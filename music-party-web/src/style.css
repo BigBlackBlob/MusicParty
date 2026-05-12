@@ -117,6 +117,11 @@ html {
   scroll-behavior: smooth;
 }
 
+.app-viewport {
+  height: var(--app-height, 100dvh);
+  min-height: var(--app-height, 100dvh);
+}
+
 :lang(zh-CN) {
   font-family: "Geist", "HarmonyOS Sans SC", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "微软雅黑", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 }

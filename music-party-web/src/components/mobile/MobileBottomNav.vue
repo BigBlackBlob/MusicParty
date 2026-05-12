@@ -1,5 +1,5 @@
 <template>
-  <nav class="mobile-bottom-nav flex-shrink-0 border-t border-[var(--border-default)] bg-[var(--surface-4)]/95 px-2 backdrop-blur-xl">
+  <nav class="mobile-bottom-nav relative z-[var(--z-header)] flex-shrink-0 border-t border-[var(--border-default)] bg-[var(--surface-4)]/95 px-2 backdrop-blur-xl">
     <div class="grid h-full grid-cols-4 gap-1">
       <button
         v-for="item in items"
