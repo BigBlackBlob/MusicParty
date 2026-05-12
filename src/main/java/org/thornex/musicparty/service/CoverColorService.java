@@ -101,12 +101,48 @@ public class CoverColorService {
     }
 
     private CoverColorResponse toResponse(Color base) {
-        Color hover = shift(base, 0.06f, 0.10f);
-        String accent = toHex(base);
+        Color normalized = ensureDarkThemeContrast(base);
+        Color hover = shift(normalized, 0.06f, 0.10f);
+        String accent = toHex(normalized);
         String accentHover = toHex(hover);
-        String accentMuted = toRgba(base, 0.16f);
-        String accentSubtle = toRgba(base, 0.08f);
+        String accentMuted = toRgba(normalized, 0.16f);
+        String accentSubtle = toRgba(normalized, 0.08f);
         return new CoverColorResponse(accent, accentHover, accentMuted, accentSubtle);
+    }
+
+    private Color ensureDarkThemeContrast(Color base) {
+        float[] hsb = Color.RGBtoHSB(base.getRed(), base.getGreen(), base.getBlue(), null);
+        float saturation = Math.max(0.24f, Math.min(0.82f, hsb[1]));
+        float brightness = Math.max(0.64f, Math.min(0.90f, hsb[2]));
+        Color adjusted = Color.getHSBColor(hsb[0], saturation, brightness);
+
+        int guard = 0;
+        while (relativeLuminance(adjusted) < 0.32 && guard < 6) {
+            adjusted = mix(adjusted, Color.WHITE, 0.16f);
+            guard++;
+        }
+
+        return adjusted;
+    }
+
+    private double relativeLuminance(Color color) {
+        return 0.2126 * channelLuminance(color.getRed())
+                + 0.7152 * channelLuminance(color.getGreen())
+                + 0.0722 * channelLuminance(color.getBlue());
+    }
+
+    private double channelLuminance(int channel) {
+        double normalized = channel / 255.0;
+        return normalized <= 0.03928
+                ? normalized / 12.92
+                : Math.pow((normalized + 0.055) / 1.055, 2.4);
+    }
+
+    private Color mix(Color color, Color target, float amount) {
+        int red = Math.round(color.getRed() + (target.getRed() - color.getRed()) * amount);
+        int green = Math.round(color.getGreen() + (target.getGreen() - color.getGreen()) * amount);
+        int blue = Math.round(color.getBlue() + (target.getBlue() - color.getBlue()) * amount);
+        return new Color(red, green, blue);
     }
 
     private Color shift(Color color, float saturationDelta, float brightnessDelta) {

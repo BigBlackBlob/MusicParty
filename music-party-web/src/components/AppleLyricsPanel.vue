@@ -2,27 +2,23 @@
   <div class="lyrics-shell relative flex h-full w-full flex-col" :style="shellStyle">
     <div class="lyrics-shell__inner relative flex h-full w-full flex-col overflow-hidden px-3 py-4 md:px-4 md:py-5">
       <div class="flex h-full w-full flex-1 flex-col items-center justify-center min-h-0">
-        <div
-          ref="scrollRef"
-          class="lyrics-scroll relative w-full flex-1 min-h-0 overflow-y-auto overflow-x-hidden"
-          :class="{ 'lyrics-scroll--empty': isEmptyState }"
-          @wheel.passive="handleUserScrollIntent"
-          @touchstart.passive="handleTouchStart"
-          @touchmove.passive="handleTouchMove"
-          @touchend.passive="handleTouchEnd"
-        >
-          <div class="mx-auto flex min-h-full w-full max-w-[min(760px,88vw)] flex-col justify-center py-4 md:py-5">
-            <div v-if="isEmptyState" class="flex min-h-[180px] items-center justify-center text-center text-sm font-medium" :class="emptyStateClass">
-              纯音乐，请欣赏
-            </div>
+        <div v-if="showEmptyState" class="lyrics-empty-state flex min-h-0 w-full flex-1 items-center justify-center text-center text-sm font-medium" :class="emptyStateClass">
+          暂无歌词
+        </div>
 
-            <div v-else-if="!lines.length" class="flex min-h-[180px] items-center justify-center text-center text-sm font-medium" :class="emptyStateClass">
-              纯音乐，请欣赏
-            </div>
-
-            <div v-else class="relative flex flex-col gap-[0.18em] md:gap-[0.24em]" aria-live="off">
+        <template v-else>
+          <div
+            ref="scrollRef"
+            class="lyrics-scroll relative w-full flex-1 min-h-0 overflow-y-auto overflow-x-hidden"
+            @wheel.passive="handleUserScrollIntent"
+            @touchstart.passive="handleTouchStart"
+            @touchmove.passive="handleTouchMove"
+            @touchend.passive="handleTouchEnd"
+          >
+            <div class="mx-auto flex min-h-full w-full max-w-[min(760px,88vw)] flex-col justify-center py-4 md:py-5">
+              <div class="relative flex flex-col gap-[0.18em] md:gap-[0.24em]" aria-live="off">
               <div
-                v-for="(line, index) in lines"
+                v-for="(line, index) in displayLines"
                 :key="`${line.time}-${index}`"
                 :ref="(el) => setLineRef(el, index)"
                 class="lyrics-line origin-center transition-[opacity,transform,color,text-shadow] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
@@ -31,18 +27,19 @@
               >
                 {{ line.text }}
               </div>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div class="mt-3 flex items-center gap-2 md:mt-4">
-          <button class="lyrics-control" type="button" @click="decreaseFont" aria-label="减小歌词字号">
-            <span class="text-lg leading-none">A−</span>
-          </button>
-          <button class="lyrics-control" type="button" @click="increaseFont" aria-label="增大歌词字号">
-            <span class="text-lg leading-none">A+</span>
-          </button>
-        </div>
+          <div class="mt-3 flex items-center gap-2 md:mt-4">
+            <button class="lyrics-control" type="button" @click="decreaseFont" aria-label="减小歌词字号">
+              <span class="text-lg leading-none">A−</span>
+            </button>
+            <button class="lyrics-control" type="button" @click="increaseFont" aria-label="增大歌词字号">
+              <span class="text-lg leading-none">A+</span>
+            </button>
+          </div>
+        </template>
       </div>
     </div>
   </div>
@@ -72,11 +69,17 @@ const props = defineProps({
   bgColor: {
     type: String,
     default: ''
+  },
+  lyricsLoaded: {
+    type: Boolean,
+    default: true
   }
 });
 
+const MIN_DISPLAY_LYRIC_LINES = 5;
 const lines = computed(() => parseLyrics(props.lyrics));
-const isEmptyState = computed(() => props.isPlaying && !props.lyrics.trim());
+const displayLines = computed(() => lines.value.length >= MIN_DISPLAY_LYRIC_LINES ? lines.value : []);
+const showEmptyState = computed(() => props.lyricsLoaded && !displayLines.value.length);
 const scrollRef = ref(null);
 const activeIndex = ref(-1);
 const isUserScrolling = ref(false);
@@ -105,17 +108,17 @@ const emptyStateClass = computed(() => ({
 }));
 
 const getActiveIndex = () => {
-  if (!lines.value.length) return -1;
-  if (props.currentTime < lines.value[0].time / 1000) return -1;
+  if (!displayLines.value.length) return -1;
+  if (props.currentTime < displayLines.value[0].time / 1000) return -1;
 
   const currentMs = props.currentTime * 1000;
   let low = 0;
-  let high = lines.value.length - 1;
+  let high = displayLines.value.length - 1;
   let answer = -1;
 
   while (low <= high) {
     const mid = Math.floor((low + high) / 2);
-    if (currentMs >= lines.value[mid].time) {
+    if (currentMs >= displayLines.value[mid].time) {
       answer = mid;
       low = mid + 1;
     } else {
@@ -248,7 +251,7 @@ watch(() => [props.currentTime, props.lyrics, props.isPlaying], () => {
   syncActiveLine();
 }, { immediate: true });
 
-watch(lines, () => {
+watch(displayLines, () => {
   lineRefs.length = 0;
   lastScrolledIndex.value = -2;
   syncActiveLine();

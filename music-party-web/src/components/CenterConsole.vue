@@ -8,18 +8,18 @@
     <div class="relative z-10 flex h-full w-full items-stretch px-5 pb-8 pt-7 md:px-10 md:pb-10 md:pt-10 xl:px-14">
       <div
         class="mx-auto grid w-full max-w-[1500px] flex-1 grid-cols-1 gap-8 lg:gap-12 xl:gap-16"
-        :class="hasLyrics ? 'lg:grid-cols-[minmax(320px,480px)_minmax(0,1fr)]' : 'place-items-center'"
+        :class="stageLayoutClass"
       >
-        <section class="flex min-h-0 flex-col items-center justify-center" :class="hasLyrics ? 'lg:items-start' : 'lg:items-center'">
-          <div class="relative w-full" :class="hasLyrics ? 'max-w-[420px] lg:max-w-[460px]' : 'max-w-[460px] lg:max-w-[560px] xl:max-w-[600px]'">
+        <section class="flex min-h-0 flex-col items-center justify-center" :class="showLyricsPanel ? 'lg:items-start' : 'lg:items-center'">
+          <div class="relative w-full" :class="showLyricsPanel ? 'max-w-[420px] lg:max-w-[460px]' : 'max-w-[460px] lg:max-w-[560px] xl:max-w-[600px]'">
             <div class="absolute inset-8 rounded-[2.5rem] blur-3xl transition-all duration-500" :class="coverShadowClass"></div>
             <div
-              v-if="!hasLyrics"
+              v-if="!showLyricsPanel"
               class="pointer-events-none absolute inset-x-[18%] -bottom-14 h-24 rounded-full blur-2xl"
               :class="ambientGlowClass"
             ></div>
             <div
-              v-if="!hasLyrics"
+              v-if="!showLyricsPanel"
               class="pointer-events-none absolute left-1/2 top-1/2 h-[118%] w-[78%] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[72px]"
               :class="ambientHaloClass"
             ></div>
@@ -30,7 +30,7 @@
               :class="[
                 player.isPaused ? 'scale-[0.985] saturate-[0.88]' : 'scale-100',
                 hasLiked ? 'cursor-default' : 'cursor-pointer',
-                hasLyrics ? 'shadow-[0_38px_120px_rgba(0,0,0,0.34)]' : 'shadow-[0_48px_160px_rgba(0,0,0,0.42)]'
+                showLyricsPanel ? 'shadow-[0_38px_120px_rgba(0,0,0,0.34)]' : 'shadow-[0_48px_160px_rgba(0,0,0,0.42)]'
               ]"
               @mouseenter="!isMobile && (isHovering = true)"
               @mouseleave="!isMobile && (isHovering = false)"
@@ -47,7 +47,7 @@
                 loading="eager"
                 decoding="async"
                 class="absolute inset-0 h-full w-full object-cover transition-transform duration-700"
-                :class="player.isPaused ? 'scale-[1.01]' : (hasLyrics ? 'scale-[1.04] group-hover:scale-[1.07]' : 'scale-[1.06] group-hover:scale-[1.09]')"
+                :class="player.isPaused ? 'scale-[1.01]' : (showLyricsPanel ? 'scale-[1.04] group-hover:scale-[1.07]' : 'scale-[1.06] group-hover:scale-[1.09]')"
               />
 
               <div class="absolute inset-0 transition-all duration-500" :class="coverMaskClass"></div>
@@ -95,7 +95,7 @@
           </div>
         </section>
 
-        <section v-if="player.nowPlaying" class="flex min-h-0 flex-col justify-center">
+        <section v-if="showLyricsPanel" class="flex min-h-0 flex-col justify-center">
           <AppleLyricsPanel
             :lyrics="player.lyricText"
             :current-time="player.localProgress / 1000"
@@ -118,6 +118,7 @@ import { useWindowSize } from '@vueuse/core';
 import { Activity, Zap } from 'lucide-vue-next';
 import AppleLyricsPanel from './AppleLyricsPanel.vue';
 import CoverImage from './CoverImage.vue';
+import { parseLyrics } from '../utils/parser';
 
 const userStore = useUserStore();
 const player = usePlayerStore();
@@ -139,7 +140,14 @@ const mobileTimer = ref(null);
 const isBursting = ref(false);
 
 const hasLiked = computed(() => player.nowPlaying?.likedUserIds?.includes(userStore.userToken));
-const hasLyrics = computed(() => !!player.lyricText?.trim());
+const MIN_DISPLAY_LYRIC_LINES = 5;
+const parsedLyricLines = computed(() => parseLyrics(player.lyricText));
+const hasLyrics = computed(() => parsedLyricLines.value.length >= MIN_DISPLAY_LYRIC_LINES);
+const showLyricsPanel = computed(() => !!player.nowPlaying && hasLyrics.value);
+const stageLayoutClass = computed(() => {
+  if (!showLyricsPanel.value) return 'place-items-center';
+  return 'md:grid-cols-[minmax(260px,380px)_minmax(0,1fr)] lg:grid-cols-[minmax(320px,480px)_minmax(0,1fr)]';
+});
 
 const stageClass = computed(() => {
   if (hasCover.value) return isDarkMode.value ? 'apple-stage-with-cover-dark' : 'apple-stage-with-cover-light';
