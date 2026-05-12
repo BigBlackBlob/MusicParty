@@ -1,0 +1,12 @@
+.git
+.github
+target/
+music-party-web/node_modules/
+music-party-web/dist/
+data/
+cached_media/
+packaging/
+.dev-logs/
+.idea/
+.vscode/
+*.zip
