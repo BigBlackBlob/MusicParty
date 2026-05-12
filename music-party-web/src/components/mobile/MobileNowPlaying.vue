@@ -25,7 +25,8 @@
         <MobileMiniLyrics
           v-if="hasLyrics"
           class="mb-2"
-          :lyrics="player.lyricText"
+          :lyrics="player.lyricDetail.lyric || player.lyricText"
+          :translated-lyrics="player.lyricDetail.translatedLyric"
           :current-time-ms="player.localProgress"
           @open="lyricsExpanded = true"
         />
@@ -74,7 +75,54 @@
         ></div>
       </div>
 
-      <div class="mt-5 flex items-center justify-center gap-4">
+      <div class="mobile-controls-row mt-5">
+        <div class="relative">
+          <button
+            class="mobile-control"
+            :class="volumePanelOpen ? 'border-[var(--border-accent)] text-[var(--accent)]' : ''"
+            @click="toggleVolumePanel"
+            :aria-label="`音量 ${Math.round(ui.volume * 100)}%`"
+            :aria-expanded="volumePanelOpen"
+            aria-controls="mobile-volume-panel"
+          >
+            <VolumeX v-if="ui.volume === 0" class="h-5 w-5" />
+            <Volume1 v-else-if="ui.volume < 0.5" class="h-5 w-5" />
+            <Volume2 v-else class="h-5 w-5" />
+          </button>
+
+          <Transition name="mobile-volume-popover">
+            <div
+              v-if="volumePanelOpen"
+              id="mobile-volume-panel"
+              ref="volumePanelRef"
+              class="mobile-volume-panel"
+              role="group"
+              aria-label="音量调节"
+            >
+              <div class="text-[11px] font-bold tabular-nums text-[var(--text-primary)]">
+                {{ Math.round(ui.volume * 100) }}%
+              </div>
+              <div
+                ref="volumeTrackRef"
+                class="mobile-volume-track"
+                role="slider"
+                tabindex="0"
+                aria-label="音量"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                :aria-valuenow="Math.round(ui.volume * 100)"
+                @pointerdown="handleVolumePointerDown"
+                @pointercancel="handleVolumePointerCancel"
+                @keydown="handleVolumeKeydown"
+              >
+                <div class="mobile-volume-track__rail">
+                  <div class="mobile-volume-track__fill" :style="{ height: `${ui.volume * 100}%` }"></div>
+                </div>
+                <div class="mobile-volume-track__thumb" :style="{ bottom: `calc(${ui.volume * 100}% - 0.45rem)` }"></div>
+              </div>
+            </div>
+          </Transition>
+        </div>
         <button class="mobile-control" :class="player.isShuffle ? 'text-[var(--accent)]' : ''" @click="player.toggleShuffle" aria-label="随机播放">
           <Shuffle class="h-5 w-5" />
         </button>
@@ -84,6 +132,15 @@
         </button>
         <button class="mobile-control" @click="player.playNext" aria-label="下一首">
           <SkipForward class="h-5 w-5" />
+        </button>
+        <button
+          class="mobile-control"
+          :class="hasLiked ? 'border-[var(--border-accent)] text-[var(--accent)]' : ''"
+          @click="handleMobileLike"
+          :aria-label="hasLiked ? '已喜欢当前歌曲' : '喜欢当前歌曲'"
+          :aria-pressed="hasLiked"
+        >
+          <Heart class="h-5 w-5" :class="hasLiked ? 'fill-current stroke-none' : ''" />
         </button>
       </div>
     </div>
@@ -99,7 +156,8 @@
         </button>
       </div>
       <AppleLyricsPanel
-        :lyrics="player.lyricText"
+        :lyrics="player.lyricDetail.lyric || player.lyricText"
+        :translated-lyrics="player.lyricDetail.translatedLyric"
         :current-time="player.localProgress / 1000"
         :is-playing="!player.isPaused"
         :is-dark-mode="ui.isDarkMode"
@@ -111,7 +169,7 @@
 
 <script setup>
 import { computed, onUnmounted, ref, watch } from 'vue';
-import { Pause, Play, Shuffle, SkipForward } from 'lucide-vue-next';
+import { Heart, Pause, Play, Shuffle, SkipForward, Volume1, Volume2, VolumeX } from 'lucide-vue-next';
 import { usePlayerStore } from '../../stores/player';
 import { useUiStore } from '../../stores/ui';
 import { useUserStore } from '../../stores/user';
@@ -135,9 +193,16 @@ const lyricsExpanded = ref(false);
 const isDraggingProgress = ref(false);
 const dragProgressMs = ref(0);
 const activeProgressPointerId = ref(null);
-const lyricLines = computed(() => parseLyrics(player.lyricText));
+const volumePanelOpen = ref(false);
+const volumePanelRef = ref(null);
+const volumeTrackRef = ref(null);
+const activeVolumePointerId = ref(null);
+const lyricLines = computed(() => parseLyrics(player.lyricDetail.lyric || player.lyricText));
 const hasLyrics = computed(() => lyricLines.value.length >= 5);
 const canSeek = computed(() => !!nowPlaying.value && nowPlaying.value.enqueuedById === user.userToken);
+const hasLiked = computed(() => (
+  player.nowPlaying?.likedUserIds?.includes(user.userToken) || player.isSongLiked(music.value)
+));
 const displayProgressMs = computed(() => isDraggingProgress.value ? dragProgressMs.value : player.localProgress);
 const displayProgressPercent = computed(() => {
   if (!music.value?.duration) return 0;
@@ -197,14 +262,113 @@ const handleProgressPointerCancel = (e) => {
   cleanupProgressDrag(e);
 };
 
+const toggleVolumePanel = () => {
+  volumePanelOpen.value = !volumePanelOpen.value;
+};
+
+const closeVolumePanel = () => {
+  volumePanelOpen.value = false;
+};
+
+const setVolumeFromPointer = (e) => {
+  if (!volumeTrackRef.value) return;
+  const rect = volumeTrackRef.value.getBoundingClientRect();
+  const y = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
+  const nextVolume = 1 - (y / rect.height);
+  ui.setVolume(parseFloat(nextVolume.toFixed(2)));
+};
+
+const handleVolumePointerDown = (e) => {
+  e.preventDefault();
+  activeVolumePointerId.value = e.pointerId;
+  volumeTrackRef.value?.setPointerCapture?.(e.pointerId);
+  setVolumeFromPointer(e);
+  window.addEventListener('pointermove', handleVolumePointerMove);
+  window.addEventListener('pointerup', handleVolumePointerUp);
+  window.addEventListener('pointercancel', handleVolumePointerCancel);
+};
+
+const handleVolumePointerMove = (e) => {
+  if (activeVolumePointerId.value !== null && e.pointerId !== activeVolumePointerId.value) return;
+  setVolumeFromPointer(e);
+};
+
+const cleanupVolumeDrag = (e) => {
+  const pointerId = activeVolumePointerId.value ?? e?.pointerId;
+  if (pointerId !== undefined && volumeTrackRef.value?.hasPointerCapture?.(pointerId)) {
+    volumeTrackRef.value.releasePointerCapture(pointerId);
+  }
+  activeVolumePointerId.value = null;
+  window.removeEventListener('pointermove', handleVolumePointerMove);
+  window.removeEventListener('pointerup', handleVolumePointerUp);
+  window.removeEventListener('pointercancel', handleVolumePointerCancel);
+};
+
+const handleVolumePointerUp = (e) => {
+  if (activeVolumePointerId.value !== null && e.pointerId !== activeVolumePointerId.value) return;
+  cleanupVolumeDrag(e);
+};
+
+const handleVolumePointerCancel = (e) => {
+  if (activeVolumePointerId.value !== null && e.pointerId !== activeVolumePointerId.value) return;
+  cleanupVolumeDrag(e);
+};
+
+const handleVolumeKeydown = (e) => {
+  const step = e.shiftKey ? 0.1 : 0.05;
+  if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
+    e.preventDefault();
+    ui.setVolume(ui.volume + step);
+  }
+  if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
+    e.preventDefault();
+    ui.setVolume(ui.volume - step);
+  }
+  if (e.key === 'Home') {
+    e.preventDefault();
+    ui.setVolume(0);
+  }
+  if (e.key === 'End') {
+    e.preventDefault();
+    ui.setVolume(1);
+  }
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    closeVolumePanel();
+  }
+};
+
+const handleMobileLike = () => {
+  if (!nowPlaying.value || hasLiked.value) return;
+  player.sendLike();
+};
+
+const handleDocumentPointerDown = (e) => {
+  if (!volumePanelOpen.value) return;
+  if (volumePanelRef.value?.contains(e.target)) return;
+  closeVolumePanel();
+};
+
 watch(() => music.value?.coverUrl, (coverUrl) => {
   ui.updateAccentFromCover(coverUrl);
 }, { immediate: true });
+
+watch(volumePanelOpen, (open) => {
+  if (open) {
+    document.addEventListener('pointerdown', handleDocumentPointerDown, true);
+  } else {
+    document.removeEventListener('pointerdown', handleDocumentPointerDown, true);
+  }
+});
 
 onUnmounted(() => {
   window.removeEventListener('pointermove', handleProgressPointerMove);
   window.removeEventListener('pointerup', handleProgressPointerUp);
   window.removeEventListener('pointercancel', handleProgressPointerCancel);
+  window.removeEventListener('pointermove', handleVolumePointerMove);
+  window.removeEventListener('pointerup', handleVolumePointerUp);
+  window.removeEventListener('pointercancel', handleVolumePointerCancel);
+  document.removeEventListener('pointerdown', handleDocumentPointerDown, true);
 });
 </script>
 
@@ -221,6 +385,14 @@ onUnmounted(() => {
   color: var(--text-secondary);
 }
 
+.mobile-controls-row {
+  display: grid;
+  grid-template-columns: 3rem 3rem 4rem 3rem 3rem;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+}
+
 .mobile-primary-control {
   display: inline-flex;
   min-width: 4rem;
@@ -231,5 +403,87 @@ onUnmounted(() => {
   background: var(--accent);
   color: var(--text-inverse);
   box-shadow: 0 18px 40px color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.mobile-volume-panel {
+  position: absolute;
+  bottom: calc(100% + 0.75rem);
+  left: 50%;
+  z-index: 20;
+  display: flex;
+  min-width: 4.75rem;
+  min-height: 12rem;
+  transform: translateX(-50%);
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  border: 1px solid var(--border-default);
+  border-radius: 1.5rem;
+  background: var(--surface-4);
+  padding: 0.85rem 0.75rem;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.28);
+}
+
+.mobile-volume-track {
+  position: relative;
+  display: flex;
+  width: 2.75rem;
+  min-height: 8.5rem;
+  touch-action: none;
+  align-items: center;
+  justify-content: center;
+  outline: none;
+}
+
+.mobile-volume-track:focus-visible {
+  border-radius: 1rem;
+  box-shadow: 0 0 0 3px var(--accent-muted);
+}
+
+.mobile-volume-track__rail {
+  position: relative;
+  height: 8rem;
+  width: 0.55rem;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: var(--progress-track);
+}
+
+.mobile-volume-track__fill {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  border-radius: 9999px;
+  background: var(--accent);
+}
+
+.mobile-volume-track__thumb {
+  position: absolute;
+  left: 50%;
+  width: 1.15rem;
+  height: 1.15rem;
+  transform: translateX(-50%);
+  border: 3px solid var(--surface-4);
+  border-radius: 9999px;
+  background: var(--accent);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.24);
+}
+
+.mobile-volume-popover-enter-active,
+.mobile-volume-popover-leave-active {
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.mobile-volume-popover-enter-from,
+.mobile-volume-popover-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(0.35rem) scale(0.96);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-volume-popover-enter-active,
+  .mobile-volume-popover-leave-active {
+    transition-duration: 0.01ms;
+  }
 }
 </style>

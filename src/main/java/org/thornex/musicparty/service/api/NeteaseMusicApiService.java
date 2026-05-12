@@ -330,18 +330,21 @@ public class NeteaseMusicApiService implements IMusicApiService {
 
     @Override
     public Mono<String> getLyric(String musicId) {
+        return getLyricDetail(musicId).map(LyricResponse::lyric);
+    }
+
+    @Override
+    public Mono<LyricResponse> getLyricDetail(String musicId) {
         ensureConfigured();
         return webClient.get()
                 .uri(baseUrl + "/lyric?id={id}", musicId)
                 .retrieve()
                 .bodyToMono(JsonNode.class)
-                .map(json -> {
-                    // 尝试获取 lrc.lyric
-                    if (json.has("lrc") && json.get("lrc").has("lyric")) {
-                        return json.get("lrc").get("lyric").asText();
-                    }
-                    return ""; // 没有歌词
-                })
-                .onErrorReturn("");
+                .map(json -> new LyricResponse(
+                        json.path("lrc").path("lyric").asText(""),
+                        json.path("tlyric").path("lyric").asText(""),
+                        json.path("romalrc").path("lyric").asText("")
+                ))
+                .onErrorReturn(LyricResponse.empty());
     }
 }

@@ -7,20 +7,29 @@
     @click="$emit('open')"
   >
     <Transition name="mini-lyric-line" mode="out-in">
-      <span :key="currentLineKey" class="mini-lyrics__line">
-        {{ currentLine?.text || '' }}
+      <span :key="currentLineKey" class="mini-lyrics__line-group">
+        <span class="mini-lyrics__line">
+          {{ currentLine?.text || '' }}
+        </span>
+        <span v-if="currentLine?.translation" class="mini-lyrics__translation">
+          {{ currentLine.translation }}
+        </span>
+        <span v-else class="mini-lyrics__translation-spacer" aria-hidden="true"></span>
       </span>
     </Transition>
-    <span class="mini-lyrics__translation-placeholder" aria-hidden="true">Translation placeholder</span>
   </button>
 </template>
 
 <script setup>
 import { computed } from 'vue';
-import { parseLyrics } from '../../utils/parser';
+import { mergeTranslatedLyrics } from '../../utils/parser';
 
 const props = defineProps({
   lyrics: {
+    type: String,
+    default: ''
+  },
+  translatedLyrics: {
     type: String,
     default: ''
   },
@@ -37,7 +46,7 @@ const props = defineProps({
 defineEmits(['open']);
 
 const lines = computed(() => {
-  const parsed = parseLyrics(props.lyrics);
+  const parsed = mergeTranslatedLyrics(props.lyrics, props.translatedLyrics);
   return parsed.length >= props.minLines ? parsed : [];
 });
 
@@ -104,14 +113,32 @@ const currentLineKey = computed(() => {
   text-shadow: 0 2px 14px rgba(0, 0, 0, 0.22);
 }
 
-.mini-lyrics__translation-placeholder {
+.mini-lyrics__line-group {
+  display: block;
+  width: 100%;
+  min-height: 3.05rem;
+}
+
+.mini-lyrics__translation,
+.mini-lyrics__translation-spacer {
   display: block;
   width: 100%;
   min-height: 1.25rem;
   overflow: hidden;
-  opacity: 0;
   font-size: 0.875rem;
   line-height: 1.25rem;
+}
+
+.mini-lyrics__translation {
+  color: var(--text-secondary);
+  font-weight: 560;
+  opacity: 0.82;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mini-lyrics__translation-spacer {
+  opacity: 0;
   pointer-events: none;
   user-select: none;
 }
