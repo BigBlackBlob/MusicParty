@@ -263,7 +263,8 @@ const cancelSelection = () => {
 
 const topSelected = () => {
   if (!hasSelection.value) return;
-  player.topSongs(selectedIds.value);
+  const ids = selectedIds.value;
+  if (!player.topSongs(ids)) player.topSongsCompat(ids);
   cancelSelection();
 };
 
@@ -274,7 +275,8 @@ const requestDeleteSelected = () => {
 
 const confirmDeleteSelected = () => {
   if (!hasSelection.value) return;
-  player.removeSongs(selectedIds.value);
+  const ids = selectedIds.value;
+  if (!player.removeSongs(ids)) player.removeSongsCompat(ids);
   cancelSelection();
 };
 </script>

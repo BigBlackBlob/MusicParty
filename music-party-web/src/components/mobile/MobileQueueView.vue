@@ -43,7 +43,7 @@
     </div>
 
     <div v-if="activeView === 'queue'" class="relative min-h-0 flex-1 overflow-hidden">
-      <div class="h-full overflow-y-auto px-3 py-2" :class="selectionMode ? 'pr-[4.75rem]' : ''">
+      <div class="h-full overflow-y-auto px-3 py-2">
       <div v-if="player.queue.length === 0" class="flex h-full items-center justify-center text-sm text-[var(--text-tertiary)]">
         队列为空
       </div>
@@ -214,7 +214,8 @@ const cancelSelection = () => {
 
 const topSelected = () => {
   if (!hasSelection.value) return;
-  player.topSongs(selectedIds.value);
+  const ids = selectedIds.value;
+  if (!player.topSongs(ids)) player.topSongsCompat(ids);
   cancelSelection();
 };
 
@@ -225,7 +226,8 @@ const requestDeleteSelected = () => {
 
 const confirmDeleteSelected = () => {
   if (!hasSelection.value) return;
-  player.removeSongs(selectedIds.value);
+  const ids = selectedIds.value;
+  if (!player.removeSongs(ids)) player.removeSongsCompat(ids);
   cancelSelection();
 };
 </script>
@@ -296,7 +298,7 @@ const confirmDeleteSelected = () => {
 .selection-rail {
   position: absolute;
   right: 0.65rem;
-  top: 50%;
+  top: 64%;
   z-index: 30;
   display: flex;
   transform: translateY(-50%);
