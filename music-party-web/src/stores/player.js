@@ -19,6 +19,12 @@ export const usePlayerStore = defineStore('player', () => {
     const isSkipLocked = ref(false);
     const isShuffleLocked = ref(false);
     const lyricText = ref('');
+    const lyricDetail = ref({
+        lyric: '',
+        translatedLyric: '',
+        romanizedLyric: ''
+    });
+    const likedSongs = ref([]);
     const connected = ref(false);
     const isLoading = ref(false);
     const streamListenerCount = ref(0);
@@ -33,6 +39,13 @@ export const usePlayerStore = defineStore('player', () => {
 
     const userStore = useUserStore();
     const LOCAL_COOLDOWN = 500; // 稍微调低一点冷却时间提升手感
+
+    try {
+        const savedLikedSongs = JSON.parse(localStorage.getItem(STORAGE_KEYS.LIKED_SONGS) || '[]');
+        likedSongs.value = Array.isArray(savedLikedSongs) ? savedLikedSongs : [];
+    } catch (e) {
+        likedSongs.value = [];
+    }
 
     // === 2. Logic ===
     const getCurrentProgress = () => {
@@ -150,8 +163,44 @@ export const usePlayerStore = defineStore('player', () => {
         // userStore.saveName(newName) removed; relying on backend sync
     };
 
+    const getSongKey = (music) => music ? `${music.platform}:${music.id}` : '';
+
+    const saveLikedSongs = () => {
+        localStorage.setItem(STORAGE_KEYS.LIKED_SONGS, JSON.stringify(likedSongs.value));
+    };
+
+    const addLikedSong = (music = nowPlaying.value?.music) => {
+        if (!music) return;
+        const key = getSongKey(music);
+        const nextSong = {
+            key,
+            id: music.id,
+            platform: music.platform,
+            name: music.name,
+            artists: music.artists || [],
+            duration: music.duration || 0,
+            coverUrl: music.coverUrl || '',
+            likedAt: Date.now()
+        };
+        likedSongs.value = [nextSong, ...likedSongs.value.filter(song => song.key !== key)].slice(0, 500);
+        saveLikedSongs();
+    };
+
+    const removeLikedSong = (key) => {
+        likedSongs.value = likedSongs.value.filter(song => song.key !== key);
+        saveLikedSongs();
+    };
+
+    const isSongLiked = (music = nowPlaying.value?.music) => {
+        const key = getSongKey(music);
+        return !!key && likedSongs.value.some(song => song.key === key);
+    };
+
     const sendLike = () => {
-        if (requireAuth()) socketService.send(WS_DEST.PLAYER_LIKE);
+        if (requireAuth()) {
+            addLikedSong();
+            socketService.send(WS_DEST.PLAYER_LIKE);
+        }
     };
 
     const sendChatMessage = (content) => {
@@ -161,24 +210,38 @@ export const usePlayerStore = defineStore('player', () => {
     // 歌词监听
     watch(() => nowPlaying.value?.music?.id, async (newId) => {
         lyricText.value = '';
+        lyricDetail.value = { lyric: '', translatedLyric: '', romanizedLyric: '' };
         if (!newId) return;
         try {
             const platform = nowPlaying.value.music.platform;
-            const data = await musicApi.getLyric(platform, newId);
-            lyricText.value = data || '';
+            const data = await musicApi.getLyricDetail(platform, newId);
+            lyricDetail.value = {
+                lyric: data?.lyric || '',
+                translatedLyric: data?.translatedLyric || '',
+                romanizedLyric: data?.romanizedLyric || ''
+            };
+            lyricText.value = lyricDetail.value.lyric;
         } catch (e) {
             console.error("Lyrics Error", e);
+            try {
+                const platform = nowPlaying.value.music.platform;
+                const fallback = await musicApi.getLyric(platform, newId);
+                lyricText.value = fallback || '';
+                lyricDetail.value = { lyric: lyricText.value, translatedLyric: '', romanizedLyric: '' };
+            } catch (fallbackError) {
+                console.error("Lyrics Fallback Error", fallbackError);
+            }
         }
     });
 
     return {
-        nowPlaying, queue, isPaused, isShuffle, isPauseLocked, isSkipLocked, isShuffleLocked, connected, isLoading, lyricText,
+        nowPlaying, queue, isPaused, isShuffle, isPauseLocked, isSkipLocked, isShuffleLocked, connected, isLoading, lyricText, lyricDetail, likedSongs,
         localProgress, isBuffering, isErrorState, streamListenerCount, lastSyncTime,
         isSeekingPreview, setSeekingPreview,
         connect, tryReconnect, getCurrentProgress, syncState, // 导出 syncState
         playNext, togglePause, toggleShuffle,
         seek,
         enqueue, enqueuePlaylist, enqueueAlbum, topSong, removeSong,
-        bindAccount, renameUser, sendChatMessage, sendLike
+        bindAccount, renameUser, sendChatMessage, sendLike, addLikedSong, removeLikedSong, isSongLiked
     };
 });

@@ -97,7 +97,8 @@
 
         <section v-if="showLyricsPanel" class="flex min-h-0 flex-col justify-center">
           <AppleLyricsPanel
-            :lyrics="player.lyricText"
+            :lyrics="player.lyricDetail.lyric || player.lyricText"
+            :translated-lyrics="player.lyricDetail.translatedLyric"
             :current-time="player.localProgress / 1000"
             :is-playing="!player.isPaused"
             :is-dark-mode="isDarkMode"
@@ -141,7 +142,7 @@ const isBursting = ref(false);
 
 const hasLiked = computed(() => player.nowPlaying?.likedUserIds?.includes(userStore.userToken));
 const MIN_DISPLAY_LYRIC_LINES = 5;
-const parsedLyricLines = computed(() => parseLyrics(player.lyricText));
+const parsedLyricLines = computed(() => parseLyrics(player.lyricDetail.lyric || player.lyricText));
 const hasLyrics = computed(() => parsedLyricLines.value.length >= MIN_DISPLAY_LYRIC_LINES);
 const showLyricsPanel = computed(() => !!player.nowPlaying && hasLyrics.value);
 const stageLayoutClass = computed(() => {

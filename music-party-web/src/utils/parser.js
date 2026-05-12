@@ -23,3 +23,22 @@ export const parseLyrics = (lrcString) => {
 
     return result.sort((a, b) => a.time - b.time);
 };
+
+export const mergeTranslatedLyrics = (lyricString, translatedLyricString) => {
+    const mainLines = parseLyrics(lyricString);
+    const translatedLines = parseLyrics(translatedLyricString);
+
+    if (!mainLines.length) return [];
+
+    const translationByTime = new Map();
+    for (const line of translatedLines) {
+        if (!translationByTime.has(line.time)) {
+            translationByTime.set(line.time, line.text);
+        }
+    }
+
+    return mainLines.map((line) => ({
+        ...line,
+        translation: translationByTime.get(line.time) || ''
+    }));
+};

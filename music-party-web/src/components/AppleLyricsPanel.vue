@@ -25,7 +25,8 @@
                 :class="getLineClass(index)"
                 :style="getLineStyle(index)"
               >
-                {{ line.text }}
+                <span class="lyrics-line__primary">{{ line.text }}</span>
+                <span v-if="line.translation" class="lyrics-line__translation">{{ line.translation }}</span>
               </div>
               </div>
             </div>
@@ -47,10 +48,14 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
-import { parseLyrics } from '../utils/parser';
+import { mergeTranslatedLyrics } from '../utils/parser';
 
 const props = defineProps({
   lyrics: {
+    type: String,
+    default: ''
+  },
+  translatedLyrics: {
     type: String,
     default: ''
   },
@@ -77,7 +82,7 @@ const props = defineProps({
 });
 
 const MIN_DISPLAY_LYRIC_LINES = 5;
-const lines = computed(() => parseLyrics(props.lyrics));
+const lines = computed(() => mergeTranslatedLyrics(props.lyrics, props.translatedLyrics));
 const displayLines = computed(() => lines.value.length >= MIN_DISPLAY_LYRIC_LINES ? lines.value : []);
 const showEmptyState = computed(() => props.lyricsLoaded && !displayLines.value.length);
 const scrollRef = ref(null);
@@ -96,6 +101,9 @@ const shellStyle = computed(() => ({
   '--lyrics-text-active': props.isDarkMode ? 'rgba(255,255,255,0.98)' : 'rgba(26,26,26,0.98)',
   '--lyrics-text-mid': props.isDarkMode ? 'rgba(255,255,255,0.6)' : 'rgba(26,26,26,0.6)',
   '--lyrics-text-low': props.isDarkMode ? 'rgba(255,255,255,0.3)' : 'rgba(26,26,26,0.3)',
+  '--lyrics-translation-active': props.isDarkMode ? 'rgba(255,255,255,0.68)' : 'rgba(26,26,26,0.58)',
+  '--lyrics-translation-mid': props.isDarkMode ? 'rgba(255,255,255,0.42)' : 'rgba(26,26,26,0.38)',
+  '--lyrics-translation-low': props.isDarkMode ? 'rgba(255,255,255,0.22)' : 'rgba(26,26,26,0.22)',
   '--lyrics-empty': props.isDarkMode ? 'rgba(255,255,255,0.5)' : 'rgba(26,26,26,0.55)',
   '--lyrics-accent-glow': props.bgColor || (props.isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(26,26,26,0.06)'),
   '--lyrics-active-size': `clamp(${scaledFont(34)}, 4.3vw, ${scaledFont(56)})`,
@@ -146,6 +154,8 @@ const getLineStyle = (index) => {
       fontWeight: 700,
       lineHeight: 1.3,
       color: 'var(--lyrics-text-active)',
+      '--lyrics-translation-size': 'clamp(0.95rem, 1.1vw, 1.28rem)',
+      '--lyrics-translation-color': 'var(--lyrics-translation-active)',
       textShadow: props.isDarkMode
         ? '0 8px 24px rgba(0,0,0,0.22), 0 0 22px color-mix(in srgb, var(--lyrics-accent-glow) 36%, transparent)'
         : '0 6px 18px rgba(255,255,255,0.08)'
@@ -160,7 +170,9 @@ const getLineStyle = (index) => {
       fontSize: 'var(--lyrics-mid-size)',
       fontWeight: 600,
       lineHeight: 1.28,
-      color: 'var(--lyrics-text-mid)'
+      color: 'var(--lyrics-text-mid)',
+      '--lyrics-translation-size': 'clamp(0.82rem, 0.95vw, 1.05rem)',
+      '--lyrics-translation-color': 'var(--lyrics-translation-mid)'
     };
   }
 
@@ -171,7 +183,9 @@ const getLineStyle = (index) => {
     fontSize: 'var(--lyrics-low-size)',
     fontWeight: 500,
     lineHeight: 1.28,
-    color: 'var(--lyrics-text-low)'
+    color: 'var(--lyrics-text-low)',
+    '--lyrics-translation-size': 'clamp(0.75rem, 0.8vw, 0.92rem)',
+    '--lyrics-translation-color': 'var(--lyrics-translation-low)'
   };
 };
 
@@ -247,7 +261,7 @@ const decreaseFont = () => {
   fontScale.value = Math.max(-2, fontScale.value - 1);
 };
 
-watch(() => [props.currentTime, props.lyrics, props.isPlaying], () => {
+watch(() => [props.currentTime, props.lyrics, props.translatedLyrics, props.isPlaying], () => {
   syncActiveLine();
 }, { immediate: true });
 
@@ -284,10 +298,29 @@ onBeforeUnmount(() => {
 }
 
 .lyrics-line {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18em;
   max-width: min(760px, 88vw);
   word-break: break-word;
   will-change: transform, opacity;
   letter-spacing: 0;
+}
+
+.lyrics-line__primary,
+.lyrics-line__translation {
+  display: block;
+  max-width: min(760px, 88vw);
+  word-break: break-word;
+  letter-spacing: 0;
+}
+
+.lyrics-line__translation {
+  color: var(--lyrics-translation-color);
+  font-size: var(--lyrics-translation-size);
+  font-weight: 560;
+  line-height: 1.35;
+  text-shadow: none;
 }
 
 .lyrics-control {

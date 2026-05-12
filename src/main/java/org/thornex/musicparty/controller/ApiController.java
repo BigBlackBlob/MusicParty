@@ -5,6 +5,7 @@ import org.springframework.web.bind.annotation.*;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.CoverColorResponse;
 import org.thornex.musicparty.dto.Album;
+import org.thornex.musicparty.dto.LyricResponse;
 import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.dto.Playlist;
 import org.thornex.musicparty.dto.UserSearchResult;
@@ -116,6 +117,20 @@ public class ApiController {
         return getService(platform).getLyric(musicId)
                 .doOnSuccess(result -> log.info("API lyric success: platform={}, musicId={}, length={}", platform, musicId, result == null ? 0 : result.length()))
                 .doOnError(error -> log.error("API lyric failed: platform={}, musicId={}", platform, musicId, error));
+    }
+
+    @GetMapping("/music/lyric-detail/{platform}/{musicId}")
+    public Mono<LyricResponse> getLyricDetail(@PathVariable String platform, @PathVariable String musicId) {
+        log.info("API lyric detail request: platform={}, musicId={}", platform, musicId);
+        return getService(platform).getLyricDetail(musicId)
+                .doOnSuccess(result -> log.info(
+                        "API lyric detail success: platform={}, musicId={}, lyricLength={}, translatedLength={}",
+                        platform,
+                        musicId,
+                        result == null || result.lyric() == null ? 0 : result.lyric().length(),
+                        result == null || result.translatedLyric() == null ? 0 : result.translatedLyric().length()
+                ))
+                .doOnError(error -> log.error("API lyric detail failed: platform={}, musicId={}", platform, musicId, error));
     }
 
     @GetMapping("/theme/extract-cover-color")

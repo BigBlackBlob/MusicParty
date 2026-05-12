@@ -3,6 +3,7 @@ package org.thornex.musicparty.service.api;
 import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.dto.PlayableMusic;
 import org.thornex.musicparty.dto.Playlist;
+import org.thornex.musicparty.dto.LyricResponse;
 import org.thornex.musicparty.dto.UserSearchResult;
 import reactor.core.publisher.Mono;
 
@@ -16,5 +17,8 @@ public interface IMusicApiService {
     Mono<List<Music>> getPlaylistMusics(String playlistId, int offset, int limit);
     Mono<List<UserSearchResult>> searchUsers(String keyword);
     Mono<String> getLyric(String musicId);
+    default Mono<LyricResponse> getLyricDetail(String musicId) {
+        return getLyric(musicId).map(lyric -> new LyricResponse(lyric, "", ""));
+    }
     default void prefetchMusic(String musicId) {};
 }
