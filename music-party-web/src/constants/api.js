@@ -13,6 +13,8 @@ export const WS_DEST = {
     ENQUEUE_ALBUM: '/app/enqueue/album',
     QUEUE_TOP: '/app/queue/top',
     QUEUE_REMOVE: '/app/queue/remove',
+    QUEUE_BATCH_TOP: '/app/queue/batch-top',
+    QUEUE_BATCH_REMOVE: '/app/queue/batch-remove',
     USER_BIND: '/app/user/bind',
     USER_RENAME: '/app/user/rename',
     RESYNC: '/app/player/resync',

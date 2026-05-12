@@ -1,8 +1,24 @@
 <template>
   <div
       class="group relative mb-2 flex h-16 items-center gap-3 rounded-2xl border border-[var(--border-default)] bg-[var(--surface-4)] px-3 py-2 transition-colors hover:bg-[var(--surface-3)]"
+      :class="[
+        selectionMode ? 'cursor-pointer pr-3' : '',
+        selected ? 'border-[var(--border-accent)] bg-[var(--accent-subtle)]' : ''
+      ]"
+      @click="handleRowClick"
   >
     <div class="flex w-7 flex-shrink-0 flex-col items-center justify-center">
+      <button
+          v-if="selectionMode"
+          type="button"
+          class="flex h-6 w-6 items-center justify-center rounded-full border transition-colors"
+          :class="selected ? 'border-[var(--accent)] bg-[var(--accent)] text-[var(--text-inverse)]' : 'border-[var(--border-default)] bg-[var(--surface-2)] text-transparent'"
+          :aria-label="selected ? '取消选择' : '选择歌曲'"
+          :aria-pressed="selected"
+          @click.stop="emit('toggle-select')"
+      >
+        <Check class="h-3.5 w-3.5" />
+      </button>
       <div v-if="index !== undefined" class="font-mono text-xs text-[var(--text-tertiary)]">
         {{ String(index + 1).padStart(2, '0') }}
       </div>
@@ -43,7 +59,7 @@
     </div>
 
     <div
-        v-if="!userStore.isGuest"
+        v-if="!userStore.isGuest && !selectionMode"
         class="pointer-events-none absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded-full border border-[var(--border-default)] bg-[var(--surface-3)]/95 px-1.5 py-1 opacity-0 shadow-lg backdrop-blur-sm transition-opacity group-hover:pointer-events-auto group-hover:opacity-100"
     >
       <button @click="player.topSong(item.queueId)" title="Top" class="min-w-[44px] min-h-[44px] rounded-full p-1.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--accent)] active:scale-[0.96]" aria-label="置顶">
@@ -59,7 +75,7 @@
 <script setup>
 import { usePlayerStore } from '../stores/player';
 import { useUserStore } from '../stores/user';
-import { Trash2, ArrowUpToLine, Loader2 } from 'lucide-vue-next';
+import { Trash2, ArrowUpToLine, Loader2, Check } from 'lucide-vue-next';
 import CoverImage from './CoverImage.vue';
 
 const props = defineProps({
@@ -70,9 +86,25 @@ const props = defineProps({
   index: {
     type: Number,
     default: undefined
+  },
+  selectionMode: {
+    type: Boolean,
+    default: false
+  },
+  selected: {
+    type: Boolean,
+    default: false
   }
 });
 
+const emit = defineEmits(['toggle-select']);
+
 const player = usePlayerStore();
 const userStore = useUserStore();
+
+const handleRowClick = () => {
+  if (props.selectionMode) {
+    emit('toggle-select');
+  }
+};
 </script>

@@ -161,6 +161,18 @@
         <button @click="player.playNext" :disabled="player.isSkipLocked" class="min-w-[44px] min-h-[44px] inline-flex items-center justify-center text-[var(--text-secondary)] hover:text-accent active:scale-[0.96] transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title="Next" aria-label="下一首">
             <SkipForward class="w-6 h-6 fill-current" />
         </button>
+
+        <button
+            @click="likeCurrentMusic"
+            :disabled="!nowPlaying || hasLiked"
+            class="min-w-[44px] min-h-[44px] inline-flex items-center justify-center active:scale-[0.96] transition-colors disabled:cursor-default"
+            :class="hasLiked ? 'text-[var(--accent)]' : 'text-[var(--text-secondary)] hover:text-accent'"
+            :title="hasLiked ? '已喜欢' : '喜欢当前歌曲'"
+            :aria-label="hasLiked ? '已喜欢当前歌曲' : '喜欢当前歌曲'"
+            :aria-pressed="hasLiked"
+        >
+            <Heart class="w-5 h-5" :class="hasLiked ? 'fill-current stroke-none' : ''" />
+        </button>
       </div>
 
       <!-- 音量控制 -->
@@ -202,7 +214,7 @@ import { ref, computed, onUnmounted } from 'vue';
 import { usePlayerStore } from '../stores/player';
 import { useUiStore } from '../stores/ui';
 import { formatDuration } from '../utils/format';
-import { Download, Shuffle, SkipForward, Play, Pause, Volume2, Volume1, VolumeX, ExternalLink, Zap, Lock } from 'lucide-vue-next';
+import { Download, Shuffle, SkipForward, Play, Pause, Volume2, Volume1, VolumeX, ExternalLink, Zap, Lock, Heart } from 'lucide-vue-next';
 import CoverImage from './CoverImage.vue';
 import { useToast } from '../composables/useToast';
 import { useUserStore } from '../stores/user';
@@ -217,6 +229,9 @@ const { info, error } = useToast();
 const nowPlaying = computed(() => player.nowPlaying);
 const likeMarkers = computed(() => nowPlaying.value?.likeMarkers || []);
 const canSeek = computed(() => !!nowPlaying.value && nowPlaying.value.enqueuedById === userStore.userToken);
+const hasLiked = computed(() => (
+  nowPlaying.value?.likedUserIds?.includes(userStore.userToken) || player.isSongLiked(nowPlaying.value?.music)
+));
 const isDraggingProgress = ref(false);
 const dragProgressMs = ref(0);
 const activeProgressPointerId = ref(null);
@@ -345,6 +360,11 @@ const downloadCurrentMusic = async () => {
     window.open(music.url, '_blank');
     error('直接下载失败，已尝试在新标签页打开。');
   }
+};
+
+const likeCurrentMusic = () => {
+  if (!nowPlaying.value || hasLiked.value) return;
+  player.sendLike();
 };
 
 // 跳转源页面

@@ -90,10 +90,22 @@ public class MusicSocketController {
         musicPlayerService.topSong(request.queueId(), sessionId);
     }
 
+    @MessageMapping("/queue/batch-top")
+    public void topSongs(@Payload QueueBatchActionRequest request, @Header("simpSessionId") String sessionId) {
+        if (isGuest(sessionId)) return;
+        musicPlayerService.topSongs(request.queueIds(), sessionId);
+    }
+
     @MessageMapping("/queue/remove")
     public void removeSong(@Payload QueueActionRequest request, @Header("simpSessionId") String sessionId) {
         if (isGuest(sessionId)) return;
         musicPlayerService.removeSongFromQueue(request.queueId(), sessionId);
+    }
+
+    @MessageMapping("/queue/batch-remove")
+    public void removeSongs(@Payload QueueBatchActionRequest request, @Header("simpSessionId") String sessionId) {
+        if (isGuest(sessionId)) return;
+        musicPlayerService.removeSongsFromQueue(request.queueIds(), sessionId);
     }
 
     // 点赞接口
