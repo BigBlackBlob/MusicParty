@@ -1,13 +1,20 @@
 <template>
-  <div class="h-28 bg-[var(--surface-4)]/90 backdrop-blur-xl border-t border-[var(--border-subtle)] flex items-center px-4 md:px-8 relative z-50 shadow-lg">
+  <div class="h-28 bg-[var(--surface-4)]/90 backdrop-blur-xl border-t border-[var(--border-subtle)] flex items-center px-4 md:px-8 relative z-[var(--z-header)] shadow-lg">
     <!-- 封面 -->
     <div
         id="tutorial-source"
         @click="openSourcePage"
         class="w-16 h-16 md:w-20 md:h-20 -mt-6 md:mt-0 shadow-lg border border-[var(--border-default)] rounded-xl flex-shrink-0 relative z-10 bg-[var(--surface-2)] cursor-pointer group overflow-hidden"
         title="Open Source Page"
+        :aria-label="nowPlaying ? `${nowPlaying.music.name} 封面，点击打开来源页面` : '打开来源页面'"
     >
-      <CoverImage :src="nowPlaying?.music.coverUrl" class="w-full h-full transition-transform duration-300 group-hover:scale-105 group-hover:opacity-70" />
+      <CoverImage
+          :src="nowPlaying?.music.coverUrl"
+          :alt="nowPlaying ? `${nowPlaying.music.name} 封面` : '歌曲封面'"
+          loading="eager"
+          decoding="async"
+          class="w-full h-full transition-transform duration-300 group-hover:scale-105 group-hover:opacity-70"
+      />
 
       <!-- 悬浮时的遮罩和图标 -->
       <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-black/35">
@@ -25,8 +32,8 @@
           >
             {{
               !player.connected
-                  ? '!CONNECTION LOST!'
-                  : (nowPlaying ? nowPlaying.music.name : 'WAITING FOR SIGNAL...')
+                  ? '连接已断开'
+                  : (nowPlaying ? nowPlaying.music.name : '等待播放')
             }}
           </h2>
 
@@ -36,16 +43,16 @@
           >
             {{
               !player.connected
-                  ? 'RECONNECT SERVER...'
-                  : (nowPlaying ? nowPlaying.music.artists.join(' / ') : 'SYSTEM STANDBY')
+                  ? '正在重连'
+                  : (nowPlaying ? nowPlaying.music.artists.join(' / ') : '暂无播放内容')
             }}
           </p>
         </div>
 
         <!-- 时间显示 -->
         <div class="hidden md:block font-mono text-xs text-[var(--text-tertiary)] flex-shrink-0 ml-2">
-           <span v-if="player.isLoading" class="text-accent animate-pulse">SYNCING SERVER...</span>
-           <span v-if="player.isBuffering" class="animate-pulse text-accent">BUFFERING...</span>
+           <span v-if="player.isLoading" class="text-accent animate-pulse">同步中...</span>
+           <span v-if="player.isBuffering" class="animate-pulse text-accent">缓冲中...</span>
            <span v-else>{{ formatDuration(player.localProgress) }} / {{ formatDuration(nowPlaying?.music.duration || 0) }}</span>
         </div>
       </div>
@@ -53,19 +60,29 @@
       <!-- 进度条 -->
       <div
           ref="progressTrackRef"
-          class="h-3 w-full relative flex items-center cursor-pointer touch-none"
-          :class="{ 'opacity-60 cursor-not-allowed': !canSeek }"
+          class="h-3 w-full relative flex items-center touch-none"
+          :class="canSeek ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'"
+          role="slider"
+          tabindex="0"
+          :aria-valuemin="0"
+          :aria-valuemax="nowPlaying?.music.duration || 0"
+          :aria-valuenow="Math.round(displayProgressMs)"
+          :aria-disabled="!canSeek"
+          :aria-label="canSeek ? '拖拽调整播放进度' : '只有点播者可以调整进度'"
+          :title="canSeek ? '拖拽调整播放进度' : '只有点播者可以调整进度'"
           @pointerdown="handleProgressPointerDown"
+          @pointercancel="handleProgressPointerCancel"
       >
-        <div class="h-1.5 bg-[var(--progress-track)] w-full relative rounded-full overflow-hidden">
-          <div
-              class="h-full transition-all duration-200 ease-linear relative rounded-full"
+          <div class="h-1.5 bg-[var(--progress-track)] w-full relative rounded-full overflow-hidden">
+            <div
+              class="h-full relative rounded-full"
               :class="player.isErrorState ? 'bg-red-500' : 'bg-[var(--accent)]'"
               :style="{ width: displayProgressPercent + '%' }"
-          >
+            >
             <div
                 v-if="displayProgressPercent > 0 && !player.isErrorState"
                 class="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full transition-all duration-200 bg-[var(--accent)] shadow-lg"
+                :class="{ 'opacity-0': !canSeek }"
             ></div>
           </div>
         </div>
@@ -85,28 +102,29 @@
       
       <!-- 移动端简易控制 -->
       <div class="flex md:hidden justify-end gap-3 mt-2">
-        <button id="tutorial-download-mobile" @click="downloadCurrentMusic" class="p-2 bg-[var(--surface-2)] border border-[var(--border-default)] rounded-lg text-[var(--text-secondary)] active:bg-[var(--surface-3)]">
+        <button id="tutorial-download-mobile" @click="downloadCurrentMusic" class="min-w-[44px] min-h-[44px] p-2 bg-[var(--surface-2)] border border-[var(--border-default)] rounded-lg text-[var(--text-secondary)] active:bg-[var(--surface-3)] active:scale-[0.96]" aria-label="下载当前歌曲">
           <Download class="w-4 h-4" />
         </button>
         <button
             id="tutorial-random-mobile"
             @click="player.toggleShuffle"
             :disabled="!player.connected || player.isShuffleLocked"
-            class="p-2 border rounded-lg disabled:opacity-50 transition-colors border-[var(--border-default)]"
+            class="min-w-[44px] min-h-[44px] p-2 border rounded-lg disabled:opacity-50 transition-colors border-[var(--border-default)] active:scale-[0.96]"
             :class="player.isShuffle
                 ? 'bg-accent text-white border-accent'
                 : 'bg-[var(--surface-2)] text-[var(--text-secondary)]'"
+            aria-label="随机播放"
         >
           <Shuffle class="w-4 h-4" />
         </button>
-         <button id="tutorial-pause-mobile" @click="player.togglePause" :disabled="player.isPauseLocked && !player.isPaused" class="p-2 bg-[var(--surface-2)] rounded-lg disabled:opacity-50 border border-[var(--border-default)]">
+         <button id="tutorial-pause-mobile" @click="player.togglePause" :disabled="player.isPauseLocked && !player.isPaused" class="min-w-[44px] min-h-[44px] p-2 bg-[var(--surface-2)] rounded-lg disabled:opacity-50 border border-[var(--border-default)] active:scale-[0.96]" aria-label="播放或暂停">
              <Lock v-if="player.isPauseLocked && !player.isPaused" class="w-4 h-4 text-[var(--text-tertiary)]" />
              <template v-else>
                  <Play v-if="player.isPaused" class="w-4 h-4" />
                  <Pause v-else class="w-4 h-4" />
              </template>
          </button>
-         <button @click="player.playNext" :disabled="player.isSkipLocked" class="p-2 bg-[var(--surface-2)] rounded-lg disabled:opacity-50 border border-[var(--border-default)]">
+         <button @click="player.playNext" :disabled="player.isSkipLocked" class="min-w-[44px] min-h-[44px] p-2 bg-[var(--surface-2)] rounded-lg disabled:opacity-50 border border-[var(--border-default)] active:scale-[0.96]" aria-label="下一首">
              <SkipForward class="w-4 h-4" />
          </button>
        </div>
@@ -118,11 +136,11 @@
       <!-- 播放控制 -->
       <div class="flex items-center gap-4 border-r border-[var(--border-default)] pr-6">
         <!-- 新增：下载按钮 (放在 Shuffle 旁边或者 Next 后面) -->
-        <button id="tutorial-download" @click="downloadCurrentMusic" class="text-[var(--text-tertiary)] hover:text-accent transition-colors" title="Download">
+        <button id="tutorial-download" @click="downloadCurrentMusic" class="min-w-[44px] min-h-[44px] inline-flex items-center justify-center text-[var(--text-tertiary)] hover:text-accent active:scale-[0.96] transition-colors" title="Download" aria-label="下载当前歌曲">
           <Download class="w-5 h-5" />
         </button>
 
-        <button id="tutorial-random" @click="player.toggleShuffle" :disabled="player.isShuffleLocked" :class="[player.isShuffle ? 'text-accent' : 'text-[var(--text-tertiary)]', player.isShuffleLocked ? 'opacity-50 cursor-not-allowed' : '']" title="Shuffle">
+        <button id="tutorial-random" @click="player.toggleShuffle" :disabled="player.isShuffleLocked" :class="['min-w-[44px] min-h-[44px] inline-flex items-center justify-center active:scale-[0.96]', player.isShuffle ? 'text-accent' : 'text-[var(--text-tertiary)]', player.isShuffleLocked ? 'opacity-50 cursor-not-allowed' : '']" title="Shuffle" aria-label="随机播放">
             <Shuffle class="w-5 h-5" />
         </button>
         
@@ -130,7 +148,8 @@
             id="tutorial-pause"
             @click="player.togglePause" 
             :disabled="player.isPauseLocked && !player.isPaused"
-            class="w-10 h-10 bg-[var(--accent)] text-[var(--text-inverse)] flex items-center justify-center hover:bg-[var(--accent-hover)] transition-colors rounded-full disabled:opacity-50 disabled:hover:bg-[var(--accent)] disabled:cursor-not-allowed shadow-md"
+            class="min-w-[44px] min-h-[44px] bg-[var(--accent)] text-[var(--text-inverse)] flex items-center justify-center hover:bg-[var(--accent-hover)] active:scale-[0.96] transition-colors rounded-full disabled:opacity-50 disabled:hover:bg-[var(--accent)] disabled:cursor-not-allowed shadow-md"
+            aria-label="播放或暂停"
         >
             <Lock v-if="player.isPauseLocked && !player.isPaused" class="w-4 h-4 text-white" />
             <template v-else>
@@ -139,14 +158,14 @@
             </template>
         </button>
 
-        <button @click="player.playNext" :disabled="player.isSkipLocked" class="text-[var(--text-secondary)] hover:text-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title="Next">
+        <button @click="player.playNext" :disabled="player.isSkipLocked" class="min-w-[44px] min-h-[44px] inline-flex items-center justify-center text-[var(--text-secondary)] hover:text-accent active:scale-[0.96] transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title="Next" aria-label="下一首">
             <SkipForward class="w-6 h-6 fill-current" />
         </button>
       </div>
 
       <!-- 音量控制 -->
       <div class="flex items-center gap-2 group">
-        <button @click="toggleMute" class="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
+        <button @click="toggleMute" class="min-w-[44px] min-h-[44px] inline-flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--text-primary)] active:scale-[0.96] transition-colors" aria-label="切换静音">
           <VolumeX v-if="ui.volume === 0" class="w-5 h-5" />
           <Volume1 v-else-if="ui.volume < 0.5" class="w-5 h-5" />
           <Volume2 v-else class="w-5 h-5" />
@@ -170,7 +189,7 @@
           </div>
         </div>
 
-        <div class="w-8 text-[10px] font-mono text-[var(--text-tertiary)] text-right">
+        <div class="w-8 text-xs font-mono text-[var(--text-tertiary)] text-right">
           {{ Math.round(ui.volume * 100) }}%
         </div>
       </div>
@@ -200,6 +219,7 @@ const likeMarkers = computed(() => nowPlaying.value?.likeMarkers || []);
 const canSeek = computed(() => !!nowPlaying.value && nowPlaying.value.enqueuedById === userStore.userToken);
 const isDraggingProgress = ref(false);
 const dragProgressMs = ref(0);
+const activeProgressPointerId = ref(null);
 const progressPercent = computed(() => {
   if (!nowPlaying.value || nowPlaying.value.music.duration === 0) return 0;
   return Math.min(100, (player.localProgress / nowPlaying.value.music.duration) * 100);
@@ -222,27 +242,51 @@ const getProgressMsFromEvent = (e) => {
 };
 
 const handleProgressPointerDown = (e) => {
-  if (!canSeek.value || !nowPlaying.value) return;
+  if (!canSeek.value || !nowPlaying.value) {
+    if (nowPlaying.value) error('只有点播者可以调整这首歌的进度');
+    return;
+  }
+  e.preventDefault();
   isDraggingProgress.value = true;
+  activeProgressPointerId.value = e.pointerId;
   dragProgressMs.value = getProgressMsFromEvent(e);
+  progressTrackRef.value?.setPointerCapture?.(e.pointerId);
   player.setSeekingPreview?.(true);
   window.addEventListener('pointermove', handleProgressPointerMove);
   window.addEventListener('pointerup', handleProgressPointerUp);
+  window.addEventListener('pointercancel', handleProgressPointerCancel);
 };
 
 const handleProgressPointerMove = (e) => {
   if (!isDraggingProgress.value) return;
+  if (activeProgressPointerId.value !== null && e.pointerId !== activeProgressPointerId.value) return;
   dragProgressMs.value = getProgressMsFromEvent(e);
 };
 
-const handleProgressPointerUp = () => {
-  if (isDraggingProgress.value) {
-    player.seek(dragProgressMs.value);
+const cleanupProgressDrag = (e) => {
+  const pointerId = activeProgressPointerId.value ?? e?.pointerId;
+  if (pointerId !== undefined && progressTrackRef.value?.hasPointerCapture?.(pointerId)) {
+    progressTrackRef.value.releasePointerCapture(pointerId);
   }
+  activeProgressPointerId.value = null;
   isDraggingProgress.value = false;
   player.setSeekingPreview?.(false);
   window.removeEventListener('pointermove', handleProgressPointerMove);
   window.removeEventListener('pointerup', handleProgressPointerUp);
+  window.removeEventListener('pointercancel', handleProgressPointerCancel);
+};
+
+const handleProgressPointerUp = (e) => {
+  if (activeProgressPointerId.value !== null && e.pointerId !== activeProgressPointerId.value) return;
+  if (isDraggingProgress.value) {
+    player.seek(dragProgressMs.value);
+  }
+  cleanupProgressDrag(e);
+};
+
+const handleProgressPointerCancel = (e) => {
+  if (activeProgressPointerId.value !== null && e.pointerId !== activeProgressPointerId.value) return;
+  cleanupProgressDrag(e);
 };
 
 // --- 音量逻辑 ---
@@ -284,7 +328,7 @@ const handleVolumeMouseUp = () => {
 const downloadCurrentMusic = async () => {
   if (!nowPlaying.value) return;
   const music = nowPlaying.value.music;
-  info(`Starting download: ${music.name}...`);
+  info(`开始下载：${music.name}...`);
   try {
     const response = await fetch(music.url);
     if (!response.ok) throw new Error('Network error');
@@ -299,7 +343,7 @@ const downloadCurrentMusic = async () => {
     window.URL.revokeObjectURL(blobUrl);
   } catch (e) {
     window.open(music.url, '_blank');
-    error('Blob download failed, opening new tab.');
+    error('直接下载失败，已尝试在新标签页打开。');
   }
 };
 
@@ -316,5 +360,6 @@ onUnmounted(() => {
   window.removeEventListener('mouseup', handleVolumeMouseUp);
   window.removeEventListener('pointermove', handleProgressPointerMove);
   window.removeEventListener('pointerup', handleProgressPointerUp);
+  window.removeEventListener('pointercancel', handleProgressPointerCancel);
 });
 </script>

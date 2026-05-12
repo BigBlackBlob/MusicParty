@@ -95,6 +95,34 @@ command -v node >/dev/null 2>&1 || die "node is required"
 command -v npm >/dev/null 2>&1 || die "npm is required"
 command -v npx >/dev/null 2>&1 || die "npx is required"
 
+ensure_java_home() {
+  local candidate=""
+
+  if [[ -n "${JAVA_HOME:-}" && -x "$JAVA_HOME/bin/java" && -x "$JAVA_HOME/bin/javac" ]]; then
+    return 0
+  fi
+
+  for candidate in \
+    /c/Program\ Files/Microsoft/jdk-* \
+    /c/Program\ Files/Java/jdk-* \
+    /c/Users/"$USERNAME"/Downloads/graalvm-jdk-*/graalvm-jdk-*; do
+    if [[ -x "$candidate/bin/java" && -x "$candidate/bin/javac" ]]; then
+      export JAVA_HOME="$candidate"
+      export PATH="$JAVA_HOME/bin:$PATH"
+      info "detected JAVA_HOME: $JAVA_HOME"
+      return 0
+    fi
+  done
+
+  if command -v java >/dev/null 2>&1 && command -v javac >/dev/null 2>&1; then
+    return 0
+  fi
+
+  die "java/javac not found. Set JAVA_HOME or add a JDK bin directory to PATH."
+}
+
+ensure_java_home
+
 if command -v mvn >/dev/null 2>&1; then
   MVN_CMD=(mvn)
 elif [[ -x "$ROOT_DIR/mvnw" ]]; then
@@ -227,6 +255,11 @@ info "starting backend in background"
     "${MVN_CMD[@]}" spring-boot:run 2>&1 | tee -a "$BACKEND_LOG"
 ) &
 STARTED_PIDS+=("$!")
+
+if ! wait_for_port 127.0.0.1 "$BACKEND_PORT" "Backend" 60; then
+  warn "backend did not open port $BACKEND_PORT within 60s"
+  warn "check $BACKEND_LOG"
+fi
 
 info "starting frontend in background"
 (

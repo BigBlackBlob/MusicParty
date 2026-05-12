@@ -3,6 +3,9 @@
     <img
         v-if="!hasError && normalizedSrc"
         :src="normalizedSrc"
+        :alt="alt"
+        :loading="loading"
+        :decoding="decoding"
         class="h-full w-full object-cover transition-opacity duration-300"
         @error="hasError = true"
     />
@@ -17,7 +20,24 @@
 import { computed, ref, watch } from 'vue';
 import { ImageOff } from 'lucide-vue-next';
 
-const props = defineProps(['src']);
+const props = defineProps({
+  src: {
+    type: String,
+    default: ''
+  },
+  alt: {
+    type: String,
+    default: ''
+  },
+  loading: {
+    type: String,
+    default: 'lazy'
+  },
+  decoding: {
+    type: String,
+    default: 'async'
+  }
+});
 const hasError = ref(false);
 
 const normalizedSrc = computed(() => {

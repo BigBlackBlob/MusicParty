@@ -4,12 +4,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.CoverColorResponse;
+import org.thornex.musicparty.dto.Album;
 import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.dto.Playlist;
 import org.thornex.musicparty.dto.UserSearchResult;
 import org.thornex.musicparty.exception.ApiRequestException;
 import org.thornex.musicparty.service.CoverColorService;
 import org.thornex.musicparty.service.api.IMusicApiService;
+import org.thornex.musicparty.service.api.NeteaseMusicApiService;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -74,6 +76,30 @@ public class ApiController {
         return getService(platform).getPlaylistMusics(playlistId, offset, limit)
                 .doOnSuccess(result -> log.info("API playlist songs success: platform={}, playlistId={}, resultCount={}", platform, playlistId, result == null ? 0 : result.size()))
                 .doOnError(error -> log.error("API playlist songs failed: platform={}, playlistId={}, offset={}, limit={}", platform, playlistId, offset, limit, error));
+    }
+
+    @GetMapping("/album/search/netease")
+    public Mono<List<Album>> searchNeteaseAlbums(@RequestParam String keyword) {
+        log.info("API album search request: platform=netease, keywordLength={}", keyword == null ? 0 : keyword.length());
+        IMusicApiService service = getService("netease");
+        if (!(service instanceof NeteaseMusicApiService neteaseService)) {
+            throw new ApiRequestException("Netease album search is unavailable");
+        }
+        return neteaseService.searchAlbums(keyword)
+                .doOnSuccess(result -> log.info("API album search success: platform=netease, resultCount={}", result == null ? 0 : result.size()))
+                .doOnError(error -> log.error("API album search failed: platform=netease, keyword={}", keyword, error));
+    }
+
+    @GetMapping("/album/songs/netease/{albumId}")
+    public Mono<List<Music>> getNeteaseAlbumSongs(@PathVariable String albumId) {
+        log.info("API album songs request: platform=netease, albumId={}", albumId);
+        IMusicApiService service = getService("netease");
+        if (!(service instanceof NeteaseMusicApiService neteaseService)) {
+            throw new ApiRequestException("Netease album songs are unavailable");
+        }
+        return neteaseService.getAlbumMusics(albumId)
+                .doOnSuccess(result -> log.info("API album songs success: platform=netease, albumId={}, resultCount={}", albumId, result == null ? 0 : result.size()))
+                .doOnError(error -> log.error("API album songs failed: platform=netease, albumId={}", albumId, error));
     }
 
     @GetMapping("/user/search/{platform}/{keyword}")

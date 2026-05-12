@@ -7,10 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.thornex.musicparty.config.AppProperties;
-import org.thornex.musicparty.dto.Music;
-import org.thornex.musicparty.dto.PlayableMusic;
-import org.thornex.musicparty.dto.Playlist;
-import org.thornex.musicparty.dto.UserSearchResult;
+import org.thornex.musicparty.dto.*;
 import org.thornex.musicparty.exception.ApiRequestException;
 import reactor.core.publisher.Mono;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -88,15 +85,23 @@ public class NeteaseMusicApiService implements IMusicApiService {
         return url;
     }
 
+    private String normalizeNeteaseImageUrl(String url) {
+        String httpsUrl = upgradeToHttps(url);
+        if (!StringUtils.hasText(httpsUrl)) {
+            return "";
+        }
+        return httpsUrl;
+    }
+
     private String getNeteaseCoverUrl(JsonNode song) {
         String coverUrl = song.path("al").path("picUrl").asText("");
         if (StringUtils.hasText(coverUrl)) {
-            return upgradeToHttps(coverUrl);
+            return normalizeNeteaseImageUrl(coverUrl);
         }
 
         coverUrl = song.path("album").path("picUrl").asText("");
         if (StringUtils.hasText(coverUrl)) {
-            return upgradeToHttps(coverUrl);
+            return normalizeNeteaseImageUrl(coverUrl);
         }
 
         long picId = song.path("album").path("picId").asLong(0);
@@ -113,6 +118,29 @@ public class NeteaseMusicApiService implements IMusicApiService {
             return duration;
         }
         return song.path("duration").asLong(0);
+    }
+
+    private Music toMusic(JsonNode song) {
+        return toMusic(song, "");
+    }
+
+    private Music toMusic(JsonNode song, String fallbackCoverUrl) {
+        JsonNode artistNode = song.has("artists") ? song.path("artists") : song.path("ar");
+        List<String> artists = StreamSupport.stream(artistNode.spliterator(), false)
+                .map(artist -> artist.path("name").asText())
+                .toList();
+        String coverUrl = getNeteaseCoverUrl(song);
+        if (!StringUtils.hasText(coverUrl)) {
+            coverUrl = fallbackCoverUrl;
+        }
+        return new Music(
+                song.path("id").asText(),
+                song.path("name").asText(),
+                artists,
+                getNeteaseDuration(song),
+                PLATFORM,
+                coverUrl
+        );
     }
 
 
@@ -142,18 +170,50 @@ public class NeteaseMusicApiService implements IMusicApiService {
                     JsonNode songs = jsonNode.path("result").path("songs");
                     if (songs.isArray()) {
                         for (JsonNode song : songs) {
-                            List<String> artists = new ArrayList<>();
-                            JsonNode artistNode = song.has("artists") ? song.path("artists") : song.path("ar");
-                            artistNode.forEach(artist -> artists.add(artist.path("name").asText()));
-                            musicList.add(new Music(
-                                    song.path("id").asText(),
-                                    song.path("name").asText(),
-                                    artists,
-                                    getNeteaseDuration(song),
-                                    PLATFORM,
-                                    getNeteaseCoverUrl(song)
-                            ));
+                            musicList.add(toMusic(song));
                         }
+                    }
+                    return musicList;
+                });
+    }
+
+    public Mono<List<Album>> searchAlbums(String keyword) {
+        ensureConfigured();
+        return webClient.get()
+                .uri(baseUrl + "/cloudsearch?keywords={keyword}&type=10&cookie={cookie}", keyword, getCookie())
+                .retrieve()
+                .onStatus(HttpStatusCode::isError, response -> handleApiError("search albums", response))
+                .bodyToMono(JsonNode.class)
+                .map(jsonNode -> {
+                    List<Album> albums = new ArrayList<>();
+                    JsonNode albumNodes = jsonNode.path("result").path("albums");
+                    if (albumNodes.isArray()) {
+                        albumNodes.forEach(album -> albums.add(new Album(
+                                album.path("id").asText(),
+                                album.path("name").asText(),
+                                album.path("artist").path("name").asText(""),
+                                normalizeNeteaseImageUrl(album.path("picUrl").asText("")),
+                                album.path("size").asInt(0),
+                                PLATFORM
+                        )));
+                    }
+                    return albums;
+                });
+    }
+
+    public Mono<List<Music>> getAlbumMusics(String albumId) {
+        ensureConfigured();
+        return webClient.get()
+                .uri(baseUrl + "/album?id={albumId}&cookie={cookie}", albumId, getCookie())
+                .retrieve()
+                .onStatus(HttpStatusCode::isError, response -> handleApiError("get album tracks", response))
+                .bodyToMono(JsonNode.class)
+                .map(jsonNode -> {
+                    List<Music> musicList = new ArrayList<>();
+                    String albumCoverUrl = normalizeNeteaseImageUrl(jsonNode.path("album").path("picUrl").asText(""));
+                    JsonNode songs = jsonNode.path("songs");
+                    if (songs.isArray()) {
+                        songs.forEach(song -> musicList.add(toMusic(song, albumCoverUrl)));
                     }
                     return musicList;
                 });
@@ -201,7 +261,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
                             artists,
                             song.path("dt").asLong(),
                             PLATFORM,
-                            upgradeToHttps(song.path("al").path("picUrl").asText())
+                            normalizeNeteaseImageUrl(song.path("al").path("picUrl").asText())
                     );
                 });
     }
@@ -219,7 +279,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
                     jsonNode.path("playlist").forEach(pl -> playlists.add(new Playlist(
                             pl.path("id").asText(),
                             pl.path("name").asText(),
-                            upgradeToHttps(pl.path("coverImgUrl").asText()),
+                            normalizeNeteaseImageUrl(pl.path("coverImgUrl").asText()),
                             pl.path("trackCount").asInt(),
                             PLATFORM
                     )));
@@ -238,18 +298,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
                 .map(jsonNode -> {
                     List<Music> musicList = new ArrayList<>();
                     jsonNode.path("songs").forEach(song -> {
-                        JsonNode artistNode = song.has("artists") ? song.path("artists") : song.path("ar");
-                        List<String> artists = StreamSupport.stream(artistNode.spliterator(), false)
-                                .map(artist -> artist.path("name").asText())
-                                .toList();
-                        musicList.add(new Music(
-                                song.path("id").asText(),
-                                song.path("name").asText(),
-                                artists,
-                                song.path("dt").asLong(),
-                                PLATFORM,
-                                upgradeToHttps(song.path("al").path("picUrl").asText())
-                        ));
+                        musicList.add(toMusic(song));
                     });
                     return musicList;
                 });

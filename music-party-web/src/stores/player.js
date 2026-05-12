@@ -25,6 +25,7 @@ export const usePlayerStore = defineStore('player', () => {
     const lastControlTime = ref(0);
     const remotePosition = ref(0);
     const lastSyncTime = ref(0);
+    const serverClockOffset = ref(0);
     const localProgress = ref(0);
     const isBuffering = ref(false);
     const isErrorState = ref(false);
@@ -39,8 +40,7 @@ export const usePlayerStore = defineStore('player', () => {
         if (isPaused.value) {
             return remotePosition.value;
         } else {
-            // 本地简单的推算：服务器给的进度 + (当前时间 -收到包的时间)
-            return remotePosition.value + (Date.now() - lastSyncTime.value);
+            return remotePosition.value + ((Date.now() + serverClockOffset.value) - lastSyncTime.value);
         }
     };
 
@@ -75,12 +75,18 @@ export const usePlayerStore = defineStore('player', () => {
         isLoading.value = state.isLoading || false;
         streamListenerCount.value = state.streamListenerCount || 0;
 
-        // 记录服务器发来的进度和收到包的时间
+        const clientReceiveTime = Date.now();
+        const serverTimestamp = state.serverTimestamp || clientReceiveTime;
+
+        // 记录服务器发来的进度和状态包对应的服务端时间
         if (state.nowPlaying) {
             remotePosition.value = state.nowPlaying.currentPosition;
-            lastSyncTime.value = Date.now();
+            lastSyncTime.value = serverTimestamp;
+            serverClockOffset.value = serverTimestamp - clientReceiveTime;
         } else {
             remotePosition.value = 0;
+            lastSyncTime.value = serverTimestamp;
+            serverClockOffset.value = serverTimestamp - clientReceiveTime;
         }
 
         if (state.onlineUsers) {
@@ -130,6 +136,7 @@ export const usePlayerStore = defineStore('player', () => {
 
     const enqueue = (platform, musicId) => requireAuth() && socketService.send(WS_DEST.ENQUEUE, { platform, musicId });
     const enqueuePlaylist = (platform, playlistId) => requireAuth() && socketService.send(WS_DEST.ENQUEUE_PLAYLIST, { platform, playlistId });
+    const enqueueAlbum = (platform, albumId) => requireAuth() && socketService.send(WS_DEST.ENQUEUE_ALBUM, { platform, albumId });
     const topSong = (queueId) => requireAuth() && socketService.send(WS_DEST.QUEUE_TOP, { queueId });
     const removeSong = (queueId) => requireAuth() && socketService.send(WS_DEST.QUEUE_REMOVE, { queueId });
 
@@ -171,7 +178,7 @@ export const usePlayerStore = defineStore('player', () => {
         connect, tryReconnect, getCurrentProgress, syncState, // 导出 syncState
         playNext, togglePause, toggleShuffle,
         seek,
-        enqueue, enqueuePlaylist, topSong, removeSong,
+        enqueue, enqueuePlaylist, enqueueAlbum, topSong, removeSong,
         bindAccount, renameUser, sendChatMessage, sendLike
     };
 });

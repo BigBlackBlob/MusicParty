@@ -3,6 +3,15 @@
 @tailwind utilities;
 
 :root {
+  --z-base: 0;
+  --z-content: 10;
+  --z-header: 40;
+  --z-overlay: 60;
+  --z-chat: 80;
+  --z-modal: 90;
+  --z-toast: 100;
+  --z-skip-link: 120;
+  --z-tutorial: 140;
   --surface-0: #121212;
   --surface-1: #1a1a1a;
   --surface-2: #222222;
@@ -10,8 +19,8 @@
   --surface-4: #333333;
   --surface-elevated: #3e3e3e;
   --text-primary: #f0f0f0;
-  --text-secondary: #a0a0a0;
-  --text-tertiary: #6b6b6b;
+  --text-secondary: #b8b8b8;
+  --text-tertiary: #8a8a8a;
   --text-inverse: #ffffff;
   --accent: #d3c2f3;
   --accent-hover: #e0d4f7;
@@ -33,7 +42,7 @@
   --toast-bg: rgba(42, 42, 42, 0.92);
   --toast-border: rgba(255, 255, 255, 0.1);
   --toast-shadow: 0 20px 40px rgba(0, 0, 0, 0.28);
-  --toast-message: #c9c9c9;
+  --toast-message: #d4d4d4;
   --toast-info-bg: rgba(62, 62, 62, 0.94);
   --toast-info-border: rgba(255, 255, 255, 0.12);
   --toast-info-icon: #d0d0d0;
@@ -46,6 +55,11 @@
   --toast-error-bg: rgba(62, 21, 21, 0.96);
   --toast-error-border: rgba(239, 68, 68, 0.42);
   --toast-error-icon: #f87171;
+  --motion-enter: 220ms;
+  --motion-exit: 140ms;
+  --motion-press: 100ms;
+  --motion-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-ease-in: cubic-bezier(0.4, 0, 1, 1);
 }
 
 .light {
@@ -56,8 +70,8 @@
   --surface-4: #ffffff;
   --surface-elevated: #ffffff;
   --text-primary: #1a1a1a;
-  --text-secondary: #6b6b6b;
-  --text-tertiary: #a0a0a0;
+  --text-secondary: #5a5a5a;
+  --text-tertiary: #787878;
   --text-inverse: #ffffff;
   --accent: #7c5cbf;
   --accent-hover: #8d6ec8;
@@ -79,7 +93,7 @@
   --toast-bg: rgba(255, 255, 255, 0.96);
   --toast-border: rgba(0, 0, 0, 0.08);
   --toast-shadow: 0 20px 38px rgba(15, 23, 42, 0.12);
-  --toast-message: #5f5f5f;
+  --toast-message: #5a5a5a;
   --toast-info-bg: rgba(255, 255, 255, 0.98);
   --toast-info-border: rgba(0, 0, 0, 0.08);
   --toast-info-icon: #666666;
@@ -97,6 +111,19 @@
 body {
   @apply bg-[var(--surface-0)] text-[var(--text-primary)] font-sans antialiased overflow-hidden;
   font-feature-settings: "liga" 1, "calt" 1;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+:lang(zh-CN) {
+  font-family: "Geist", "HarmonyOS Sans SC", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "微软雅黑", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.font-mono:lang(zh-CN),
+:lang(zh-CN) .font-mono {
+  font-family: "JetBrains Mono", "HarmonyOS Sans SC", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "微软雅黑", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
 /* 自定义滚动条 */
@@ -128,11 +155,11 @@ body {
 }
 
 .slide-fade-enter-active {
-  transition: all 0.15s ease-out;
+  transition: opacity var(--motion-enter) var(--motion-ease-out), transform var(--motion-enter) var(--motion-ease-out);
 }
 
 .slide-fade-leave-active {
-  transition: all 0.1s ease-in;
+  transition: opacity var(--motion-exit) var(--motion-ease-in), transform var(--motion-exit) var(--motion-ease-in);
 }
 
 .slide-fade-enter-from,
@@ -178,4 +205,23 @@ input[type="range"]::-moz-range-thumb {
   background: var(--accent);
   border: none;
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  .animate-shimmer {
+    animation: none;
+  }
 }

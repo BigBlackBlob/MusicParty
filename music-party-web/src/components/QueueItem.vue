@@ -12,25 +12,31 @@
     </div>
 
     <div class="h-10 w-10 flex-shrink-0 overflow-hidden rounded-xl bg-[var(--surface-3)]">
-      <CoverImage :src="item.music.coverUrl" class="h-full w-full" />
+      <CoverImage
+          :src="item.music.coverUrl"
+          :alt="`${item.music.name} 封面`"
+          loading="lazy"
+          decoding="async"
+          class="h-full w-full"
+      />
     </div>
 
     <div class="min-w-0 flex-1">
       <div class="truncate text-sm font-semibold text-[var(--text-primary)]">{{ item.music.name }}</div>
-      <div class="mt-0.5 flex items-center gap-2">
-        <div v-if="!item.status || item.status === 'READY'" class="truncate text-xs text-[var(--text-secondary)]">
+      <div class="mt-0.5 flex min-w-0 items-center gap-2">
+        <div v-if="!item.status || item.status === 'READY'" class="min-w-0 flex-1 truncate text-xs text-[var(--text-secondary)]">
           {{ item.music.artists.join(' / ') }}
         </div>
 
-        <div v-else-if="item.status === 'DOWNLOADING' || item.status === 'PENDING'" class="flex items-center gap-1 text-xs font-semibold text-[var(--accent)]">
-          <Loader2 class="h-3.5 w-3.5 animate-spin" /> LOADING...
+        <div v-else-if="item.status === 'DOWNLOADING' || item.status === 'PENDING'" class="min-w-0 flex-1 truncate text-xs font-semibold text-[var(--accent)]">
+          <Loader2 class="h-3.5 w-3.5 animate-spin" /> 加载中...
         </div>
 
-        <div v-else-if="item.status === 'FAILED'" class="text-xs font-semibold text-[var(--error)]">
-          DOWNLOAD FAILED
+        <div v-else-if="item.status === 'FAILED'" class="min-w-0 flex-1 truncate text-xs font-semibold text-[var(--error)]">
+          下载失败
         </div>
 
-        <div class="ml-auto rounded-full border border-[var(--border-default)] bg-[var(--surface-3)] px-2 py-0.5 text-[10px] text-[var(--text-tertiary)]">
+        <div class="ml-auto max-w-[7rem] flex-shrink-0 truncate rounded-full border border-[var(--border-default)] bg-[var(--surface-3)] px-2 py-0.5 text-[10px] text-[var(--text-tertiary)]">
           {{ userStore.resolveName(item.enqueuedBy.token, item.enqueuedBy.name) }}
         </div>
       </div>
@@ -38,12 +44,12 @@
 
     <div
         v-if="!userStore.isGuest"
-        class="flex flex-shrink-0 items-center gap-1 rounded-full border border-[var(--border-default)] bg-[var(--surface-3)] px-1.5 py-1 opacity-0 transition-opacity group-hover:opacity-100"
+        class="pointer-events-none absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded-full border border-[var(--border-default)] bg-[var(--surface-3)]/95 px-1.5 py-1 opacity-0 shadow-lg backdrop-blur-sm transition-opacity group-hover:pointer-events-auto group-hover:opacity-100"
     >
-      <button @click="player.topSong(item.queueId)" title="Top" class="rounded-full p-1.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--accent)]">
+      <button @click="player.topSong(item.queueId)" title="Top" class="min-w-[44px] min-h-[44px] rounded-full p-1.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--accent)] active:scale-[0.96]" aria-label="置顶">
         <ArrowUpToLine class="h-4 w-4" />
       </button>
-      <button @click="player.removeSong(item.queueId)" title="Remove" class="rounded-full p-1.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--error)]">
+      <button @click="player.removeSong(item.queueId)" title="Remove" class="min-w-[44px] min-h-[44px] rounded-full p-1.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--error)] active:scale-[0.96]" aria-label="移除">
         <Trash2 class="h-4 w-4" />
       </button>
     </div>
@@ -54,6 +60,7 @@
 import { usePlayerStore } from '../stores/player';
 import { useUserStore } from '../stores/user';
 import { Trash2, ArrowUpToLine, Loader2 } from 'lucide-vue-next';
+import CoverImage from './CoverImage.vue';
 
 const props = defineProps({
   item: {

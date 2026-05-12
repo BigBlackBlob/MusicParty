@@ -7,8 +7,12 @@
       </div>
     </div>
 
-    <div v-if="queue.length === 0" class="flex-1 px-4 py-10 text-center text-xs font-mono text-[var(--text-tertiary)]">
-      QUEUE EMPTY / WAITING FOR INPUT
+    <div v-if="queue.length === 0" class="flex flex-1 flex-col items-center justify-center px-4 py-10 text-center">
+      <div class="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl border border-dashed border-[var(--border-default)] bg-[var(--surface-2)] text-[var(--text-tertiary)]">
+        <Music2 class="h-5 w-5" />
+      </div>
+      <div class="text-sm font-semibold text-[var(--text-primary)]">播放队列为空</div>
+      <div class="mt-1 max-w-[12rem] text-xs leading-relaxed text-[var(--text-tertiary)]">打开搜索，添加第一首适合当前房间的歌。</div>
     </div>
 
     <div v-else-if="player.isShuffle" class="flex-1 overflow-y-auto p-3">
@@ -18,7 +22,7 @@
       </div>
 
       <div v-if="topItems.length > 0" class="mb-4">
-        <div class="mb-2 pl-1 text-xs font-mono text-[var(--text-tertiary)]">TOP PRIORITY</div>
+        <div class="mb-2 pl-1 text-xs font-mono text-[var(--text-tertiary)]">优先播放</div>
         <QueueItem
             v-for="(item, idx) in topItems"
             :key="item.queueId"
@@ -42,7 +46,7 @@
                   {{ userStore.resolveName(group.token, group.name) }}
                 </div>
                 <div class="font-mono text-[10px] text-[var(--text-tertiary)]">
-                  {{ group.items.length }} SONGS
+                  {{ group.items.length }} 首歌曲
                 </div>
               </div>
             </div>
@@ -77,7 +81,7 @@
 import { computed, ref } from 'vue';
 import { useVirtualList } from '@vueuse/core';
 import { usePlayerStore } from '../stores/player';
-import { Shuffle, ChevronDown, ChevronRight, User } from 'lucide-vue-next';
+import { Shuffle, ChevronDown, ChevronRight, User, Music2 } from 'lucide-vue-next';
 import { useUserStore } from '../stores/user';
 import QueueItem from './QueueItem.vue';
 

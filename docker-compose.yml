@@ -12,6 +12,9 @@ services:
 
   # 2. Music Party 主应用
   music-party:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: thornex/music-party:latest
     container_name: music-party-app
     restart: always

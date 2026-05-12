@@ -1,5 +1,5 @@
 <template>
-  <div v-if="!passed" class="fixed inset-0 z-[200] bg-[var(--surface-0)]/90 backdrop-blur-xl flex items-center justify-center p-4">
+  <div v-if="!passed" class="fixed inset-0 z-[var(--z-modal)] bg-[var(--surface-0)]/90 backdrop-blur-xl flex items-center justify-center p-4">
     <div class="bg-[var(--surface-4)] p-8 shadow-2xl border border-[var(--border-default)] w-full max-w-md rounded-2xl relative overflow-hidden">
       <div class="absolute inset-x-0 top-0 h-1 bg-[var(--accent)]"></div>
 
@@ -19,7 +19,7 @@
             type="password"
             :placeholder="isSetupMode ? 'SET NEW PASSWORD' : 'INPUT PASSWORD'"
             @keyup.enter="handleAction"
-            class="w-full bg-[var(--surface-2)] border border-[var(--border-default)] p-3 outline-none focus:border-[var(--accent)] font-mono text-center tracking-widest text-lg rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
+            class="w-full bg-[var(--surface-2)] border border-[var(--border-default)] p-3 outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-muted)] font-mono text-center tracking-widest text-lg rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
             autofocus
         />
 
@@ -27,7 +27,7 @@
             v-if="!isSetupMode || setupType === 'password'"
             @click="handleAction"
             :disabled="loading"
-            class="w-full bg-[var(--accent)] text-[var(--text-inverse)] font-semibold py-3 hover:bg-[var(--accent-hover)] transition-colors disabled:opacity-50 rounded-xl"
+            class="w-full min-h-[44px] bg-[var(--accent)] text-[var(--text-inverse)] font-semibold py-3 hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-colors disabled:opacity-50 rounded-xl"
         >
           {{ loading ? 'VERIFYING...' : (isSetupMode ? 'CONFIRM PASSWORD' : 'UNLOCK') }}
         </button>
@@ -35,7 +35,7 @@
         <div v-if="isSetupMode && setupType === 'initial'" class="space-y-3">
           <button
               @click="setupType = 'password'"
-              class="w-full bg-[var(--surface-2)] text-[var(--text-primary)] font-semibold py-3 hover:bg-[var(--surface-3)] transition-colors rounded-xl border border-[var(--border-default)]"
+              class="w-full min-h-[44px] bg-[var(--surface-2)] text-[var(--text-primary)] font-semibold py-3 hover:bg-[var(--surface-3)] active:scale-[0.98] transition-colors rounded-xl border border-[var(--border-default)]"
           >
             SET PASSWORD PROTECTION
           </button>
@@ -48,7 +48,7 @@
 
           <button
               @click="setupNoPassword"
-              class="w-full bg-[var(--surface-2)] border border-[var(--border-default)] text-[var(--text-secondary)] font-semibold py-3 hover:bg-[var(--surface-3)] transition-colors hover:text-[var(--text-primary)] rounded-xl"
+              class="w-full min-h-[44px] bg-[var(--surface-2)] border border-[var(--border-default)] text-[var(--text-secondary)] font-semibold py-3 hover:bg-[var(--surface-3)] active:scale-[0.98] transition-colors hover:text-[var(--text-primary)] rounded-xl"
           >
             NO PASSWORD (PUBLIC)
           </button>
@@ -57,7 +57,7 @@
         <button
             v-if="isSetupMode && setupType === 'password'"
             @click="setupType = 'initial'"
-            class="w-full text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] mt-2 underline"
+            class="w-full min-h-[44px] text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] mt-2 underline"
         >
           &lt; BACK
         </button>

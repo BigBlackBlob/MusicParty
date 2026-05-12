@@ -15,6 +15,7 @@ import org.thornex.musicparty.enums.TopResult;
 import org.thornex.musicparty.event.*;
 import org.thornex.musicparty.exception.ApiRequestException;
 import org.thornex.musicparty.service.api.IMusicApiService;
+import org.thornex.musicparty.service.api.NeteaseMusicApiService;
 import org.thornex.musicparty.service.stream.LiveStreamService;
 
 import java.time.Duration;
@@ -254,7 +255,8 @@ public class MusicPlayerService {
                 isSkipLocked.get(),
                 isShuffleLocked.get(),
                 isLoading.get(),
-                liveStreamService.getStreamListenerCount()
+                liveStreamService.getStreamListenerCount(),
+                System.currentTimeMillis()
         );
     }
 
@@ -394,6 +396,54 @@ public class MusicPlayerService {
                 });
     }
 
+    public void enqueueAlbum(EnqueueAlbumRequest request, String sessionId) {
+        Optional<User> userOpt = userService.getUser(sessionId);
+        if (userOpt.isEmpty()) return;
+        User enqueuer = userOpt.get();
+
+        if (!"netease".equals(request.platform())) {
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "当前仅支持导入网易云专辑"));
+            return;
+        }
+
+        IMusicApiService service = getApiService(request.platform());
+        if (!(service instanceof NeteaseMusicApiService neteaseService)) {
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "网易云专辑服务不可用"));
+            return;
+        }
+
+        long currentCount = queueManager.getQueueSnapshot().stream()
+                .filter(item -> item.enqueuedBy().token().equals(enqueuer.getToken()))
+                .count();
+        int maxUserSongs = appProperties.getQueue().getMaxUserSongs();
+
+        if (currentCount >= maxUserSongs) {
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "导入失败: 您的点歌数量已达上限"));
+            return;
+        }
+
+        int remainingQuota = (int) (maxUserSongs - currentCount);
+        int importLimit = Math.min(appProperties.getPlayer().getMaxPlaylistImportSize(), remainingQuota);
+
+        neteaseService.getAlbumMusics(request.albumId())
+                .subscribe(musics -> {
+                    int count = 0;
+                    for (Music music : musics.stream().limit(importLimit).toList()) {
+                        MusicQueueItem newItem = queueManager.add(music, new UserSummary(enqueuer.getToken(), enqueuer.getSessionId(), enqueuer.getName(), enqueuer.isGuest()), QueueItemStatus.READY);
+                        if (newItem != null) {
+                            count++;
+                        }
+                    }
+
+                    log.info("{} enqueued {} songs from album {}", enqueuer.getName(), count, request.albumId());
+                    broadcastQueueUpdate();
+                    eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.IMPORT_PLAYLIST, enqueuer.getToken(), String.valueOf(count)));
+                }, error -> {
+                    log.error("Album import failed for albumId: {}", request.albumId(), error);
+                    eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "专辑导入失败: " + error.getMessage()));
+                });
+    }
+
     public synchronized void topSong(String queueId, String sessionId) {
         // 先调用 top 执行置顶操作
         TopResult result = queueManager.top(queueId, isShuffle.get());
@@ -473,6 +523,31 @@ public class MusicPlayerService {
         log.info("Player {} by {}", newState ? "PAUSED" : "RESUMED", getUserName(sessionId));
         broadcastFullPlayerState();
         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, newState ? PlayerAction.PAUSE : PlayerAction.PLAY, getUserToken(sessionId), null));
+    }
+
+    public synchronized Optional<String> seekTo(long positionMs, String sessionId) {
+        PlayableMusic music = currentMusic.get();
+        if (music == null) {
+            return Optional.of("当前没有正在播放的歌曲");
+        }
+
+        String requesterToken = getUserToken(sessionId);
+        String enqueuerToken = currentEnqueuerId.get();
+        if (!Objects.equals(enqueuerToken, requesterToken)) {
+            log.warn("Seek denied for user {} on song queued by {}", requesterToken, enqueuerToken);
+            return Optional.of("只有点播者可以调整这首歌的进度");
+        }
+
+        long duration = Math.max(0, music.duration());
+        long clampedPosition = duration > 0
+                ? Math.max(0, Math.min(positionMs, duration))
+                : Math.max(0, positionMs);
+
+        positionAnchor.set(clampedPosition);
+        timestampAnchor.set(System.currentTimeMillis());
+        log.info("Player seek to {}ms by {}", clampedPosition, getUserName(sessionId));
+        broadcastFullPlayerState();
+        return Optional.empty();
     }
 
     public void toggleShuffle(String sessionId) {

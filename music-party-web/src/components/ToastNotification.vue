@@ -7,7 +7,10 @@
       leave-active-class="transition duration-200 ease-in"
       leave-from-class="translate-y-0 opacity-100 scale-100"
       leave-to-class="translate-y-2 opacity-0 scale-95"
-      class="fixed top-10 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-2 pointer-events-none"
+      class="fixed top-10 left-1/2 -translate-x-1/2 z-[var(--z-toast)] flex flex-col items-center gap-2 pointer-events-none"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
   >
     <div
         v-for="toast in toastStore.toasts"
