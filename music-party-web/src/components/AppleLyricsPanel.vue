@@ -32,7 +32,7 @@
             </div>
           </div>
 
-          <div class="mt-3 flex items-center gap-2 md:mt-4">
+          <div class="lyrics-controls mt-3 flex items-center gap-2 md:mt-4">
             <button class="lyrics-control" type="button" @click="decreaseFont" aria-label="减小歌词字号">
               <span class="text-lg leading-none">A−</span>
             </button>
@@ -353,6 +353,11 @@ onBeforeUnmount(() => {
   color: var(--text-primary);
   transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
   opacity: 0.72;
+}
+
+.lyrics-controls {
+  flex-shrink: 0;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .lyrics-control:hover {
