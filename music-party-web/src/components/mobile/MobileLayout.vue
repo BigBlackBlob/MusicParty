@@ -1,5 +1,5 @@
 <template>
-  <div class="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[var(--surface-0)] text-[var(--text-primary)]">
+  <div class="mobile-layout flex h-full min-h-0 w-full flex-col overflow-hidden bg-[var(--surface-0)] text-[var(--text-primary)]">
     <header class="flex min-h-[56px] flex-shrink-0 items-center justify-between border-b border-[var(--border-default)] bg-[var(--surface-1)] px-4 pt-[env(safe-area-inset-top)]">
       <div class="min-w-0">
         <div class="text-sm font-bold tracking-tight">MUSIC PARTY</div>
@@ -84,3 +84,10 @@ watch(activeTab, (tab) => {
   if (tab === 'chat') chat.unreadCount = 0;
 });
 </script>
+
+<style scoped>
+.mobile-layout {
+  height: 100%;
+  min-height: 0;
+}
+</style>

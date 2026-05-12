@@ -3,7 +3,7 @@
   <!-- 全局 Toast 挂载点 -->
   <ToastNotification ref="toastInstance" />
 
-  <div class="h-screen w-screen overflow-hidden font-sans">
+  <div class="app-viewport w-screen overflow-hidden font-sans">
     <AudioEngine />
     <!-- 1. 认证遮罩 -->
     <AuthOverlay @unlocked="userStore.isAuthPassed = true" v-if="!userStore.isAuthPassed" />
@@ -88,6 +88,10 @@ let autoLiteSuppressedUntil = 0;
 const AUTO_LITE_DELAY_MS = 180000;
 const AUTO_LITE_SUPPRESS_MS = 600000;
 
+const setAppViewportHeight = () => {
+  document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`);
+};
+
 const startGame = () => {
   hasStarted.value = true;
   player.connect();
@@ -149,6 +153,10 @@ const handleMobileChat = () => {
 };
 
 onMounted(() => {
+  setAppViewportHeight();
+  window.addEventListener('resize', setAppViewportHeight);
+  window.visualViewport?.addEventListener('resize', setAppViewportHeight);
+
   const params = new URLSearchParams(window.location.search);
   const mobilePreview = params.get('mobilePreview');
   if (mobilePreview === '1') uiStore.setForceMobileLayout(true);
@@ -159,5 +167,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   clearAutoLiteTimer();
+  window.removeEventListener('resize', setAppViewportHeight);
+  window.visualViewport?.removeEventListener('resize', setAppViewportHeight);
 });
 </script>
