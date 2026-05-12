@@ -99,10 +99,12 @@
           <AppleLyricsPanel
             :lyrics="player.lyricDetail.lyric || player.lyricText"
             :translated-lyrics="player.lyricDetail.translatedLyric"
+            :show-translation="uiStore.showLyricTranslation"
             :current-time="player.localProgress / 1000"
             :is-playing="!player.isPaused"
             :is-dark-mode="isDarkMode"
             :bg-color="dominantCoverColor"
+            @toggle-translation="uiStore.toggleLyricTranslation"
           />
         </section>
       </div>

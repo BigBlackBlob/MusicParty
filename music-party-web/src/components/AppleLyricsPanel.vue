@@ -39,6 +39,16 @@
             <button class="lyrics-control" type="button" @click="increaseFont" aria-label="增大歌词字号">
               <span class="text-lg leading-none">A+</span>
             </button>
+            <button
+              class="lyrics-control lyrics-control--text"
+              type="button"
+              :class="showTranslation ? 'lyrics-control--active' : ''"
+              :aria-pressed="showTranslation"
+              aria-label="切换译文显示"
+              @click="$emit('toggle-translation')"
+            >
+              译文
+            </button>
           </div>
         </template>
       </div>
@@ -58,6 +68,10 @@ const props = defineProps({
   translatedLyrics: {
     type: String,
     default: ''
+  },
+  showTranslation: {
+    type: Boolean,
+    default: true
   },
   currentTime: {
     type: Number,
@@ -80,9 +94,13 @@ const props = defineProps({
     default: true
   }
 });
+defineEmits(['toggle-translation']);
 
 const MIN_DISPLAY_LYRIC_LINES = 5;
-const lines = computed(() => mergeTranslatedLyrics(props.lyrics, props.translatedLyrics));
+const lines = computed(() => mergeTranslatedLyrics(
+  props.lyrics,
+  props.showTranslation ? props.translatedLyrics : ''
+));
 const displayLines = computed(() => lines.value.length >= MIN_DISPLAY_LYRIC_LINES ? lines.value : []);
 const showEmptyState = computed(() => props.lyricsLoaded && !displayLines.value.length);
 const scrollRef = ref(null);
@@ -261,7 +279,7 @@ const decreaseFont = () => {
   fontScale.value = Math.max(-2, fontScale.value - 1);
 };
 
-watch(() => [props.currentTime, props.lyrics, props.translatedLyrics, props.isPlaying], () => {
+watch(() => [props.currentTime, props.lyrics, props.translatedLyrics, props.showTranslation, props.isPlaying], () => {
   syncActiveLine();
 }, { immediate: true });
 
@@ -346,6 +364,21 @@ onBeforeUnmount(() => {
   border-color: var(--border-accent);
   box-shadow: 0 0 0 3px var(--accent-muted);
   outline: none;
+  opacity: 1;
+}
+
+.lyrics-control--text {
+  width: auto;
+  min-width: 3.25rem;
+  padding: 0 0.85rem;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.lyrics-control--active {
+  border-color: var(--border-accent);
+  background: var(--accent-subtle);
+  color: var(--accent);
   opacity: 1;
 }
 

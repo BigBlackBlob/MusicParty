@@ -12,6 +12,7 @@ export const useUiStore = defineStore('ui', () => {
     const forceMobileLayout = ref(localStorage.getItem('mp_force_mobile_layout') === 'true');
     const mobilePreviewWidth = ref(parseInt(localStorage.getItem('mp_mobile_preview_width') || '390', 10));
     const volume = ref(parseFloat(localStorage.getItem(STORAGE_KEYS.VOLUME) || '0.5'));
+    const showLyricTranslation = ref(localStorage.getItem(STORAGE_KEYS.LYRIC_TRANSLATION) !== 'false');
     const autoLiteMode = ref(localStorage.getItem('mp_auto_lite_mode') === 'true'); // 默认 false
 
     const authorName = ref('ThorNex');
@@ -151,6 +152,14 @@ export const useUiStore = defineStore('ui', () => {
         volume.value = Math.max(0, Math.min(1, val));
     };
 
+    const toggleLyricTranslation = () => {
+        showLyricTranslation.value = !showLyricTranslation.value;
+    };
+
+    const setLyricTranslation = (val) => {
+        showLyricTranslation.value = !!val;
+    };
+
     const fetchConfig = async () => {
         try {
             const config = await client.get('/api/config');
@@ -205,6 +214,10 @@ export const useUiStore = defineStore('ui', () => {
         localStorage.setItem(STORAGE_KEYS.VOLUME, newVal.toString());
     });
 
+    watch(showLyricTranslation, (newVal) => {
+        localStorage.setItem(STORAGE_KEYS.LYRIC_TRANSLATION, newVal.toString());
+    });
+
     watch(autoLiteMode, (newVal) => {
         localStorage.setItem('mp_auto_lite_mode', newVal.toString());
     });
@@ -234,6 +247,9 @@ export const useUiStore = defineStore('ui', () => {
         toggleDarkMode,
         volume,
         setVolume,
+        showLyricTranslation,
+        toggleLyricTranslation,
+        setLyricTranslation,
         autoLiteMode,
         authorName,
         backWords,
