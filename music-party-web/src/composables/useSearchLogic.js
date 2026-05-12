@@ -10,8 +10,10 @@ export function useSearchLogic(emit) {
     const platform = ref('netease');
     const keyword = ref('');
     const songs = ref([]);
+    const albums = ref([]);
     const loading = ref(false);
-    const listMode = ref('search'); // 'search' | 'playlist'
+    const listMode = ref('search'); // 'search' | 'playlist' | 'albumSearch' | 'album'
+    const searchType = ref('song'); // 'song' | 'album'
     const isAdminMode = ref(false);
 
     // 存储原始的管理员指令
@@ -51,17 +53,22 @@ export function useSearchLogic(emit) {
 
 
         // 3. 普通搜索
-        listMode.value = 'search';
+        listMode.value = searchType.value === 'album' && platform.value === 'netease' ? 'albumSearch' : 'search';
         loading.value = true;
         songs.value = [];
+        albums.value = [];
         try {
-            const data = await musicApi.search(platform.value, val);
-            songs.value = data;
-            const missingCoverCount = Array.isArray(data)
-                ? data.filter(song => !song?.coverUrl || !String(song.coverUrl).trim()).length
-                : 0;
-            if (missingCoverCount > 0) {
-                console.warn(`[search] ${platform.value} results missing coverUrl: ${missingCoverCount}/${data.length}`);
+            if (searchType.value === 'album' && platform.value === 'netease') {
+                albums.value = await musicApi.searchNeteaseAlbums(val);
+            } else {
+                const data = await musicApi.search(platform.value, val);
+                songs.value = data;
+                const missingCoverCount = Array.isArray(data)
+                    ? data.filter(song => !song?.coverUrl || !String(song.coverUrl).trim()).length
+                    : 0;
+                if (missingCoverCount > 0) {
+                    console.warn(`[search] ${platform.value} results missing coverUrl: ${missingCoverCount}/${data.length}`);
+                }
             }
         } catch (e) {
             console.error('Search failed:', e);
@@ -75,8 +82,10 @@ export function useSearchLogic(emit) {
         platform,
         keyword,
         songs,
+        albums,
         loading,
         listMode,
+        searchType,
         isAdminMode,
         doSearch
     };

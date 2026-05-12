@@ -53,8 +53,17 @@ function handleGameEvent(event) {
     if (event.action === 'ERROR_LOAD') type = 'error';
     if (event.action === 'RESET' || event.action === 'REMOVE') type = 'warning';
 
+    const titleMap = {
+        ERROR_LOAD: '播放错误',
+        SYSTEM_MESSAGE: '系统消息',
+        SEEK_DENIED: '无法调整进度',
+        RESET: '房间已重置',
+        REMOVE: '队列已更新',
+        LIKE: '收到回应'
+    };
+
     show({
-        title: event.action === 'ERROR_LOAD' ? 'PLAYBACK ERROR' : (event.action === 'SYSTEM_MESSAGE' ? 'SYSTEM' : event.action),
+        title: titleMap[event.action] || '房间通知',
         message: msgText,
         type: type,
         duration: 3000

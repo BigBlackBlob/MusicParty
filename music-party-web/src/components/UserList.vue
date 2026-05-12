@@ -25,26 +25,27 @@
                 'bg-[var(--surface-3)] text-[var(--text-primary)]'
             ]"
         >
-          <span v-if="isEnqueuerById(userStore.userToken)">DJ</span>
+          <span v-if="isEnqueuerById(userStore.userToken)" aria-label="点歌者">DJ</span>
           <Zap v-else-if="isLikedUser(userStore.userToken)" class="w-4 h-4 fill-current text-[var(--text-inverse)]" />
-          <span v-else>ME</span>
+          <span v-else aria-label="我">我</span>
         </div>
         <div class="flex-1 min-w-0">
           <input
               v-model="newName"
               @blur="doRename"
               @keyup.enter="doRename"
-              class="w-full bg-transparent text-sm font-semibold outline-none border-b border-transparent focus:border-[var(--accent)]"
+              class="w-full bg-transparent text-sm font-semibold outline-none border-b border-transparent focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-muted)]"
+              aria-label="修改昵称"
               :class="isEnqueuerById(userStore.userToken) ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'"
           />
         </div>
 
-        <div v-if="isEnqueuerById(userStore.userToken)" class="flex gap-0.5 items-end h-4">
+        <div v-if="isEnqueuerById(userStore.userToken)" class="flex gap-0.5 items-end h-4" aria-label="点歌者状态">
           <div class="bar bar-1 bg-[var(--accent)]"></div>
           <div class="bar bar-2 bg-[var(--accent)]"></div>
           <div class="bar bar-3 bg-[var(--accent)]"></div>
         </div>
-        <div v-else class="h-2 w-2 rounded-full bg-[var(--accent)] animate-pulse"></div>
+        <div v-else class="h-2 w-2 rounded-full bg-[var(--accent)] animate-pulse" aria-label="在线"></div>
       </div>
 
       <!-- 其他人 -->
@@ -65,9 +66,9 @@
                 'bg-[var(--surface-3)] text-[var(--text-secondary)]'
             ]"
         >
-          <span v-if="isEnqueuerById(u.token)">DJ</span>
+          <span v-if="isEnqueuerById(u.token)" aria-label="点歌者">DJ</span>
           <Zap v-else-if="isLikedUser(u.token)" class="w-4 h-4 fill-current text-[var(--text-inverse)]" />
-          <span v-else>OP</span>
+          <span v-else aria-label="成员">成员</span>
         </div>
         <div
             class="flex-1 truncate text-sm font-semibold"
@@ -76,19 +77,19 @@
           {{ u.name }}
         </div>
 
-        <div v-if="isEnqueuerById(u.token)" class="flex gap-0.5 items-end h-4">
+        <div v-if="isEnqueuerById(u.token)" class="flex gap-0.5 items-end h-4" aria-label="点歌者状态">
           <div class="bar bar-1 bg-[var(--accent)]"></div>
           <div class="bar bar-2 bg-[var(--accent)]"></div>
           <div class="bar bar-3 bg-[var(--accent)]"></div>
         </div>
-        <div v-else class="h-2 w-2 rounded-full bg-[var(--accent)]"></div>
+        <div v-else class="h-2 w-2 rounded-full bg-[var(--accent)]" aria-label="在线"></div>
       </div>
     </div>
 
     <!-- 直播流人数 -->
     <div v-if="playerStore.streamListenerCount > 0" class="mt-4 pt-3 border-t border-[var(--border-default)]">
       <div class="flex items-center gap-3 rounded-2xl bg-[var(--surface-2)] px-3 py-2 opacity-70">
-        <div class="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--surface-3)] text-[10px] font-semibold text-[var(--text-secondary)]">
+        <div class="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--surface-3)] text-[10px] font-semibold text-[var(--text-secondary)]" aria-label="直播在线">
           LIVE
         </div>
         <div class="text-xs font-semibold text-[var(--text-primary)]">
@@ -153,5 +154,12 @@ const isEnqueuerById = (token) => {
 @keyframes bounce {
   0%, 100% { transform: scaleY(0.4); }
   50% { transform: scaleY(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar {
+    animation: none;
+    transform: scaleY(0.7);
+  }
 }
 </style>

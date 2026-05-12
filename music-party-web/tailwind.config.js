@@ -49,6 +49,7 @@ export default {
           '"Noto Sans SC"',
           '"PingFang SC"',
           '"Hiragino Sans GB"',
+          '"Microsoft YaHei UI"',
           '"Microsoft YaHei"',
           '"微软雅黑"',
           'system-ui',
@@ -56,7 +57,24 @@ export default {
           'BlinkMacSystemFont',
           'sans-serif'
         ],
-        mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', '"Liberation Mono"', '"Courier New"', 'monospace'],
+        mono: [
+          '"JetBrains Mono"',
+          '"HarmonyOS Sans SC"',
+          '"Noto Sans SC"',
+          '"PingFang SC"',
+          '"Hiragino Sans GB"',
+          '"Microsoft YaHei UI"',
+          '"Microsoft YaHei"',
+          '"微软雅黑"',
+          'ui-monospace',
+          'SFMono-Regular',
+          'Menlo',
+          'Monaco',
+          'Consolas',
+          '"Liberation Mono"',
+          '"Courier New"',
+          'monospace'
+        ],
       }
     },
   },

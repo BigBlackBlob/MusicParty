@@ -10,19 +10,19 @@
 
     <!-- 2. 启动页 (Start Screen) -->
     <!-- 注意：点击 Connect 后，我们先不销毁它，直到 socket 连接成功，或者直接切换布局 -->
-    <div v-if="userStore.isAuthPassed && !hasStarted" class="absolute inset-0 z-[100] bg-[radial-gradient(circle_at_top,rgba(211,194,243,0.08),transparent_42%),var(--surface-0)] flex flex-col items-center justify-center space-y-8">
+    <div v-if="userStore.isAuthPassed && !hasStarted" class="absolute inset-0 z-[var(--z-overlay)] bg-[radial-gradient(circle_at_top,rgba(211,194,243,0.08),transparent_42%),var(--surface-0)] flex flex-col items-center justify-center space-y-8">
       <div class="text-4xl md:text-5xl font-bold tracking-tight text-[var(--text-primary)]">MUSIC PARTY</div>
-      <div class="font-mono text-xs text-[var(--text-tertiary)] tracking-[0.3em]">SYSTEM READY</div>
+      <div class="font-mono text-xs text-[var(--text-tertiary)] tracking-[0.3em]">准备就绪</div>
       <button
           @click="startGame"
-          class="px-12 py-4 bg-[var(--accent)] text-[var(--text-inverse)] font-semibold text-lg hover:bg-[var(--accent-hover)] transition-colors rounded-xl shadow-lg"
+          class="min-h-[44px] px-12 py-4 bg-[var(--accent)] text-[var(--text-inverse)] font-semibold text-lg hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-colors rounded-xl shadow-lg"
       >
-        CONNECT
+        进入房间
       </button>
     </div>
 
     <!-- 3. 主界面 (当 hasStarted 为 true 时显示) -->
-    <MainLayout v-if="hasStarted" @search="handleSearchClick">
+    <MainLayout v-if="hasStarted" @search="handleSearchClick" @toggle-mobile-chat="handleMobileChat">
       <!-- 中间插槽: 视觉控制台 -->
       <CenterConsole />
 
@@ -39,7 +39,7 @@
     <!-- 4. 全局弹窗 -->
     <SearchModal :isOpen="showSearch" @close="showSearch = false" />
     <NamePromptModal />
-    <ChatOverlay v-if="hasStarted && !uiStore.isLiteMode" />
+    <ChatOverlay v-if="hasStarted && !uiStore.isLiteMode" ref="chatOverlayRef" />
     <TutorialOverlay v-if="hasStarted && !uiStore.isLiteMode" />
   </div>
 </template>
@@ -70,6 +70,7 @@ const uiStore = useUiStore();
 const hasStarted = ref(false);
 const showSearch = ref(false);
 const toastInstance = ref(null);
+const chatOverlayRef = ref(null);
 const { register } = useToast();
 
 const startGame = () => {
@@ -92,6 +93,18 @@ const handleSearchClick = () => {
   } else {
     showSearch.value = true;
   }
+};
+
+const handleMobileChat = () => {
+  if (userStore.isGuest) {
+    userStore.setPostNameAction(() => {
+      chatOverlayRef.value?.toggleChat?.();
+    });
+    userStore.showNameModal = true;
+    return;
+  }
+
+  chatOverlayRef.value?.toggleChat?.();
 };
 
 onMounted(() => {

@@ -4,6 +4,12 @@ export const musicApi = {
     // 搜索歌曲
     search: (platform, keyword) => client.get(`/api/search/${platform}/${keyword}`),
 
+    // 搜索网易云专辑
+    searchNeteaseAlbums: (keyword) => client.get('/api/album/search/netease', { params: { keyword } }),
+
+    // 获取网易云专辑歌曲
+    getNeteaseAlbumSongs: (albumId) => client.get(`/api/album/songs/netease/${albumId}`),
+
     // 获取歌词
     getLyric: (platform, songId) => client.get(`/api/music/lyric/${platform}/${songId}`),
 

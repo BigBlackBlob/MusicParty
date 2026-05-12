@@ -36,10 +36,10 @@
         </div>
 
         <div class="mt-3 flex items-center gap-2 md:mt-4">
-          <button class="lyrics-control" type="button" @click="decreaseFont">
+          <button class="lyrics-control" type="button" @click="decreaseFont" aria-label="减小歌词字号">
             <span class="text-lg leading-none">A−</span>
           </button>
-          <button class="lyrics-control" type="button" @click="increaseFont">
+          <button class="lyrics-control" type="button" @click="increaseFont" aria-label="增大歌词字号">
             <span class="text-lg leading-none">A+</span>
           </button>
         </div>
@@ -140,10 +140,12 @@ const getLineStyle = (index) => {
       opacity: 1,
       transform: 'scale(1) translate3d(0,0,0)',
       fontSize: 'var(--lyrics-active-size)',
-      fontWeight: 750,
-      lineHeight: 1.04,
+      fontWeight: 700,
+      lineHeight: 1.3,
       color: 'var(--lyrics-text-active)',
-      textShadow: props.isDarkMode ? '0 8px 24px rgba(0,0,0,0.22)' : '0 6px 18px rgba(255,255,255,0.08)'
+      textShadow: props.isDarkMode
+        ? '0 8px 24px rgba(0,0,0,0.22), 0 0 22px color-mix(in srgb, var(--lyrics-accent-glow) 36%, transparent)'
+        : '0 6px 18px rgba(255,255,255,0.08)'
     };
   }
 
@@ -153,8 +155,8 @@ const getLineStyle = (index) => {
       opacity: 0.6,
       transform: `scale(0.84) translate3d(0, ${offset}px, 0)`,
       fontSize: 'var(--lyrics-mid-size)',
-      fontWeight: 650,
-      lineHeight: 1.12,
+      fontWeight: 600,
+      lineHeight: 1.28,
       color: 'var(--lyrics-text-mid)'
     };
   }
@@ -164,8 +166,8 @@ const getLineStyle = (index) => {
     opacity: 0.3,
     transform: `scale(0.72) translate3d(0, ${offset}px, 0)`,
     fontSize: 'var(--lyrics-low-size)',
-    fontWeight: 600,
-    lineHeight: 1.12,
+    fontWeight: 500,
+    lineHeight: 1.28,
     color: 'var(--lyrics-text-low)'
   };
 };
@@ -271,6 +273,7 @@ onBeforeUnmount(() => {
   -ms-overflow-style: none;
   max-height: 100%;
   scroll-behavior: auto;
+  contain: layout style paint;
 }
 
 .lyrics-scroll::-webkit-scrollbar {
@@ -288,8 +291,8 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 2.75rem;
+  height: 2.75rem;
   border-radius: 9999px;
   border: 1px solid var(--border-default);
   background: var(--surface-3);
@@ -303,8 +306,19 @@ onBeforeUnmount(() => {
   opacity: 1;
 }
 
+.lyrics-control:focus-visible {
+  border-color: var(--border-accent);
+  box-shadow: 0 0 0 3px var(--accent-muted);
+  outline: none;
+  opacity: 1;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .lyrics-line {
+    transition-duration: 0.01ms;
+  }
+
+  .lyrics-control {
     transition-duration: 0.01ms;
   }
 }

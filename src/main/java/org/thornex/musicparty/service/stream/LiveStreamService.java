@@ -44,6 +44,10 @@ public class LiveStreamService {
     // FFmpeg 进程管理
     private Process transcoderProcess;
     private ExecutorService streamExecutor;
+    private String activeStreamKey;
+    private long activeStreamStartPosition;
+    private long activeStreamStartTime;
+    private static final long STREAM_POSITION_DRIFT_TOLERANCE_MS = 1500;
     
     // 广播器：负责将转码后的数据分发给所有 HTTP 客户端
     private final StreamBroadcaster broadcaster = new StreamBroadcaster();
@@ -198,6 +202,11 @@ public class LiveStreamService {
             }
         }
 
+        String streamKey = currentMusic.id() + "|" + inputSource;
+        if (isCurrentTranscoderUsable(streamKey)) {
+            return;
+        }
+
         stopTranscoding(); // 先杀掉旧的
 
         log.info("Stream: Starting transcoding for {} at {}ms", currentMusic.name(), currentPosition);
@@ -239,6 +248,9 @@ public class LiveStreamService {
             pb.redirectError(ProcessBuilder.Redirect.DISCARD);
 
             transcoderProcess = pb.start();
+            activeStreamKey = streamKey;
+            activeStreamStartPosition = currentPosition;
+            activeStreamStartTime = System.currentTimeMillis();
             
             // 异步读取 stdout 并写入 broadcaster
             streamExecutor.submit(() -> {
@@ -257,8 +269,22 @@ public class LiveStreamService {
             });
 
         } catch (IOException e) {
+            activeStreamKey = null;
             log.error("Stream: Failed to start ffmpeg", e);
         }
+    }
+
+    private boolean isCurrentTranscoderUsable(String streamKey) {
+        if (transcoderProcess == null || !transcoderProcess.isAlive()) {
+            return false;
+        }
+        if (!streamKey.equals(activeStreamKey)) {
+            return false;
+        }
+
+        long expectedPosition = activeStreamStartPosition + (System.currentTimeMillis() - activeStreamStartTime);
+        long drift = Math.abs(currentPosition - expectedPosition);
+        return drift <= STREAM_POSITION_DRIFT_TOLERANCE_MS;
     }
 
     private synchronized void stopTranscoding() {
@@ -268,5 +294,8 @@ public class LiveStreamService {
             }
             transcoderProcess = null;
         }
+        activeStreamKey = null;
+        activeStreamStartPosition = 0;
+        activeStreamStartTime = 0;
     }
 }

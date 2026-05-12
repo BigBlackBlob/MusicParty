@@ -1,5 +1,5 @@
 <template>
-  <div v-if="isActive" class="fixed inset-0 z-[9999] pointer-events-auto">
+  <div v-if="isActive" class="fixed inset-0 z-[var(--z-tutorial)] pointer-events-auto">
     <div class="absolute inset-0 bg-black/55 transition-opacity duration-300"></div>
 
     <div

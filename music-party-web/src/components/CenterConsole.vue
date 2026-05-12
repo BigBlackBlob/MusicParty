@@ -41,15 +41,14 @@
                 <span class="text-xs font-medium tracking-[0.18em] text-white/75">Loading track</span>
               </div>
 
-              <img
-                v-if="currentCover"
+              <CoverImage
                 :src="currentCover"
+                :alt="player.nowPlaying ? `${player.nowPlaying.music.name} 封面` : '歌曲封面'"
+                loading="eager"
+                decoding="async"
                 class="absolute inset-0 h-full w-full object-cover transition-transform duration-700"
                 :class="player.isPaused ? 'scale-[1.01]' : (hasLyrics ? 'scale-[1.04] group-hover:scale-[1.07]' : 'scale-[1.06] group-hover:scale-[1.09]')"
               />
-              <div v-else class="absolute inset-0 flex flex-col items-center justify-center bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] text-[var(--text-secondary)]">
-                <div class="mb-4 h-20 w-20 rounded-[1.75rem] bg-black/10 shadow-inner"></div>
-              </div>
 
               <div class="absolute inset-0 transition-all duration-500" :class="coverMaskClass"></div>
               <div class="absolute inset-x-0 top-0 h-28 transition-all duration-500" :class="coverSheenClass"></div>
@@ -77,7 +76,7 @@
                         'scale-100 group-hover:scale-110'
                       ]"
                     >
-                      <Activity v-if="!hasLiked && (isHovering || mobileLikePending) && !isBursting" class="h-9 w-9 animate-pulse" />
+                      <Activity v-if="!hasLiked && (isHovering || mobileLikePending) && !isBursting" class="h-9 w-9" />
                       <Zap v-else class="h-9 w-9" :class="hasLiked || isBursting ? 'fill-current stroke-none' : ''" />
                     </div>
 
@@ -118,6 +117,7 @@ import { useUiStore } from '../stores/ui';
 import { useWindowSize } from '@vueuse/core';
 import { Activity, Zap } from 'lucide-vue-next';
 import AppleLyricsPanel from './AppleLyricsPanel.vue';
+import CoverImage from './CoverImage.vue';
 
 const userStore = useUserStore();
 const player = usePlayerStore();
