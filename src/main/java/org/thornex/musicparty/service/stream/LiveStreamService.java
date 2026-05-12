@@ -87,6 +87,7 @@ public class LiveStreamService {
     @PreDestroy
     public void cleanup() {
         stopTranscoding();
+        broadcaster.shutdown();
         if (streamExecutor != null) {
             streamExecutor.shutdownNow();
         }
@@ -291,6 +292,14 @@ public class LiveStreamService {
         if (transcoderProcess != null) {
             if (transcoderProcess.isAlive()) {
                 transcoderProcess.destroy();
+                try {
+                    if (!transcoderProcess.waitFor(1500, TimeUnit.MILLISECONDS)) {
+                        transcoderProcess.destroyForcibly();
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    transcoderProcess.destroyForcibly();
+                }
             }
             transcoderProcess = null;
         }

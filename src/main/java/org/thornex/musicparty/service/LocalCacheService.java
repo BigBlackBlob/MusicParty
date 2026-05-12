@@ -21,8 +21,10 @@ import reactor.core.scheduler.Schedulers;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.util.Comparator;
@@ -77,6 +79,14 @@ public class LocalCacheService {
         File[] files = dir.listFiles();
         if (files != null) {
             for (File f : files) {
+                if (f.getName().endsWith(".part")) {
+                    try {
+                        Files.deleteIfExists(f.toPath());
+                    } catch (IOException e) {
+                        log.warn("Failed to delete stale partial cache file: {}", f.getName(), e);
+                    }
+                    continue;
+                }
                 String id = f.getName().split("\\.")[0]; // 假设文件名是 id.mp3
                 CacheEntry entry = new CacheEntry();
                 entry.setId(id);
@@ -172,24 +182,23 @@ public class LocalCacheService {
                     String fileName = musicId + task.extension();
                     entry.setFileName(fileName);
                     Path destPath = Paths.get(LocalResourceConfig.CACHE_DIR, fileName);
+                    Path partPath = Paths.get(LocalResourceConfig.CACHE_DIR, fileName + ".part");
 
-                    return webClient.get()
-                            .uri(url)
-                            .headers(httpHeaders -> task.headers().forEach(httpHeaders::add))
-                            .retrieve()
-                            .bodyToFlux(DataBuffer.class)
-                            .collectList()
+                    return DataBufferUtils.write(
+                                    webClient.get()
+                                            .uri(url)
+                                            .headers(httpHeaders -> task.headers().forEach(httpHeaders::add))
+                                            .retrieve()
+                                            .bodyToFlux(DataBuffer.class),
+                                    partPath,
+                                    StandardOpenOption.CREATE,
+                                    StandardOpenOption.TRUNCATE_EXISTING,
+                                    StandardOpenOption.WRITE
+                            )
                             .publishOn(Schedulers.boundedElastic())
-                            .doOnSuccess(dataBuffers -> {
+                            .doOnSuccess(unused -> {
                                 try {
-                                    try (var os = Files.newOutputStream(destPath, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
-                                        for (DataBuffer buffer : dataBuffers) {
-                                            byte[] bytes = new byte[buffer.readableByteCount()];
-                                            buffer.read(bytes);
-                                            os.write(bytes);
-                                            DataBufferUtils.release(buffer);
-                                        }
-                                    }
+                                    moveCompletedDownload(partPath, destPath);
                                     long size = Files.size(destPath);
                                     entry.setSize(size);
                                     entry.setStatus(CacheStatus.COMPLETED);
@@ -205,12 +214,25 @@ public class LocalCacheService {
                 // 错误处理
                 .doOnError(error -> {
                     log.error("Download Task failed for {}: {}", musicId, error.getMessage());
+                    try {
+                        Files.deleteIfExists(Paths.get(LocalResourceConfig.CACHE_DIR, musicId + task.extension() + ".part"));
+                    } catch (IOException cleanupError) {
+                        log.warn("Failed to delete partial cache for {}", musicId, cleanupError);
+                    }
                     entry.setStatus(CacheStatus.FAILED);
                     eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
                 })
                 // 这里的 onErrorResume 保证即使这个任务失败，Flux 链也不会断，会继续执行 delay 和下一个任务
                 .onErrorResume(e -> Mono.empty())
                 .then(); // 转为 Mono<Void>
+    }
+
+    private void moveCompletedDownload(Path partPath, Path destPath) throws IOException {
+        try {
+            Files.move(partPath, destPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException e) {
+            Files.move(partPath, destPath, StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     /**

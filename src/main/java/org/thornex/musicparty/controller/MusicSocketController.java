@@ -37,6 +37,23 @@ public class MusicSocketController {
         musicPlayerService.broadcastFullPlayerState();
     }
 
+    @MessageMapping("/sync/ping")
+    public void syncPing(@Payload SyncPingRequest request, @Header("simpSessionId") String sessionId) {
+        long serverReceiveTime = System.currentTimeMillis();
+        SyncPongResponse response = new SyncPongResponse(
+                request.pingId(),
+                request.clientSendTime(),
+                serverReceiveTime,
+                System.currentTimeMillis()
+        );
+        messagingTemplate.convertAndSendToUser(
+                sessionId,
+                "/queue/sync/pong",
+                response,
+                createSessionHeaders(sessionId)
+        );
+    }
+
     @MessageMapping("/enqueue")
     public void enqueue(EnqueueRequest request, @Header("simpSessionId") String sessionId) {
         if (isGuest(sessionId)) return;

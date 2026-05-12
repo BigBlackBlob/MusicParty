@@ -17,6 +17,7 @@ export const WS_DEST = {
     QUEUE_BATCH_REMOVE: '/app/queue/batch-remove',
     USER_BIND: '/app/user/bind',
     USER_RENAME: '/app/user/rename',
+    SYNC_PING: '/app/sync/ping',
     RESYNC: '/app/player/resync',
 
     // 订阅频道 (Subscribe)
@@ -31,6 +32,7 @@ export const WS_DEST = {
     USER_ME_UPDATE: '/user/queue/me',
     APP_CHAT_HISTORY: '/app/chat/history',
     USER_STATE: '/user/queue/player/state',
+    USER_SYNC_PONG: '/user/queue/sync/pong',
     USER_CHAT_HISTORY: '/user/queue/chat/history',
     USER_EVENTS: '/user/queue/events',
     USER_PRIVATE_CHAT: '/user/queue/chat/private'

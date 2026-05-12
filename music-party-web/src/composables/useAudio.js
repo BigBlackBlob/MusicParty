@@ -11,6 +11,8 @@ export function useAudio(audioRef, playerStore) {
     const { info, error, success } = useToast();
     let syncTimer = null;
     let wakeLock = null;
+    let smoothSeekInFlight = false;
+    let pingTimer = null;
 
     // 请求唤醒锁 (防止 WebSocket 断连)
     const requestWakeLock = async () => {
@@ -29,6 +31,60 @@ export function useAudio(audioRef, playerStore) {
         if (wakeLock !== null) {
             await wakeLock.release();
             wakeLock = null;
+        }
+    };
+
+    const waitForAudioReady = (audio, timeoutMs = 800) => new Promise((resolve) => {
+        let done = false;
+        const finish = () => {
+            if (done) return;
+            done = true;
+            audio.removeEventListener('seeked', finish);
+            audio.removeEventListener('canplay', finish);
+            clearTimeout(timer);
+            resolve();
+        };
+        const timer = setTimeout(finish, timeoutMs);
+        audio.addEventListener('seeked', finish, { once: true });
+        audio.addEventListener('canplay', finish, { once: true });
+    });
+
+    const fadeVolume = (audio, targetVolume, durationMs) => new Promise((resolve) => {
+        const startVolume = audio.volume;
+        const startedAt = performance.now();
+        const step = (now) => {
+            const progress = Math.min(1, (now - startedAt) / durationMs);
+            audio.volume = startVolume + (targetVolume - startVolume) * progress;
+            if (progress < 1) {
+                requestAnimationFrame(step);
+            } else {
+                resolve();
+            }
+        };
+        requestAnimationFrame(step);
+    });
+
+    const smoothSeekTo = async (targetSeconds) => {
+        const audio = audioRef.value;
+        if (!audio || smoothSeekInFlight) return;
+        smoothSeekInFlight = true;
+
+        const restoreVolume = audio.volume;
+        try {
+            await fadeVolume(audio, 0, 120);
+            audio.currentTime = targetSeconds;
+            await waitForAudioReady(audio);
+            await fadeVolume(audio, restoreVolume, 160);
+        } catch (e) {
+            if (audioRef.value) {
+                audioRef.value.currentTime = targetSeconds;
+                audioRef.value.volume = restoreVolume;
+            }
+        } finally {
+            if (audioRef.value) {
+                audioRef.value.volume = restoreVolume;
+            }
+            smoothSeekInFlight = false;
         }
     };
 
@@ -157,6 +213,7 @@ export function useAudio(audioRef, playerStore) {
             }
             // 2. 检查连接状态，必要时重连
             playerStore.tryReconnect();
+            playerStore.requestSyncRefresh('visible');
         }
     };
     
@@ -165,6 +222,7 @@ export function useAudio(audioRef, playerStore) {
         if (navigator.onLine) {
             console.log('[Network] Back online, checking socket...');
             playerStore.tryReconnect();
+            playerStore.requestSyncRefresh('online');
         }
     };
 
@@ -172,10 +230,12 @@ export function useAudio(audioRef, playerStore) {
     onMounted(() => {
         document.addEventListener('visibilitychange', handleVisibilityChange);
         window.addEventListener('online', handleNetworkChange);
+        pingTimer = setInterval(() => playerStore.requestPing('interval'), 10000);
 
         syncTimer = setInterval(() => {
             if (!playerStore.nowPlaying) {
                 localProgress.value = 0;
+                if (audioRef.value) audioRef.value.playbackRate = 1;
                 return;
             }
 
@@ -195,6 +255,7 @@ export function useAudio(audioRef, playerStore) {
             if (audioRef.value && !isBuffering.value && !isErrorState.value && !playerStore.isSeekingPreview) {
                 // 如果是暂停状态，强制对齐
                 if (playerStore.isPaused) {
+                    audioRef.value.playbackRate = 1;
                     // 避免重复赋值导致杂音
                     if (Math.abs(audioRef.value.currentTime * 1000 - targetTime) > 200) {
                         audioRef.value.currentTime = targetTime / 1000;
@@ -203,16 +264,33 @@ export function useAudio(audioRef, playerStore) {
                 // 如果是播放状态，只有偏差过大才对齐
                 else {
                     const domTime = audioRef.value.currentTime * 1000;
-                    // 动态调整阈值：前台 2s，后台 10s (避免后台节流导致的频繁 seek 卡顿)
-                    const threshold = document.hidden ? 10000 : 2000;
-                    
-                    if (Math.abs(domTime - targetTime) > threshold) {
-                        if (audioRef.value.readyState >= 2) {
-                            console.log(`[Sync] Correcting time (${document.hidden ? 'bg' : 'fg'}): ${domTime} -> ${targetTime}`);
+                    const drift = targetTime - domTime;
+                    const absDrift = Math.abs(drift);
+
+                    if (playerStore.forceNextSyncSeek && audioRef.value.readyState >= 2) {
+                        audioRef.value.playbackRate = 1;
+                        audioRef.value.currentTime = targetTime / 1000;
+                        playerStore.forceNextSyncSeek = false;
+                    } else if (absDrift <= 250) {
+                        audioRef.value.playbackRate = 1;
+                    } else if (absDrift <= 2000) {
+                        audioRef.value.playbackRate = drift > 0 ? 1.03 : 0.97;
+                    } else if (document.hidden) {
+                        audioRef.value.playbackRate = 1;
+                        if (absDrift > 10000 && audioRef.value.readyState >= 2) {
+                            console.log(`[Sync] Background hard seek: ${domTime} -> ${targetTime}`);
                             audioRef.value.currentTime = targetTime / 1000;
+                        }
+                    } else if (audioRef.value.readyState >= 2) {
+                        audioRef.value.playbackRate = 1;
+                        if (!smoothSeekInFlight) {
+                            console.log(`[Sync] Smooth seek: ${domTime} -> ${targetTime}`);
+                            smoothSeekTo(targetTime / 1000);
                         }
                     }
                 }
+            } else if (audioRef.value) {
+                audioRef.value.playbackRate = 1;
             }
         }, 200);
     });
@@ -221,6 +299,8 @@ export function useAudio(audioRef, playerStore) {
         document.removeEventListener('visibilitychange', handleVisibilityChange);
         window.removeEventListener('online', handleNetworkChange);
         clearInterval(syncTimer);
+        clearInterval(pingTimer);
+        if (audioRef.value) audioRef.value.playbackRate = 1;
         releaseWakeLock();
     });
 

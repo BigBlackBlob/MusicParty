@@ -83,6 +83,7 @@ export const createSocketSubscriptions = () => {
         // 1. 状态同步
         [WS_DEST.TOPIC_STATE]: (state) => playerStore.syncState(state),
         [WS_DEST.USER_STATE]: (state) => playerStore.syncState(state),
+        [WS_DEST.USER_SYNC_PONG]: (pong) => playerStore.handleSyncPong(pong),
 
         // 2. 用户列表
         [WS_DEST.TOPIC_USERS]: (users) => userStore.setOnlineUsers(users),
@@ -118,9 +119,10 @@ export const createSocketCallbacks = () => {
         // 连接成功
         onConnect: () => {
             playerStore.connected = true;
+            playerStore.requestPing('connect', true);
             // 发起同步
             setTimeout(() => {
-                socketService.send(WS_DEST.RESYNC);
+                playerStore.requestResync('connect', true);
             }, 300);
             // 恢复绑定
             Object.entries(userStore.bindings).forEach(([platform, id]) => {
