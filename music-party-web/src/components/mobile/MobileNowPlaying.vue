@@ -1,5 +1,5 @@
 <template>
-  <section class="flex h-full flex-col overflow-y-auto px-4 py-4">
+  <section class="mobile-now-playing flex h-full flex-col overflow-y-auto px-4 pt-4">
     <div
       class="flex flex-1 flex-col items-center"
       :class="hasLyrics ? 'justify-start gap-0 pt-4' : 'justify-center gap-5 pb-2'"
@@ -146,8 +146,8 @@
       </div>
     </div>
 
-    <div v-if="lyricsExpanded" class="fixed inset-0 z-[var(--z-modal)] bg-[var(--surface-0)] p-4 pt-[calc(env(safe-area-inset-top)+1rem)]" @click.self="lyricsExpanded = false">
-      <div class="mb-4 flex items-center justify-between">
+    <div v-if="lyricsExpanded" class="mobile-lyrics-overlay fixed inset-0 z-[var(--z-modal)] bg-[var(--surface-0)] px-4" @click.self="lyricsExpanded = false">
+      <div class="mb-4 flex flex-shrink-0 items-center justify-between">
         <div>
           <div class="text-sm font-bold">歌词</div>
           <div class="text-xs text-[var(--text-tertiary)]">{{ music?.name || '' }}</div>
@@ -156,16 +156,18 @@
           关闭
         </button>
       </div>
-      <AppleLyricsPanel
-        :lyrics="player.lyricDetail.lyric || player.lyricText"
-        :translated-lyrics="player.lyricDetail.translatedLyric"
-        :show-translation="ui.showLyricTranslation"
-        :current-time="player.localProgress / 1000"
-        :is-playing="!player.isPaused"
-        :is-dark-mode="ui.isDarkMode"
-        :bg-color="ui.dynamicAccent?.accent || ''"
-        @toggle-translation="ui.toggleLyricTranslation"
-      />
+      <div class="min-h-0 flex-1">
+        <AppleLyricsPanel
+          :lyrics="player.lyricDetail.lyric || player.lyricText"
+          :translated-lyrics="player.lyricDetail.translatedLyric"
+          :show-translation="ui.showLyricTranslation"
+          :current-time="player.localProgress / 1000"
+          :is-playing="!player.isPaused"
+          :is-dark-mode="ui.isDarkMode"
+          :bg-color="ui.dynamicAccent?.accent || ''"
+          @toggle-translation="ui.toggleLyricTranslation"
+        />
+      </div>
     </div>
   </section>
 </template>
@@ -375,6 +377,21 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.mobile-now-playing {
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+  overscroll-behavior: contain;
+}
+
+.mobile-lyrics-overlay {
+  display: flex;
+  height: var(--app-height, 100dvh);
+  min-height: var(--app-height, 100dvh);
+  flex-direction: column;
+  overflow: hidden;
+  padding-top: calc(env(safe-area-inset-top) + 1rem);
+  padding-bottom: calc(env(safe-area-inset-bottom) + 1rem);
+}
+
 .mobile-control {
   display: inline-flex;
   min-width: 3rem;
