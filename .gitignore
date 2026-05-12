@@ -38,3 +38,8 @@ build/
 /.gemini/.env
 /scripts/publish-image.ps1
 /.dev-logs/
+
+### MusicParty runtime/package artifacts ###
+/data/
+/cached_media/
+/packaging/
