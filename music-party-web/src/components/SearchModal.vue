@@ -257,22 +257,25 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { usePlayerStore } from '../stores/player';
 import { useSearchLogic } from '../composables/useSearchLogic';
 import { usePlaylistLogic } from '../composables/usePlaylistLogic';
 import { X, Search, PlusCircle, ListPlus, Loader2, ArrowLeft, ChevronRight, Check } from 'lucide-vue-next';
 import CoverImage from './CoverImage.vue';
+import { useWindowSize } from '@vueuse/core';
 
 const props = defineProps(['isOpen']);
 const emit = defineEmits(['close']);
 const playerStore = usePlayerStore();
+const { width } = useWindowSize();
+const isMobile = computed(() => width.value < 768);
 
 const { platform, keyword, songs, albums, loading, listMode, searchType, isAdminMode, doSearch } = useSearchLogic(emit);
 
 const handleSearchAction = async () => {
   await doSearch();
-  if (!isAdminMode.value) {
+  if (!isAdminMode.value && isMobile.value) {
     mobileView.value = 'songs';
   }
 };
@@ -291,7 +294,7 @@ const isUnplayable = (song) => platform.value === 'bilibili' && song.duration > 
 
 const handleSelectPlaylist = (pid) => {
   loadPlaylist(pid);
-  mobileView.value = 'songs';
+  if (isMobile.value) mobileView.value = 'songs';
 };
 
 const handleSelectAlbum = async (album) => {
@@ -300,7 +303,7 @@ const handleSelectAlbum = async (album) => {
   currentAlbumId.value = album.id;
   songs.value = [];
   loading.value = true;
-  mobileView.value = 'songs';
+  if (isMobile.value) mobileView.value = 'songs';
   try {
     songs.value = await musicApi.getNeteaseAlbumSongs(album.id);
   } finally {
@@ -349,12 +352,12 @@ const handleAddClick = (song) => {
 };
 
 watch(listMode, (mode) => {
-  if (mode === 'search' || mode === 'albumSearch') mobileView.value = 'songs';
+  if (isMobile.value && (mode === 'search' || mode === 'albumSearch')) mobileView.value = 'songs';
   if (mode !== 'album') currentAlbumId.value = null;
 });
 
 watch(() => props.isOpen, (val) => {
-  if (val) mobileView.value = 'playlists';
+  if (val && isMobile.value) mobileView.value = 'playlists';
 });
 
 watch(platform, (nextPlatform) => {

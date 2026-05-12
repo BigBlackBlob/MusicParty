@@ -22,7 +22,13 @@
     </div>
 
     <!-- 3. 主界面 (当 hasStarted 为 true 时显示) -->
-    <MainLayout v-if="hasStarted" @search="handleSearchClick" @toggle-mobile-chat="handleMobileChat">
+    <MobilePreviewShell v-if="hasStarted && isMobileLayout && usePreviewShell">
+      <MobileLayout />
+    </MobilePreviewShell>
+
+    <MobileLayout v-else-if="hasStarted && isMobileLayout" />
+
+    <MainLayout v-else-if="hasStarted" @search="handleSearchClick" @toggle-mobile-chat="handleMobileChat">
       <!-- 中间插槽: 视觉控制台 -->
       <CenterConsole />
 
@@ -37,16 +43,16 @@
     </MainLayout>
 
     <!-- 4. 全局弹窗 -->
-    <SearchModal :isOpen="showSearch" @close="showSearch = false" />
+    <SearchModal v-if="!isMobileLayout" :isOpen="showSearch" @close="showSearch = false" />
     <NamePromptModal />
-    <ChatOverlay v-if="hasStarted && !uiStore.isLiteMode" ref="chatOverlayRef" />
-    <TutorialOverlay v-if="hasStarted && !uiStore.isLiteMode" />
+    <ChatOverlay v-if="hasStarted && !uiStore.isLiteMode && !isMobileLayout" ref="chatOverlayRef" />
+    <TutorialOverlay v-if="hasStarted && !uiStore.isLiteMode && !isMobileLayout" />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
-import { useEventListener } from '@vueuse/core';
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue';
+import { useEventListener, useWindowSize } from '@vueuse/core';
 import { usePlayerStore } from './stores/player';
 import { useUserStore } from './stores/user';
 import { useUiStore } from './stores/ui';
@@ -63,6 +69,8 @@ import NamePromptModal from './components/NamePromptModal.vue';
 import ChatOverlay from './components/ChatOverlay.vue';
 import ToastNotification from './components/ToastNotification.vue';
 import TutorialOverlay from './components/TutorialOverlay.vue';
+import MobileLayout from './components/mobile/MobileLayout.vue';
+import MobilePreviewShell from './components/mobile/MobilePreviewShell.vue';
 
 const player = usePlayerStore();
 const userStore = useUserStore();
@@ -72,16 +80,49 @@ const showSearch = ref(false);
 const toastInstance = ref(null);
 const chatOverlayRef = ref(null);
 const { register } = useToast();
+const { width } = useWindowSize();
+const isMobileLayout = computed(() => uiStore.forceMobileLayout || width.value < 768);
+const usePreviewShell = computed(() => uiStore.forceMobileLayout && width.value >= 768);
+let autoLiteTimer = null;
+let autoLiteSuppressedUntil = 0;
+const AUTO_LITE_DELAY_MS = 180000;
+const AUTO_LITE_SUPPRESS_MS = 600000;
 
 const startGame = () => {
   hasStarted.value = true;
   player.connect();
 };
 
-// 自动性能优化：切后台自动进入精简模式
+const clearAutoLiteTimer = () => {
+  if (autoLiteTimer) {
+    clearTimeout(autoLiteTimer);
+    autoLiteTimer = null;
+  }
+};
+
+// 自动性能优化：后台停留较久后才进入精简模式，避免短暂切换应用时频繁触发。
 useEventListener(document, 'visibilitychange', () => {
-  if (document.visibilityState === 'hidden' && hasStarted.value && !player.isPaused && uiStore.autoLiteMode) {
-    uiStore.isLiteMode = true;
+  clearAutoLiteTimer();
+
+  if (document.visibilityState === 'hidden') {
+    if (
+      hasStarted.value &&
+      !player.isPaused &&
+      uiStore.autoLiteMode &&
+      !uiStore.isLiteMode &&
+      Date.now() > autoLiteSuppressedUntil
+    ) {
+      autoLiteTimer = setTimeout(() => {
+        if (document.visibilityState === 'hidden' && hasStarted.value && !player.isPaused && uiStore.autoLiteMode) {
+          uiStore.isLiteMode = true;
+        }
+      }, AUTO_LITE_DELAY_MS);
+    }
+    return;
+  }
+
+  if (uiStore.isLiteMode) {
+    autoLiteSuppressedUntil = Date.now() + AUTO_LITE_SUPPRESS_MS;
   }
 });
 
@@ -108,6 +149,15 @@ const handleMobileChat = () => {
 };
 
 onMounted(() => {
+  const params = new URLSearchParams(window.location.search);
+  const mobilePreview = params.get('mobilePreview');
+  if (mobilePreview === '1') uiStore.setForceMobileLayout(true);
+  if (mobilePreview === '0') uiStore.setForceMobileLayout(false);
+
   if (toastInstance.value) register(toastInstance.value);
+});
+
+onBeforeUnmount(() => {
+  clearAutoLiteTimer();
 });
 </script>

@@ -9,8 +9,10 @@ export const useUiStore = defineStore('ui', () => {
     const initialTheme = localStorage.getItem('theme') || 'dark';
     const isDarkMode = ref(initialTheme !== 'light');
     const isLiteMode = ref(false);
+    const forceMobileLayout = ref(localStorage.getItem('mp_force_mobile_layout') === 'true');
+    const mobilePreviewWidth = ref(parseInt(localStorage.getItem('mp_mobile_preview_width') || '390', 10));
     const volume = ref(parseFloat(localStorage.getItem(STORAGE_KEYS.VOLUME) || '0.5'));
-    const autoLiteMode = ref(localStorage.getItem('mp_auto_lite_mode') !== 'false'); // 默认 true
+    const autoLiteMode = ref(localStorage.getItem('mp_auto_lite_mode') === 'true'); // 默认 false
 
     const authorName = ref('ThorNex');
     const backWords = ref('THORNEX');
@@ -34,13 +36,73 @@ export const useUiStore = defineStore('ui', () => {
         }
     };
 
-    const deriveBorderAccent = (accent) => {
+    const parseHexColor = (accent) => {
         if (!accent || !accent.startsWith('#') || accent.length !== 7) {
+            return null;
+        }
+        return {
+            r: parseInt(accent.slice(1, 3), 16),
+            g: parseInt(accent.slice(3, 5), 16),
+            b: parseInt(accent.slice(5, 7), 16)
+        };
+    };
+
+    const toHex = ({ r, g, b }) => `#${[r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('')}`;
+
+    const toRgba = ({ r, g, b }, alpha) => `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${alpha})`;
+
+    const relativeLuminance = ({ r, g, b }) => {
+        const channel = (value) => {
+            const normalized = value / 255;
+            return normalized <= 0.03928 ? normalized / 12.92 : Math.pow((normalized + 0.055) / 1.055, 2.4);
+        };
+        return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+    };
+
+    const mix = (color, target, amount) => ({
+        r: color.r + (target.r - color.r) * amount,
+        g: color.g + (target.g - color.g) * amount,
+        b: color.b + (target.b - color.b) * amount
+    });
+
+    const normalizeAccentForTheme = (accentSet) => {
+        const defaults = isDarkMode.value ? defaultAccentSet.dark : defaultAccentSet.light;
+        const parsed = parseHexColor(accentSet?.accent);
+        if (!parsed) return accentSet || defaults;
+
+        let color = parsed;
+        if (isDarkMode.value) {
+            let guard = 0;
+            while (relativeLuminance(color) < 0.32 && guard < 6) {
+                color = mix(color, { r: 255, g: 255, b: 255 }, 0.18);
+                guard++;
+            }
+        } else {
+            let guard = 0;
+            while (relativeLuminance(color) > 0.55 && guard < 6) {
+                color = mix(color, { r: 0, g: 0, b: 0 }, 0.16);
+                guard++;
+            }
+        }
+
+        const hoverTarget = isDarkMode.value ? { r: 255, g: 255, b: 255 } : { r: 0, g: 0, b: 0 };
+        const hover = mix(color, hoverTarget, isDarkMode.value ? 0.14 : 0.10);
+
+        return {
+            accent: toHex(color),
+            accentHover: toHex(hover),
+            accentMuted: toRgba(color, isDarkMode.value ? 0.18 : 0.14),
+            accentSubtle: toRgba(color, isDarkMode.value ? 0.10 : 0.07),
+            borderAccent: toRgba(color, 0.5)
+        };
+    };
+
+    const deriveBorderAccent = (accent) => {
+        const color = parseHexColor(accent);
+        if (!color) {
             return isDarkMode.value ? defaultAccentSet.dark.borderAccent : defaultAccentSet.light.borderAccent;
         }
-        const r = parseInt(accent.slice(1, 3), 16);
-        const g = parseInt(accent.slice(3, 5), 16);
-        const b = parseInt(accent.slice(5, 7), 16);
+        const { r, g, b } = color;
         return `rgba(${r}, ${g}, ${b}, 0.5)`;
     };
 
@@ -54,7 +116,7 @@ export const useUiStore = defineStore('ui', () => {
     const syncAccentVariables = () => {
         const root = document.documentElement;
         const defaults = isDarkMode.value ? defaultAccentSet.dark : defaultAccentSet.light;
-        const active = dynamicAccent.value || defaults;
+        const active = normalizeAccentForTheme(dynamicAccent.value || defaults);
 
         root.style.setProperty('--accent', active.accent);
         root.style.setProperty('--accent-hover', active.accentHover);
@@ -65,6 +127,20 @@ export const useUiStore = defineStore('ui', () => {
 
     const toggleLiteMode = () => {
         isLiteMode.value = !isLiteMode.value;
+    };
+
+    const setForceMobileLayout = (val) => {
+        forceMobileLayout.value = !!val;
+    };
+
+    const toggleForceMobileLayout = () => {
+        forceMobileLayout.value = !forceMobileLayout.value;
+    };
+
+    const setMobilePreviewWidth = (val) => {
+        const next = Number(val);
+        if (!Number.isFinite(next)) return;
+        mobilePreviewWidth.value = Math.max(320, Math.min(768, next));
     };
 
     const toggleDarkMode = () => {
@@ -92,9 +168,10 @@ export const useUiStore = defineStore('ui', () => {
     };
 
     const setDynamicAccent = (accentSet) => {
+        const normalized = normalizeAccentForTheme(accentSet);
         dynamicAccent.value = {
-            ...accentSet,
-            borderAccent: accentSet.borderAccent || deriveBorderAccent(accentSet.accent)
+            ...normalized,
+            borderAccent: accentSet.borderAccent || normalized.borderAccent || deriveBorderAccent(accentSet.accent)
         };
         syncAccentVariables();
     };
@@ -132,6 +209,14 @@ export const useUiStore = defineStore('ui', () => {
         localStorage.setItem('mp_auto_lite_mode', newVal.toString());
     });
 
+    watch(forceMobileLayout, (newVal) => {
+        localStorage.setItem('mp_force_mobile_layout', newVal.toString());
+    });
+
+    watch(mobilePreviewWidth, (newVal) => {
+        localStorage.setItem('mp_mobile_preview_width', newVal.toString());
+    });
+
     watch(isDarkMode, (newVal) => {
         localStorage.setItem('theme', newVal ? 'dark' : 'light');
         syncThemeClass(newVal);
@@ -140,6 +225,11 @@ export const useUiStore = defineStore('ui', () => {
     return {
         isLiteMode,
         toggleLiteMode,
+        forceMobileLayout,
+        setForceMobileLayout,
+        toggleForceMobileLayout,
+        mobilePreviewWidth,
+        setMobilePreviewWidth,
         isDarkMode,
         toggleDarkMode,
         volume,
