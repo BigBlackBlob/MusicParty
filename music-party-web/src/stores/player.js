@@ -32,6 +32,13 @@ export const usePlayerStore = defineStore('player', () => {
     const remotePosition = ref(0);
     const lastSyncTime = ref(0);
     const serverClockOffset = ref(0);
+    const hasClockSample = ref(false);
+    const lastStateVersion = ref(0);
+    const lastPlayEpoch = ref(0);
+    const lastServerTimestamp = ref(0);
+    const forceNextSyncSeek = ref(false);
+    const lastPingSentAt = ref(0);
+    const lastResyncSentAt = ref(0);
     const localProgress = ref(0);
     const isBuffering = ref(false);
     const isErrorState = ref(false);
@@ -57,6 +64,46 @@ export const usePlayerStore = defineStore('player', () => {
         }
     };
 
+    const requestPing = (reason = 'manual', force = false) => {
+        const now = Date.now();
+        if (!force && now - lastPingSentAt.value < 1000) return false;
+        lastPingSentAt.value = now;
+        socketService.send(WS_DEST.SYNC_PING, {
+            pingId: `${reason}-${now}-${Math.random().toString(36).slice(2, 8)}`,
+            clientSendTime: now
+        });
+        return true;
+    };
+
+    const requestResync = (reason = 'manual', force = false) => {
+        const now = Date.now();
+        if (!force && now - lastResyncSentAt.value < 500) return false;
+        lastResyncSentAt.value = now;
+        socketService.send(WS_DEST.RESYNC, { reason });
+        return true;
+    };
+
+    const requestSyncRefresh = (reason = 'refresh') => {
+        if (!connected.value) return;
+        requestPing(reason);
+        requestResync(reason);
+    };
+
+    const handleSyncPong = (pong) => {
+        if (!pong || typeof pong.clientSendTime !== 'number' || typeof pong.serverSendTime !== 'number') return;
+        const clientReceiveTime = Date.now();
+        const rtt = clientReceiveTime - pong.clientSendTime;
+        if (rtt < 0 || rtt > 3000) return;
+
+        const sampleOffset = (pong.serverSendTime + rtt / 2) - clientReceiveTime;
+        if (hasClockSample.value && Math.abs(sampleOffset - serverClockOffset.value) > 10000) return;
+
+        serverClockOffset.value = hasClockSample.value
+            ? serverClockOffset.value * 0.85 + sampleOffset * 0.15
+            : sampleOffset;
+        hasClockSample.value = true;
+    };
+
     const requireAuth = () => {
         if (userStore.isGuest) {
             userStore.showNameModal = true;
@@ -78,8 +125,25 @@ export const usePlayerStore = defineStore('player', () => {
     // === 3. Actions ===
 
     const syncState = (state) => {
+        if (!state) return;
+        const incomingVersion = Number.isFinite(state.stateVersion) ? state.stateVersion : null;
+        const serverTimestamp = state.serverTimestamp || Date.now();
+
+        if (incomingVersion !== null) {
+            if (incomingVersion < lastStateVersion.value) return;
+            if (incomingVersion === lastStateVersion.value && serverTimestamp < lastServerTimestamp.value) return;
+            lastStateVersion.value = incomingVersion;
+            lastServerTimestamp.value = serverTimestamp;
+        }
+
+        const incomingEpoch = state.nowPlaying?.playEpoch ?? state.playEpoch ?? 0;
+        if (incomingEpoch !== lastPlayEpoch.value) {
+            lastPlayEpoch.value = incomingEpoch;
+            forceNextSyncSeek.value = true;
+        }
+
         nowPlaying.value = state.nowPlaying;
-        queue.value = state.queue;
+        queue.value = state.queue || [];
         isPaused.value = state.isPaused;
         isShuffle.value = state.isShuffle;
         isPauseLocked.value = state.isPauseLocked || false;
@@ -89,17 +153,17 @@ export const usePlayerStore = defineStore('player', () => {
         streamListenerCount.value = state.streamListenerCount || 0;
 
         const clientReceiveTime = Date.now();
-        const serverTimestamp = state.serverTimestamp || clientReceiveTime;
+        if (!hasClockSample.value) {
+            serverClockOffset.value = serverTimestamp - clientReceiveTime;
+        }
 
         // 记录服务器发来的进度和状态包对应的服务端时间
         if (state.nowPlaying) {
             remotePosition.value = state.nowPlaying.currentPosition;
             lastSyncTime.value = serverTimestamp;
-            serverClockOffset.value = serverTimestamp - clientReceiveTime;
         } else {
             remotePosition.value = 0;
             lastSyncTime.value = serverTimestamp;
-            serverClockOffset.value = serverTimestamp - clientReceiveTime;
         }
 
         if (state.onlineUsers) {
@@ -135,6 +199,8 @@ export const usePlayerStore = defineStore('player', () => {
     const tryReconnect = () => {
         if (!connected.value) {
             socketService.forceReconnect();
+        } else {
+            requestSyncRefresh('reconnect-check');
         }
     };
 
@@ -162,7 +228,7 @@ export const usePlayerStore = defineStore('player', () => {
         if (!Array.isArray(queueIds) || queueIds.length === 0) return;
         if (!requireAuth()) return false;
         socketService.send(WS_DEST.QUEUE_BATCH_REMOVE, { queueIds });
-        setTimeout(() => socketService.send(WS_DEST.RESYNC), 250);
+        setTimeout(() => requestResync('batch-remove', true), 250);
         return true;
     };
     const topSongsCompat = (queueIds) => {
@@ -262,8 +328,8 @@ export const usePlayerStore = defineStore('player', () => {
     return {
         nowPlaying, queue, isPaused, isShuffle, isPauseLocked, isSkipLocked, isShuffleLocked, connected, isLoading, lyricText, lyricDetail, likedSongs,
         localProgress, isBuffering, isErrorState, streamListenerCount, lastSyncTime,
-        isSeekingPreview, setSeekingPreview,
-        connect, tryReconnect, getCurrentProgress, syncState, // 导出 syncState
+        isSeekingPreview, forceNextSyncSeek, setSeekingPreview,
+        connect, tryReconnect, getCurrentProgress, syncState, handleSyncPong, requestPing, requestResync, requestSyncRefresh,
         playNext, togglePause, toggleShuffle,
         seek,
         enqueue, enqueuePlaylist, enqueueAlbum, topSong, removeSong, topSongs, removeSongs, topSongsCompat, removeSongsCompat,

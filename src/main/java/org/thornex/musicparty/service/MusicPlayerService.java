@@ -51,6 +51,7 @@ public class MusicPlayerService {
     // 核心计时逻辑
     private final AtomicLong positionAnchor = new AtomicLong(0); // 上一次更新状态时的进度(ms)
     private final AtomicLong timestampAnchor = new AtomicLong(0); // 上一次更新状态时的系统时间(ms)
+    private final AtomicLong positionUpdatedAt = new AtomicLong(0);
 
 
     private final AtomicBoolean isShuffle = new AtomicBoolean(false);
@@ -70,6 +71,8 @@ public class MusicPlayerService {
     private static final long IDLE_RESET_TIMEOUT_MS = Duration.ofHours(2).toMillis();
 
     private final AtomicLong playHeadVersion = new AtomicLong(0);
+    private final AtomicLong stateVersion = new AtomicLong(0);
+    private final AtomicLong playEpoch = new AtomicLong(0);
 
     public MusicPlayerService(List<IMusicApiService> apiServices, UserService userService,
                               LocalCacheService localCacheService,
@@ -121,6 +124,7 @@ public class MusicPlayerService {
 
                 // 清空当前，触发下一首
                 currentMusic.set(null);
+                bumpPlayEpochAndStateVersion();
                 playNextInQueue();
             }
         } else {
@@ -147,6 +151,7 @@ public class MusicPlayerService {
         if (nextItem == null) {
             if (isLoading.get()) {
                 isLoading.set(false);
+                bumpStateVersion();
             }
             broadcastFullPlayerState();
             return;
@@ -164,6 +169,7 @@ public class MusicPlayerService {
         // 增加版本号，这表示"开始一次新的播放尝试"
         long currentVersion = playHeadVersion.incrementAndGet();
         isLoading.set(true);
+        bumpStateVersion();
         broadcastFullPlayerState();
         isPaused.set(false);
 
@@ -183,16 +189,18 @@ public class MusicPlayerService {
                                     log.info("Discarded stale play result for {}", nextItem.music().name());
                                 }
                             },
-                            error -> {
+                        error -> {
                         log.error("Play failed for {}: {}", nextItem.music().name(), error.getMessage());
                         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", nextItem.music().name()));
                         isLoading.set(false);
+                        bumpStateVersion();
                         broadcastFullPlayerState();
                         playNextInQueue();
                     });
         } catch (Exception e) {
             log.error("Unexpected error in playNextInQueue", e);
             isLoading.set(false);
+            bumpStateVersion();
             broadcastFullPlayerState();
         }
     }
@@ -208,6 +216,22 @@ public class MusicPlayerService {
         }
     }
 
+    private void updatePlaybackAnchor(long positionMs) {
+        long now = System.currentTimeMillis();
+        positionAnchor.set(Math.max(0, positionMs));
+        timestampAnchor.set(now);
+        positionUpdatedAt.set(now);
+    }
+
+    private void bumpStateVersion() {
+        stateVersion.incrementAndGet();
+    }
+
+    private void bumpPlayEpochAndStateVersion() {
+        playEpoch.incrementAndGet();
+        bumpStateVersion();
+    }
+
     private void applyNewSong(PlayableMusic music, MusicQueueItem queueItem) {
         currentLikedUserIds.clear();
         currentLikeMarkers.clear();
@@ -217,12 +241,12 @@ public class MusicPlayerService {
         currentEnqueuerId.set(queueItem.enqueuedBy().token());
         currentEnqueuerName.set(queueItem.enqueuedBy().name());
 
-        positionAnchor.set(0);
-        timestampAnchor.set(System.currentTimeMillis());
+        updatePlaybackAnchor(0);
         isPaused.set(false);
 
         log.info("Now playing: {}", music.name());
         isLoading.set(false);
+        bumpPlayEpochAndStateVersion();
         broadcastFullPlayerState();
         broadcastQueueUpdate();
 
@@ -241,7 +265,9 @@ public class MusicPlayerService {
                     currentEnqueuerId.get(),
                     currentEnqueuerName.get(),
                     currentLikedUserIds,
-                    currentLikeMarkers
+                    currentLikeMarkers,
+                    playEpoch.get(),
+                    positionUpdatedAt.get()
             );
         }
 
@@ -256,7 +282,9 @@ public class MusicPlayerService {
                 isShuffleLocked.get(),
                 isLoading.get(),
                 liveStreamService.getStreamListenerCount(),
-                System.currentTimeMillis()
+                System.currentTimeMillis(),
+                stateVersion.get(),
+                playEpoch.get()
         );
     }
 
@@ -273,6 +301,7 @@ public class MusicPlayerService {
         boolean old = targetLock.getAndSet(locked);
         if (old != locked) {
             log.info("{} lock set to: {}", desc, locked);
+            bumpStateVersion();
             broadcastFullPlayerState();
             eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.SYSTEM_MESSAGE, "SYSTEM",
                     locked ? "管理员锁定了" + desc : "管理员解锁了" + desc));
@@ -280,9 +309,12 @@ public class MusicPlayerService {
     }
 
     public void setAllLocks(boolean locked) {
-        isPauseLocked.set(locked);
-        isSkipLocked.set(locked);
-        isShuffleLocked.set(locked);
+        boolean changed = isPauseLocked.getAndSet(locked) != locked;
+        changed = (isSkipLocked.getAndSet(locked) != locked) || changed;
+        changed = (isShuffleLocked.getAndSet(locked) != locked) || changed;
+        if (changed) {
+            bumpStateVersion();
+        }
         broadcastFullPlayerState();
         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.SYSTEM_MESSAGE, "SYSTEM",
                 locked ? "管理员锁定了所有控制" : "管理员解锁了所有控制"));
@@ -346,6 +378,7 @@ public class MusicPlayerService {
         currentLikeMarkers.add(progress);
 
         log.info("Like received from {}", getUserName(sessionId));
+        bumpStateVersion();
 
         // 3. 广播
         // 广播事件用于触发特效
@@ -511,7 +544,8 @@ public class MusicPlayerService {
         isLoading.set(false);
 
         currentMusic.set(null);
-        positionAnchor.set(0);
+        updatePlaybackAnchor(0);
+        bumpPlayEpochAndStateVersion();
 
         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.SKIP, getUserToken(sessionId), null));
         playNextInQueue();
@@ -544,10 +578,10 @@ public class MusicPlayerService {
         isPaused.set(newState);
 
         // 3. 重置锚点：无论是暂停还是播放，当前进度都变成新的基准进度
-        positionAnchor.set(currentPos);
-        timestampAnchor.set(System.currentTimeMillis());
+        updatePlaybackAnchor(currentPos);
 
         log.info("Player {} by {}", newState ? "PAUSED" : "RESUMED", getUserName(sessionId));
+        bumpStateVersion();
         broadcastFullPlayerState();
         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, newState ? PlayerAction.PAUSE : PlayerAction.PLAY, getUserToken(sessionId), null));
     }
@@ -570,9 +604,9 @@ public class MusicPlayerService {
                 ? Math.max(0, Math.min(positionMs, duration))
                 : Math.max(0, positionMs);
 
-        positionAnchor.set(clampedPosition);
-        timestampAnchor.set(System.currentTimeMillis());
+        updatePlaybackAnchor(clampedPosition);
         log.info("Player seek to {}ms by {}", clampedPosition, getUserName(sessionId));
+        bumpPlayEpochAndStateVersion();
         broadcastFullPlayerState();
         return Optional.empty();
     }
@@ -590,6 +624,7 @@ public class MusicPlayerService {
         } while (!isShuffle.compareAndSet(current, newState));
 
         log.info("Shuffle mode set to {} by {}", newState, getUserName(sessionId));
+        bumpStateVersion();
         broadcastFullPlayerState();
         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO,
                 newState ? PlayerAction.SHUFFLE_ON : PlayerAction.SHUFFLE_OFF, getUserToken(sessionId), null));
@@ -598,14 +633,14 @@ public class MusicPlayerService {
     public void resetSystem() {
         log.warn("!!!SYSTEM RESET INITIATED!!!");
         currentMusic.set(null);
-        positionAnchor.set(0);
-        timestampAnchor.set(0);
+        updatePlaybackAnchor(0);
 
         queueManager.clearAll();
         isPaused.set(false);
         isShuffle.set(false);
         isLoading.set(false);
 
+        bumpPlayEpochAndStateVersion();
         broadcastFullPlayerState();
         broadcastQueueUpdate();
         log.warn("System reset complete.");
@@ -670,6 +705,7 @@ public class MusicPlayerService {
                 enterIdleMode();
             }
         }
+        bumpStateVersion();
         broadcastFullPlayerState();
     }
 
@@ -686,10 +722,10 @@ public class MusicPlayerService {
 
             if (isPaused.compareAndSet(false, true)) {
                 // 暂停时，更新锚点为刚才计算出的准确进度
-                positionAnchor.set(currentPos);
-                timestampAnchor.set(System.currentTimeMillis()); // 这个时间在暂停期间主要用于超时判断
+                updatePlaybackAnchor(currentPos);
 
                 log.info("Player paused as all users have disconnected. Position saved at: {}", currentPos);
+                bumpStateVersion();
                 broadcastFullPlayerState();
             }
         }
@@ -706,9 +742,9 @@ public class MusicPlayerService {
             if (pausedDuration > IDLE_RESET_TIMEOUT_MS) {
                 log.info("Idle player timeout reached. Resetting now playing.");
                 currentMusic.set(null);
-                positionAnchor.set(0);
-                timestampAnchor.set(0);
+                updatePlaybackAnchor(0);
                 isPaused.set(false);
+                bumpPlayEpochAndStateVersion();
                 broadcastFullPlayerState();
             }
         }

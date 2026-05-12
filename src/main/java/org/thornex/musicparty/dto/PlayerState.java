@@ -13,5 +13,7 @@ public record PlayerState(
         boolean isShuffleLocked,
         boolean isLoading,
         int streamListenerCount,
-        long serverTimestamp
+        long serverTimestamp,
+        long stateVersion,
+        long playEpoch
 ) {}
