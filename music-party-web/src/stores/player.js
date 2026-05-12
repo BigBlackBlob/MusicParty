@@ -154,11 +154,28 @@ export const usePlayerStore = defineStore('player', () => {
     const removeSong = (queueId) => requireAuth() && socketService.send(WS_DEST.QUEUE_REMOVE, { queueId });
     const topSongs = (queueIds) => {
         if (!Array.isArray(queueIds) || queueIds.length === 0) return;
-        return requireAuth() && socketService.send(WS_DEST.QUEUE_BATCH_TOP, { queueIds });
+        if (!requireAuth()) return false;
+        socketService.send(WS_DEST.QUEUE_BATCH_TOP, { queueIds });
+        return true;
     };
     const removeSongs = (queueIds) => {
         if (!Array.isArray(queueIds) || queueIds.length === 0) return;
-        return requireAuth() && socketService.send(WS_DEST.QUEUE_BATCH_REMOVE, { queueIds });
+        if (!requireAuth()) return false;
+        socketService.send(WS_DEST.QUEUE_BATCH_REMOVE, { queueIds });
+        setTimeout(() => socketService.send(WS_DEST.RESYNC), 250);
+        return true;
+    };
+    const topSongsCompat = (queueIds) => {
+        if (!Array.isArray(queueIds) || queueIds.length === 0) return;
+        if (!requireAuth()) return false;
+        queueIds.forEach(queueId => socketService.send(WS_DEST.QUEUE_TOP, { queueId }));
+        return true;
+    };
+    const removeSongsCompat = (queueIds) => {
+        if (!Array.isArray(queueIds) || queueIds.length === 0) return;
+        if (!requireAuth()) return false;
+        queueIds.forEach(queueId => socketService.send(WS_DEST.QUEUE_REMOVE, { queueId }));
+        return true;
     };
 
     const bindAccount = (platform, accountId) => {
@@ -249,7 +266,7 @@ export const usePlayerStore = defineStore('player', () => {
         connect, tryReconnect, getCurrentProgress, syncState, // 导出 syncState
         playNext, togglePause, toggleShuffle,
         seek,
-        enqueue, enqueuePlaylist, enqueueAlbum, topSong, removeSong, topSongs, removeSongs,
+        enqueue, enqueuePlaylist, enqueueAlbum, topSong, removeSong, topSongs, removeSongs, topSongsCompat, removeSongsCompat,
         bindAccount, renameUser, sendChatMessage, sendLike, addLikedSong, removeLikedSong, isSongLiked
     };
 });

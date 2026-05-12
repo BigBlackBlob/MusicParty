@@ -494,6 +494,7 @@ public class MusicPlayerService {
         if (!removedItems.isEmpty()) {
             log.info("{} songs removed from queue by {}", removedItems.size(), getUserName(sessionId));
             broadcastQueueUpdate();
+            broadcastFullPlayerState();
             eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.REMOVE, getUserToken(sessionId), "移除 " + removedItems.size() + " 首歌曲"));
         }
     }
