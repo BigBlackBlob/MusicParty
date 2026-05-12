@@ -11,10 +11,10 @@
         <span class="mini-lyrics__line">
           {{ currentLine?.text || '' }}
         </span>
-        <span v-if="currentLine?.translation" class="mini-lyrics__translation">
+        <span v-if="showTranslation && currentLine?.translation" class="mini-lyrics__translation">
           {{ currentLine.translation }}
         </span>
-        <span v-else class="mini-lyrics__translation-spacer" aria-hidden="true"></span>
+        <span v-else-if="showTranslation" class="mini-lyrics__translation-spacer" aria-hidden="true"></span>
       </span>
     </Transition>
   </button>
@@ -33,6 +33,10 @@ const props = defineProps({
     type: String,
     default: ''
   },
+  showTranslation: {
+    type: Boolean,
+    default: true
+  },
   currentTimeMs: {
     type: Number,
     default: 0
@@ -46,7 +50,10 @@ const props = defineProps({
 defineEmits(['open']);
 
 const lines = computed(() => {
-  const parsed = mergeTranslatedLyrics(props.lyrics, props.translatedLyrics);
+  const parsed = mergeTranslatedLyrics(
+    props.lyrics,
+    props.showTranslation ? props.translatedLyrics : ''
+  );
   return parsed.length >= props.minLines ? parsed : [];
 });
 

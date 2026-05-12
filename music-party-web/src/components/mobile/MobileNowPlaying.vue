@@ -26,7 +26,8 @@
           v-if="hasLyrics"
           class="mb-2"
           :lyrics="player.lyricDetail.lyric || player.lyricText"
-          :translated-lyrics="player.lyricDetail.translatedLyric"
+          :translated-lyrics="ui.showLyricTranslation ? player.lyricDetail.translatedLyric : ''"
+          :show-translation="ui.showLyricTranslation"
           :current-time-ms="player.localProgress"
           @open="lyricsExpanded = true"
         />
@@ -158,10 +159,12 @@
       <AppleLyricsPanel
         :lyrics="player.lyricDetail.lyric || player.lyricText"
         :translated-lyrics="player.lyricDetail.translatedLyric"
+        :show-translation="ui.showLyricTranslation"
         :current-time="player.localProgress / 1000"
         :is-playing="!player.isPaused"
         :is-dark-mode="ui.isDarkMode"
         :bg-color="ui.dynamicAccent?.accent || ''"
+        @toggle-translation="ui.toggleLyricTranslation"
       />
     </div>
   </section>
@@ -200,9 +203,8 @@ const activeVolumePointerId = ref(null);
 const lyricLines = computed(() => parseLyrics(player.lyricDetail.lyric || player.lyricText));
 const hasLyrics = computed(() => lyricLines.value.length >= 5);
 const canSeek = computed(() => !!nowPlaying.value && nowPlaying.value.enqueuedById === user.userToken);
-const hasLiked = computed(() => (
-  player.nowPlaying?.likedUserIds?.includes(user.userToken) || player.isSongLiked(music.value)
-));
+const isLocallyLiked = computed(() => player.isSongLiked(music.value));
+const hasLiked = computed(() => isLocallyLiked.value);
 const displayProgressMs = computed(() => isDraggingProgress.value ? dragProgressMs.value : player.localProgress);
 const displayProgressPercent = computed(() => {
   if (!music.value?.duration) return 0;

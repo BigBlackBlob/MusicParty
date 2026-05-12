@@ -229,9 +229,8 @@ const { info, error } = useToast();
 const nowPlaying = computed(() => player.nowPlaying);
 const likeMarkers = computed(() => nowPlaying.value?.likeMarkers || []);
 const canSeek = computed(() => !!nowPlaying.value && nowPlaying.value.enqueuedById === userStore.userToken);
-const hasLiked = computed(() => (
-  nowPlaying.value?.likedUserIds?.includes(userStore.userToken) || player.isSongLiked(nowPlaying.value?.music)
-));
+const isLocallyLiked = computed(() => player.isSongLiked(nowPlaying.value?.music));
+const hasLiked = computed(() => isLocallyLiked.value);
 const isDraggingProgress = ref(false);
 const dragProgressMs = ref(0);
 const activeProgressPointerId = ref(null);
