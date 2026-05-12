@@ -2,7 +2,7 @@ name: Build and Publish Docker Image
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "main", "master", "NRT-Base" ]
     # 当推送 v1.0.0 这样的 tag 时也触发
     tags: [ 'v*.*.*' ]
   workflow_dispatch:
@@ -10,9 +10,7 @@ on:
 env:
   # 默认使用 Docker Hub (docker.io). 如果使用 GitHub Container Registry, 改为 ghcr.io
   REGISTRY: docker.io
-  # 镜像名称，默认为 <github-user>/<repo-name>
-  # 如果您的 Docker Hub 用户名与 GitHub 用户名不同，请在此处直接指定: e.g., my-docker-user/music-party
-  IMAGE_NAME: thornex/music-party
+  IMAGE_NAME: kokinyal/musicparty
 
 jobs:
   build-and-push:
@@ -46,6 +44,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=nrt-base,enable=${{ github.ref == 'refs/heads/NRT-Base' }}
             type=sha,prefix=sha-,format=short
             type=ref,event=branch
             type=semver,pattern={{version}}
