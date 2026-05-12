@@ -463,12 +463,38 @@ public class MusicPlayerService {
         }
     }
 
+    public synchronized void topSongs(List<String> queueIds, String sessionId) {
+        if (queueIds == null || queueIds.isEmpty()) return;
+
+        List<MusicQueueItem> toppedItems = queueManager.topManyGlobal(queueIds);
+        if (!toppedItems.isEmpty()) {
+            log.info("{} songs topped by {}", toppedItems.size(), getUserName(sessionId));
+            broadcastQueueUpdate();
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.TOP, getUserToken(sessionId), "置顶 " + toppedItems.size() + " 首歌曲"));
+
+            if (currentMusic.get() == null) {
+                playNextInQueue();
+            }
+        }
+    }
+
     public void removeSongFromQueue(String queueId, String sessionId) {
         Optional<MusicQueueItem> removedItem = queueManager.remove(queueId);
         if (removedItem.isPresent()) {
             log.info("Removed song from queue by {}", getUserName(sessionId));
             broadcastQueueUpdate();
             eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.REMOVE, getUserToken(sessionId), removedItem.get().music().name()));
+        }
+    }
+
+    public void removeSongsFromQueue(List<String> queueIds, String sessionId) {
+        if (queueIds == null || queueIds.isEmpty()) return;
+
+        List<MusicQueueItem> removedItems = queueManager.removeMany(queueIds);
+        if (!removedItems.isEmpty()) {
+            log.info("{} songs removed from queue by {}", removedItems.size(), getUserName(sessionId));
+            broadcastQueueUpdate();
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.REMOVE, getUserToken(sessionId), "移除 " + removedItems.size() + " 首歌曲"));
         }
     }
 

@@ -121,6 +121,53 @@ public class MusicQueueManager {
         return TopResult.NONE;
     }
 
+    public synchronized List<MusicQueueItem> topManyGlobal(List<String> queueIds) {
+        if (queueIds == null || queueIds.isEmpty()) {
+            return List.of();
+        }
+
+        Set<String> normalizedIds = new LinkedHashSet<>();
+        for (String queueId : queueIds) {
+            if (queueId != null && !queueId.isBlank()) {
+                normalizedIds.add(stripPrefix(queueId));
+            }
+        }
+        if (normalizedIds.isEmpty()) {
+            return List.of();
+        }
+
+        List<MusicQueueItem> snapshot = new ArrayList<>(queue);
+        List<MusicQueueItem> selected = snapshot.stream()
+                .filter(item -> normalizedIds.contains(stripPrefix(item.queueId())))
+                .toList();
+
+        if (selected.isEmpty()) {
+            return List.of();
+        }
+
+        Set<String> selectedBaseIds = selected.stream()
+                .map(item -> stripPrefix(item.queueId()))
+                .collect(java.util.stream.Collectors.toSet());
+
+        List<MusicQueueItem> topped = selected.stream()
+                .map(item -> new MusicQueueItem(
+                        "TOP-" + stripPrefix(item.queueId()),
+                        item.music(),
+                        item.enqueuedBy(),
+                        item.status()
+                ))
+                .toList();
+
+        List<MusicQueueItem> remaining = snapshot.stream()
+                .filter(item -> !selectedBaseIds.contains(stripPrefix(item.queueId())))
+                .toList();
+
+        queue.clear();
+        queue.addAll(topped);
+        queue.addAll(remaining);
+        return topped;
+    }
+
     /**
      * 从队列中移除指定用户的所有点歌
      * @return 移除的数量
@@ -144,6 +191,30 @@ public class MusicQueueManager {
         Optional<MusicQueueItem> itemOpt = findByQueueId(idToFind);
         itemOpt.ifPresent(queue::remove);
         return itemOpt;
+    }
+
+    public synchronized List<MusicQueueItem> removeMany(List<String> queueIds) {
+        if (queueIds == null || queueIds.isEmpty()) {
+            return List.of();
+        }
+
+        Set<String> normalizedIds = new LinkedHashSet<>();
+        for (String queueId : queueIds) {
+            if (queueId != null && !queueId.isBlank()) {
+                normalizedIds.add(stripPrefix(queueId));
+            }
+        }
+        if (normalizedIds.isEmpty()) {
+            return List.of();
+        }
+
+        List<MusicQueueItem> snapshot = new ArrayList<>(queue);
+        List<MusicQueueItem> removed = snapshot.stream()
+                .filter(item -> normalizedIds.contains(stripPrefix(item.queueId())))
+                .toList();
+
+        removed.forEach(queue::remove);
+        return removed;
     }
 
     /**

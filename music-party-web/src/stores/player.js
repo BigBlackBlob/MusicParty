@@ -152,6 +152,14 @@ export const usePlayerStore = defineStore('player', () => {
     const enqueueAlbum = (platform, albumId) => requireAuth() && socketService.send(WS_DEST.ENQUEUE_ALBUM, { platform, albumId });
     const topSong = (queueId) => requireAuth() && socketService.send(WS_DEST.QUEUE_TOP, { queueId });
     const removeSong = (queueId) => requireAuth() && socketService.send(WS_DEST.QUEUE_REMOVE, { queueId });
+    const topSongs = (queueIds) => {
+        if (!Array.isArray(queueIds) || queueIds.length === 0) return;
+        return requireAuth() && socketService.send(WS_DEST.QUEUE_BATCH_TOP, { queueIds });
+    };
+    const removeSongs = (queueIds) => {
+        if (!Array.isArray(queueIds) || queueIds.length === 0) return;
+        return requireAuth() && socketService.send(WS_DEST.QUEUE_BATCH_REMOVE, { queueIds });
+    };
 
     const bindAccount = (platform, accountId) => {
         socketService.send(WS_DEST.USER_BIND, { platform, accountId });
@@ -241,7 +249,7 @@ export const usePlayerStore = defineStore('player', () => {
         connect, tryReconnect, getCurrentProgress, syncState, // 导出 syncState
         playNext, togglePause, toggleShuffle,
         seek,
-        enqueue, enqueuePlaylist, enqueueAlbum, topSong, removeSong,
+        enqueue, enqueuePlaylist, enqueueAlbum, topSong, removeSong, topSongs, removeSongs,
         bindAccount, renameUser, sendChatMessage, sendLike, addLikedSong, removeLikedSong, isSongLiked
     };
 });

@@ -28,11 +28,6 @@
   - Separate queue, chat, member, search, and lyric flows.
   - Avoid compressing desktop sidebars into mobile overlays without a mobile-specific information architecture.
 
-- Add a clearer desktop like/favorite affordance:
-  - Keep the current cover-click reaction behavior for compatibility.
-  - Add an explicit heart/like control near desktop playback controls or track metadata.
-  - Reuse the liked-songs export model once the desktop information architecture is settled.
-
 ## Streaming
 
 - Revisit the HTTP stream broadcaster later:
