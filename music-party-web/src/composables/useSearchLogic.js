@@ -3,11 +3,15 @@ import { useToast } from './useToast';
 import { musicApi } from '../api/music.js';
 import { authApi } from '../api/auth.js';
 import { extractErrorMessage } from '../utils/errors.js';
+import { useUserStore } from '../stores/user.js';
+import { usePlatforms } from './usePlatforms.js';
 
 export function useSearchLogic(emit) {
     const { success, error } = useToast();
+    const userStore = useUserStore();
 
     const platform = ref('netease');
+    const { platforms, supportsAlbumSearch, loadPlatforms } = usePlatforms(platform);
     const keyword = ref('');
     const songs = ref([]);
     const albums = ref([]);
@@ -53,15 +57,15 @@ export function useSearchLogic(emit) {
 
 
         // 3. 普通搜索
-        listMode.value = searchType.value === 'album' && platform.value === 'netease' ? 'albumSearch' : 'search';
+        listMode.value = searchType.value === 'album' && supportsAlbumSearch.value ? 'albumSearch' : 'search';
         loading.value = true;
         songs.value = [];
         albums.value = [];
         try {
-            if (searchType.value === 'album' && platform.value === 'netease') {
+            if (searchType.value === 'album' && supportsAlbumSearch.value) {
                 albums.value = await musicApi.searchNeteaseAlbums(val);
             } else {
-                const data = await musicApi.search(platform.value, val);
+                const data = await musicApi.search(platform.value, val, userStore.userToken);
                 songs.value = data;
                 const missingCoverCount = Array.isArray(data)
                     ? data.filter(song => !song?.coverUrl || !String(song.coverUrl).trim()).length
@@ -80,6 +84,9 @@ export function useSearchLogic(emit) {
 
     return {
         platform,
+        platforms,
+        supportsAlbumSearch,
+        loadPlatforms,
         keyword,
         songs,
         albums,

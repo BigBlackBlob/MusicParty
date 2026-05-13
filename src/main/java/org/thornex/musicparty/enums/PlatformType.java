@@ -5,7 +5,8 @@ import lombok.Getter;
 @Getter
 public enum PlatformType {
     NETEASE("netease"),
-    BILIBILI("bilibili");
+    BILIBILI("bilibili"),
+    NAVIDROME("navidrome");
 
     private final String value;
 

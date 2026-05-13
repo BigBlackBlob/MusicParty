@@ -16,6 +16,7 @@ import org.thornex.musicparty.event.*;
 import org.thornex.musicparty.exception.ApiRequestException;
 import org.thornex.musicparty.service.api.IMusicApiService;
 import org.thornex.musicparty.service.api.NeteaseMusicApiService;
+import org.thornex.musicparty.service.NavidromeAccessService;
 import org.thornex.musicparty.service.stream.LiveStreamService;
 
 import java.time.Duration;
@@ -37,6 +38,7 @@ public class MusicPlayerService {
     private final LocalCacheService localCacheService;
     // ChatService dependency removed to break circular reference
     private final LiveStreamService liveStreamService;
+    private final NavidromeAccessService navidromeAccessService;
 
     // --- Refactored Dependencies ---
     private final MusicQueueManager queueManager;
@@ -79,7 +81,8 @@ public class MusicPlayerService {
                               LiveStreamService liveStreamService,
                               MusicQueueManager queueManager,
                               ApplicationEventPublisher eventPublisher,
-                              AppProperties appProperties) {
+                              AppProperties appProperties,
+                              NavidromeAccessService navidromeAccessService) {
         this.apiServiceMap = apiServices.stream()
                 .collect(Collectors.toMap(IMusicApiService::getPlatformName, Function.identity()));
         this.userService = userService;
@@ -88,6 +91,7 @@ public class MusicPlayerService {
         this.queueManager = queueManager;
         this.eventPublisher = eventPublisher;
         this.appProperties = appProperties;
+        this.navidromeAccessService = navidromeAccessService;
         this.currentLikedUserIds = ConcurrentHashMap.newKeySet();
         this.currentLikeMarkers = new CopyOnWriteArrayList<>();
     }
@@ -325,6 +329,11 @@ public class MusicPlayerService {
         if (userOpt.isEmpty()) return;
         User enqueuer = userOpt.get();
 
+        if ("navidrome".equals(request.platform()) && !navidromeAccessService.canUseBySession(sessionId)) {
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "添加失败: 无权使用 Navidrome"));
+            return;
+        }
+
         // Check user song limit
         long userSongCount = queueManager.getQueueSnapshot().stream()
                 .filter(item -> item.enqueuedBy().token().equals(enqueuer.getToken()))
@@ -391,6 +400,11 @@ public class MusicPlayerService {
         Optional<User> userOpt = userService.getUser(sessionId);
         if (userOpt.isEmpty()) return;
         User enqueuer = userOpt.get();
+
+        if ("navidrome".equals(request.platform())) {
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "Navidrome 暂不支持歌单导入"));
+            return;
+        }
 
         // Check user song limit
         long currentCount = queueManager.getQueueSnapshot().stream()

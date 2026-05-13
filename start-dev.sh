@@ -5,6 +5,21 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FRONTEND_DIR="$ROOT_DIR/music-party-web"
 LOG_DIR="$ROOT_DIR/.dev-logs"
 COOKIE_FILE="$ROOT_DIR/cookies.json"
+ENV_FILE="$ROOT_DIR/.env.local"
+
+for ((i = 1; i <= $#; i++)); do
+  if [[ "${!i}" == "--env-file" ]]; then
+    next=$((i + 1))
+    ENV_FILE="${!next:-}"
+  fi
+done
+
+if [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+fi
 
 START_NETEASE_API=false
 BACKEND_PORT=8080
@@ -13,6 +28,11 @@ FRONTEND_PORT=5173
 NETEASE_API_PORT=3000
 NETEASE_API_URL="${NETEASE_API_URL:-}"
 SKIP_BROWSER=false
+NAVIDROME_ENABLED="${NAVIDROME_ENABLED:-false}"
+NAVIDROME_BASE_URL="${NAVIDROME_BASE_URL:-}"
+NAVIDROME_USERNAME="${NAVIDROME_USERNAME:-}"
+NAVIDROME_PASSWORD="${NAVIDROME_PASSWORD:-}"
+NAVIDROME_ALLOWED_USERS="${NAVIDROME_ALLOWED_USERS:-}"
 STARTED_PIDS=()
 
 info() {
@@ -39,6 +59,13 @@ Options:
   --frontend-port <port>        Frontend port. Default: 5173.
   --api-port <port>             Local Netease API port. Default: 3000.
   --netease-api-url <url>       Use an existing Netease API URL instead of http://127.0.0.1:<api-port>.
+  --env-file <path>             Load local environment file. Default: ./.env.local if present.
+  --navidrome-local             Enable Navidrome at http://127.0.0.1:4533; credentials come from env file or env vars.
+  --navidrome-base-url <url>    Enable Navidrome and use this base URL.
+  --navidrome-username <name>   Navidrome username.
+  --navidrome-password <pass>   Navidrome password.
+  --navidrome-allowed-users <names>
+                                MusicParty usernames allowed to use Navidrome, comma-separated.
   --skip-browser                Do not open frontend URL after startup.
   -h, --help                    Show this help.
 
@@ -75,6 +102,37 @@ while [[ $# -gt 0 ]]; do
     --netease-api-url)
       NETEASE_API_URL="${2:-}"
       [[ -n "$NETEASE_API_URL" ]] || die "--netease-api-url requires a value"
+      shift 2
+      ;;
+    --env-file)
+      ENV_FILE="${2:-}"
+      [[ -n "$ENV_FILE" ]] || die "--env-file requires a value"
+      shift 2
+      ;;
+    --navidrome-local)
+      NAVIDROME_ENABLED=true
+      NAVIDROME_BASE_URL="${NAVIDROME_BASE_URL:-http://127.0.0.1:4533}"
+      shift
+      ;;
+    --navidrome-base-url)
+      NAVIDROME_ENABLED=true
+      NAVIDROME_BASE_URL="${2:-}"
+      [[ -n "$NAVIDROME_BASE_URL" ]] || die "--navidrome-base-url requires a value"
+      shift 2
+      ;;
+    --navidrome-username)
+      NAVIDROME_USERNAME="${2:-}"
+      [[ -n "$NAVIDROME_USERNAME" ]] || die "--navidrome-username requires a value"
+      shift 2
+      ;;
+    --navidrome-password)
+      NAVIDROME_PASSWORD="${2:-}"
+      [[ -n "$NAVIDROME_PASSWORD" ]] || die "--navidrome-password requires a value"
+      shift 2
+      ;;
+    --navidrome-allowed-users)
+      NAVIDROME_ALLOWED_USERS="${2:-}"
+      [[ -n "$NAVIDROME_ALLOWED_USERS" ]] || die "--navidrome-allowed-users requires a value"
       shift 2
       ;;
     --skip-browser)
@@ -132,6 +190,15 @@ else
 fi
 
 mkdir -p "$LOG_DIR"
+mkdir -p "$LOG_DIR/tmp"
+export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-}"
+if [[ "$JAVA_TOOL_OPTIONS" != *"-Djava.io.tmpdir="* ]]; then
+  if [[ -n "$JAVA_TOOL_OPTIONS" ]]; then
+    export JAVA_TOOL_OPTIONS="-Djava.io.tmpdir=$LOG_DIR/tmp $JAVA_TOOL_OPTIONS"
+  else
+    export JAVA_TOOL_OPTIONS="-Djava.io.tmpdir=$LOG_DIR/tmp"
+  fi
+fi
 
 read_json_field() {
   local file="$1"
@@ -186,6 +253,42 @@ wait_for_port() {
   return 1
 }
 
+check_navidrome() {
+  node -e "
+const crypto = require('crypto');
+const baseUrl = process.env.NAVIDROME_BASE_URL;
+const username = process.env.NAVIDROME_USERNAME;
+const password = process.env.NAVIDROME_PASSWORD;
+if (!baseUrl || !username || !password) {
+  console.error('missing Navidrome base URL, username, or password');
+  process.exit(2);
+}
+const salt = crypto.randomBytes(4).toString('hex');
+const token = crypto.createHash('md5').update(password + salt).digest('hex');
+const url = new URL('/rest/ping.view', baseUrl);
+url.searchParams.set('u', username);
+url.searchParams.set('s', salt);
+url.searchParams.set('t', token);
+url.searchParams.set('v', process.env.NAVIDROME_API_VERSION || '1.16.1');
+url.searchParams.set('c', process.env.NAVIDROME_CLIENT || 'musicparty-dev');
+url.searchParams.set('f', 'json');
+fetch(url)
+  .then(async response => {
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    const body = await response.json();
+    const status = body?.['subsonic-response']?.status;
+    if (status !== 'ok') {
+      const error = body?.['subsonic-response']?.error;
+      throw new Error(error?.message || 'Subsonic ping failed');
+    }
+  })
+  .catch(error => {
+    console.error(error.message);
+    process.exit(1);
+  });
+"
+}
+
 cleanup() {
   if [[ ${#STARTED_PIDS[@]} -gt 0 ]]; then
     info "stopping child processes: ${STARTED_PIDS[*]}"
@@ -213,12 +316,23 @@ NETEASE_LOG="$LOG_DIR/netease-api.log"
   echo "netease-api-url: $NETEASE_API_URL"
   echo "backend-port: $BACKEND_PORT"
   echo "frontend-url: http://$FRONTEND_HOST:$FRONTEND_PORT"
+  echo "navidrome-enabled: $NAVIDROME_ENABLED"
+  echo "navidrome-base-url: $NAVIDROME_BASE_URL"
+  echo "navidrome-allowed-users: $NAVIDROME_ALLOWED_USERS"
 } >> "$BACKEND_LOG"
 
 info "root: $ROOT_DIR"
 info "logs: $LOG_DIR"
+if [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then
+  info "env file: $ENV_FILE"
+fi
 info "netease cookie length: ${#NETEASE_COOKIE}"
 info "netease api url: $NETEASE_API_URL"
+info "navidrome enabled: $NAVIDROME_ENABLED"
+if [[ "$NAVIDROME_ENABLED" == true ]]; then
+  info "navidrome base url: $NAVIDROME_BASE_URL"
+  info "navidrome allowed users: $NAVIDROME_ALLOWED_USERS"
+fi
 
 trap cleanup EXIT INT TERM
 
@@ -245,6 +359,21 @@ else
   fi
 fi
 
+if [[ "$NAVIDROME_ENABLED" == true ]]; then
+  info "checking Navidrome connectivity"
+  if ! NAVIDROME_BASE_URL="$NAVIDROME_BASE_URL" \
+      NAVIDROME_USERNAME="$NAVIDROME_USERNAME" \
+      NAVIDROME_PASSWORD="$NAVIDROME_PASSWORD" \
+      NAVIDROME_API_VERSION="${NAVIDROME_API_VERSION:-1.16.1}" \
+      NAVIDROME_CLIENT="${NAVIDROME_CLIENT:-musicparty-dev}" \
+      check_navidrome; then
+    warn "Navidrome precheck failed; backend will still start"
+    warn "check base URL, credentials, and that the Windows Navidrome service is running"
+  else
+    info "Navidrome ping succeeded"
+  fi
+fi
+
 info "starting backend in background"
 (
   cd "$ROOT_DIR"
@@ -252,6 +381,13 @@ info "starting backend in background"
     NETEASE_API_URL="$NETEASE_API_URL" \
     NETEASE_COOKIE="$NETEASE_COOKIE" \
     BILIBILI_SESSDATA="$BILIBILI_SESSDATA" \
+    NAVIDROME_ENABLED="$NAVIDROME_ENABLED" \
+    NAVIDROME_BASE_URL="$NAVIDROME_BASE_URL" \
+    NAVIDROME_USERNAME="$NAVIDROME_USERNAME" \
+    NAVIDROME_PASSWORD="$NAVIDROME_PASSWORD" \
+    NAVIDROME_CLIENT="${NAVIDROME_CLIENT:-musicparty}" \
+    NAVIDROME_API_VERSION="${NAVIDROME_API_VERSION:-1.16.1}" \
+    NAVIDROME_ALLOWED_USERS="$NAVIDROME_ALLOWED_USERS" \
     "${MVN_CMD[@]}" spring-boot:run 2>&1 | tee -a "$BACKEND_LOG"
 ) &
 STARTED_PIDS+=("$!")
@@ -264,7 +400,8 @@ fi
 info "starting frontend in background"
 (
   cd "$FRONTEND_DIR"
-  npm run dev -- --host "$FRONTEND_HOST" --port "$FRONTEND_PORT" --strictPort 2>&1 | tee -a "$FRONTEND_LOG"
+  VITE_BACKEND_URL="http://127.0.0.1:$BACKEND_PORT" \
+    npm run dev -- --host "$FRONTEND_HOST" --port "$FRONTEND_PORT" --strictPort 2>&1 | tee -a "$FRONTEND_LOG"
 ) &
 STARTED_PIDS+=("$!")
 

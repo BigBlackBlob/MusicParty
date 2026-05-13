@@ -1,8 +1,14 @@
 import client from './client';
 
 export const musicApi = {
+    // 获取当前用户可用平台
+    getPlatforms: (token) => client.get('/api/platforms', { params: { token } }),
+
     // 搜索歌曲
-    search: (platform, keyword) => client.get(`/api/search/${platform}/${keyword}`),
+    search: (platform, keyword, token) => client.get(
+        `/api/search/${platform}/${keyword}`,
+        { params: platform === 'navidrome' ? { token } : {} }
+    ),
 
     // 搜索网易云专辑
     searchNeteaseAlbums: (keyword) => client.get('/api/album/search/netease', { params: { keyword } }),
