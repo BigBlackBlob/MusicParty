@@ -24,6 +24,9 @@ export const usePlayerStore = defineStore('player', () => {
         translatedLyric: '',
         romanizedLyric: ''
     });
+    // 歌词缓存，防止重复请求导致的 UI 闪烁和滚动重置
+    const lyricCache = new Map();
+
     const likedSongs = ref([]);
     const connected = ref(false);
     const isLoading = ref(false);
@@ -40,6 +43,7 @@ export const usePlayerStore = defineStore('player', () => {
     const lastPingSentAt = ref(0);
     const lastResyncSentAt = ref(0);
     const localProgress = ref(0);
+    const playbackPositionMs = ref(0);
     const isBuffering = ref(false);
     const isErrorState = ref(false);
     const isSeekingPreview = ref(false);
@@ -57,11 +61,14 @@ export const usePlayerStore = defineStore('player', () => {
     // === 2. Logic ===
     const getCurrentProgress = () => {
         if (!nowPlaying.value) return 0;
-        if (isPaused.value) {
-            return remotePosition.value;
-        } else {
-            return remotePosition.value + ((Date.now() + serverClockOffset.value) - lastSyncTime.value);
-        }
+        if (isPaused.value) return remotePosition.value;
+        return remotePosition.value + ((Date.now() + serverClockOffset.value) - lastSyncTime.value);
+    };
+
+    const setPlaybackPosition = (positionMs) => {
+        const nextPosition = Number.isFinite(positionMs) ? Math.max(0, positionMs) : 0;
+        playbackPositionMs.value = nextPosition;
+        localProgress.value = nextPosition;
     };
 
     const requestPing = (reason = 'manual', force = false) => {
@@ -164,6 +171,7 @@ export const usePlayerStore = defineStore('player', () => {
         } else {
             remotePosition.value = 0;
             lastSyncTime.value = serverTimestamp;
+            setPlaybackPosition(0);
         }
 
         if (state.onlineUsers) {
@@ -299,26 +307,61 @@ export const usePlayerStore = defineStore('player', () => {
     };
 
     // 歌词监听
-    watch(() => nowPlaying.value?.music?.id, async (newId) => {
+    let lyricRequestId = 0;
+    watch(() => `${nowPlaying.value?.music?.platform || ''}:${nowPlaying.value?.music?.id || ''}`, async (newKey, oldKey) => {
+        const requestId = ++lyricRequestId;
+        const music = nowPlaying.value?.music;
+        const newId = music?.id;
+        const platform = music?.platform;
+        // 如果 ID 没变 (仅仅是进度或其它状态同步)，且已有歌词，绝对不要操作歌词状态
+        if (newKey === oldKey && (lyricDetail.value.lyric || lyricCache.has(newKey))) return;
+
+        if (!newId || !platform) {
+            lyricText.value = '';
+            lyricDetail.value = { lyric: '', translatedLyric: '', romanizedLyric: '' };
+            return;
+        }
+
+        // 1. 检查缓存
+        if (lyricCache.has(newKey)) {
+            const cached = lyricCache.get(newKey);
+            lyricDetail.value = cached;
+            lyricText.value = cached.lyric;
+            return;
+        }
+
+        // 2. 只有确实换了新歌且没缓存时，才清空旧状态并请求
         lyricText.value = '';
         lyricDetail.value = { lyric: '', translatedLyric: '', romanizedLyric: '' };
-        if (!newId) return;
+        
         try {
-            const platform = nowPlaying.value.music.platform;
             const data = await musicApi.getLyricDetail(platform, newId);
-            lyricDetail.value = {
+            if (requestId !== lyricRequestId || `${nowPlaying.value?.music?.platform || ''}:${nowPlaying.value?.music?.id || ''}` !== newKey) return;
+            const result = {
                 lyric: data?.lyric || '',
                 translatedLyric: data?.translatedLyric || '',
                 romanizedLyric: data?.romanizedLyric || ''
             };
-            lyricText.value = lyricDetail.value.lyric;
+            
+            // 写入缓存并更新状态
+            lyricCache.set(newKey, result);
+            // 限制缓存大小防止内存泄露 (保留最近10首)
+            if (lyricCache.size > 10) {
+                const firstKey = lyricCache.keys().next().value;
+                lyricCache.delete(firstKey);
+            }
+
+            lyricDetail.value = result;
+            lyricText.value = result.lyric;
         } catch (e) {
             console.error("Lyrics Error", e);
             try {
-                const platform = nowPlaying.value.music.platform;
                 const fallback = await musicApi.getLyric(platform, newId);
-                lyricText.value = fallback || '';
-                lyricDetail.value = { lyric: lyricText.value, translatedLyric: '', romanizedLyric: '' };
+                if (requestId !== lyricRequestId || `${nowPlaying.value?.music?.platform || ''}:${nowPlaying.value?.music?.id || ''}` !== newKey) return;
+                const fallbackResult = { lyric: fallback || '', translatedLyric: '', romanizedLyric: '' };
+                lyricCache.set(newKey, fallbackResult);
+                lyricDetail.value = fallbackResult;
+                lyricText.value = fallbackResult.lyric;
             } catch (fallbackError) {
                 console.error("Lyrics Fallback Error", fallbackError);
             }
@@ -327,8 +370,9 @@ export const usePlayerStore = defineStore('player', () => {
 
     return {
         nowPlaying, queue, isPaused, isShuffle, isPauseLocked, isSkipLocked, isShuffleLocked, connected, isLoading, lyricText, lyricDetail, likedSongs,
-        localProgress, isBuffering, isErrorState, streamListenerCount, lastSyncTime,
+        localProgress, playbackPositionMs, isBuffering, isErrorState, streamListenerCount, lastSyncTime,
         isSeekingPreview, forceNextSyncSeek, setSeekingPreview,
+        setPlaybackPosition,
         connect, tryReconnect, getCurrentProgress, syncState, handleSyncPong, requestPing, requestResync, requestSyncRefresh,
         playNext, togglePause, toggleShuffle,
         seek,

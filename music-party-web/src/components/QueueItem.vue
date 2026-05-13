@@ -1,82 +1,40 @@
 <template>
-  <div
-      class="group relative mb-2 flex h-16 items-center gap-3 rounded-2xl border border-[var(--border-default)] bg-[var(--surface-4)] px-3 py-2 transition-colors hover:bg-[var(--surface-3)]"
-      :class="[
-        selectionMode ? 'cursor-pointer pr-3' : '',
-        selected ? 'border-[var(--border-accent)] bg-[var(--accent-subtle)]' : ''
-      ]"
-      @click="handleRowClick"
+  <TrackListItem
+    :title="item.music.name"
+    :artist="item.music.artists.join(' / ')"
+    :cover-url="item.music.coverUrl"
+    :active="selected"
+    :class="selectionMode ? 'cursor-pointer' : ''"
+    @click="handleRowClick"
   >
-    <div class="flex w-7 flex-shrink-0 flex-col items-center justify-center">
-      <button
-          v-if="selectionMode"
-          type="button"
-          class="flex h-6 w-6 items-center justify-center rounded-full border transition-colors"
-          :class="selected ? 'border-[var(--accent)] bg-[var(--accent)] text-[var(--text-inverse)]' : 'border-[var(--border-default)] bg-[var(--surface-2)] text-transparent'"
-          :aria-label="selected ? '取消选择' : '选择歌曲'"
-          :aria-pressed="selected"
-          @click.stop="emit('toggle-select')"
-      >
-        <Check class="h-3.5 w-3.5" />
-      </button>
-      <div v-if="index !== undefined" class="font-mono text-xs text-[var(--text-tertiary)]">
-        {{ String(index + 1).padStart(2, '0') }}
+    <template #prefix>
+      <div v-if="selectionMode" class="flex h-5 w-5 items-center justify-center rounded-full border transition-colors" :class="selected ? 'border-primary bg-primary text-on-primary' : 'border-border-default bg-surface-raised text-transparent'" @click.stop="emit('toggle-select')">
+        <span class="material-symbols-outlined text-[12px]">check</span>
       </div>
-      <div v-else class="font-mono text-xs text-[var(--text-tertiary)]">#</div>
-      <div v-if="item.queueId.startsWith('TOP-')" class="mt-1 h-2 w-2 rounded-full bg-[var(--accent)]" title="全局置顶"></div>
-      <div v-else-if="item.queueId.startsWith('USERTOP-')" class="mt-1 h-2.5 w-2.5 rounded-full bg-[var(--accent)]/90" title="个人置顶"></div>
-    </div>
+    </template>
 
-    <div class="h-10 w-10 flex-shrink-0 overflow-hidden rounded-xl bg-[var(--surface-3)]">
-      <CoverImage
-          :src="item.music.coverUrl"
-          :alt="`${item.music.name} 封面`"
-          loading="lazy"
-          decoding="async"
-          class="h-full w-full"
-      />
-    </div>
+    <template #meta>
+      <!-- Meta fallback is duration, but maybe we just show status or index -->
+      <span v-if="index !== undefined">{{ String(index + 1).padStart(2, '0') }}</span>
+      <span v-if="item.status === 'DOWNLOADING' || item.status === 'PENDING'" class="text-accent animate-pulse ml-2">Loading</span>
+      <span v-if="item.status === 'FAILED'" class="text-error ml-2">Failed</span>
+    </template>
 
-    <div class="min-w-0 flex-1">
-      <div class="truncate text-sm font-semibold text-[var(--text-primary)]">{{ item.music.name }}</div>
-      <div class="mt-0.5 flex min-w-0 items-center gap-2">
-        <div v-if="!item.status || item.status === 'READY'" class="min-w-0 flex-1 truncate text-xs text-[var(--text-secondary)]">
-          {{ item.music.artists.join(' / ') }}
-        </div>
-
-        <div v-else-if="item.status === 'DOWNLOADING' || item.status === 'PENDING'" class="min-w-0 flex-1 truncate text-xs font-semibold text-[var(--accent)]">
-          <Loader2 class="h-3.5 w-3.5 animate-spin" /> 加载中...
-        </div>
-
-        <div v-else-if="item.status === 'FAILED'" class="min-w-0 flex-1 truncate text-xs font-semibold text-[var(--error)]">
-          下载失败
-        </div>
-
-        <div class="ml-auto max-w-[7rem] flex-shrink-0 truncate rounded-full border border-[var(--border-default)] bg-[var(--surface-3)] px-2 py-0.5 text-[10px] text-[var(--text-tertiary)]">
-          {{ userStore.resolveName(item.enqueuedBy.token, item.enqueuedBy.name) }}
-        </div>
-      </div>
-    </div>
-
-    <div
-        v-if="!userStore.isGuest && !selectionMode"
-        class="pointer-events-none absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded-full border border-[var(--border-default)] bg-[var(--surface-3)]/95 px-1.5 py-1 opacity-0 shadow-lg backdrop-blur-sm transition-opacity group-hover:pointer-events-auto group-hover:opacity-100"
-    >
-      <button @click="player.topSong(item.queueId)" title="Top" class="min-w-[44px] min-h-[44px] rounded-full p-1.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--accent)] active:scale-[0.96]" aria-label="置顶">
-        <ArrowUpToLine class="h-4 w-4" />
+    <template #suffix>
+      <button v-if="!userStore.isGuest && !selectionMode" @click.stop="player.topSong(item.queueId)" class="hover:text-primary transition-colors" title="Play Next">
+        <span class="material-symbols-outlined text-[20px]">keyboard_double_arrow_up</span>
       </button>
-      <button @click="player.removeSong(item.queueId)" title="Remove" class="min-w-[44px] min-h-[44px] rounded-full p-1.5 text-[var(--text-tertiary)] transition-colors hover:text-[var(--error)] active:scale-[0.96]" aria-label="移除">
-        <Trash2 class="h-4 w-4" />
+      <button v-if="!userStore.isGuest && !selectionMode" @click.stop="player.removeSong(item.queueId)" class="text-error hover:text-red-400 transition-colors" title="Remove">
+        <span class="material-symbols-outlined text-[20px]">delete</span>
       </button>
-    </div>
-  </div>
+    </template>
+  </TrackListItem>
 </template>
 
 <script setup>
 import { usePlayerStore } from '../stores/player';
 import { useUserStore } from '../stores/user';
-import { Trash2, ArrowUpToLine, Loader2, Check } from 'lucide-vue-next';
-import CoverImage from './CoverImage.vue';
+import TrackListItem from './ui/TrackListItem.vue';
 
 const props = defineProps({
   item: {

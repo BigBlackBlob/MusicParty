@@ -28,17 +28,20 @@
 
     <MobileLayout v-else-if="hasStarted && isMobileLayout" />
 
-    <MainLayout v-else-if="hasStarted" @search="handleSearchClick" @toggle-mobile-chat="handleMobileChat">
-      <!-- 中间插槽: 视觉控制台 -->
-      <CenterConsole />
+    <MainLayout
+      v-else-if="hasStarted"
+      :is-queue-visible="isQueueVisible"
+      @search="handleSearchClick"
+      @toggle-mobile-chat="handleMobileChat"
+    >
+      <template #default>
+        <!-- Center Stage & Lyrics -->
+        <CenterConsole :is-queue-visible="isQueueVisible" @toggle-queue="handleQueueToggle" />
 
-      <!-- 底部插槽: 播放器 -->
-      <!-- 注意：这里不使用 v-if，而是 v-show，或者因为在 MainLayout 里是 slot，
-           只有 MainLayout 渲染了，它才会渲染。
-           关键是 useAudio 里的逻辑已经修好了，会自动处理播放。
-      -->
-      <template #player>
-        <PlayerControl />
+        <!-- Right Panel: Queue -->
+        <div v-show="isQueueVisible" class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden" id="right-queue-panel">
+          <QueueList />
+        </div>
       </template>
     </MainLayout>
 
@@ -57,11 +60,12 @@ import { usePlayerStore } from './stores/player';
 import { useUserStore } from './stores/user';
 import { useUiStore } from './stores/ui';
 import { useToast } from './composables/useToast';
+import { useShortcuts } from './composables/useShortcuts';
 
 // Components
 import MainLayout from './components/layout/MainLayout.vue';
 import CenterConsole from './components/CenterConsole.vue';
-import PlayerControl from './components/PlayerControl.vue';
+import QueueList from './components/QueueList.vue';
 import AudioEngine from './components/AudioEngine.vue';
 import AuthOverlay from './components/AuthOverlay.vue';
 import SearchModal from './components/SearchModal.vue';
@@ -77,9 +81,18 @@ const userStore = useUserStore();
 const uiStore = useUiStore();
 const hasStarted = ref(false);
 const showSearch = ref(false);
+const isQueueVisible = ref(true);
 const toastInstance = ref(null);
 const chatOverlayRef = ref(null);
 const { register } = useToast();
+
+const { shortcuts } = useShortcuts({
+  onSearch: () => handleSearchClick(),
+  onCloseModals: () => {
+    showSearch.value = false;
+  }
+});
+
 const { width } = useWindowSize();
 const isMobileLayout = computed(() => uiStore.forceMobileLayout || width.value < 768);
 const usePreviewShell = computed(() => uiStore.forceMobileLayout && width.value >= 768);
@@ -150,6 +163,10 @@ const handleMobileChat = () => {
   }
 
   chatOverlayRef.value?.toggleChat?.();
+};
+
+const handleQueueToggle = () => {
+  isQueueVisible.value = !isQueueVisible.value;
 };
 
 onMounted(() => {

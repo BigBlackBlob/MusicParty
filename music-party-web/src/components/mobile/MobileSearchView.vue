@@ -1,71 +1,88 @@
 <template>
-  <section class="flex h-full flex-col overflow-hidden">
-    <div class="border-b border-[var(--border-default)] bg-[var(--surface-1)] px-4 py-3">
-      <label for="mobile-search-input" class="sr-only">搜索音乐</label>
+  <section class="flex h-full flex-col overflow-hidden bg-[var(--surface-0)]">
+    <div class="border-b border-[var(--border-default)] bg-[var(--surface-1)] px-4 py-4 flex flex-col gap-4">
+      <!-- Search Input -->
       <div class="flex gap-2">
-        <input
-          id="mobile-search-input"
-          v-model="keyword"
-          class="min-h-[48px] min-w-0 flex-1 rounded-2xl border border-[var(--border-default)] bg-[var(--surface-2)] px-4 text-base text-[var(--text-primary)] outline-none focus:border-[var(--border-accent)] focus:ring-2 focus:ring-[var(--accent-muted)]"
-          placeholder="搜索歌曲或专辑"
-          @keyup.enter="runSearch"
-        />
-        <button class="min-h-[48px] min-w-[52px] rounded-2xl bg-[var(--accent)] text-[var(--text-inverse)] active:scale-[0.96]" @click="runSearch" aria-label="搜索">
-          <Search class="mx-auto h-5 w-5" />
-        </button>
+        <div class="relative flex-1">
+          <input
+            id="mobile-search-input"
+            v-model="keyword"
+            class="w-full h-11 px-4 bg-[var(--surface-2)] border border-[var(--border-default)] rounded-[var(--radius-sm)] text-base text-[var(--text-primary)] outline-none focus:border-[var(--border-accent)] transition-all placeholder:text-[var(--text-tertiary)]"
+            placeholder="Search music..."
+            @keyup.enter="runSearch"
+          />
+        </div>
+        <IconButton variant="primary" size="lg" radius="sm" @click="runSearch">
+          <Search class="h-5 w-5" />
+        </IconButton>
       </div>
 
-      <div class="mt-3 grid grid-cols-2 gap-2">
+      <!-- Platform Selection -->
+      <div class="flex gap-2 overflow-x-auto no-scrollbar pb-1">
         <button
           v-for="p in platforms"
           :key="p.id"
-          class="min-h-[40px] rounded-xl text-sm font-semibold"
-          :class="platform === p.id ? 'bg-[var(--accent)] text-[var(--text-inverse)]' : 'bg-[var(--surface-2)] text-[var(--text-secondary)]'"
+          class="flex-shrink-0 px-4 py-2 rounded-[var(--radius-xs)] text-[9px] font-black uppercase tracking-widest transition-all border"
+          :class="platform === p.id
+            ? 'bg-[var(--accent)] border-[var(--accent)] text-[var(--text-inverse)]'
+            : 'bg-[var(--surface-3)] border-[var(--border-default)] text-[var(--text-tertiary)]'"
           @click="platform = p.id"
         >
           {{ p.label }}
         </button>
       </div>
 
-      <div v-if="supportsAlbumSearch" class="mt-2 grid grid-cols-2 gap-2 rounded-2xl border border-[var(--border-default)] bg-[var(--surface-2)] p-1">
-        <button class="min-h-[38px] rounded-xl text-sm font-semibold" :class="searchType === 'song' ? 'bg-[var(--surface-4)] text-[var(--text-primary)]' : 'text-[var(--text-tertiary)]'" @click="searchType = 'song'">歌曲</button>
-        <button class="min-h-[38px] rounded-xl text-sm font-semibold" :class="searchType === 'album' ? 'bg-[var(--surface-4)] text-[var(--text-primary)]' : 'text-[var(--text-tertiary)]'" @click="searchType = 'album'">专辑</button>
-      </div>
+      <!-- Search Type -->
+      <SegmentedControl
+        v-if="supportsAlbumSearch"
+        v-model="searchType"
+        :options="[
+          { label: '歌曲', value: 'song' },
+          { label: '专辑', value: 'album' }
+        ]"
+      />
     </div>
 
-    <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-      <div v-if="loading" class="flex justify-center py-10 text-[var(--accent)]">
-        <Loader2 class="h-6 w-6 animate-spin" />
+    <!-- Results -->
+    <div class="flex-1 overflow-y-auto px-3 py-3">
+      <div v-if="loading" class="flex flex-col items-center justify-center py-20 gap-4 opacity-50">
+        <Loader2 class="h-8 w-8 animate-spin text-[var(--accent)]" />
+        <span class="text-[10px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]">Searching Room...</span>
       </div>
 
       <template v-else-if="searchType === 'album' && supportsAlbumSearch">
-        <div v-if="albums.length === 0" class="py-12 text-center text-sm text-[var(--text-tertiary)]">暂无专辑结果</div>
-        <div v-for="album in albums" :key="album.id" class="mb-2 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-3xl border border-[var(--border-default)] bg-[var(--surface-4)] p-3">
-          <div class="h-14 w-14 overflow-hidden rounded-2xl bg-[var(--surface-3)]">
-            <CoverImage :src="album.coverUrl" :alt="`${album.name} 封面`" loading="lazy" class="h-full w-full" />
+        <div v-if="albums.length === 0" class="py-20 text-center text-xs font-bold text-[var(--text-tertiary)] uppercase tracking-widest">No albums found</div>
+        <div v-for="album in albums" :key="album.id" class="flex items-center gap-4 p-3 bg-[var(--surface-1)] border border-[var(--border-default)] rounded-[var(--radius-md)] mb-2 shadow-sm">
+          <div class="h-14 w-14 flex-shrink-0 overflow-hidden rounded-[var(--radius-xs)] bg-[var(--surface-3)]">
+            <CoverImage :src="album.coverUrl" class="h-full w-full object-cover" />
           </div>
-          <div class="min-w-0">
-            <div class="truncate text-sm font-semibold">{{ album.name }}</div>
-            <div class="truncate text-xs text-[var(--text-secondary)]">{{ album.artistName || '未知艺术家' }}</div>
-            <div class="text-[11px] text-[var(--text-tertiary)]">{{ album.trackCount }} 首</div>
+          <div class="min-w-0 flex-1">
+            <div class="text-sm font-bold truncate">{{ album.name }}</div>
+            <div class="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">{{ album.artistName || 'Unknown Artist' }}</div>
+            <div class="text-[9px] text-[var(--text-tertiary)] uppercase font-bold">{{ album.trackCount }} Tracks</div>
           </div>
-          <button class="min-h-[44px] rounded-full bg-[var(--accent)] px-3 text-xs font-semibold text-[var(--text-inverse)]" @click="player.enqueueAlbum('netease', album.id)">导入</button>
+          <IconButton variant="primary" size="sm" @click="player.enqueueAlbum('netease', album.id)">
+            <Plus class="h-4 w-4" />
+          </IconButton>
         </div>
       </template>
 
       <template v-else>
-        <div v-if="songs.length === 0" class="py-12 text-center text-sm text-[var(--text-tertiary)]">暂无歌曲结果</div>
-        <div v-for="song in songs" :key="song.id" class="mb-2 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-3xl border border-[var(--border-default)] bg-[var(--surface-4)] p-3">
-          <div class="h-14 w-14 overflow-hidden rounded-2xl bg-[var(--surface-3)]">
-            <CoverImage :src="song.coverUrl" :alt="`${song.name} 封面`" loading="lazy" class="h-full w-full" />
-          </div>
-          <div class="min-w-0">
-            <div class="truncate text-sm font-semibold">{{ song.name }}</div>
-            <div class="truncate text-xs text-[var(--text-secondary)]">{{ song.artists.join(' / ') }}</div>
-          </div>
-          <button class="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-[var(--surface-3)] text-[var(--accent)]" @click="player.enqueue(platform, song.id)" aria-label="添加到队列">
-            <Plus class="h-5 w-5" />
-          </button>
+        <div v-if="songs.length === 0" class="py-20 text-center text-xs font-bold text-[var(--text-tertiary)] uppercase tracking-widest">No tracks found</div>
+        <div class="space-y-1">
+          <TrackListItem
+            v-for="song in songs"
+            :key="song.id"
+            :title="song.name"
+            :artist="song.artists.join(' / ')"
+            :cover-url="song.coverUrl"
+          >
+            <template #suffix>
+              <IconButton variant="primary" size="sm" @click="player.enqueue(platform, song.id)">
+                <Plus class="h-4 w-4" />
+              </IconButton>
+            </template>
+          </TrackListItem>
         </div>
       </template>
     </div>
@@ -82,6 +99,11 @@ import { usePlatforms } from '../../composables/usePlatforms';
 import { useToast } from '../../composables/useToast';
 import { extractErrorMessage } from '../../utils/errors';
 import CoverImage from '../CoverImage.vue';
+
+// UI Primitives
+import IconButton from '../ui/IconButton.vue';
+import SegmentedControl from '../ui/SegmentedControl.vue';
+import TrackListItem from '../ui/TrackListItem.vue';
 
 const player = usePlayerStore();
 const userStore = useUserStore();
@@ -118,3 +140,8 @@ watch(platform, (next) => {
   if (!supportsAlbumSearch.value) searchType.value = 'song';
 });
 </script>
+
+<style scoped>
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+</style>

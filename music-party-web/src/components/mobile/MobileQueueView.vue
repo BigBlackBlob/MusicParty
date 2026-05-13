@@ -1,150 +1,131 @@
 <template>
-  <section class="flex h-full flex-col overflow-hidden">
-    <div class="border-b border-[var(--border-default)] px-4 py-3">
-      <div class="flex items-start justify-between gap-3">
+  <section class="flex h-full flex-col overflow-hidden bg-[var(--surface-1)]">
+    <div class="px-4 py-4 border-b border-[var(--border-default)] bg-[var(--surface-1)]">
+      <div class="flex items-center justify-between mb-4">
         <div>
-          <h2 class="text-lg font-bold">{{ activeView === 'queue' ? '播放队列' : '喜欢的歌' }}</h2>
-          <p class="text-xs text-[var(--text-tertiary)]">
-            {{ activeView === 'queue' ? `${player.queue.length} 首待播` : `${player.likedSongs.length} 首已保存` }}
+          <h2 class="text-xl font-bold text-[var(--text-primary)]">
+            {{ activeView === 'queue' ? '播放队列' : '喜欢的歌' }}
+          </h2>
+          <p class="text-[11px] font-bold text-[var(--text-tertiary)] uppercase tracking-wider mt-0.5">
+            {{ activeView === 'queue' ? `${player.queue.length} Tracks` : `${player.likedSongs.length} Favorites` }}
           </p>
         </div>
-        <button
-          v-if="activeView === 'liked'"
-          class="export-action"
-          :disabled="player.likedSongs.length === 0"
-          @click="exportLikedSongs"
-          aria-label="导出喜欢的歌"
-        >
+        <IconButton v-if="activeView === 'liked'" variant="primary" @click="exportLikedSongs" :disabled="player.likedSongs.length === 0" title="导出">
           <Download class="h-4 w-4" />
-          导出
-        </button>
-      </div>
-      <div class="mt-3 grid grid-cols-2 rounded-2xl bg-[var(--surface-3)] p-1">
-        <button
-          class="view-toggle"
-          :class="activeView === 'queue' ? 'view-toggle--active' : ''"
-          @click="activeView = 'queue'"
-        >
-          队列
-        </button>
-        <button
-          class="view-toggle"
-          :class="activeView === 'liked' ? 'view-toggle--active' : ''"
-          @click="activeView = 'liked'"
-        >
-          喜欢
-        </button>
+        </IconButton>
       </div>
 
-      <div v-if="activeView === 'queue' && selectionMode" class="mt-3 flex items-center justify-between rounded-2xl bg-[var(--accent-subtle)] px-3 py-2">
-        <span class="text-sm font-bold text-[var(--accent)]">已选 {{ selectedCount }}</span>
-        <span class="text-xs text-[var(--text-tertiary)]">点击条目调整选择</span>
+      <SegmentedControl
+        v-model="activeView"
+        :options="[
+          { label: '队列', value: 'queue' },
+          { label: '喜欢', value: 'liked' }
+        ]"
+      />
+    </div>
+
+    <div class="flex-1 overflow-y-auto px-3 py-3">
+      <!-- Queue View -->
+      <div v-if="activeView === 'queue'">
+        <div v-if="player.queue.length === 0" class="py-20 text-center text-sm text-[var(--text-tertiary)]">
+          队列为空
+        </div>
+
+        <div v-else class="space-y-1">
+          <TrackListItem
+            v-for="(item, index) in player.queue"
+            :key="item.queueId"
+            :title="item.music.name"
+            :artist="item.music.artists.join(' / ')"
+            :cover-url="item.music.coverUrl"
+            :active="isSelected(item.queueId)"
+            @click="handleQueueItemClick(item.queueId)"
+            @pointerdown="startLongPress(item.queueId)"
+            @pointerup="clearLongPress"
+            @pointercancel="clearLongPress"
+          >
+            <template #prefix>
+              <div class="flex w-8 flex-shrink-0 items-center justify-center">
+                <div v-if="selectionMode" class="h-5 w-5 rounded-full border flex items-center justify-center transition-colors"
+                  :class="isSelected(item.queueId) ? 'border-[var(--accent)] bg-[var(--accent)] text-[var(--text-inverse)]' : 'border-[var(--border-default)]'"
+                >
+                  <Check v-if="isSelected(item.queueId)" class="h-3 w-3" />
+                </div>
+                <span v-else class="font-mono text-[10px] text-[var(--text-tertiary)]">{{ index + 1 }}</span>
+              </div>
+            </template>
+            <template #suffix>
+              <div v-if="!user.isGuest && !selectionMode" class="flex items-center gap-1">
+                <IconButton size="sm" @click.stop="player.topSong(item.queueId)"><ArrowUpToLine class="h-3.5 w-3.5" /></IconButton>
+                <IconButton size="sm" @click.stop="player.removeSong(item.queueId)"><Trash2 class="h-3.5 w-3.5 text-[var(--error)]" /></IconButton>
+              </div>
+            </template>
+          </TrackListItem>
+        </div>
+      </div>
+
+      <!-- Liked View -->
+      <div v-else>
+        <div v-if="player.likedSongs.length === 0" class="py-20 text-center text-sm text-[var(--text-tertiary)] px-8 leading-relaxed">
+          还没有喜欢的歌。播放页右侧红心会把当前歌曲保存到这里。
+        </div>
+
+        <div v-else class="space-y-1">
+          <TrackListItem
+            v-for="song in player.likedSongs"
+            :key="song.key"
+            :title="song.name"
+            :artist="song.artists.join(' / ')"
+            :cover-url="song.coverUrl"
+          >
+            <template #suffix>
+              <IconButton size="sm" @click="player.removeLikedSong(song.key)">
+                <Trash2 class="h-3.5 w-3.5 text-[var(--error)]" />
+              </IconButton>
+            </template>
+          </TrackListItem>
+        </div>
       </div>
     </div>
 
-    <div v-if="activeView === 'queue'" class="relative min-h-0 flex-1 overflow-hidden">
-      <div class="h-full overflow-y-auto px-3 py-2">
-      <div v-if="player.queue.length === 0" class="flex h-full items-center justify-center text-sm text-[var(--text-tertiary)]">
-        队列为空
-      </div>
-
-      <div
-        v-for="(item, index) in player.queue"
-        :key="item.queueId"
-        class="mb-1.5 grid min-h-[52px] grid-cols-[1.25rem_2.25rem_minmax(0,1fr)_2.35rem] items-center gap-2 rounded-2xl border bg-[var(--surface-4)] py-1 pl-2.5 pr-1.5"
-        :class="[
-          selectionMode ? 'cursor-pointer' : '',
-          isSelected(item.queueId) ? 'border-[var(--border-accent)] bg-[var(--accent-subtle)]' : 'border-[var(--border-default)]'
-        ]"
-        @click="handleQueueItemClick(item.queueId)"
-        @pointerdown="startLongPress(item.queueId)"
-        @pointerup="clearLongPress"
-        @pointercancel="clearLongPress"
-        @pointerleave="clearLongPress"
-      >
-        <div class="text-center font-mono text-[11px] text-[var(--text-tertiary)]">
-          <span
-            v-if="selectionMode"
-            class="inline-flex h-6 w-6 items-center justify-center rounded-full border"
-            :class="isSelected(item.queueId) ? 'border-[var(--accent)] bg-[var(--accent)] text-[var(--text-inverse)]' : 'border-[var(--border-default)] text-transparent'"
-          >
-            <Check class="h-3.5 w-3.5" />
-          </span>
-          <span v-else>{{ index + 1 }}</span>
-        </div>
-        <div class="h-9 w-9 overflow-hidden rounded-xl bg-[var(--surface-3)]">
-          <CoverImage :src="item.music.coverUrl" :alt="`${item.music.name} 封面`" loading="lazy" class="h-full w-full" />
-        </div>
-        <div class="min-w-0 flex-1">
-          <div class="truncate text-[13px] font-semibold leading-tight text-[var(--text-primary)]">{{ item.music.name }}</div>
-          <div class="truncate text-[11px] leading-tight text-[var(--text-secondary)]">{{ item.music.artists.join(' / ') }}</div>
-          <div class="truncate text-[10px] leading-tight text-[var(--text-tertiary)]">{{ item.enqueuedBy.name }}</div>
-        </div>
-        <div v-if="!user.isGuest && !selectionMode" class="flex flex-col items-center gap-1">
-          <button class="queue-action" @click.stop="player.topSong(item.queueId)" aria-label="置顶"><ArrowUpToLine class="h-4 w-4" /></button>
-          <button class="queue-action text-[var(--error)]" @click.stop="player.removeSong(item.queueId)" aria-label="移除"><Trash2 class="h-4 w-4" /></button>
-        </div>
-      </div>
-      </div>
-
-      <Transition name="selection-rail">
-        <div v-if="selectionMode" class="selection-rail" aria-label="多选操作">
-          <button class="selection-rail-button" @click="selectAll" :disabled="player.queue.length === 0" aria-label="全选">
-            <CheckSquare class="h-5 w-5" />
-          </button>
-          <button class="selection-rail-button" @click="topSelected" :disabled="!hasSelection" aria-label="置顶已选">
-            <ArrowUpToLine class="h-5 w-5" />
-          </button>
-          <button class="selection-rail-button selection-rail-button--danger" @click="requestDeleteSelected" :disabled="!hasSelection" aria-label="删除已选">
-            <Trash2 class="h-5 w-5" />
-          </button>
-          <button class="selection-rail-button selection-rail-button--close" @click="cancelSelection" aria-label="取消选择">
-            <X class="h-6 w-6" />
-          </button>
-        </div>
-      </Transition>
-
-      <Transition name="delete-confirm-float">
-        <div v-if="selectionMode && pendingDelete" class="delete-confirm-float">
-          <div class="text-sm font-semibold text-[var(--text-primary)]">删除已选 {{ selectedCount }} 首？</div>
-          <div class="mt-2 grid grid-cols-2 gap-2">
-            <button class="delete-confirm-action" @click="confirmDeleteSelected">确认删除</button>
-            <button class="delete-cancel-action" @click="pendingDelete = false">取消</button>
+    <!-- Selection ActionBar -->
+    <Transition name="action-bar">
+      <div v-if="selectionMode" class="px-4 py-3 bg-[var(--surface-2)] border-t border-[var(--border-default)] safe-area-bottom">
+        <div v-if="pendingDelete" class="mb-3 p-3 rounded-[var(--radius-md)] bg-[var(--error-soft-bg)]/10 border border-[var(--error)]/20">
+          <div class="text-xs font-bold text-[var(--error-soft-text)] mb-3 text-center">确认从队列中删除 {{ selectedCount }} 首歌曲？</div>
+          <div class="flex gap-2">
+            <button class="flex-1 h-10 bg-[var(--error)] text-[var(--text-inverse)] text-xs font-bold rounded-[var(--radius-sm)]" @click="confirmDeleteSelected">确认删除</button>
+            <button class="flex-1 h-10 bg-[var(--surface-3)] text-[var(--text-primary)] text-xs font-bold rounded-[var(--radius-sm)]" @click="pendingDelete = false">取消</button>
           </div>
         </div>
-      </Transition>
-    </div>
-
-    <div v-else class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-      <div v-if="player.likedSongs.length === 0" class="flex h-full items-center justify-center px-8 text-center text-sm leading-relaxed text-[var(--text-tertiary)]">
-        还没有喜欢的歌。播放页右侧红心会把当前歌曲保存到这里。
-      </div>
-
-      <div v-for="song in player.likedSongs" :key="song.key" class="mb-1.5 grid min-h-[52px] grid-cols-[2.25rem_minmax(0,1fr)_2.35rem] items-center gap-2 rounded-2xl border border-[var(--border-default)] bg-[var(--surface-4)] py-1 pl-2.5 pr-1.5">
-        <div class="h-9 w-9 overflow-hidden rounded-xl bg-[var(--surface-3)]">
-          <CoverImage :src="song.coverUrl" :alt="`${song.name} 封面`" loading="lazy" class="h-full w-full" />
+        <div v-else class="flex items-center justify-between">
+          <div class="flex flex-col">
+            <span class="text-sm font-bold text-[var(--text-primary)]">已选择 {{ selectedCount }}</span>
+            <button class="text-[10px] font-bold text-[var(--accent)] uppercase tracking-wider text-left" @click="selectAll">全选所有</button>
+          </div>
+          <div class="flex items-center gap-2">
+            <IconButton variant="secondary" @click="topSelected" :disabled="!hasSelection" title="置顶"><ArrowUpToLine class="h-5 w-5" /></IconButton>
+            <IconButton variant="secondary" @click="requestDeleteSelected" :disabled="!hasSelection" title="删除"><Trash2 class="h-5 w-5 text-[var(--error)]" /></IconButton>
+            <IconButton variant="primary" @click="cancelSelection" title="关闭"><X class="h-5 w-5" /></IconButton>
+          </div>
         </div>
-        <div class="min-w-0 flex-1">
-          <div class="truncate text-[13px] font-semibold leading-tight text-[var(--text-primary)]">{{ song.name }}</div>
-          <div class="truncate text-[11px] leading-tight text-[var(--text-secondary)]">{{ song.artists.join(' / ') }}</div>
-          <div class="truncate text-[10px] leading-tight text-[var(--text-tertiary)]">{{ song.platform }}</div>
-        </div>
-        <button class="queue-action text-[var(--error)]" @click="player.removeLikedSong(song.key)" aria-label="从喜欢的歌移除">
-          <Trash2 class="h-4 w-4" />
-        </button>
       </div>
-    </div>
+    </Transition>
   </section>
 </template>
 
 <script setup>
 import { computed, ref } from 'vue';
-import { ArrowUpToLine, Check, CheckSquare, Download, Trash2, X } from 'lucide-vue-next';
+import { ArrowUpToLine, Check, Download, Trash2, X } from 'lucide-vue-next';
 import { usePlayerStore } from '../../stores/player';
 import { useUserStore } from '../../stores/user';
 import { createLikedSongsFilename, createLikedSongsText } from '../../utils/likedSongs';
 import { useQueueSelection } from '../../composables/useQueueSelection';
-import CoverImage from '../CoverImage.vue';
+
+// UI Primitives
+import SegmentedControl from '../ui/SegmentedControl.vue';
+import TrackListItem from '../ui/TrackListItem.vue';
+import IconButton from '../ui/IconButton.vue';
 
 const player = usePlayerStore();
 const user = useUserStore();
@@ -231,6 +212,23 @@ const confirmDeleteSelected = () => {
   cancelSelection();
 };
 </script>
+
+<style scoped>
+.action-bar-enter-active,
+.action-bar-leave-active {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.15s ease;
+}
+
+.action-bar-enter-from,
+.action-bar-leave-to {
+  transform: translateY(100%);
+  opacity: 0;
+}
+
+.safe-area-bottom {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 12px);
+}
+</style>
 
 <style scoped>
 .queue-action {

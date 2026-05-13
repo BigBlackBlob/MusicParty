@@ -1,8 +1,5 @@
 <template>
-  <div
-      :style="{ left: x + 'px', top: y + 'px' }"
-      class="fixed z-[var(--z-chat)] flex flex-col items-center touch-none pointer-events-none"
-  >
+  <div class="pointer-events-none fixed bottom-5 right-5 z-[var(--z-chat)] flex flex-col items-end gap-3">
     <Transition
         enter-active-class="transition-all duration-300 ease-out"
         enter-from-class="opacity-0 scale-95"
@@ -14,16 +11,13 @@
     >
       <div
           v-if="chatStore.isOpen"
-          class="pointer-events-auto flex flex-col overflow-hidden border border-[var(--border-default)] bg-[var(--surface-4)] shadow-2xl"
+          class="pointer-events-auto flex flex-col overflow-hidden border border-border-default bg-surface-overlay/95 shadow-lg backdrop-blur-xl"
           :class="dynamicWindowClasses"
           @mousedown.stop
           @touchstart.stop
       >
         <div
-            ref="windowHeaderRef"
-            @pointerdown="startHeaderDrag"
-            class="flex h-11 items-center justify-between border-b border-[var(--border-default)] bg-[var(--surface-1)] px-3 select-none"
-            :class="{ 'cursor-move': !isMobile }"
+            class="flex h-11 select-none items-center justify-between border-b border-border-subtle bg-[var(--surface-control)] px-3"
         >
           <div class="flex items-center gap-2 text-xs font-semibold tracking-[0.12em] text-[var(--text-secondary)]">
             <MessageSquare class="w-3.5 h-3.5 text-[var(--accent)]" />
@@ -50,7 +44,7 @@
         <div
             ref="msgListRef"
             @scroll="handleScroll"
-            class="flex-1 overflow-y-auto bg-[var(--surface-2)] px-3 py-3 space-y-4 chat-scroll"
+            class="chat-scroll flex-1 space-y-4 overflow-y-auto bg-transparent px-3 py-3"
         >
           <div v-if="chatStore.isLoadingMore" class="flex justify-center py-2">
             <Loader2 class="w-4 h-4 animate-spin text-[var(--accent)]/60" />
@@ -72,7 +66,7 @@
                 <span v-if="!isSelf(item.msg)">{{ userStore.resolveName(item.msg.userId, item.msg.userName) }}</span>
               </div>
               <div
-                  class="max-w-[90%] select-text rounded-2xl px-3 py-2 text-xs leading-relaxed shadow-sm"
+                  class="max-w-[90%] select-text rounded-lg px-3 py-2 text-xs leading-relaxed shadow-sm"
                   :class="isSelf(item.msg)
                     ? 'bg-[var(--accent)] text-[var(--text-inverse)] rounded-br-md'
                     : 'border border-[var(--border-default)] bg-[var(--surface-4)] text-[var(--text-primary)] rounded-bl-md'"
@@ -132,15 +126,14 @@
     <div
         id="tutorial-chat"
         v-if="!isMobile || !chatStore.isOpen"
-        ref="dragHandle"
         @pointerdown="handlePointerDown"
         @click="handleClick"
-        class="pointer-events-auto relative flex min-h-[44px] min-w-[44px] cursor-move select-none items-center justify-center overflow-hidden rounded-xl border border-[var(--border-default)] bg-[var(--surface-4)] text-[var(--text-secondary)] shadow-lg transition-all hover:bg-[var(--surface-3)] hover:text-[var(--text-primary)] active:scale-[0.96]"
-        :class="chatStore.unreadCount > 0 ? 'border-[var(--accent)] bg-[var(--accent)] text-[var(--text-inverse)] shadow-[0_0_18px_rgba(211,194,243,0.22)]' : ''"
+        class="pointer-events-auto relative flex h-11 w-11 select-none items-center justify-center overflow-hidden rounded-lg border border-border-default bg-surface-overlay/90 text-[var(--text-secondary)] shadow-lg backdrop-blur-xl transition-colors hover:bg-[var(--surface-3)] hover:text-[var(--text-primary)] active:scale-[0.96]"
+        :class="chatStore.unreadCount > 0 ? 'border-[var(--accent)] text-[var(--accent)]' : ''"
     >
       <span
           v-if="chatStore.unreadCount > 0"
-          class="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_60%)] pointer-events-none"
+          class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,var(--accent-muted),transparent_60%)]"
       ></span>
 
       <span v-if="chatStore.unreadCount > 0" class="relative z-10 font-mono text-sm font-semibold">
@@ -156,64 +149,21 @@ import { ref, watch, nextTick, computed } from 'vue';
 import { useChatStore } from '../stores/chat';
 import { usePlayerStore } from '../stores/player';
 import { useUserStore } from '../stores/user';
-import { useDraggable, useWindowSize, useEventListener, clamp } from '@vueuse/core';
+import { useWindowSize } from '@vueuse/core';
 import { MessageSquare, X, Send, Terminal, Zap, Loader2 } from 'lucide-vue-next';
 import dayjs from 'dayjs';
 
 const chatStore = useChatStore();
 const playerStore = usePlayerStore();
 const userStore = useUserStore();
-const { width: windowWidth, height: windowHeight } = useWindowSize();
+const { width: windowWidth } = useWindowSize();
 
 const isMobile = computed(() => windowWidth.value < 768);
 
 const inputContent = ref('');
 const msgListRef = ref(null);
-const dragHandle = ref(null);
-const windowHeaderRef = ref(null);
-
 const activeTab = ref('CHAT');
 const tabLabel = (tab) => tab === 'CHAT' ? '聊天' : '系统';
-
-const BUTTON_SIZE = 40;
-const MARGIN = 10;
-
-const { x, y } = useDraggable(dragHandle, {
-  initialValue: { x: window.innerWidth - 60, y: window.innerHeight - 150 },
-  preventDefault: true,
-  onMove: (position) => {
-    position.x = clamp(position.x, MARGIN, window.innerWidth - BUTTON_SIZE - MARGIN);
-    position.y = clamp(position.y, MARGIN, window.innerHeight - BUTTON_SIZE - MARGIN);
-  }
-});
-
-const startHeaderDrag = (e) => {
-  if (isMobile.value) return;
-
-  const startMouseX = e.clientX;
-  const startMouseY = e.clientY;
-  const startX = x.value;
-  const startY = y.value;
-
-  const onMouseMove = (me) => {
-    let newX = startX + (me.clientX - startMouseX);
-    let newY = startY + (me.clientY - startMouseY);
-
-    newX = clamp(newX, MARGIN, window.innerWidth - BUTTON_SIZE - MARGIN);
-    newY = clamp(newY, MARGIN, window.innerHeight - BUTTON_SIZE - MARGIN);
-
-    x.value = newX;
-    y.value = newY;
-  };
-
-  const onMouseUp = () => {
-    window.removeEventListener('pointermove', onMouseMove);
-    window.removeEventListener('pointerup', onMouseUp);
-  };
-
-  window.addEventListener('pointermove', onMouseMove);
-  window.addEventListener('pointerup', onMouseUp);
-};
 
 let startDragPos = { x: 0, y: 0 };
 const handlePointerDown = (e) => {
@@ -234,29 +184,12 @@ const handleClick = (e) => {
   chatStore.toggleChat();
 };
 
-const isRightSide = computed(() => x.value > windowWidth.value / 2);
-const isBottomSide = computed(() => y.value > windowHeight.value / 2);
-
-const windowPositionClasses = computed(() => {
-  const classes = [];
-  if (isRightSide.value) classes.push('right-12'); else classes.push('left-12');
-  if (isBottomSide.value) classes.push('bottom-0'); else classes.push('top-0');
-  return classes.join(' ');
-});
-
 const dynamicWindowClasses = computed(() => {
   if (isMobile.value) {
-    return ['fixed', 'inset-0', 'm-auto', 'h-[75vh]', 'w-[90vw]', 'max-h-[600px]', 'max-w-[420px]', 'rounded-2xl'];
+    return ['fixed', 'inset-0', 'm-auto', 'h-[75vh]', 'w-[90vw]', 'max-h-[600px]', 'max-w-[420px]', 'rounded-xl'];
   }
-  return ['absolute', 'h-[50vh]', 'w-[85vw]', 'max-w-[340px]', 'md:h-[480px]', 'rounded-2xl', windowPositionClasses.value];
+  return ['h-[50vh]', 'w-[340px]', 'md:h-[480px]', 'rounded-lg'];
 });
-
-const resetPosition = () => {
-  x.value = clamp(x.value, MARGIN, windowWidth.value - BUTTON_SIZE - MARGIN);
-  y.value = clamp(y.value, MARGIN, windowHeight.value - BUTTON_SIZE - MARGIN);
-};
-useEventListener(window, 'resize', resetPosition);
-resetPosition();
 
 const isSelf = (msg) => msg.userId === userStore.userToken;
 const formatTime = (ts) => dayjs(ts).format('MM-DD HH:mm');
