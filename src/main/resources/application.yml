@@ -25,6 +25,14 @@ app:
       # Bilibili API base URL, it's public
       base-url: "https://api.bilibili.com"
       sessdata: ${BILIBILI_SESSDATA:}
+    navidrome:
+      enabled: ${NAVIDROME_ENABLED:false}
+      base-url: ${NAVIDROME_BASE_URL:http://navidrome:4533}
+      username: ${NAVIDROME_USERNAME:}
+      password: ${NAVIDROME_PASSWORD:}
+      client: ${NAVIDROME_CLIENT:musicparty}
+      api-version: ${NAVIDROME_API_VERSION:1.16.1}
+      allowed-users: ${NAVIDROME_ALLOWED_USERS:}
     queue:
       max-size: ${QUEUE_MAX_SIZE:1000}
       history-size: ${QUEUE_HISTORY_SIZE:50}

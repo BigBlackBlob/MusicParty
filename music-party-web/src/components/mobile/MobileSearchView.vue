@@ -17,17 +17,17 @@
 
       <div class="mt-3 grid grid-cols-2 gap-2">
         <button
-          v-for="p in ['netease', 'bilibili']"
-          :key="p"
+          v-for="p in platforms"
+          :key="p.id"
           class="min-h-[40px] rounded-xl text-sm font-semibold"
-          :class="platform === p ? 'bg-[var(--accent)] text-[var(--text-inverse)]' : 'bg-[var(--surface-2)] text-[var(--text-secondary)]'"
-          @click="platform = p"
+          :class="platform === p.id ? 'bg-[var(--accent)] text-[var(--text-inverse)]' : 'bg-[var(--surface-2)] text-[var(--text-secondary)]'"
+          @click="platform = p.id"
         >
-          {{ p }}
+          {{ p.label }}
         </button>
       </div>
 
-      <div v-if="platform === 'netease'" class="mt-2 grid grid-cols-2 gap-2 rounded-2xl border border-[var(--border-default)] bg-[var(--surface-2)] p-1">
+      <div v-if="supportsAlbumSearch" class="mt-2 grid grid-cols-2 gap-2 rounded-2xl border border-[var(--border-default)] bg-[var(--surface-2)] p-1">
         <button class="min-h-[38px] rounded-xl text-sm font-semibold" :class="searchType === 'song' ? 'bg-[var(--surface-4)] text-[var(--text-primary)]' : 'text-[var(--text-tertiary)]'" @click="searchType = 'song'">歌曲</button>
         <button class="min-h-[38px] rounded-xl text-sm font-semibold" :class="searchType === 'album' ? 'bg-[var(--surface-4)] text-[var(--text-primary)]' : 'text-[var(--text-tertiary)]'" @click="searchType = 'album'">专辑</button>
       </div>
@@ -38,7 +38,7 @@
         <Loader2 class="h-6 w-6 animate-spin" />
       </div>
 
-      <template v-else-if="searchType === 'album' && platform === 'netease'">
+      <template v-else-if="searchType === 'album' && supportsAlbumSearch">
         <div v-if="albums.length === 0" class="py-12 text-center text-sm text-[var(--text-tertiary)]">暂无专辑结果</div>
         <div v-for="album in albums" :key="album.id" class="mb-2 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-3xl border border-[var(--border-default)] bg-[var(--surface-4)] p-3">
           <div class="h-14 w-14 overflow-hidden rounded-2xl bg-[var(--surface-3)]">
@@ -77,10 +77,17 @@ import { ref, watch } from 'vue';
 import { Loader2, Plus, Search } from 'lucide-vue-next';
 import { musicApi } from '../../api/music';
 import { usePlayerStore } from '../../stores/player';
+import { useUserStore } from '../../stores/user';
+import { usePlatforms } from '../../composables/usePlatforms';
+import { useToast } from '../../composables/useToast';
+import { extractErrorMessage } from '../../utils/errors';
 import CoverImage from '../CoverImage.vue';
 
 const player = usePlayerStore();
+const userStore = useUserStore();
+const { error } = useToast();
 const platform = ref('netease');
+const { platforms, supportsAlbumSearch } = usePlatforms(platform);
 const searchType = ref('song');
 const keyword = ref('');
 const songs = ref([]);
@@ -94,17 +101,20 @@ const runSearch = async () => {
   songs.value = [];
   albums.value = [];
   try {
-    if (platform.value === 'netease' && searchType.value === 'album') {
+    if (supportsAlbumSearch.value && searchType.value === 'album') {
       albums.value = await musicApi.searchNeteaseAlbums(q);
     } else {
-      songs.value = await musicApi.search(platform.value, q);
+      songs.value = await musicApi.search(platform.value, q, userStore.userToken);
     }
+  } catch (e) {
+    console.error('Mobile search failed:', e);
+    error(extractErrorMessage(e, '搜索失败'));
   } finally {
     loading.value = false;
   }
 };
 
 watch(platform, (next) => {
-  if (next !== 'netease') searchType.value = 'song';
+  if (!supportsAlbumSearch.value) searchType.value = 'song';
 });
 </script>

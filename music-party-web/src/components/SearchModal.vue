@@ -14,19 +14,19 @@
 
         <div class="mb-3 flex flex-wrap gap-2">
           <button
-              v-for="p in ['netease', 'bilibili']"
-              :key="p"
-              @click="platform = p"
+              v-for="p in platforms"
+              :key="p.id"
+              @click="platform = p.id"
               class="min-h-[44px] rounded-full border px-4 py-2 text-sm font-semibold transition-colors active:scale-[0.96]"
-              :class="platform === p
+              :class="platform === p.id
                 ? 'border-[var(--accent)] bg-[var(--accent)] text-[var(--text-inverse)]'
                 : 'border-[var(--border-default)] bg-[var(--surface-2)] text-[var(--text-secondary)] hover:bg-[var(--surface-3)]'"
           >
-            {{ p }}
+            {{ p.label }}
           </button>
         </div>
 
-        <div v-if="platform === 'netease'" class="mb-4 flex gap-2 rounded-2xl border border-[var(--border-default)] bg-[var(--surface-2)] p-1">
+        <div v-if="supportsAlbumSearch" class="mb-4 flex gap-2 rounded-2xl border border-[var(--border-default)] bg-[var(--surface-2)] p-1">
           <button
               type="button"
               @click="searchType = 'song'"
@@ -271,7 +271,7 @@ const playerStore = usePlayerStore();
 const { width } = useWindowSize();
 const isMobile = computed(() => width.value < 768);
 
-const { platform, keyword, songs, albums, loading, listMode, searchType, isAdminMode, doSearch } = useSearchLogic(emit);
+const { platform, platforms, supportsAlbumSearch, loadPlatforms, keyword, songs, albums, loading, listMode, searchType, isAdminMode, doSearch } = useSearchLogic(emit);
 
 const handleSearchAction = async () => {
   await doSearch();
@@ -357,11 +357,13 @@ watch(listMode, (mode) => {
 });
 
 watch(() => props.isOpen, (val) => {
-  if (val && isMobile.value) mobileView.value = 'playlists';
+  if (!val) return;
+  loadPlatforms();
+  if (isMobile.value) mobileView.value = 'playlists';
 });
 
 watch(platform, (nextPlatform) => {
-  if (nextPlatform !== 'netease') {
+  if (!supportsAlbumSearch.value) {
     searchType.value = 'song';
   }
 });

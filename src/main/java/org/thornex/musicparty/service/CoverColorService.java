@@ -5,6 +5,7 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.CoverColorResponse;
 import reactor.core.publisher.Mono;
 
@@ -12,6 +13,7 @@ import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -20,9 +22,11 @@ import java.util.Map;
 public class CoverColorService {
 
     private final WebClient webClient;
+    private final AppProperties appProperties;
 
-    public CoverColorService(WebClient webClient) {
+    public CoverColorService(WebClient webClient, AppProperties appProperties) {
         this.webClient = webClient;
+        this.appProperties = appProperties;
     }
 
     public Mono<CoverColorResponse> extract(String coverUrl) {
@@ -30,8 +34,10 @@ public class CoverColorService {
             return Mono.empty();
         }
 
+        String resolvedUrl = resolveCoverUrl(coverUrl);
+
         return webClient.get()
-                .uri(coverUrl)
+                .uri(resolvedUrl)
                 .retrieve()
                 .onStatus(HttpStatusCode::isError, response -> response.createException().flatMap(Mono::error))
                 .bodyToMono(byte[].class)
@@ -45,14 +51,26 @@ public class CoverColorService {
                         Color dominant = extractDominantColor(image);
                         return Mono.just(toResponse(dominant));
                     } catch (Exception e) {
-                        log.warn("Failed to extract cover color from {}", coverUrl, e);
+                        log.warn("Failed to extract cover color from {}", resolvedUrl, e);
                         return Mono.empty();
                     }
                 })
                 .onErrorResume(error -> {
-                    log.warn("Failed to fetch cover for color extraction: {}", coverUrl, error);
+                    log.warn("Failed to fetch cover for color extraction: {}", resolvedUrl, error);
                     return Mono.empty();
                 });
+    }
+
+    private String resolveCoverUrl(String coverUrl) {
+        URI uri = URI.create(coverUrl);
+        if (uri.isAbsolute()) {
+            return coverUrl;
+        }
+        String baseUrl = appProperties.getBaseUrl();
+        if (!StringUtils.hasText(baseUrl)) {
+            baseUrl = "http://127.0.0.1:8080";
+        }
+        return baseUrl.replaceAll("/+$", "") + (coverUrl.startsWith("/") ? coverUrl : "/" + coverUrl);
     }
 
     private Color extractDominantColor(BufferedImage image) {

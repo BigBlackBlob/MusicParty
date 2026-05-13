@@ -9,6 +9,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class AppProperties {
     private NeteaseApiConfig  netease;
     private BilibiliApiConfig bilibili;
+    private NavidromeApiConfig navidrome = new NavidromeApiConfig();
     private String adminPassword;
     private String baseUrl;
     private String authorName = "ThorNex";
@@ -72,5 +73,16 @@ public class AppProperties {
     public static class NeteaseApiConfig extends ApiConfig {
         private String cookie;
         private String quality = "exhigh"; // 默认音质：极高 (exhigh)
+    }
+
+    @EqualsAndHashCode(callSuper = true)
+    @Data
+    public static class NavidromeApiConfig extends ApiConfig {
+        private boolean enabled = false;
+        private String username;
+        private String password;
+        private String client = "musicparty";
+        private String apiVersion = "1.16.1";
+        private String allowedUsers = "";
     }
 }

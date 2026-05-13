@@ -218,6 +218,7 @@ import { Download, Shuffle, SkipForward, Play, Pause, Volume2, Volume1, VolumeX,
 import CoverImage from './CoverImage.vue';
 import { useToast } from '../composables/useToast';
 import { useUserStore } from '../stores/user';
+import { withPlaybackToken } from '../utils/audioUrl';
 
 const player = usePlayerStore();
 const ui = useUiStore();
@@ -342,9 +343,10 @@ const handleVolumeMouseUp = () => {
 const downloadCurrentMusic = async () => {
   if (!nowPlaying.value) return;
   const music = nowPlaying.value.music;
+  const url = withPlaybackToken(music, userStore.userToken);
   info(`开始下载：${music.name}...`);
   try {
-    const response = await fetch(music.url);
+    const response = await fetch(url);
     if (!response.ok) throw new Error('Network error');
     const blob = await response.blob();
     const blobUrl = window.URL.createObjectURL(blob);
@@ -356,7 +358,7 @@ const downloadCurrentMusic = async () => {
     document.body.removeChild(link);
     window.URL.revokeObjectURL(blobUrl);
   } catch (e) {
-    window.open(music.url, '_blank');
+    window.open(url, '_blank');
     error('直接下载失败，已尝试在新标签页打开。');
   }
 };
@@ -370,6 +372,10 @@ const likeCurrentMusic = () => {
 const openSourcePage = () => {
   if (!nowPlaying.value) return;
   const { platform, id } = nowPlaying.value.music;
+  if (platform === 'navidrome') {
+    info('Navidrome 没有公开源页面');
+    return;
+  }
   let url = platform === 'netease' ? `https://music.163.com/#/song?id=${id}` : `https://www.bilibili.com/video/${id}`;
   if (url) window.open(url, '_blank');
 };

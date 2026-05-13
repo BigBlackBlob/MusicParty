@@ -46,6 +46,7 @@ const normalizedSrc = computed(() => {
   const trimmed = props.src.trim();
   if (!trimmed) return '';
   if (trimmed.startsWith('//')) return `https:${trimmed}`;
+  if (trimmed.startsWith('/') || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) return trimmed;
   if (trimmed.startsWith('http://')) return trimmed.replace('http://', 'https://');
 
   return /^https?:\/\//.test(trimmed) ? trimmed : '';

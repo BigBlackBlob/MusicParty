@@ -24,10 +24,13 @@
 import { ref, computed, watch, onMounted } from 'vue';
 import { usePlayerStore } from '../stores/player';
 import { useUiStore } from '../stores/ui';
+import { useUserStore } from '../stores/user';
 import { useAudio } from '../composables/useAudio';
+import { withPlaybackToken } from '../utils/audioUrl';
 
 const player = usePlayerStore();
 const ui = useUiStore();
+const user = useUserStore();
 const audioRef = ref(null);
 const silentAudioRef = ref(null);
 
@@ -42,7 +45,7 @@ const {
   checkAutoPlay
 } = useAudio(audioRef, player);
 
-const audioSrc = computed(() => player.nowPlaying?.music.url || '');
+const audioSrc = computed(() => withPlaybackToken(player.nowPlaying?.music, user.userToken));
 
 // 同步状态到 playerStore
 watch(localProgress, (val) => {

@@ -1,20 +1,25 @@
 package org.thornex.musicparty.controller;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.CoverColorResponse;
 import org.thornex.musicparty.dto.Album;
 import org.thornex.musicparty.dto.LyricResponse;
 import org.thornex.musicparty.dto.Music;
+import org.thornex.musicparty.dto.MusicPlatform;
 import org.thornex.musicparty.dto.Playlist;
 import org.thornex.musicparty.dto.UserSearchResult;
 import org.thornex.musicparty.exception.ApiRequestException;
 import org.thornex.musicparty.service.CoverColorService;
+import org.thornex.musicparty.service.NavidromeAccessService;
 import org.thornex.musicparty.service.api.IMusicApiService;
 import org.thornex.musicparty.service.api.NeteaseMusicApiService;
 import reactor.core.publisher.Mono;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -28,12 +33,14 @@ public class ApiController {
     private final Map<String, IMusicApiService> apiServiceMap;
     private final AppProperties appProperties;
     private final CoverColorService coverColorService;
+    private final NavidromeAccessService navidromeAccessService;
 
-    public ApiController(List<IMusicApiService> apiServices, AppProperties appProperties, CoverColorService coverColorService) {
+    public ApiController(List<IMusicApiService> apiServices, AppProperties appProperties, CoverColorService coverColorService, NavidromeAccessService navidromeAccessService) {
         this.apiServiceMap = apiServices.stream()
                 .collect(Collectors.toMap(IMusicApiService::getPlatformName, Function.identity()));
         this.appProperties = appProperties;
         this.coverColorService = coverColorService;
+        this.navidromeAccessService = navidromeAccessService;
     }
 
     @GetMapping("/config")
@@ -42,6 +49,20 @@ public class ApiController {
                 "authorName", appProperties.getAuthorName(),
                 "backWords", appProperties.getBackWords()
         );
+    }
+
+    @GetMapping("/platforms")
+    public List<MusicPlatform> getPlatforms(@RequestParam(required = false) String token) {
+        List<MusicPlatform> platforms = new ArrayList<>();
+        platforms.add(new MusicPlatform("netease", "netease", true));
+        platforms.add(new MusicPlatform("bilibili", "bilibili", false));
+
+        if (navidromeAccessService.isEnabled() && navidromeAccessService.isConfigured()
+                && token != null && navidromeAccessService.canUseByToken(token)) {
+            platforms.add(new MusicPlatform("navidrome", "navidrome", false));
+        }
+
+        return platforms;
     }
 
     private IMusicApiService getService(String platform) {
@@ -53,7 +74,14 @@ public class ApiController {
     }
 
     @GetMapping("/search/{platform}/{keyword}")
-    public Mono<List<Music>> searchMusic(@PathVariable String platform, @PathVariable String keyword) {
+    public Mono<List<Music>> searchMusic(@PathVariable String platform, @PathVariable String keyword,
+                                          @RequestParam(required = false) String token) {
+        if ("navidrome".equals(platform)) {
+            if (token == null || !navidromeAccessService.canUseByToken(token)) {
+                return Mono.error(new ResponseStatusException(HttpStatus.FORBIDDEN));
+            }
+        }
+
         log.info("API search request: platform={}, keywordLength={}", platform, keyword == null ? 0 : keyword.length());
         return getService(platform).searchMusic(keyword)
                 .doOnSuccess(result -> log.info("API search success: platform={}, resultCount={}", platform, result == null ? 0 : result.size()))

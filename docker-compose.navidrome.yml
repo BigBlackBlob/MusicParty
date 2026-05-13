@@ -1,0 +1,72 @@
+services:
+  rclone-navidrome:
+    image: rclone/rclone:latest
+    container_name: music-party-rclone-navidrome
+    restart: always
+    command:
+      - mount
+      - openlist-webdav:
+      - /music
+      - --allow-other
+      - --vfs-cache-mode
+      - full
+      - --vfs-cache-max-size
+      - ${RCLONE_VFS_CACHE_MAX_SIZE:-10G}
+      - --vfs-cache-max-age
+      - ${RCLONE_VFS_CACHE_MAX_AGE:-72h}
+      - --buffer-size
+      - ${RCLONE_BUFFER_SIZE:-64M}
+      - --read-ahead
+      - ${RCLONE_READ_AHEAD:-128M}
+      - --dir-cache-time
+      - ${RCLONE_DIR_CACHE_TIME:-5m}
+      - --poll-interval
+      - ${RCLONE_POLL_INTERVAL:-10s}
+      - --tpslimit
+      - ${RCLONE_TPS_LIMIT:-5}
+      - --log-level
+      - INFO
+    devices:
+      - /dev/fuse:/dev/fuse
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - apparmor:unconfined
+    volumes:
+      - ./music_party/rclone/config:/config/rclone
+      - ./music_party/rclone/cache:/cache
+      - navidrome-music:/music:rshared
+    networks:
+      - music-net
+
+  navidrome:
+    image: deluan/navidrome:latest
+    container_name: music-party-navidrome
+    restart: always
+    depends_on:
+      - rclone-navidrome
+    environment:
+      - ND_MUSICFOLDER=/music
+      - ND_DATAFOLDER=/data
+      - ND_LOGLEVEL=info
+      - ND_SCANSCHEDULE=${ND_SCANSCHEDULE:-0 2 * * *}
+      - ND_TRANSCODINGCACHE=/cache/transcoding
+      - ND_TRANSCODINGCACHESIZE=${ND_TRANSCODINGCACHESIZE:-2G}
+      - ND_ENABLETRANSCODINGCONFIG=false
+    volumes:
+      - navidrome-music:/music:ro
+      - ./music_party/navidrome/data:/data
+      - ./music_party/navidrome/cache:/cache
+    networks:
+      - music-net
+
+  music-party:
+    environment:
+      - NAVIDROME_ENABLED=true
+      - NAVIDROME_BASE_URL=http://navidrome:4533
+      - NAVIDROME_USERNAME=${NAVIDROME_USERNAME}
+      - NAVIDROME_PASSWORD=${NAVIDROME_PASSWORD}
+      - NAVIDROME_ALLOWED_USERS=${NAVIDROME_ALLOWED_USERS}
+
+volumes:
+  navidrome-music:
