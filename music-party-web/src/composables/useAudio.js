@@ -242,14 +242,11 @@ export function useAudio(audioRef, playerStore) {
             // 1. 获取理论上的正确进度
             const targetTime = playerStore.getCurrentProgress();
 
-            // 2. 更新 UI 绑定值 (localProgress)
-            // 如果音频正在播放，直接用 audio.currentTime 作为 UI 显示源，这样最平滑
-            // 如果没在播（缓冲中/暂停），用 targetTime
-            if (audioRef.value && !audioRef.value.paused) {
-                localProgress.value = audioRef.value.currentTime * 1000;
-            } else {
-                localProgress.value = targetTime;
-            }
+            // UI 进度统一使用服务端锚点推导出的房间时钟。
+            // audio.currentTime 只用于纠偏，不再作为歌词/进度条主时间源，避免缓冲、
+            // smooth seek 或媒体元素状态抖动时把歌词时间带回旧位置。
+            localProgress.value = targetTime;
+            playerStore.setPlaybackPosition(targetTime);
 
             // 3. 强行同步逻辑 (纠偏)
             if (audioRef.value && !isBuffering.value && !isErrorState.value && !playerStore.isSeekingPreview) {

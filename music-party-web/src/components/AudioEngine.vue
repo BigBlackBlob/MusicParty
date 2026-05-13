@@ -49,7 +49,7 @@ const audioSrc = computed(() => withPlaybackToken(player.nowPlaying?.music, user
 
 // 同步状态到 playerStore
 watch(localProgress, (val) => {
-  player.localProgress = val;
+  player.setPlaybackPosition(val);
 });
 watch(isBuffering, (val) => {
   player.isBuffering = val;

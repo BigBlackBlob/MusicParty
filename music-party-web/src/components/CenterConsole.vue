@@ -1,289 +1,230 @@
 <template>
-  <div class="apple-stage relative h-full w-full overflow-hidden" :class="stageClass">
-    <div class="pointer-events-none absolute inset-0">
-      <div class="absolute inset-[-12%] scale-110 blur-3xl opacity-60 transition-all duration-700" :style="coverBackgroundStyle"></div>
-      <div class="absolute inset-0 transition-all duration-700" :class="stageOverlayClass"></div>
-    </div>
-
-    <div class="relative z-10 flex h-full w-full items-stretch px-5 pb-8 pt-7 md:px-10 md:pb-10 md:pt-10 xl:px-14">
+  <!-- Floating Album Art & Now Playing Controls -->
+  <section class="flex h-full min-h-0 min-w-0 flex-col items-center justify-center overflow-hidden gap-8">
+    <div class="relative flex min-h-0 w-full flex-1 items-center justify-center group">
       <div
-        class="mx-auto grid w-full max-w-[1500px] flex-1 grid-cols-1 gap-8 lg:gap-12 xl:gap-16"
-        :class="stageLayoutClass"
+        class="relative aspect-square h-full max-w-full shrink-0 overflow-hidden rounded-xl bg-surface-raised album-shadow transition-transform duration-700 hover:scale-[1.02]"
+        :class="player.isPaused ? 'saturate-[0.86]' : 'saturate-100'"
+        @click="handleCoverClick"
       >
-        <section class="flex min-h-0 flex-col items-center justify-center" :class="showLyricsPanel ? 'lg:items-start' : 'lg:items-center'">
-          <div class="relative w-full" :class="showLyricsPanel ? 'max-w-[420px] lg:max-w-[460px]' : 'max-w-[460px] lg:max-w-[560px] xl:max-w-[600px]'">
-            <div class="absolute inset-8 rounded-[2.5rem] blur-3xl transition-all duration-500" :class="coverShadowClass"></div>
-            <div
-              v-if="!showLyricsPanel"
-              class="pointer-events-none absolute inset-x-[18%] -bottom-14 h-24 rounded-full blur-2xl"
-              :class="ambientGlowClass"
-            ></div>
-            <div
-              v-if="!showLyricsPanel"
-              class="pointer-events-none absolute left-1/2 top-1/2 h-[118%] w-[78%] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[72px]"
-              :class="ambientHaloClass"
-            ></div>
+        <CoverImage
+          :src="currentCover"
+          :alt="trackTitle"
+          class="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
+          loading="eager"
+        />
+        <div class="absolute inset-0 bg-gradient-to-b from-[var(--album-gradient-top)] via-transparent to-[var(--album-gradient-bottom)]" />
+        <div class="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-[var(--border-subtle)]" />
 
-            <div
-              id="tutorial-like"
-              class="group relative aspect-square w-full cursor-pointer overflow-hidden rounded-[2.35rem] bg-[var(--surface-4)] transition-all duration-500"
-              :class="[
-                player.isPaused ? 'scale-[0.985] saturate-[0.88]' : 'scale-100',
-                hasLiked ? 'cursor-default' : 'cursor-pointer',
-                showLyricsPanel ? 'shadow-[0_38px_120px_rgba(0,0,0,0.34)]' : 'shadow-[0_48px_160px_rgba(0,0,0,0.42)]'
-              ]"
-              @mouseenter="!isMobile && (isHovering = true)"
-              @mouseleave="!isMobile && (isHovering = false)"
-              @click="handleCoverClick"
-            >
-              <div v-if="player.isLoading" class="absolute inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-black/38 text-white backdrop-blur-xl">
-                <div class="h-12 w-12 animate-spin rounded-full border-[3px] border-white/20 border-t-white"></div>
-                <span class="text-xs font-medium tracking-[0.18em] text-white/75">Loading track</span>
-              </div>
+        <div v-if="player.isLoading || player.isBuffering" class="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-[var(--media-overlay)] text-text-primary backdrop-blur-xl">
+          <div class="h-12 w-12 animate-spin rounded-full border-[3px] border-[var(--surface-control-active)] border-t-[var(--accent)]" />
+          <span class="font-micro text-micro uppercase text-text-secondary">{{ player.isBuffering ? 'Buffering' : 'Loading track' }}</span>
+        </div>
 
-              <CoverImage
-                :src="currentCover"
-                :alt="player.nowPlaying ? `${player.nowPlaying.music.name} 封面` : '歌曲封面'"
-                loading="eager"
-                decoding="async"
-                class="absolute inset-0 h-full w-full object-cover transition-transform duration-700"
-                :class="player.isPaused ? 'scale-[1.01]' : (showLyricsPanel ? 'scale-[1.04] group-hover:scale-[1.07]' : 'scale-[1.06] group-hover:scale-[1.09]')"
-              />
-
-              <div class="absolute inset-0 transition-all duration-500" :class="coverMaskClass"></div>
-              <div class="absolute inset-x-0 top-0 h-28 transition-all duration-500" :class="coverSheenClass"></div>
-
-              <Transition
-                enter-active-class="transition-all duration-300 ease-out"
-                enter-from-class="opacity-0 scale-90"
-                enter-to-class="opacity-100 scale-100"
-                leave-active-class="transition-all duration-300 ease-in"
-                leave-from-class="opacity-100 scale-100"
-                leave-to-class="opacity-0 scale-95"
-              >
-                <div
-                  v-if="isBursting || (!hasLiked && (isHovering || mobileLikePending)) || hasLiked"
-                  class="absolute inset-0 z-40 flex items-center justify-center select-none"
-                  :class="[(isBursting || (!hasLiked && (isHovering || mobileLikePending))) ? 'bg-black/30 backdrop-blur-[2px]' : '']"
-                >
-                  <div class="relative flex flex-col items-center justify-center gap-3">
-                    <div v-if="isBursting" class="absolute -inset-8 rounded-full bg-[var(--accent)]/18 blur-2xl"></div>
-                    <div
-                      class="relative z-10 flex h-20 w-20 items-center justify-center rounded-full bg-black/24 text-white transition-all duration-300"
-                      :class="[
-                        isBursting ? 'scale-125 bg-[var(--accent)]/24 text-[var(--accent)]' :
-                        hasLiked ? 'scale-100 bg-[var(--accent)]/18 text-[var(--accent)]' :
-                        'scale-100 group-hover:scale-110'
-                      ]"
-                    >
-                      <Activity v-if="!hasLiked && (isHovering || mobileLikePending) && !isBursting" class="h-9 w-9" />
-                      <Zap v-else class="h-9 w-9" :class="hasLiked || isBursting ? 'fill-current stroke-none' : ''" />
-                    </div>
-
-                    <div
-                      class="text-[11px] font-medium tracking-[0.22em] uppercase transition-colors duration-300"
-                      :class="isBursting || hasLiked ? 'text-[var(--accent)]' : 'text-white/72'"
-                    >
-                      <span v-if="isBursting">Lovely choice</span>
-                      <span v-else-if="hasLiked">Saved to the room</span>
-                      <span v-else>Tap to react</span>
-                    </div>
-                  </div>
-                </div>
-              </Transition>
-            </div>
-          </div>
-        </section>
-
-        <section v-if="showLyricsPanel" class="flex min-h-0 flex-col justify-center">
-          <AppleLyricsPanel
-            :lyrics="player.lyricDetail.lyric || player.lyricText"
-            :translated-lyrics="player.lyricDetail.translatedLyric"
-            :show-translation="uiStore.showLyricTranslation"
-            :current-time="player.localProgress / 1000"
-            :is-playing="!player.isPaused"
-            :is-dark-mode="isDarkMode"
-            :bg-color="dominantCoverColor"
-            @toggle-translation="uiStore.toggleLyricTranslation"
-          />
-        </section>
+        <div v-if="player.isErrorState" class="absolute inset-x-5 bottom-5 rounded-lg border border-error/30 bg-error-container/70 px-4 py-3 text-on-error-container backdrop-blur-md">
+          <div class="font-section-label text-section-label uppercase">Playback error</div>
+          <div class="mt-1 text-caption text-on-error-container/80">The current track could not be loaded.</div>
+        </div>
       </div>
     </div>
-  </div>
+
+    <div class="glass-panel w-full shrink-0 max-w-[480px] h-[280px] flex flex-col justify-between rounded-xl p-6 pb-5">
+      <div class="text-center">
+        <div class="mb-2 flex items-center justify-center gap-2">
+          <span class="rounded bg-[var(--surface-control)] px-2 py-1 font-micro text-micro uppercase text-text-muted">{{ platformLabel }}</span>
+          <span v-if="requesterName" class="rounded bg-[var(--surface-control)] px-2 py-1 font-micro text-micro uppercase text-text-muted">by {{ requesterName }}</span>
+        </div>
+        <h1 class="truncate font-display text-[28px] font-bold leading-tight tracking-tight text-text-primary">{{ trackTitle }}</h1>
+        <p class="mt-1 truncate font-title text-[15px] text-primary/80">{{ artistLine }}</p>
+      </div>
+
+      <div class="mt-auto flex flex-col gap-4">
+        <div class="flex items-center justify-center gap-4">
+          <span class="w-12 text-right font-micro text-micro tabular-nums text-text-muted">{{ formatDuration(progressMs) }}</span>
+          <button
+            class="h-4 flex-1 cursor-pointer rounded-full py-[6px]"
+            :class="canSeek ? '' : 'cursor-not-allowed opacity-60'"
+            @click="handleSeek"
+            title="Seek"
+          >
+            <span class="block h-1 overflow-hidden rounded-full bg-[var(--progress-track)]">
+              <span class="block h-full rounded-full bg-primary transition-[width] duration-200" :style="{ width: progressPercent }" />
+            </span>
+          </button>
+          <span class="w-12 font-micro text-micro tabular-nums text-text-muted">{{ formatDuration(durationMs) }}</span>
+        </div>
+
+        <div class="flex items-center justify-center gap-6">
+          <button
+            class="flex h-10 w-10 items-center justify-center text-text-muted transition-colors hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-35"
+            :class="player.isShuffle ? 'text-primary' : ''"
+            :disabled="player.isShuffleLocked"
+            @click="player.toggleShuffle"
+            title="Shuffle"
+          >
+            <span class="material-symbols-outlined text-[20px]">shuffle</span>
+          </button>
+          <button class="flex h-12 w-12 cursor-not-allowed items-center justify-center rounded-full text-text-secondary opacity-35" title="Previous unavailable">
+            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">skip_previous</span>
+          </button>
+          <button
+            class="flex h-16 w-16 items-center justify-center rounded-full bg-primary text-on-primary shadow-xl transition-all hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-45"
+            :disabled="player.isPauseLocked && !player.isPaused"
+            @click="player.togglePause"
+            :title="player.isPaused ? 'Play' : 'Pause'"
+          >
+            <span v-if="player.isPaused" class="material-symbols-outlined text-[32px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+            <span v-else class="material-symbols-outlined text-[32px]" style="font-variation-settings: 'FILL' 1;">pause</span>
+          </button>
+          <button
+            class="flex h-12 w-12 items-center justify-center rounded-full text-text-secondary transition-all hover:bg-[var(--surface-control-hover)] hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-35"
+            :disabled="player.isSkipLocked"
+            @click="player.playNext"
+            title="Next"
+          >
+            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">skip_next</span>
+          </button>
+          <button
+            class="flex h-10 w-10 items-center justify-center transition-colors hover:text-primary"
+            :class="isLiked ? 'text-primary' : 'text-text-muted'"
+            @click="handleLike"
+            title="Like"
+          >
+            <span class="material-symbols-outlined text-[20px]" :style="isLiked ? `font-variation-settings: 'FILL' 1;` : ''">favorite</span>
+          </button>
+        </div>
+
+        <div class="flex w-full items-center justify-between border-t border-border-subtle pt-3">
+          <div class="flex min-w-0 items-center gap-3">
+            <span class="material-symbols-outlined text-[20px] text-primary" style="font-variation-settings: 'FILL' 1;">graphic_eq</span>
+            <div class="min-w-0 text-left">
+              <div class="font-micro text-micro uppercase leading-none text-text-muted">Now playing in</div>
+              <div class="mt-1 truncate font-compact text-compact leading-none text-text-primary">Main Lounge • {{ activeUserCount }} Active</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-4">
+            <div class="flex items-center gap-3">
+              <button class="flex items-center text-text-muted transition-colors hover:text-text-primary" @click="toggleMute" title="Volume">
+                <span class="material-symbols-outlined text-[18px]">{{ uiStore.volume === 0 ? 'volume_off' : 'volume_up' }}</span>
+              </button>
+              <input
+                v-model.number="uiStore.volume"
+                class="lounge-volume w-20"
+                min="0"
+                max="1"
+                step="0.01"
+                type="range"
+                aria-label="Volume"
+              />
+            </div>
+            <button class="flex items-center justify-center text-primary transition-colors hover:text-text-primary" title="Queue" @click="emit('toggle-queue')">
+              <span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">queue_music</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Scrolling Lyrics Column -->
+  <section class="flex h-full min-h-0 min-w-0 flex-col justify-center overflow-hidden">
+    <AppleLyricsPanel
+      class="h-full w-full"
+      :class="isQueueVisible ? 'pr-4' : 'pr-8'"
+      :lyrics="player.lyricDetail.lyric || player.lyricText"
+      :translated-lyrics="player.lyricDetail.translatedLyric"
+      :show-translation="uiStore.showLyricTranslation"
+      :current-time-ms="progressMs"
+      :is-playing="!player.isPaused"
+      :is-dark-mode="uiStore.isDarkMode"
+      :bg-color="ambientAccent"
+      :lyrics-loaded="!!currentMusic"
+      @toggle-translation="uiStore.toggleLyricTranslation"
+    />
+  </section>
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, watch } from 'vue';
+import CoverImage from './CoverImage.vue';
+import AppleLyricsPanel from './AppleLyricsPanel.vue';
 import { usePlayerStore } from '../stores/player';
 import { useUserStore } from '../stores/user';
 import { useUiStore } from '../stores/ui';
-import { useWindowSize } from '@vueuse/core';
-import { Activity, Zap } from 'lucide-vue-next';
-import AppleLyricsPanel from './AppleLyricsPanel.vue';
-import CoverImage from './CoverImage.vue';
-import { parseLyrics } from '../utils/parser';
+import { formatDuration } from '../utils/format';
 
-const userStore = useUserStore();
 const player = usePlayerStore();
+const userStore = useUserStore();
 const uiStore = useUiStore();
-const { width } = useWindowSize();
-const isMobile = computed(() => width.value < 768);
-const isDarkMode = computed(() => uiStore.isDarkMode);
-const currentCover = computed(() => player.nowPlaying?.music.coverUrl || '');
-const hasCover = computed(() => !!currentCover.value);
-const dominantCoverColor = computed(() => {
-  if (uiStore.dynamicAccent?.accent) return uiStore.dynamicAccent.accent;
-  if (!hasCover.value) return isDarkMode.value ? 'rgba(28,28,28,1)' : 'rgba(246,246,248,1)';
-  return isDarkMode.value ? 'rgba(24,24,28,1)' : 'rgba(245,244,248,1)';
-});
 
-const isHovering = ref(false);
-const mobileLikePending = ref(false);
-const mobileTimer = ref(null);
-const isBursting = ref(false);
-
-const hasLiked = computed(() => player.nowPlaying?.likedUserIds?.includes(userStore.userToken));
-const MIN_DISPLAY_LYRIC_LINES = 5;
-const parsedLyricLines = computed(() => parseLyrics(player.lyricDetail.lyric || player.lyricText));
-const hasLyrics = computed(() => parsedLyricLines.value.length >= MIN_DISPLAY_LYRIC_LINES);
-const showLyricsPanel = computed(() => !!player.nowPlaying && hasLyrics.value);
-const stageLayoutClass = computed(() => {
-  if (!showLyricsPanel.value) return 'place-items-center';
-  return 'md:grid-cols-[minmax(260px,380px)_minmax(0,1fr)] lg:grid-cols-[minmax(320px,480px)_minmax(0,1fr)]';
-});
-
-const stageClass = computed(() => {
-  if (hasCover.value) return isDarkMode.value ? 'apple-stage-with-cover-dark' : 'apple-stage-with-cover-light';
-  return isDarkMode.value ? 'apple-stage-empty-dark' : 'apple-stage-empty-light';
-});
-
-const stageOverlayClass = computed(() => {
-  if (hasCover.value) {
-    return isDarkMode.value
-      ? 'bg-[linear-gradient(180deg,rgba(6,6,6,0.08),rgba(8,8,8,0.32)_42%,rgba(6,6,6,0.62))]'
-      : 'bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.3)_42%,rgba(244,244,246,0.72))]';
+defineProps({
+  isQueueVisible: {
+    type: Boolean,
+    default: true
   }
-  return isDarkMode.value
-    ? 'bg-[linear-gradient(180deg,rgba(12,12,12,0.06),rgba(12,12,12,0.18)_42%,rgba(12,12,12,0.34))]'
-    : 'bg-[linear-gradient(180deg,rgba(255,255,255,0.18),rgba(255,255,255,0.4)_42%,rgba(248,248,249,0.75))]';
 });
+const emit = defineEmits(['toggle-queue']);
 
-const ambientGlowClass = computed(() => (
-  isDarkMode.value
-    ? 'bg-[radial-gradient(circle,rgba(255,255,255,0.14),rgba(255,255,255,0.02)_48%,transparent_72%)]'
-    : 'bg-[radial-gradient(circle,rgba(124,92,191,0.12),rgba(124,92,191,0.03)_48%,transparent_72%)]'
-));
-
-const ambientHaloClass = computed(() => (
-  isDarkMode.value
-    ? 'bg-[radial-gradient(circle,rgba(211,194,243,0.18),rgba(211,194,243,0.06)_42%,transparent_72%)]'
-    : 'bg-[radial-gradient(circle,rgba(124,92,191,0.11),rgba(124,92,191,0.03)_42%,transparent_72%)]'
-));
-
-const coverShadowClass = computed(() => (isDarkMode.value ? 'bg-black/38' : 'bg-[rgba(124,92,191,0.12)]'));
-
-const coverMaskClass = computed(() => (
-  isDarkMode.value
-    ? 'bg-[linear-gradient(180deg,rgba(0,0,0,0.02),rgba(0,0,0,0.18)_45%,rgba(0,0,0,0.55))]'
-    : 'bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02)_45%,rgba(255,255,255,0.22))]'
-));
-
-const coverSheenClass = computed(() => (
-  isDarkMode.value
-    ? 'bg-[linear-gradient(180deg,rgba(255,255,255,0.16),transparent)]'
-    : 'bg-[linear-gradient(180deg,rgba(255,255,255,0.34),rgba(255,255,255,0.02))]'
-));
-
-const coverBackgroundStyle = computed(() => {
-  if (!currentCover.value) {
-    return {
-      background: isDarkMode.value
-        ? 'radial-gradient(circle at 20% 20%, rgba(211,194,243,0.18), transparent 28%), radial-gradient(circle at 80% 25%, rgba(120,138,255,0.12), transparent 26%), linear-gradient(135deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01))'
-        : 'radial-gradient(circle at 18% 18%, rgba(124,92,191,0.12), transparent 28%), radial-gradient(circle at 82% 22%, rgba(160,178,255,0.12), transparent 26%), linear-gradient(135deg, rgba(255,255,255,0.16), rgba(255,255,255,0.04))'
-    };
-  }
-
-  return {
-    backgroundImage: `${
-      isDarkMode.value
-        ? 'linear-gradient(135deg, rgba(17,17,17,0.25), rgba(17,17,17,0.55))'
-        : 'linear-gradient(135deg, rgba(255,255,255,0.12), rgba(248,248,249,0.4))'
-    }, url("${currentCover.value}")`,
-    backgroundPosition: 'center',
-    backgroundSize: 'cover'
-  };
+const currentMusic = computed(() => player.nowPlaying?.music || null);
+const currentCover = computed(() => currentMusic.value?.coverUrl || '');
+const trackTitle = computed(() => currentMusic.value?.name || 'Waiting for the first track');
+const artistLine = computed(() => {
+  const artists = currentMusic.value?.artists;
+  return Array.isArray(artists) && artists.length ? artists.join(' • ') : 'MusicParty';
 });
+const platformLabel = computed(() => {
+  const platform = currentMusic.value?.platform;
+  if (platform === 'netease') return 'Netease';
+  if (platform === 'bilibili') return 'Bilibili';
+  if (platform === 'navidrome') return 'Navidrome';
+  return 'Room';
+});
+const requesterName = computed(() => {
+  const requester = player.nowPlaying?.requestedBy || player.nowPlaying?.userId || player.nowPlaying?.requesterId;
+  return requester ? userStore.resolveName(requester) : '';
+});
+const durationMs = computed(() => currentMusic.value?.duration || 0);
+const progressMs = computed(() => player.playbackPositionMs || 0);
+const progressPercent = computed(() => {
+  if (!durationMs.value) return '0%';
+  return `${Math.max(0, Math.min(100, (progressMs.value / durationMs.value) * 100))}%`;
+});
+const canSeek = computed(() => !!currentMusic.value && !player.isSeekingPreview && durationMs.value > 0);
+const isLiked = computed(() => player.isSongLiked(currentMusic.value));
+const activeUserCount = computed(() => userStore.onlineUsers.length || 1);
+const ambientAccent = computed(() => uiStore.dynamicAccent?.accent || '#ede1ff');
 
-const EFFECT_COOLDOWN = 1000;
-let lastEffectTime = 0;
+const handleSeek = (event) => {
+  if (!canSeek.value) return;
+  const rect = event.currentTarget.getBoundingClientRect();
+  const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+  player.seek(Math.floor(ratio * durationMs.value));
+};
+
+const handleLike = () => {
+  if (!currentMusic.value) return;
+  player.sendLike();
+};
 
 const handleCoverClick = () => {
-  if (hasLiked.value) return;
-  if (isMobile.value) {
-    if (!mobileLikePending.value) {
-      mobileLikePending.value = true;
-      mobileTimer.value = setTimeout(() => {
-        mobileLikePending.value = false;
-      }, 2000);
-    } else {
-      clearTimeout(mobileTimer.value);
-      mobileLikePending.value = false;
-      confirmLike();
-    }
-  } else {
-    confirmLike();
-  }
+  handleLike();
 };
 
-const confirmLike = () => {
-  player.sendLike();
-  triggerBurst();
-};
-
-const triggerBurst = () => {
-  const now = Date.now();
-  if (now - lastEffectTime < EFFECT_COOLDOWN) return;
-  lastEffectTime = now;
-  isBursting.value = true;
-  setTimeout(() => {
-    isBursting.value = false;
-  }, 500);
+const toggleMute = () => {
+  uiStore.volume = uiStore.volume === 0 ? 0.75 : 0;
 };
 
 watch(currentCover, (coverUrl) => {
   uiStore.updateAccentFromCover(coverUrl);
 }, { immediate: true });
-
 </script>
 
 <style scoped>
-.apple-stage {
-  background: var(--surface-2);
+.lounge-volume {
+  accent-color: #ede1ff;
 }
 
-.apple-stage-empty-dark {
-  background:
-    radial-gradient(circle at top, rgba(255, 255, 255, 0.04), transparent 30%),
-    var(--surface-2);
-}
-
-.apple-stage-empty-light {
-  background:
-    radial-gradient(circle at top, rgba(124, 92, 191, 0.06), transparent 30%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(244, 244, 246, 0.96)),
-    var(--surface-2);
-}
-
-.apple-stage-with-cover-dark {
-  background:
-    radial-gradient(circle at top, rgba(255, 255, 255, 0.05), transparent 28%),
-    var(--surface-2);
-}
-
-.apple-stage-with-cover-light {
-  background:
-    radial-gradient(circle at top, rgba(124, 92, 191, 0.04), transparent 28%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.7), rgba(244, 244, 246, 0.92)),
-    var(--surface-2);
+section {
+  --player-panel-height: 280px;
 }
 </style>

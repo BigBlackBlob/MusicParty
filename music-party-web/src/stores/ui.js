@@ -11,8 +11,11 @@ export const useUiStore = defineStore('ui', () => {
     const isLiteMode = ref(false);
     const forceMobileLayout = ref(localStorage.getItem('mp_force_mobile_layout') === 'true');
     const mobilePreviewWidth = ref(parseInt(localStorage.getItem('mp_mobile_preview_width') || '390', 10));
+    const mainStageScale = ref(Number(localStorage.getItem('mp_main_stage_scale') || 1));
+    const globalZoomLevel = ref(Number(localStorage.getItem('mp_global_zoom_level') || 1));
     const volume = ref(parseFloat(localStorage.getItem(STORAGE_KEYS.VOLUME) || '0.5'));
     const showLyricTranslation = ref(localStorage.getItem(STORAGE_KEYS.LYRIC_TRANSLATION) !== 'false');
+    const lyricAlignment = ref(localStorage.getItem('mp_lyric_alignment') || 'center');
     const autoLiteMode = ref(localStorage.getItem('mp_auto_lite_mode') === 'true'); // 默认 false
 
     const authorName = ref('ThorNex');
@@ -80,8 +83,8 @@ export const useUiStore = defineStore('ui', () => {
             }
         } else {
             let guard = 0;
-            while (relativeLuminance(color) > 0.55 && guard < 6) {
-                color = mix(color, { r: 0, g: 0, b: 0 }, 0.16);
+            while (relativeLuminance(color) > 0.22 && guard < 10) {
+                color = mix(color, { r: 0, g: 0, b: 0 }, 0.20);
                 guard++;
             }
         }
@@ -160,6 +163,26 @@ export const useUiStore = defineStore('ui', () => {
         showLyricTranslation.value = !!val;
     };
 
+    const setLyricAlignment = (val) => {
+        if (['left', 'center', 'right'].includes(val)) {
+            lyricAlignment.value = val;
+        }
+    };
+
+    const setMainStageScale = (val) => {
+        const num = parseFloat(val);
+        if (!isNaN(num)) {
+            mainStageScale.value = Math.max(0.90, Math.min(1.20, num));
+        }
+    };
+
+    const setGlobalZoomLevel = (val) => {
+        const num = parseFloat(val);
+        if (!isNaN(num)) {
+            globalZoomLevel.value = Math.max(1.0, Math.min(1.5, num));
+        }
+    };
+
     const fetchConfig = async () => {
         try {
             const config = await client.get('/api/config');
@@ -230,6 +253,14 @@ export const useUiStore = defineStore('ui', () => {
         localStorage.setItem('mp_mobile_preview_width', newVal.toString());
     });
 
+    watch(mainStageScale, (newVal) => {
+        localStorage.setItem('mp_main_stage_scale', newVal.toString());
+    });
+
+    watch(globalZoomLevel, (newVal) => {
+        localStorage.setItem('mp_global_zoom_level', newVal.toString());
+    });
+
     watch(isDarkMode, (newVal) => {
         localStorage.setItem('theme', newVal ? 'dark' : 'light');
         syncThemeClass(newVal);
@@ -243,6 +274,10 @@ export const useUiStore = defineStore('ui', () => {
         toggleForceMobileLayout,
         mobilePreviewWidth,
         setMobilePreviewWidth,
+        mainStageScale,
+        setMainStageScale,
+        globalZoomLevel,
+        setGlobalZoomLevel,
         isDarkMode,
         toggleDarkMode,
         volume,
@@ -250,6 +285,8 @@ export const useUiStore = defineStore('ui', () => {
         showLyricTranslation,
         toggleLyricTranslation,
         setLyricTranslation,
+        lyricAlignment,
+        setLyricAlignment,
         autoLiteMode,
         authorName,
         backWords,

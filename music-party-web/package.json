@@ -12,9 +12,14 @@
     "@stomp/stompjs": "^7.2.1",
     "@vueuse/core": "^14.1.0",
     "axios": "^1.13.2",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "dayjs": "^1.11.19",
     "lucide-vue-next": "^0.562.0",
     "pinia": "^3.0.4",
+    "reka-ui": "^2.9.7",
+    "tailwind-merge": "^3.6.0",
+    "tailwindcss-animate": "^1.0.7",
     "vue": "^3.5.24"
   },
   "devDependencies": {

@@ -1,6 +1,6 @@
 <template>
   <div class="lyrics-shell relative flex h-full w-full flex-col" :style="shellStyle">
-    <div class="lyrics-shell__inner relative flex h-full w-full flex-col overflow-hidden px-3 py-4 md:px-4 md:py-5">
+    <div class="lyrics-shell__inner relative flex h-full w-full flex-col overflow-hidden px-3 md:px-4">
       <div class="flex h-full w-full flex-1 flex-col items-center justify-center min-h-0">
         <div v-if="showEmptyState" class="lyrics-empty-state flex min-h-0 w-full flex-1 items-center justify-center text-center text-sm font-medium" :class="emptyStateClass">
           暂无歌词
@@ -9,35 +9,40 @@
         <template v-else>
           <div
             ref="scrollRef"
-            class="lyrics-scroll relative w-full flex-1 min-h-0 overflow-y-auto overflow-x-hidden"
+            class="lyrics-scroll relative w-full flex-1 min-h-0 overflow-y-auto overflow-x-hidden [mask-image:linear-gradient(to_bottom,transparent,black_5%,black_95%,transparent)]"
             @wheel.passive="handleUserScrollIntent"
             @touchstart.passive="handleTouchStart"
             @touchmove.passive="handleTouchMove"
             @touchend.passive="handleTouchEnd"
           >
-            <div class="mx-auto flex min-h-full w-full max-w-[min(760px,88vw)] flex-col justify-center py-4 md:py-5">
-              <div class="relative flex flex-col gap-[0.18em] md:gap-[0.24em]" aria-live="off">
+            <div class="mx-auto flex w-full max-w-[min(760px,88vw)] flex-col" :class="containerAlignmentClass">
+              <div class="w-full shrink-0" style="height: 45vh;"></div>
+              <div class="relative flex flex-col gap-[0.18em] md:gap-[0.24em] shrink-0" aria-live="off" :class="containerAlignmentClass">
               <div
                 v-for="(line, index) in displayLines"
                 :key="`${line.time}-${index}`"
                 :ref="(el) => setLineRef(el, index)"
-                class="lyrics-line origin-center transition-[opacity,transform,color,text-shadow] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
-                :class="getLineClass(index)"
+                class="lyrics-line transition-[opacity,transform,color,text-shadow] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
+                :class="[getLineClass(index), alignmentClass]"
                 :style="getLineStyle(index)"
               >
                 <span class="lyrics-line__primary">{{ line.text }}</span>
                 <span v-if="line.translation" class="lyrics-line__translation">{{ line.translation }}</span>
               </div>
               </div>
+              <div class="w-full shrink-0" style="height: 45vh;"></div>
             </div>
           </div>
 
-          <div class="lyrics-controls mt-3 flex items-center gap-2 md:mt-4">
+          <div class="lyrics-controls mt-3 flex items-center justify-center gap-2 md:mt-4 w-full shrink-0">
+            <button class="lyrics-control" type="button" @click="toggleAlignment" aria-label="切换歌词对齐方式">
+              <span class="material-symbols-outlined text-[18px]">{{ alignmentIcon }}</span>
+            </button>
             <button class="lyrics-control" type="button" @click="decreaseFont" aria-label="减小歌词字号">
-              <span class="text-lg leading-none">A−</span>
+              <span class="lyrics-control__label">A−</span>
             </button>
             <button class="lyrics-control" type="button" @click="increaseFont" aria-label="增大歌词字号">
-              <span class="text-lg leading-none">A+</span>
+              <span class="lyrics-control__label">A+</span>
             </button>
             <button
               class="lyrics-control lyrics-control--text"
@@ -59,6 +64,9 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { mergeTranslatedLyrics } from '../utils/parser';
+import { useUiStore } from '../stores/ui';
+
+const uiStore = useUiStore();
 
 const props = defineProps({
   lyrics: {
@@ -76,6 +84,10 @@ const props = defineProps({
   currentTime: {
     type: Number,
     default: 0
+  },
+  currentTimeMs: {
+    type: Number,
+    default: null
   },
   isPlaying: {
     type: Boolean,
@@ -103,6 +115,10 @@ const lines = computed(() => mergeTranslatedLyrics(
 ));
 const displayLines = computed(() => lines.value.length >= MIN_DISPLAY_LYRIC_LINES ? lines.value : []);
 const showEmptyState = computed(() => props.lyricsLoaded && !displayLines.value.length);
+const activeTimeMs = computed(() => {
+  if (Number.isFinite(props.currentTimeMs)) return Math.max(0, props.currentTimeMs);
+  return Math.max(0, props.currentTime * 1000);
+});
 const scrollRef = ref(null);
 const activeIndex = ref(-1);
 const isUserScrolling = ref(false);
@@ -112,6 +128,38 @@ const lastScrolledIndex = ref(-2);
 const touchStartY = ref(0);
 const touchMoved = ref(false);
 const fontScale = ref(-2);
+let syncRequestId = 0;
+let scrollFrameId = null;
+
+const alignmentIcon = computed(() => {
+  switch (uiStore.lyricAlignment) {
+    case 'left': return 'format_align_left';
+    case 'right': return 'format_align_right';
+    default: return 'format_align_center';
+  }
+});
+
+const containerAlignmentClass = computed(() => {
+  switch (uiStore.lyricAlignment) {
+    case 'left': return 'items-start';
+    case 'right': return 'items-end';
+    default: return 'items-center';
+  }
+});
+
+const alignmentClass = computed(() => {
+  switch (uiStore.lyricAlignment) {
+    case 'left': return 'text-left origin-left';
+    case 'right': return 'text-right origin-right';
+    default: return 'text-center origin-center';
+  }
+});
+
+const toggleAlignment = () => {
+  const modes = ['center', 'left', 'right'];
+  const currentIndex = modes.indexOf(uiStore.lyricAlignment);
+  uiStore.setLyricAlignment(modes[(currentIndex + 1) % modes.length]);
+};
 
 const scaledFont = (base) => `${Math.max(10, Math.round(base + fontScale.value * 2)) / 16}rem`;
 
@@ -135,9 +183,9 @@ const emptyStateClass = computed(() => ({
 
 const getActiveIndex = () => {
   if (!displayLines.value.length) return -1;
-  if (props.currentTime < displayLines.value[0].time / 1000) return -1;
+  if (activeTimeMs.value < displayLines.value[0].time) return -1;
 
-  const currentMs = props.currentTime * 1000;
+  const currentMs = activeTimeMs.value;
   let low = 0;
   let high = displayLines.value.length - 1;
   let answer = -1;
@@ -219,27 +267,48 @@ const clearManualTimer = () => {
   }
 };
 
-const syncActiveLine = async () => {
+const syncActiveLine = async (force = false) => {
+  const requestId = ++syncRequestId;
   const nextIndex = getActiveIndex();
   const indexChanged = nextIndex !== activeIndex.value;
-  activeIndex.value = nextIndex;
-  await nextTick();
-  if (!props.isPlaying || isUserScrolling.value) return;
-  if (!indexChanged && lastScrolledIndex.value === nextIndex) return;
-  if (Date.now() - lastAutoScrollAt.value < 120) return;
-  if (activeIndex.value < 0 || !scrollRef.value) return;
+  const targetIndex = nextIndex === -1 ? 0 : nextIndex;
+  const needsRecentering = force || lastScrolledIndex.value !== targetIndex;
 
-  const el = lineRefs[activeIndex.value];
+  if (!indexChanged && !needsRecentering) return;
+
+  activeIndex.value = nextIndex;
+
+  await nextTick();
+
+  if (requestId !== syncRequestId) return;
+  if (!scrollRef.value || displayLines.value.length === 0) return;
+  if (isUserScrolling.value && !force) return;
+
+  if (Date.now() - lastAutoScrollAt.value < 50 && !force) return;
+
+  const el = lineRefs[targetIndex];
   if (!el) return;
 
   const container = scrollRef.value;
-  const targetTop = el.offsetTop - container.clientHeight / 2 + el.offsetHeight / 2;
+  const containerRect = container.getBoundingClientRect();
+  const lineRect = el.getBoundingClientRect();
+  const visualDelta = (lineRect.top + lineRect.height / 2) - (containerRect.top + containerRect.height / 2);
   const maxTop = Math.max(0, container.scrollHeight - container.clientHeight);
-  const nextTop = Math.max(0, Math.min(maxTop, targetTop));
+  const nextTop = Math.max(0, Math.min(maxTop, container.scrollTop + visualDelta));
 
-  lastAutoScrollAt.value = Date.now();
-  lastScrolledIndex.value = nextIndex;
-  container.scrollTo({ top: nextTop, behavior: 'smooth' });
+  if (scrollFrameId !== null) cancelAnimationFrame(scrollFrameId);
+  scrollFrameId = requestAnimationFrame(() => {
+    scrollFrameId = null;
+    if (requestId !== syncRequestId || !scrollRef.value) return;
+
+    lastAutoScrollAt.value = Date.now();
+    lastScrolledIndex.value = targetIndex;
+
+    scrollRef.value.scrollTo({
+      top: nextTop,
+      behavior: (indexChanged && props.isPlaying && !force) ? 'smooth' : 'auto'
+    });
+  });
 };
 
 const handleUserScrollIntent = () => {
@@ -249,7 +318,7 @@ const handleUserScrollIntent = () => {
     if (props.isPlaying) {
       isUserScrolling.value = false;
       manualScrollTimer.value = null;
-      syncActiveLine();
+      syncActiveLine(true);
     }
   }, 3000);
 };
@@ -279,22 +348,27 @@ const decreaseFont = () => {
   fontScale.value = Math.max(-2, fontScale.value - 1);
 };
 
-watch(() => [props.currentTime, props.lyrics, props.translatedLyrics, props.showTranslation, props.isPlaying], () => {
+watch(() => [activeTimeMs.value, props.showTranslation], () => {
   syncActiveLine();
 }, { immediate: true });
 
-watch(displayLines, () => {
-  lineRefs.length = 0;
-  lastScrolledIndex.value = -2;
-  syncActiveLine();
-});
+watch(displayLines, (newLines, oldLines) => {
+  // 只有当行数发生变化或从无到有时，才重置滚动索引和 lineRefs
+  // 防止因为 prop 引用变化但内容不变导致的跳动
+  if (newLines.length !== oldLines?.length || (newLines.length > 0 && oldLines?.length === 0)) {
+    lineRefs.length = 0;
+    lastScrolledIndex.value = -2;
+    syncActiveLine(true);
+  }
+}, { immediate: true });
 
 watch(() => props.isPlaying, (playing) => {
-  if (playing && isUserScrolling.value) syncActiveLine();
+  if (playing && isUserScrolling.value) syncActiveLine(true);
 });
 
 onBeforeUnmount(() => {
   clearManualTimer();
+  if (scrollFrameId !== null) cancelAnimationFrame(scrollFrameId);
 });
 </script>
 
@@ -345,19 +419,35 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.75rem;
-  height: 2.75rem;
-  border-radius: 9999px;
+  width: 2.5rem;
+  height: 2.5rem;
+  min-width: 2.5rem;
+  min-height: 2.5rem;
+  border-radius: var(--radius-md);
   border: 1px solid var(--border-default);
   background: var(--surface-3);
   color: var(--text-primary);
+  font: inherit;
+  line-height: 1;
   transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
   opacity: 0.72;
 }
 
 .lyrics-controls {
   flex-shrink: 0;
+  justify-content: center;
+  min-height: 2.5rem;
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+.lyrics-control__label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1em;
+  font-size: 0.98rem;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .lyrics-control:hover {
@@ -374,10 +464,11 @@ onBeforeUnmount(() => {
 
 .lyrics-control--text {
   width: auto;
-  min-width: 3.25rem;
+  min-width: 3.4rem;
   padding: 0 0.85rem;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   font-weight: 800;
+  line-height: 1;
 }
 
 .lyrics-control--active {
