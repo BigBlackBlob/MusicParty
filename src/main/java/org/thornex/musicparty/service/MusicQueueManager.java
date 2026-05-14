@@ -38,7 +38,7 @@ public class MusicQueueManager {
         }
 
         // 防止重复添加
-        if (isMusicInQueue(music.id())) {
+        if (isMusicInQueue(music)) {
             return null;
         }
 
@@ -395,13 +395,21 @@ public class MusicQueueManager {
         }
     }
 
-    private boolean isMusicInQueue(String musicId) {
-        return queue.stream().anyMatch(item -> item.music().id().equals(musicId));
+    private boolean isMusicInQueue(Music music) {
+        String key = musicKey(music);
+        return queue.stream().anyMatch(item -> musicKey(item.music()).equals(key));
     }
 
     private boolean isReadyOrFailed(Map<String, QueueItemStatus> statusMap, MusicQueueItem item) {
-        QueueItemStatus status = statusMap.getOrDefault(item.music().id(), QueueItemStatus.PENDING);
+        QueueItemStatus status = statusMap.getOrDefault(musicKey(item.music()), QueueItemStatus.PENDING);
         return status == QueueItemStatus.READY || status == QueueItemStatus.FAILED;
+    }
+
+    public static String musicKey(Music music) {
+        if (music == null) {
+            return "";
+        }
+        return String.valueOf(music.platform()) + ":" + String.valueOf(music.id());
     }
 
     /**

@@ -12,6 +12,7 @@ public class AppProperties {
     private NavidromeApiConfig navidrome = new NavidromeApiConfig();
     private String adminPassword;
     private String baseUrl;
+    private String allowedOrigins;
     private String authorName = "ThorNex";
     private String backWords = "THORNEX";
     private String ffmpegPath = "ffmpeg"; // 默认使用环境变量中的 ffmpeg

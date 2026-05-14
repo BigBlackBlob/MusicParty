@@ -19,6 +19,8 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import { ImageOff } from 'lucide-vue-next';
+import { useUserStore } from '../stores/user';
+import { withNavidromeResourceToken } from '../utils/audioUrl';
 
 const props = defineProps({
   src: {
@@ -39,12 +41,15 @@ const props = defineProps({
   }
 });
 const hasError = ref(false);
+const userStore = useUserStore();
 
 const normalizedSrc = computed(() => {
   if (typeof props.src !== 'string') return '';
 
   const trimmed = props.src.trim();
   if (!trimmed) return '';
+  const withToken = withNavidromeResourceToken(trimmed, userStore.userToken);
+  if (withToken !== trimmed) return withToken;
   if (trimmed.startsWith('//')) return `https:${trimmed}`;
   if (trimmed.startsWith('/') || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) return trimmed;
   if (trimmed.startsWith('http://')) return trimmed.replace('http://', 'https://');

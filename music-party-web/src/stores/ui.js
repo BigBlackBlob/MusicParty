@@ -4,6 +4,8 @@ import { ref, watch } from 'vue';
 import { STORAGE_KEYS } from '../constants/keys';
 import client from '../api/client';
 import { musicApi } from '../api/music';
+import { useUserStore } from './user';
+import { withNavidromeResourceToken } from '../utils/audioUrl';
 
 export const useUiStore = defineStore('ui', () => {
     const mobileNowDensityOptions = ['compact', 'standard', 'relaxed'];
@@ -234,14 +236,17 @@ export const useUiStore = defineStore('ui', () => {
             return;
         }
 
-        if (coverUrl === lastAccentCoverUrl.value && dynamicAccent.value) {
+        const userStore = useUserStore();
+        const requestUrl = withNavidromeResourceToken(coverUrl, userStore.userToken);
+
+        if (requestUrl === lastAccentCoverUrl.value && dynamicAccent.value) {
             return;
         }
 
         try {
-            const accentSet = await musicApi.extractCoverColor(coverUrl);
+            const accentSet = await musicApi.extractCoverColor(requestUrl);
             if (accentSet?.accent) {
-                lastAccentCoverUrl.value = coverUrl;
+                lastAccentCoverUrl.value = requestUrl;
                 setDynamicAccent(accentSet);
             } else {
                 clearDynamicAccent();

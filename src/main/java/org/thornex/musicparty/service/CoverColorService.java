@@ -1,7 +1,7 @@
 package org.thornex.musicparty.service;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -13,9 +13,12 @@ import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.net.InetAddress;
 import java.net.URI;
+import java.net.UnknownHostException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 @Slf4j
@@ -23,6 +26,8 @@ public class CoverColorService {
 
     private final WebClient webClient;
     private final AppProperties appProperties;
+    private static final long MAX_COVER_BYTES = 3 * 1024 * 1024;
+    private static final Set<String> ALLOWED_SCHEMES = Set.of("http", "https");
 
     public CoverColorService(WebClient webClient, AppProperties appProperties) {
         this.webClient = webClient;
@@ -34,13 +39,38 @@ public class CoverColorService {
             return Mono.empty();
         }
 
+        boolean trustedLocalPath = isTrustedLocalCoverPath(coverUrl);
         String resolvedUrl = resolveCoverUrl(coverUrl);
+        if (!trustedLocalPath && !isSafeCoverUrl(resolvedUrl)) {
+            log.warn("Rejected unsafe cover URL for color extraction: {}", resolvedUrl);
+            return Mono.empty();
+        }
 
         return webClient.get()
                 .uri(resolvedUrl)
-                .retrieve()
-                .onStatus(HttpStatusCode::isError, response -> response.createException().flatMap(Mono::error))
-                .bodyToMono(byte[].class)
+                .exchangeToMono(response -> {
+                    if (response.statusCode().isError()) {
+                        return response.createException().flatMap(Mono::error);
+                    }
+                    MediaType contentType = response.headers().contentType().orElse(null);
+                    if (contentType == null || !"image".equalsIgnoreCase(contentType.getType())) {
+                        log.warn("Rejected non-image cover response: url={}, contentType={}", resolvedUrl, contentType);
+                        return Mono.empty();
+                    }
+                    long contentLength = response.headers().contentLength().orElse(-1);
+                    if (contentLength > MAX_COVER_BYTES) {
+                        log.warn("Rejected oversized cover response: url={}, bytes={}", resolvedUrl, contentLength);
+                        return Mono.empty();
+                    }
+                    return response.bodyToMono(byte[].class);
+                })
+                .filter(bytes -> {
+                    boolean allowed = bytes.length <= MAX_COVER_BYTES;
+                    if (!allowed) {
+                        log.warn("Rejected oversized cover body: url={}, bytes={}", resolvedUrl, bytes.length);
+                    }
+                    return allowed;
+                })
                 .flatMap(bytes -> {
                     try {
                         BufferedImage image = ImageIO.read(new ByteArrayInputStream(bytes));
@@ -71,6 +101,59 @@ public class CoverColorService {
             baseUrl = "http://127.0.0.1:8080";
         }
         return baseUrl.replaceAll("/+$", "") + (coverUrl.startsWith("/") ? coverUrl : "/" + coverUrl);
+    }
+
+    private boolean isSafeCoverUrl(String url) {
+        try {
+            URI uri = URI.create(url);
+            String scheme = uri.getScheme();
+            String host = uri.getHost();
+            if (!StringUtils.hasText(scheme) || !ALLOWED_SCHEMES.contains(scheme.toLowerCase())) {
+                return false;
+            }
+            if (!StringUtils.hasText(host)) {
+                return false;
+            }
+            if ("localhost".equalsIgnoreCase(host) || host.endsWith(".localhost")) {
+                return false;
+            }
+
+            for (InetAddress address : InetAddress.getAllByName(host)) {
+                if (!isPublicAddress(address)) {
+                    return false;
+                }
+            }
+            return true;
+        } catch (IllegalArgumentException | UnknownHostException e) {
+            return false;
+        }
+    }
+
+    private boolean isTrustedLocalCoverPath(String coverUrl) {
+        if (!StringUtils.hasText(coverUrl)) {
+            return false;
+        }
+        String trimmed = coverUrl.trim();
+        return trimmed.startsWith("/api/navidrome/cover/")
+                || trimmed.startsWith("/media/");
+    }
+
+    private boolean isPublicAddress(InetAddress address) {
+        return !(address.isAnyLocalAddress()
+                || address.isLoopbackAddress()
+                || address.isLinkLocalAddress()
+                || address.isSiteLocalAddress()
+                || address.isMulticastAddress()
+                || isCloudMetadataAddress(address));
+    }
+
+    private boolean isCloudMetadataAddress(InetAddress address) {
+        byte[] bytes = address.getAddress();
+        return bytes.length == 4
+                && (bytes[0] & 0xFF) == 169
+                && (bytes[1] & 0xFF) == 254
+                && (bytes[2] & 0xFF) == 169
+                && (bytes[3] & 0xFF) == 254;
     }
 
     private Color extractDominantColor(BufferedImage image) {
