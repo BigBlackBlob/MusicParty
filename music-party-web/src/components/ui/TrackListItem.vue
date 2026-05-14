@@ -1,7 +1,16 @@
 <template>
   <div
     class="group flex min-h-[60px] items-center gap-3 rounded-md border p-2.5 transition-colors"
-    :class="active ? 'border-border-subtle bg-[var(--surface-control-active)]' : 'border-transparent hover:bg-[var(--surface-control-hover)]'"
+    :class="[
+      active ? 'border-border-subtle bg-[var(--surface-control-active)]' : 'border-transparent hover:bg-[var(--surface-control-hover)]',
+      clickable ? 'cursor-pointer' : '',
+      unplayable ? 'opacity-60' : ''
+    ]"
+    :role="clickable ? 'button' : undefined"
+    :tabindex="clickable ? 0 : undefined"
+    :aria-disabled="unplayable || undefined"
+    @keydown.enter="$emit('activate', $event)"
+    @keydown.space.prevent="$emit('activate', $event)"
   >
     <!-- Prefix Slot (optional) -->
     <div v-if="$slots.prefix" class="flex-shrink-0">
@@ -21,9 +30,9 @@
     </div>
 
     <!-- Meta / Suffix Area -->
-    <div class="flex flex-shrink-0 items-center gap-2">
+    <div class="flex min-w-[44px] flex-shrink-0 items-center justify-end gap-2">
       <!-- Only show meta (like duration) when not hovering (unless active, maybe?) -->
-      <span class="text-text-muted font-micro text-micro transition-opacity" :class="{ 'group-hover:hidden': $slots.suffix && !active }">
+      <span class="text-text-muted font-micro text-micro transition-opacity" :class="{ 'hidden md:inline md:group-hover:hidden': $slots.suffix && !active }">
         <slot name="meta" />
       </span>
 
@@ -33,7 +42,7 @@
       <!-- Suffix (Actions) -->
       <div 
         v-if="$slots.suffix && !active" 
-        class="hidden group-hover:flex items-center text-text-primary gap-2"
+        class="flex items-center text-text-primary gap-2 md:hidden md:group-hover:flex"
       >
         <slot name="suffix" />
       </div>
@@ -56,6 +65,9 @@ defineProps({
   artist: String,
   coverUrl: String,
   active: Boolean,
-  unplayable: Boolean
+  unplayable: Boolean,
+  clickable: Boolean
 });
+
+defineEmits(['activate']);
 </script>

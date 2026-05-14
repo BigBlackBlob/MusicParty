@@ -1,10 +1,12 @@
 import { ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useToast } from './useToast';
 import { musicApi } from '../api/music';
 import { authApi } from '../api/auth';
 
 export function useSearchLogic(emit) {
     const { success, error } = useToast();
+    const { t } = useI18n();
 
     const platform = ref('netease');
     const keyword = ref('');
@@ -21,17 +23,17 @@ export function useSearchLogic(emit) {
         try {
             if (adminCommandType.value === 'RESET') {
                 await authApi.adminReset(pwd);
-                success('SYSTEM PURGED');
+                success(t('search.adminExecuted'));
             } else if (adminCommandType.value === 'PASS') {
                 await authApi.adminSetPassword(pwd, adminCommandArg.value);
-                success('ROOM PASSWORD UPDATED');
+                success(t('search.adminExecuted'));
             } else if (adminCommandType.value === 'OPEN') {
                 await authApi.adminSetPassword(pwd, "");
-                success('ROOM IS NOW PUBLIC');
+                success(t('search.adminExecuted'));
             }
             emit('close');
         } catch (e) {
-            error('ACCESS DENIED');
+            error(t('search.adminFailed'));
         } finally {
             isAdminMode.value = false;
             keyword.value = '';
@@ -79,7 +81,7 @@ export function useSearchLogic(emit) {
             songs.value = data;
         } catch (e) {
             console.error(e);
-            error('Search Failed');
+            error(t('search.failed'));
         } finally {
             loading.value = false;
         }

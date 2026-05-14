@@ -1,132 +1,165 @@
 <template>
-  <section class="flex h-full flex-col overflow-hidden bg-[var(--surface-1)]">
-    <div class="px-4 py-4 border-b border-[var(--border-default)] bg-[var(--surface-1)]">
-      <div class="flex items-center justify-between mb-4">
-        <div>
-          <h2 class="text-xl font-bold text-[var(--text-primary)]">
-            {{ activeView === 'queue' ? '播放队列' : '喜欢的歌' }}
-          </h2>
-          <p class="text-[11px] font-bold text-[var(--text-tertiary)] uppercase tracking-wider mt-0.5">
-            {{ activeView === 'queue' ? `${player.queue.length} Tracks` : `${player.likedSongs.length} Favorites` }}
-          </p>
+  <section class="mobile-work-page">
+    <header class="mobile-work-header">
+      <div class="mobile-work-header__top">
+        <div class="min-w-0">
+          <h2>{{ activeView === 'queue' ? t('queue.title') : t('queue.liked') }}</h2>
+          <p>{{ activeCount }} {{ t('queue.tracks') }}</p>
         </div>
-        <IconButton v-if="activeView === 'liked'" variant="primary" @click="exportLikedSongs" :disabled="player.likedSongs.length === 0" title="导出">
-          <Download class="h-4 w-4" />
-        </IconButton>
+        <div class="flex items-center gap-2">
+          <IconButton
+            v-if="activeView === 'queue' && player.queue.length > 0"
+            :variant="selectionMode ? 'secondary' : 'ghost'"
+            size="sm"
+            @click="toggleSelectionMode"
+            :aria-label="t('queue.selectTracks')"
+          >
+            <X v-if="selectionMode" class="h-4 w-4" />
+            <CheckSquare v-else class="h-4 w-4" />
+          </IconButton>
+          <IconButton
+            v-if="activeView === 'liked'"
+            variant="ghost"
+            size="sm"
+            @click="exportLikedSongs"
+            :disabled="player.likedSongs.length === 0"
+            :aria-label="t('queue.exportLiked')"
+          >
+            <Download class="h-4 w-4" />
+          </IconButton>
+        </div>
       </div>
 
       <SegmentedControl
         v-model="activeView"
         :options="[
-          { label: '队列', value: 'queue' },
-          { label: '喜欢', value: 'liked' }
+          { label: t('nav.queue'), value: 'queue' },
+          { label: t('queue.liked'), value: 'liked' }
         ]"
       />
-    </div>
+    </header>
 
-    <div class="flex-1 overflow-y-auto px-3 py-3">
-      <!-- Queue View -->
-      <div v-if="activeView === 'queue'">
-        <div v-if="player.queue.length === 0" class="py-20 text-center text-sm text-[var(--text-tertiary)]">
-          队列为空
+    <div class="mobile-work-list" :class="{ 'mobile-work-list--with-action-bar': selectionMode }">
+      <template v-if="activeView === 'queue'">
+        <div v-if="player.queue.length === 0" class="mobile-empty">
+          <strong>{{ t('queue.empty') }}</strong>
+          <span>{{ t('queue.emptyDesc') }}</span>
         </div>
 
-        <div v-else class="space-y-1">
-          <TrackListItem
-            v-for="(item, index) in player.queue"
-            :key="item.queueId"
-            :title="item.music.name"
-            :artist="item.music.artists.join(' / ')"
-            :cover-url="item.music.coverUrl"
-            :active="isSelected(item.queueId)"
-            @click="handleQueueItemClick(item.queueId)"
-            @pointerdown="startLongPress(item.queueId)"
-            @pointerup="clearLongPress"
-            @pointercancel="clearLongPress"
-          >
-            <template #prefix>
-              <div class="flex w-8 flex-shrink-0 items-center justify-center">
-                <div v-if="selectionMode" class="h-5 w-5 rounded-full border flex items-center justify-center transition-colors"
-                  :class="isSelected(item.queueId) ? 'border-[var(--accent)] bg-[var(--accent)] text-[var(--text-inverse)]' : 'border-[var(--border-default)]'"
-                >
-                  <Check v-if="isSelected(item.queueId)" class="h-3 w-3" />
-                </div>
-                <span v-else class="font-mono text-[10px] text-[var(--text-tertiary)]">{{ index + 1 }}</span>
-              </div>
-            </template>
-            <template #suffix>
-              <div v-if="!user.isGuest && !selectionMode" class="flex items-center gap-1">
-                <IconButton size="sm" @click.stop="player.topSong(item.queueId)"><ArrowUpToLine class="h-3.5 w-3.5" /></IconButton>
-                <IconButton size="sm" @click.stop="player.removeSong(item.queueId)"><Trash2 class="h-3.5 w-3.5 text-[var(--error)]" /></IconButton>
-              </div>
-            </template>
-          </TrackListItem>
-        </div>
-      </div>
-
-      <!-- Liked View -->
-      <div v-else>
-        <div v-if="player.likedSongs.length === 0" class="py-20 text-center text-sm text-[var(--text-tertiary)] px-8 leading-relaxed">
-          还没有喜欢的歌。播放页右侧红心会把当前歌曲保存到这里。
-        </div>
-
-        <div v-else class="space-y-1">
-          <TrackListItem
-            v-for="song in player.likedSongs"
-            :key="song.key"
-            :title="song.name"
-            :artist="song.artists.join(' / ')"
-            :cover-url="song.coverUrl"
-          >
-            <template #suffix>
-              <IconButton size="sm" @click="player.removeLikedSong(song.key)">
+        <TrackListItem
+          v-for="(item, index) in player.queue"
+          v-else
+          :key="item.queueId || `${item.music?.platform}:${item.music?.id}:${index}`"
+          :title="item.music?.name"
+          :artist="formatArtists(item.music?.artists)"
+          :cover-url="item.music?.coverUrl"
+          :active="isSelected(item.queueId)"
+          clickable
+          @click="handleQueueItemClick(item.queueId)"
+          @activate="handleQueueItemClick(item.queueId)"
+          @pointerdown="startLongPress(item.queueId)"
+          @pointerup="clearLongPress"
+          @pointerleave="clearLongPress"
+          @pointercancel="clearLongPress"
+        >
+          <template #prefix>
+            <div class="mobile-list-prefix">
+              <span v-if="!selectionMode">{{ index + 1 }}</span>
+              <span
+                v-else
+                class="mobile-check"
+                :class="{ 'mobile-check--selected': isSelected(item.queueId) }"
+              >
+                <Check v-if="isSelected(item.queueId)" class="h-3 w-3" />
+              </span>
+            </div>
+          </template>
+          <template #meta>
+            {{ item.status || '' }}
+          </template>
+          <template #suffix>
+            <div v-if="!selectionMode && !user.isGuest" class="flex items-center gap-1">
+              <IconButton size="sm" variant="ghost" @click.stop="player.topSong(item.queueId)" :aria-label="t('queue.top')">
+                <ArrowUpToLine class="h-3.5 w-3.5" />
+              </IconButton>
+              <IconButton size="sm" variant="ghost" @click.stop="player.removeSong(item.queueId)" :aria-label="t('queue.remove')">
                 <Trash2 class="h-3.5 w-3.5 text-[var(--error)]" />
               </IconButton>
-            </template>
-          </TrackListItem>
+            </div>
+          </template>
+        </TrackListItem>
+      </template>
+
+      <template v-else>
+        <div v-if="player.likedSongs.length === 0" class="mobile-empty">
+          <strong>{{ t('queue.noLiked') }}</strong>
+          <span>{{ t('queue.likedDesc') }}</span>
         </div>
-      </div>
+
+        <TrackListItem
+          v-for="song in player.likedSongs"
+          v-else
+          :key="song.key"
+          :title="song.name"
+          :artist="formatArtists(song.artists)"
+          :cover-url="song.coverUrl"
+        >
+          <template #meta>
+            {{ song.platform }}
+          </template>
+          <template #suffix>
+            <IconButton size="sm" variant="ghost" @click="player.removeLikedSong(song.key)" :aria-label="t('queue.remove')">
+              <Trash2 class="h-3.5 w-3.5 text-[var(--error)]" />
+            </IconButton>
+          </template>
+        </TrackListItem>
+      </template>
     </div>
 
-    <!-- Selection ActionBar -->
     <Transition name="action-bar">
-      <div v-if="selectionMode" class="px-4 py-3 bg-[var(--surface-2)] border-t border-[var(--border-default)] safe-area-bottom">
-        <div v-if="pendingDelete" class="mb-3 p-3 rounded-[var(--radius-md)] bg-[var(--error-soft-bg)]/10 border border-[var(--error)]/20">
-          <div class="text-xs font-bold text-[var(--error-soft-text)] mb-3 text-center">确认从队列中删除 {{ selectedCount }} 首歌曲？</div>
-          <div class="flex gap-2">
-            <button class="flex-1 h-10 bg-[var(--error)] text-[var(--text-inverse)] text-xs font-bold rounded-[var(--radius-sm)]" @click="confirmDeleteSelected">确认删除</button>
-            <button class="flex-1 h-10 bg-[var(--surface-3)] text-[var(--text-primary)] text-xs font-bold rounded-[var(--radius-sm)]" @click="pendingDelete = false">取消</button>
+      <div v-if="selectionMode" class="mobile-action-bar">
+        <div v-if="pendingDelete" class="mobile-delete-confirm">
+          <span>{{ t('queue.deleteConfirm', { count: selectedCount }) }}</span>
+          <div class="grid grid-cols-2 gap-2">
+            <button type="button" class="mobile-danger-action" @click="confirmDeleteSelected">{{ t('queue.remove') }}</button>
+            <button type="button" class="mobile-secondary-action" @click="pendingDelete = false">{{ t('queue.cancel') }}</button>
           </div>
         </div>
-        <div v-else class="flex items-center justify-between">
-          <div class="flex flex-col">
-            <span class="text-sm font-bold text-[var(--text-primary)]">已选择 {{ selectedCount }}</span>
-            <button class="text-[10px] font-bold text-[var(--accent)] uppercase tracking-wider text-left" @click="selectAll">全选所有</button>
+        <template v-else>
+          <div class="min-w-0">
+            <strong>{{ t('queue.selected') }} {{ selectedCount }}</strong>
+            <button type="button" @click="selectAll">{{ t('queue.all') }}</button>
           </div>
           <div class="flex items-center gap-2">
-            <IconButton variant="secondary" @click="topSelected" :disabled="!hasSelection" title="置顶"><ArrowUpToLine class="h-5 w-5" /></IconButton>
-            <IconButton variant="secondary" @click="requestDeleteSelected" :disabled="!hasSelection" title="删除"><Trash2 class="h-5 w-5 text-[var(--error)]" /></IconButton>
-            <IconButton variant="primary" @click="cancelSelection" title="关闭"><X class="h-5 w-5" /></IconButton>
+            <IconButton variant="secondary" @click="topSelected" :disabled="!hasSelection" :aria-label="t('queue.top')">
+              <ArrowUpToLine class="h-5 w-5" />
+            </IconButton>
+            <IconButton variant="secondary" @click="requestDeleteSelected" :disabled="!hasSelection" :aria-label="t('queue.removeAll')">
+              <Trash2 class="h-5 w-5 text-[var(--error)]" />
+            </IconButton>
+            <IconButton variant="primary" @click="cancelSelection" :aria-label="t('queue.cancel')">
+              <X class="h-5 w-5" />
+            </IconButton>
           </div>
-        </div>
+        </template>
       </div>
     </Transition>
   </section>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue';
-import { ArrowUpToLine, Check, Download, Trash2, X } from 'lucide-vue-next';
+import { computed, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
+import { ArrowUpToLine, Check, CheckSquare, Download, Trash2, X } from 'lucide-vue-next';
 import { usePlayerStore } from '../../stores/player';
 import { useUserStore } from '../../stores/user';
 import { createLikedSongsFilename, createLikedSongsText } from '../../utils/likedSongs';
 import { useQueueSelection } from '../../composables/useQueueSelection';
-
-// UI Primitives
+import IconButton from '../ui/IconButton.vue';
 import SegmentedControl from '../ui/SegmentedControl.vue';
 import TrackListItem from '../ui/TrackListItem.vue';
-import IconButton from '../ui/IconButton.vue';
 
+const { t } = useI18n();
 const player = usePlayerStore();
 const user = useUserStore();
 const activeView = ref('queue');
@@ -135,6 +168,7 @@ const pendingDelete = ref(false);
 const longPressTimer = ref(null);
 const longPressTriggered = ref(false);
 const LONG_PRESS_MS = 450;
+
 const {
   selectionMode,
   selectedCount,
@@ -142,15 +176,19 @@ const {
   hasSelection,
   enterSelectionMode,
   exitSelectionMode,
+  toggleSelectionMode,
   toggleSelected,
   isSelected,
   selectAll
 } = useQueueSelection(queue);
 
+const activeCount = computed(() => activeView.value === 'queue' ? player.queue.length : player.likedSongs.length);
+
+const formatArtists = (artists) => Array.isArray(artists) && artists.length ? artists.join(' / ') : t('common.unknownArtist');
+
 const exportLikedSongs = () => {
   if (!player.likedSongs.length) return;
-  const content = createLikedSongsText(player.likedSongs);
-  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const blob = new Blob([createLikedSongsText(player.likedSongs)], { type: 'text/plain;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -162,7 +200,7 @@ const exportLikedSongs = () => {
 };
 
 const startLongPress = (queueId) => {
-  if (user.isGuest || selectionMode.value) return;
+  if (user.isGuest || selectionMode.value || !queueId) return;
   clearLongPress();
   longPressTriggered.value = false;
   longPressTimer.value = setTimeout(() => {
@@ -172,20 +210,18 @@ const startLongPress = (queueId) => {
 };
 
 const clearLongPress = () => {
-  if (longPressTimer.value) {
-    clearTimeout(longPressTimer.value);
-    longPressTimer.value = null;
-  }
+  if (!longPressTimer.value) return;
+  clearTimeout(longPressTimer.value);
+  longPressTimer.value = null;
 };
 
 const handleQueueItemClick = (queueId) => {
+  if (!queueId) return;
   if (longPressTriggered.value) {
     longPressTriggered.value = false;
     return;
   }
-  if (selectionMode.value) {
-    toggleSelected(queueId);
-  }
+  if (selectionMode.value) toggleSelected(queueId);
 };
 
 const cancelSelection = () => {
@@ -211,177 +247,183 @@ const confirmDeleteSelected = () => {
   if (!player.removeSongs(ids)) player.removeSongsCompat(ids);
   cancelSelection();
 };
+
+watch(activeView, () => {
+  cancelSelection();
+});
 </script>
 
 <style scoped>
+.mobile-work-page {
+  position: relative;
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  background: transparent;
+}
+
+.mobile-work-header {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border-bottom: 1px solid var(--surface-glass-border);
+  background: var(--surface-glass-bg);
+  backdrop-filter: blur(20px);
+  padding: 14px 16px;
+}
+
+.mobile-work-header__top {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mobile-work-header h2 {
+  color: var(--text-primary);
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+.mobile-work-header p {
+  margin-top: 2px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.mobile-work-list {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
+}
+
+.mobile-work-list--with-action-bar {
+  padding-bottom: calc(112px + env(safe-area-inset-bottom));
+}
+
+.mobile-list-prefix {
+  display: flex;
+  width: 30px;
+  justify-content: center;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.mobile-check {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  color: var(--text-inverse);
+}
+
+.mobile-check--selected {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.mobile-empty {
+  display: flex;
+  min-height: 220px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.mobile-empty strong {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.mobile-empty span {
+  max-width: 220px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.mobile-action-bar {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--surface-glass-border);
+  background: var(--surface-glass-panel);
+  backdrop-filter: blur(24px);
+  padding: 12px 16px;
+}
+
+.mobile-action-bar strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.mobile-action-bar button {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.mobile-delete-confirm {
+  display: grid;
+  width: 100%;
+  gap: 10px;
+}
+
+.mobile-delete-confirm span {
+  color: var(--error-soft-text);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.mobile-danger-action,
+.mobile-secondary-action {
+  min-height: 40px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.mobile-danger-action {
+  background: var(--error);
+  color: var(--text-inverse) !important;
+}
+
+.mobile-secondary-action {
+  background: var(--surface-3);
+  color: var(--text-primary) !important;
+}
+
 .action-bar-enter-active,
 .action-bar-leave-active {
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.15s ease;
+  transition: transform 180ms var(--motion-ease-out), opacity 140ms var(--motion-ease-out);
 }
 
 .action-bar-enter-from,
 .action-bar-leave-to {
+  opacity: 0;
   transform: translateY(100%);
-  opacity: 0;
-}
-
-.safe-area-bottom {
-  padding-bottom: calc(env(safe-area-inset-bottom) + 12px);
-}
-</style>
-
-<style scoped>
-.queue-action {
-  display: inline-flex;
-  min-width: 2.2rem;
-  min-height: 2.2rem;
-  align-items: center;
-  justify-content: center;
-  border-radius: 9999px;
-  background: var(--surface-3);
-  color: var(--text-secondary);
-}
-
-.view-toggle {
-  min-height: 2.35rem;
-  border-radius: 0.85rem;
-  color: var(--text-secondary);
-  font-size: 0.8rem;
-  font-weight: 700;
-  transition: background-color 0.18s ease, color 0.18s ease;
-}
-
-.view-toggle--active {
-  background: var(--surface-1);
-  color: var(--text-primary);
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.12);
-}
-
-.export-action {
-  display: inline-flex;
-  min-height: 2.5rem;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  border-radius: 9999px;
-  background: var(--accent);
-  padding: 0 0.85rem;
-  color: var(--text-inverse);
-  font-size: 0.75rem;
-  font-weight: 800;
-}
-
-.export-action:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-.delete-confirm-action,
-.delete-cancel-action {
-  display: inline-flex;
-  min-height: 2.75rem;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-  border-radius: 9999px;
-  font-size: 0.8rem;
-  font-weight: 800;
-}
-
-.delete-cancel-action {
-  background: var(--surface-3);
-  color: var(--text-secondary);
-}
-
-.selection-rail {
-  position: absolute;
-  right: 0.65rem;
-  top: 64%;
-  z-index: 30;
-  display: flex;
-  transform: translateY(-50%);
-  flex-direction: column;
-  align-items: center;
-  gap: 0.65rem;
-  pointer-events: auto;
-}
-
-.selection-rail-button {
-  display: inline-flex;
-  width: 3.25rem;
-  height: 3.25rem;
-  align-items: center;
-  justify-content: center;
-  border-radius: 9999px;
-  background: color-mix(in srgb, var(--surface-4) 92%, transparent);
-  color: var(--text-primary);
-  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.26);
-  backdrop-filter: blur(14px);
-  transition: transform 0.18s ease, opacity 0.18s ease, background-color 0.18s ease;
-}
-
-.selection-rail-button:active {
-  transform: scale(0.94);
-}
-
-.selection-rail-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-.selection-rail-button--danger {
-  color: var(--error);
-}
-
-.selection-rail-button--close {
-  width: 3.75rem;
-  height: 3.75rem;
-  margin-top: 0.3rem;
-  background: color-mix(in srgb, var(--surface-4) 96%, transparent);
-}
-
-.delete-confirm-float {
-  position: absolute;
-  inset-inline: 1rem;
-  bottom: 1rem;
-  z-index: 35;
-  border: 1px solid color-mix(in srgb, var(--error) 35%, transparent);
-  border-radius: 1.35rem;
-  background: var(--surface-4);
-  padding: 0.85rem;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
-}
-
-.delete-confirm-action {
-  background: var(--error);
-  color: var(--text-inverse);
-}
-
-.selection-rail-enter-active,
-.selection-rail-leave-active,
-.delete-confirm-float-enter-active,
-.delete-confirm-float-leave-active {
-  transition: opacity 180ms ease, transform 180ms ease;
-}
-
-.selection-rail-enter-from,
-.selection-rail-leave-to {
-  opacity: 0;
-  transform: translateY(-50%) translateX(0.5rem) scale(0.96);
-}
-
-.delete-confirm-float-enter-from,
-.delete-confirm-float-leave-to {
-  opacity: 0;
-  transform: translateY(0.5rem) scale(0.98);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .selection-rail-enter-active,
-  .selection-rail-leave-active,
-  .delete-confirm-float-enter-active,
-  .delete-confirm-float-leave-active {
-    transition-duration: 0.01ms;
-  }
 }
 </style>

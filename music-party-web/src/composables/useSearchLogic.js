@@ -1,4 +1,5 @@
 import { ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useToast } from './useToast';
 import { musicApi } from '../api/music.js';
 import { authApi } from '../api/auth.js';
@@ -6,8 +7,9 @@ import { extractErrorMessage } from '../utils/errors.js';
 import { useUserStore } from '../stores/user.js';
 import { usePlatforms } from './usePlatforms.js';
 
-export function useSearchLogic(emit) {
+export function useSearchLogic(emit = () => {}) {
     const { success, error } = useToast();
+    const { t } = useI18n();
     const userStore = useUserStore();
 
     const platform = ref('netease');
@@ -16,6 +18,7 @@ export function useSearchLogic(emit) {
     const songs = ref([]);
     const albums = ref([]);
     const loading = ref(false);
+    const hasSubmittedSearch = ref(false);
     const listMode = ref('search'); // 'search' | 'playlist' | 'albumSearch' | 'album'
     const searchType = ref('song'); // 'song' | 'album'
     const isAdminMode = ref(false);
@@ -26,11 +29,11 @@ export function useSearchLogic(emit) {
     const handleAdminCommand = async (pwd) => {
         try {
             await authApi.adminCommand(pwd, adminCommand.value);
-            success('ADMIN COMMAND EXECUTED');
+            success(t('search.adminExecuted'));
             emit('close');
         } catch (e) {
             console.error('Admin command failed:', e);
-            error(extractErrorMessage(e, 'ACCESS DENIED OR COMMAND FAILED'));
+            error(extractErrorMessage(e, t('search.adminFailed')));
         } finally {
             isAdminMode.value = false;
             keyword.value = '';
@@ -44,6 +47,7 @@ export function useSearchLogic(emit) {
 
         // 1. 管理员密码输入模式
         if (isAdminMode.value) {
+            hasSubmittedSearch.value = true;
             await handleAdminCommand(val);
             return;
         }
@@ -58,6 +62,7 @@ export function useSearchLogic(emit) {
 
         // 3. 普通搜索
         listMode.value = searchType.value === 'album' && supportsAlbumSearch.value ? 'albumSearch' : 'search';
+        hasSubmittedSearch.value = true;
         loading.value = true;
         songs.value = [];
         albums.value = [];
@@ -76,7 +81,7 @@ export function useSearchLogic(emit) {
             }
         } catch (e) {
             console.error('Search failed:', e);
-            error(extractErrorMessage(e, 'Search Failed'));
+            error(extractErrorMessage(e, t('search.failed')));
         } finally {
             loading.value = false;
         }
@@ -94,6 +99,7 @@ export function useSearchLogic(emit) {
         listMode,
         searchType,
         isAdminMode,
+        hasSubmittedSearch,
         doSearch
     };
 }

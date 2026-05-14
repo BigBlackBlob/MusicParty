@@ -21,8 +21,8 @@
         :style="tooltipStyle"
     >
       <div class="flex items-center justify-between border-b border-[var(--border-default)] pb-2">
-        <span class="text-xs font-semibold tracking-[0.16em] text-[var(--text-tertiary)]">TUTORIAL SYSTEM // {{ currentStepIndex + 1 }}/{{ steps.length }}</span>
-        <button @click="skipTutorial" class="text-xs font-semibold text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]">SKIP</button>
+        <span class="text-xs font-semibold tracking-[0.16em] text-[var(--text-tertiary)]">{{ t('tutorial.header', { current: currentStepIndex + 1, total: steps.length }) }}</span>
+        <button @click="skipTutorial" class="text-xs font-semibold text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)]">{{ t('tutorial.skip') }}</button>
       </div>
 
       <div class="text-sm font-medium leading-relaxed text-[var(--text-primary)]">
@@ -34,7 +34,7 @@
             @click="nextStep"
             class="rounded-full bg-[var(--accent)] px-4 py-2 text-xs font-semibold text-[var(--text-inverse)] transition-colors hover:bg-[var(--accent-hover)]"
         >
-          {{ currentStepIndex === steps.length - 1 ? 'FINISH' : 'NEXT >' }}
+          {{ currentStepIndex === steps.length - 1 ? t('tutorial.finish') : t('tutorial.next') }}
         </button>
       </div>
 
@@ -50,7 +50,9 @@
 <script setup>
 import { ref, computed, onMounted, nextTick, watch } from 'vue';
 import { useWindowSize } from '@vueuse/core';
+import { useI18n } from 'vue-i18n';
 
+const { t } = useI18n();
 const isActive = ref(false);
 const currentStepIndex = ref(0);
 const targetRect = ref(null);
@@ -64,54 +66,54 @@ const steps = [
   {
     targetId: 'tutorial-rename',
     mobileTargetId: 'tutorial-rename-mobile',
-    content: '点击这里可以修改你的昵称，输入后按回车确认。',
-    mobileContent: '点击这里打开用户列表，可以修改你的昵称。'
+    contentKey: 'tutorial.steps.rename.desktop',
+    mobileContentKey: 'tutorial.steps.rename.mobile'
   },
   {
     targetId: 'tutorial-search',
-    content: '点击搜索按钮寻找歌曲。在此处也可以通过搜索用户名来查看平台账号歌单。'
+    contentKey: 'tutorial.steps.search'
   },
   {
     targetId: 'tutorial-like',
-    content: '点击中间的封面可以为当前歌曲点赞。'
+    contentKey: 'tutorial.steps.like'
   },
   {
     targetId: 'tutorial-queue',
     mobileTargetId: 'tutorial-queue-mobile',
-    content: '这里是播放队列。悬停在歌曲上可以进行置顶或删除操作。',
-    mobileContent: '点击这里查看播放队列。'
+    contentKey: 'tutorial.steps.queue.desktop',
+    mobileContentKey: 'tutorial.steps.queue.mobile'
   },
   {
     targetId: 'tutorial-pause',
     mobileTargetId: 'tutorial-pause-mobile',
-    content: '注意：暂停/播放是全局生效的，会影响所有在线听众，请谨慎操作。'
+    contentKey: 'tutorial.steps.pause'
   },
   {
     targetId: 'tutorial-download',
     mobileTargetId: 'tutorial-download-mobile',
-    content: '听到喜欢的歌？点击这里可以直接下载当前播放的音频文件。'
+    contentKey: 'tutorial.steps.download'
   },
   {
     targetId: 'tutorial-random',
     mobileTargetId: 'tutorial-random-mobile',
-    content: '随机播放模式采用“公平随机”算法，确保每个人点的歌都有均等的机会被播放。'
+    contentKey: 'tutorial.steps.random'
   },
   {
     targetId: 'tutorial-chat',
-    content: '点击浮动按钮打开聊天窗口，可以和其他人聊天或查看记录。按钮可以拖动。'
+    contentKey: 'tutorial.steps.chat'
   },
   {
     targetId: 'tutorial-source',
-    content: '点击底部的小封面，可以跳转到歌曲的源网页。'
+    contentKey: 'tutorial.steps.source'
   }
 ];
 
 const currentStep = computed(() => steps[currentStepIndex.value]);
 const currentDisplayContent = computed(() => {
-  if (isUsingMobileTarget.value && currentStep.value.mobileContent) {
-    return currentStep.value.mobileContent;
+  if (isUsingMobileTarget.value && currentStep.value.mobileContentKey) {
+    return t(currentStep.value.mobileContentKey);
   }
-  return currentStep.value.content;
+  return t(currentStep.value.contentKey);
 });
 
 const tooltipRef = ref(null);

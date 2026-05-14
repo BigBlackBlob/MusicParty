@@ -81,6 +81,16 @@
   --surface-scrim: rgba(0, 0, 0, 0.6);
   --overlay-backdrop: rgba(0, 0, 0, 0.6);
 
+  /* Mobile translucent surface tokens. Keep these low opacity; they are UI surfaces, not page scrims. */
+  --surface-glass-bg: rgba(18, 18, 18, 0.72);
+  --surface-glass-border: rgba(255, 255, 255, 0.05);
+  --surface-glass-panel: rgba(20, 20, 20, 0.85);
+  --surface-glass-control: rgba(255, 255, 255, 0.1);
+  --ambient-overlay: linear-gradient(to bottom, rgba(0,0,0,0.6), transparent);
+  --ambient-lyrics-overlay: rgba(18, 18, 18, 0.96);
+  --ambient-filter: blur(48px) saturate(1.05) brightness(0.82);
+  --ambient-opacity: 0.16;
+
   --text-primary: #F0F0F0;
   --text-secondary: #B8B8B8;
   --text-tertiary: #8A8A8A;
@@ -148,6 +158,14 @@
   --surface-control: rgba(33, 31, 28, 0.055);
   --surface-control-hover: rgba(33, 31, 28, 0.09);
   --surface-control-active: rgba(124, 92, 191, 0.12);
+
+  /* Glassmorphism semantic tokens - Light Mode */
+  --surface-glass-bg: rgba(255, 255, 255, 0.76);
+  --surface-glass-border: rgba(0, 0, 0, 0.05);
+  --surface-glass-panel: rgba(255, 255, 255, 0.85);
+  --surface-glass-control: rgba(0, 0, 0, 0.05);
+  --ambient-overlay: linear-gradient(to bottom, rgba(255,255,255,0.6), transparent);
+  --ambient-lyrics-overlay: rgba(250, 249, 246, 0.98);
   --surface-scrim: rgba(255, 255, 255, 0.58);
   --overlay-backdrop: rgba(20, 18, 15, 0.34);
   --text-primary: #1a1a1a;

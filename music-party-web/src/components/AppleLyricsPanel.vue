@@ -1,9 +1,9 @@
 <template>
-  <div class="lyrics-shell relative flex h-full w-full flex-col" :style="shellStyle">
-    <div class="lyrics-shell__inner relative flex h-full w-full flex-col overflow-hidden px-3 md:px-4">
+  <div class="lyrics-shell relative flex h-full w-full flex-col" :class="{ 'lyrics-shell--mobile': mobile }" :style="shellStyle">
+    <div class="lyrics-shell__inner relative flex h-full w-full min-w-0 flex-col overflow-hidden px-3 md:px-4">
       <div class="flex h-full w-full flex-1 flex-col items-center justify-center min-h-0">
         <div v-if="showEmptyState" class="lyrics-empty-state flex min-h-0 w-full flex-1 items-center justify-center text-center text-sm font-medium" :class="emptyStateClass">
-          暂无歌词
+          {{ t('lyrics.empty') }}
         </div>
 
         <template v-else>
@@ -15,9 +15,9 @@
             @touchmove.passive="handleTouchMove"
             @touchend.passive="handleTouchEnd"
           >
-            <div class="mx-auto flex w-full max-w-[min(760px,88vw)] flex-col" :class="containerAlignmentClass">
-              <div class="w-full shrink-0" style="height: 45vh;"></div>
-              <div class="relative flex flex-col gap-[0.18em] md:gap-[0.24em] shrink-0" aria-live="off" :class="containerAlignmentClass">
+            <div class="lyrics-scroll__content mx-auto flex w-full max-w-[min(760px,88vw)] flex-col" :class="containerAlignmentClass">
+              <div class="lyrics-scroll__spacer w-full shrink-0"></div>
+              <div class="relative flex w-full min-w-0 shrink-0 flex-col gap-[0.18em] md:gap-[0.24em]" aria-live="off" :class="containerAlignmentClass">
               <div
                 v-for="(line, index) in displayLines"
                 :key="`${line.time}-${index}`"
@@ -30,18 +30,18 @@
                 <span v-if="line.translation" class="lyrics-line__translation">{{ line.translation }}</span>
               </div>
               </div>
-              <div class="w-full shrink-0" style="height: 45vh;"></div>
+              <div class="lyrics-scroll__spacer w-full shrink-0"></div>
             </div>
           </div>
 
           <div class="lyrics-controls mt-3 flex items-center justify-center gap-2 md:mt-4 w-full shrink-0">
-            <button class="lyrics-control" type="button" @click="toggleAlignment" aria-label="切换歌词对齐方式">
+            <button class="lyrics-control" type="button" @click="toggleAlignment" :aria-label="t('lyrics.toggleAlignment')" :title="t('lyrics.toggleAlignment')">
               <span class="material-symbols-outlined text-[18px]">{{ alignmentIcon }}</span>
             </button>
-            <button class="lyrics-control" type="button" @click="decreaseFont" aria-label="减小歌词字号">
+            <button class="lyrics-control" type="button" @click="decreaseFont" :aria-label="t('lyrics.decreaseFont')" :title="t('lyrics.decreaseFont')">
               <span class="lyrics-control__label">A−</span>
             </button>
-            <button class="lyrics-control" type="button" @click="increaseFont" aria-label="增大歌词字号">
+            <button class="lyrics-control" type="button" @click="increaseFont" :aria-label="t('lyrics.increaseFont')" :title="t('lyrics.increaseFont')">
               <span class="lyrics-control__label">A+</span>
             </button>
             <button
@@ -49,10 +49,11 @@
               type="button"
               :class="showTranslation ? 'lyrics-control--active' : ''"
               :aria-pressed="showTranslation"
-              aria-label="切换译文显示"
+              :aria-label="t('lyrics.toggleTranslation')"
+              :title="t('lyrics.toggleTranslation')"
               @click="$emit('toggle-translation')"
             >
-              译文
+              {{ t('lyrics.translation') }}
             </button>
           </div>
         </template>
@@ -63,10 +64,12 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { mergeTranslatedLyrics } from '../utils/parser';
 import { useUiStore } from '../stores/ui';
 
 const uiStore = useUiStore();
+const { t } = useI18n();
 
 const props = defineProps({
   lyrics: {
@@ -104,6 +107,10 @@ const props = defineProps({
   lyricsLoaded: {
     type: Boolean,
     default: true
+  },
+  mobile: {
+    type: Boolean,
+    default: false
   }
 });
 defineEmits(['toggle-translation']);
@@ -172,9 +179,18 @@ const shellStyle = computed(() => ({
   '--lyrics-translation-low': props.isDarkMode ? 'rgba(255,255,255,0.22)' : 'rgba(26,26,26,0.22)',
   '--lyrics-empty': props.isDarkMode ? 'rgba(255,255,255,0.5)' : 'rgba(26,26,26,0.55)',
   '--lyrics-accent-glow': props.bgColor || (props.isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(26,26,26,0.06)'),
-  '--lyrics-active-size': `clamp(${scaledFont(34)}, 4.3vw, ${scaledFont(56)})`,
-  '--lyrics-mid-size': `clamp(${scaledFont(20)}, 2vw, ${scaledFont(28)})`,
-  '--lyrics-low-size': `clamp(${scaledFont(15)}, 1.35vw, ${scaledFont(19)})`
+  '--lyrics-active-size': props.mobile
+    ? `clamp(${scaledFont(22)}, 7vw, ${scaledFont(34)})`
+    : `clamp(${scaledFont(34)}, 4.3vw, ${scaledFont(56)})`,
+  '--lyrics-mid-size': props.mobile
+    ? `clamp(${scaledFont(16)}, 4.8vw, ${scaledFont(22)})`
+    : `clamp(${scaledFont(20)}, 2vw, ${scaledFont(28)})`,
+  '--lyrics-low-size': props.mobile
+    ? `clamp(${scaledFont(13)}, 3.8vw, ${scaledFont(17)})`
+    : `clamp(${scaledFont(15)}, 1.35vw, ${scaledFont(19)})`,
+  '--lyrics-translation-active-size': props.mobile ? 'clamp(0.82rem, 3.6vw, 1rem)' : 'clamp(0.95rem, 1.1vw, 1.28rem)',
+  '--lyrics-translation-mid-size': props.mobile ? 'clamp(0.76rem, 3.2vw, 0.92rem)' : 'clamp(0.82rem, 0.95vw, 1.05rem)',
+  '--lyrics-translation-low-size': props.mobile ? 'clamp(0.7rem, 3vw, 0.84rem)' : 'clamp(0.75rem, 0.8vw, 0.92rem)'
 }));
 
 const emptyStateClass = computed(() => ({
@@ -220,7 +236,7 @@ const getLineStyle = (index) => {
       fontWeight: 700,
       lineHeight: 1.3,
       color: 'var(--lyrics-text-active)',
-      '--lyrics-translation-size': 'clamp(0.95rem, 1.1vw, 1.28rem)',
+      '--lyrics-translation-size': 'var(--lyrics-translation-active-size)',
       '--lyrics-translation-color': 'var(--lyrics-translation-active)',
       textShadow: props.isDarkMode
         ? '0 8px 24px rgba(0,0,0,0.22), 0 0 22px color-mix(in srgb, var(--lyrics-accent-glow) 36%, transparent)'
@@ -237,7 +253,7 @@ const getLineStyle = (index) => {
       fontWeight: 600,
       lineHeight: 1.28,
       color: 'var(--lyrics-text-mid)',
-      '--lyrics-translation-size': 'clamp(0.82rem, 0.95vw, 1.05rem)',
+      '--lyrics-translation-size': 'var(--lyrics-translation-mid-size)',
       '--lyrics-translation-color': 'var(--lyrics-translation-mid)'
     };
   }
@@ -250,7 +266,7 @@ const getLineStyle = (index) => {
     fontWeight: 500,
     lineHeight: 1.28,
     color: 'var(--lyrics-text-low)',
-    '--lyrics-translation-size': 'clamp(0.75rem, 0.8vw, 0.92rem)',
+    '--lyrics-translation-size': 'var(--lyrics-translation-low-size)',
     '--lyrics-translation-color': 'var(--lyrics-translation-low)'
   };
 };
@@ -385,6 +401,10 @@ onBeforeUnmount(() => {
   contain: layout style paint;
 }
 
+.lyrics-scroll__spacer {
+  height: 45vh;
+}
+
 .lyrics-scroll::-webkit-scrollbar {
   display: none;
 }
@@ -394,6 +414,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 0.18em;
   max-width: min(760px, 88vw);
+  min-width: 0;
   word-break: break-word;
   will-change: transform, opacity;
   letter-spacing: 0;
@@ -403,8 +424,66 @@ onBeforeUnmount(() => {
 .lyrics-line__translation {
   display: block;
   max-width: min(760px, 88vw);
+  overflow-wrap: anywhere;
   word-break: break-word;
   letter-spacing: 0;
+}
+
+.lyrics-shell--mobile .lyrics-shell__inner {
+  padding: 8px 18px calc(10px + env(safe-area-inset-bottom));
+}
+
+.lyrics-shell--mobile .lyrics-scroll {
+  width: 100%;
+  padding-top: 4px;
+  padding-bottom: 6px;
+  mask-image: linear-gradient(to bottom, transparent, black 8%, black 92%, transparent);
+}
+
+.lyrics-shell--mobile .lyrics-scroll__content {
+  max-width: 100%;
+}
+
+.lyrics-shell--mobile .lyrics-scroll__spacer {
+  height: 38dvh;
+}
+
+.lyrics-shell--mobile .lyrics-line {
+  max-width: 100%;
+  width: 100%;
+  transform-origin: inherit;
+}
+
+.lyrics-shell--mobile .lyrics-line__primary,
+.lyrics-shell--mobile .lyrics-line__translation {
+  max-width: 100%;
+  width: 100%;
+}
+
+.lyrics-shell--mobile .lyrics-line__primary {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.lyrics-shell--mobile .lyrics-line__translation {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.lyrics-shell--mobile .lyrics-controls {
+  position: sticky;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: 2.5rem 2.5rem 2.5rem minmax(3.4rem, auto);
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 0 calc(4px + env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--surface-0) 92%, transparent);
 }
 
 .lyrics-line__translation {

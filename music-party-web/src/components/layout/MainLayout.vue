@@ -34,16 +34,20 @@
       <header class="fixed top-0 z-50 flex h-[64px] w-full items-center justify-between bg-transparent px-5">
         <div class="flex min-w-0 items-center gap-5">
           <div class="flex items-center gap-2">
-            <span class="font-display text-[24px] font-black text-primary tracking-tighter flex items-center leading-none">Lounge</span>
+            <span class="font-display text-[24px] font-black text-primary tracking-tighter flex items-center leading-none">{{ t('app.lounge') }}</span>
             <span
               class="h-2 w-2 rounded-full"
               :class="playerStore.connected ? 'bg-[#22C55E] shadow-[0_0_14px_rgba(34,197,94,0.45)]' : 'bg-error'"
-              :title="playerStore.connected ? 'Connected' : 'Disconnected'"
+              :title="playerStore.connected ? t('settings.connected') : t('settings.disconnected')"
             />
           </div>
-          <div class="hidden min-w-[220px] cursor-pointer items-center gap-3 rounded-md border border-border-subtle bg-[var(--surface-control)] px-4 py-2 transition-colors hover:bg-[var(--surface-control-hover)] md:flex" @click="handleSearchClick">
+          <div
+            class="hidden min-w-[220px] cursor-pointer items-center gap-3 rounded-md border border-border-subtle bg-[var(--surface-control)] px-4 py-2 transition-colors hover:bg-[var(--surface-control-hover)] md:flex"
+            :title="t('search.searchAndAdd')"
+            @click="handleSearchClick"
+          >
             <span class="material-symbols-outlined text-text-muted text-[18px]">search</span>
-            <span class="text-text-muted font-compact text-compact flex items-center tracking-tight">Search for a track...</span>
+            <span class="text-text-muted font-compact text-compact flex items-center tracking-tight">{{ t('search.placeholder') }}</span>
           </div>
         </div>
         <div class="flex flex-shrink-0 items-center gap-3">
@@ -60,7 +64,7 @@
               <div
                 v-if="extraUserCount > 0"
                 class="flex h-8 min-w-8 items-center justify-center rounded-full border-2 border-surface-overlay bg-accent-subtle px-2 text-primary shadow-lg"
-                :title="`${extraUserCount} more active users`"
+                :title="t('settings.moreActiveUsers', { count: extraUserCount })"
               >
                 <span class="font-micro text-micro">+{{ extraUserCount }}</span>
               </div>
@@ -75,12 +79,12 @@
             </div>
           </div>
 
-          <button @click="uiStore.toggleDarkMode" class="flex h-10 w-10 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-[var(--surface-control-hover)] hover:text-text-primary" title="Toggle theme">
+          <button @click="uiStore.toggleDarkMode" class="flex h-10 w-10 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-[var(--surface-control-hover)] hover:text-text-primary" :title="t('settings.toggleTheme')">
             <span class="material-symbols-outlined">{{ uiStore.isDarkMode ? 'light_mode' : 'dark_mode' }}</span>
           </button>
 
           <div class="relative">
-            <button @click="toggleSettings" class="flex h-10 w-10 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-[var(--surface-control-hover)] hover:text-text-primary" title="Settings">
+            <button @click="toggleSettings" class="flex h-10 w-10 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-[var(--surface-control-hover)] hover:text-text-primary" :title="t('settings.title')">
               <span class="material-symbols-outlined">settings</span>
             </button>
             <div
@@ -88,32 +92,36 @@
               class="absolute right-0 top-12 w-[280px] rounded-lg border border-border-default bg-surface-overlay/95 p-3 text-sm shadow-lg backdrop-blur-xl"
             >
               <div class="mb-3 flex items-center justify-between border-b border-border-subtle pb-3">
-                <span class="font-compact text-text-primary">Settings</span>
-                <span class="text-xs text-text-muted">{{ userStore.isGuest ? 'Guest' : userStore.currentUser.name }}</span>
+                <span class="font-compact text-text-primary">{{ t('settings.title') }}</span>
+                <span class="text-xs text-text-muted">{{ userStore.isGuest ? t('settings.guest') : userStore.currentUser.name }}</span>
               </div>
               <button class="flex w-full items-center justify-between rounded-md px-2 py-2 text-left hover:bg-[var(--surface-control-hover)]" @click="uiStore.toggleDarkMode">
-                <span class="text-text-secondary">Theme</span>
-                <span class="text-text-primary">{{ uiStore.isDarkMode ? 'Dark' : 'Light' }}</span>
+                <span class="text-text-secondary">{{ t('settings.theme') }}</span>
+                <span class="text-text-primary">{{ uiStore.isDarkMode ? t('settings.dark') : t('settings.light') }}</span>
+              </button>
+              <button class="flex w-full items-center justify-between rounded-md px-2 py-2 text-left hover:bg-[var(--surface-control-hover)]" @click="uiStore.setLocale(uiStore.locale === 'en' ? 'zh' : 'en')">
+                <span class="text-text-secondary">{{ t('settings.language') }}</span>
+                <span class="text-text-primary">{{ localeLabel }}</span>
               </button>
               <button class="flex w-full items-center justify-between rounded-md px-2 py-2 text-left hover:bg-[var(--surface-control-hover)]" @click="uiStore.toggleLiteMode">
-                <span class="text-text-secondary">Lite Mode</span>
-                <span class="text-text-primary">{{ uiStore.isLiteMode ? 'On' : 'Off' }}</span>
+                <span class="text-text-secondary">{{ t('settings.liteMode') }}</span>
+                <span class="text-text-primary">{{ uiStore.isLiteMode ? t('settings.on') : t('settings.off') }}</span>
               </button>
               <label class="flex w-full cursor-pointer items-center justify-between rounded-md px-2 py-2 hover:bg-[var(--surface-control-hover)]">
-                <span class="text-text-secondary">Auto Lite Mode</span>
+                <span class="text-text-secondary">{{ t('settings.autoLiteMode') }}</span>
                 <input v-model="uiStore.autoLiteMode" class="h-4 w-4 accent-[var(--accent)]" type="checkbox" />
               </label>
 
               <!-- Scale Controls -->
               <div class="mt-2 border-t border-border-subtle pt-3">
                 <div class="mb-2 flex items-center justify-between px-2">
-                  <span class="text-text-secondary">Main Size</span>
+                  <span class="text-text-secondary">{{ t('settings.mainSize') }}</span>
                   <span class="text-xs text-text-primary">{{ Math.round(uiStore.mainStageScale * 100) }}%</span>
                 </div>
                 <div class="flex items-center gap-1 px-2 pb-2">
-                  <button class="flex-1 rounded py-1 text-xs transition-colors" :class="isScaleActive(0.92) ? 'bg-primary text-on-primary' : 'bg-[var(--surface-control)] text-text-secondary hover:text-text-primary hover:bg-[var(--surface-control-hover)]'" @click="uiStore.setMainStageScale(0.92)">Compact</button>
-                  <button class="flex-1 rounded py-1 text-xs transition-colors" :class="isScaleActive(1.00) ? 'bg-primary text-on-primary' : 'bg-[var(--surface-control)] text-text-secondary hover:text-text-primary hover:bg-[var(--surface-control-hover)]'" @click="uiStore.setMainStageScale(1.00)">Standard</button>
-                  <button class="flex-1 rounded py-1 text-xs transition-colors" :class="isScaleActive(1.12) ? 'bg-primary text-on-primary' : 'bg-[var(--surface-control)] text-text-secondary hover:text-text-primary hover:bg-[var(--surface-control-hover)]'" @click="uiStore.setMainStageScale(1.12)">Large</button>
+                  <button class="flex-1 rounded py-1 text-xs transition-colors" :class="isScaleActive(0.92) ? 'bg-primary text-on-primary' : 'bg-[var(--surface-control)] text-text-secondary hover:text-text-primary hover:bg-[var(--surface-control-hover)]'" @click="uiStore.setMainStageScale(0.92)">{{ t('settings.compact') }}</button>
+                  <button class="flex-1 rounded py-1 text-xs transition-colors" :class="isScaleActive(1.00) ? 'bg-primary text-on-primary' : 'bg-[var(--surface-control)] text-text-secondary hover:text-text-primary hover:bg-[var(--surface-control-hover)]'" @click="uiStore.setMainStageScale(1.00)">{{ t('settings.standard') }}</button>
+                  <button class="flex-1 rounded py-1 text-xs transition-colors" :class="isScaleActive(1.12) ? 'bg-primary text-on-primary' : 'bg-[var(--surface-control)] text-text-secondary hover:text-text-primary hover:bg-[var(--surface-control-hover)]'" @click="uiStore.setMainStageScale(1.12)">{{ t('settings.large') }}</button>
                 </div>
                 <div class="px-2 pb-2">
                   <input
@@ -131,7 +139,7 @@
               <!-- Zoom Controls -->
               <div class="mt-2 border-t border-border-subtle pt-3">
                 <div class="mb-2 flex items-center justify-between px-2">
-                  <span class="text-text-secondary">Global Zoom</span>
+                  <span class="text-text-secondary">{{ t('settings.globalZoom') }}</span>
                   <span class="text-xs text-text-primary">{{ Math.round(uiStore.globalZoomLevel * 100) }}%</span>
                 </div>
                 <div class="flex items-center gap-1 px-2 pb-2">
@@ -153,7 +161,7 @@
               </div>
 
               <div class="mt-1 border-t border-border-subtle px-2 pt-3 text-xs text-text-muted">
-                Connection: <span :class="playerStore.connected ? 'text-success' : 'text-error'">{{ playerStore.connected ? 'Connected' : 'Disconnected' }}</span>
+                {{ t('settings.connection') }}: <span :class="playerStore.connected ? 'text-success' : 'text-error'">{{ playerStore.connected ? t('settings.connected') : t('settings.disconnected') }}</span>
               </div>
             </div>
           </div>
@@ -184,6 +192,7 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import LiteModeView from './LiteModeView.vue';
 import UserList from '../UserList.vue';
 import { useUserStore } from '../../stores/user';
@@ -197,6 +206,7 @@ defineProps({
   }
 });
 const emit = defineEmits(['search', 'toggle-mobile-chat']);
+const { t } = useI18n();
 const userStore = useUserStore();
 const uiStore = useUiStore();
 const playerStore = usePlayerStore();
@@ -212,6 +222,7 @@ const visibleUsers = computed(() => {
   return users.slice(0, 3);
 });
 const extraUserCount = computed(() => Math.max(0, userStore.onlineUsers.length - visibleUsers.value.length));
+const localeLabel = computed(() => uiStore.locale === 'en' ? t('settings.english') : t('settings.chinese'));
 
 onMounted(() => {
   uiStore.fetchConfig();
@@ -291,7 +302,7 @@ const getInitials = (name = '') => {
 .desktop-stage-grid--queue,
 .desktop-stage-grid--lyrics {
   --panel-width: 420px;
-  --left-panel-height: calc(var(--panel-width) + 32px + 280px);
+  --left-panel-height: calc(var(--panel-width) + 32px + 256px);
   height: min(var(--stage-height), var(--left-panel-height));
 }
 
