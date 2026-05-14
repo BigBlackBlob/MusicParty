@@ -254,7 +254,7 @@ watch(activeTab, (tab) => {
 
 .mobile-shell-main {
   position: relative;
-  z-index: var(--z-tutorial);
+  z-index: 1;
   min-height: 0;
   flex: 1;
   overflow: hidden;
