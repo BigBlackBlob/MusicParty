@@ -1,18 +1,35 @@
 // src/composables/useAudio.js
 
 import { ref, onMounted, onUnmounted, watch } from 'vue';
-import { useToast } from './useToast';
 
-export function useAudio(audioRef, playerStore) {
+const SMALL_DRIFT_MS = 250;
+const RATE_CORRECTION_DRIFT_MS = 2000;
+const BACKGROUND_HARD_SEEK_DRIFT_MS = 10000;
+const TRANSITION_FADE_MS = 1500;
+const SUPPORTED_TRANSITION_PLATFORMS = new Set(['netease', 'bilibili']);
+
+export function useAudio(audioRef, playerStore, userVolumeRef) {
     const localProgress = ref(0);
     const isBuffering = ref(false);
     const retryCount = ref(0);
     const isErrorState = ref(false);
-    const { info, error, success } = useToast();
     let syncTimer = null;
     let wakeLock = null;
     let smoothSeekInFlight = false;
     let pingTimer = null;
+    let fadeGain = 1;
+    let activeFadeToken = 0;
+    let transitionFadeInPending = false;
+
+    const getUserVolume = () => {
+        const value = userVolumeRef?.value;
+        return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 1;
+    };
+
+    const applyEffectiveVolume = () => {
+        if (!audioRef.value) return;
+        audioRef.value.volume = Math.max(0, Math.min(1, getUserVolume() * fadeGain));
+    };
 
     // 请求唤醒锁 (防止 WebSocket 断连)
     const requestWakeLock = async () => {
@@ -49,42 +66,82 @@ export function useAudio(audioRef, playerStore) {
         audio.addEventListener('canplay', finish, { once: true });
     });
 
-    const fadeVolume = (audio, targetVolume, durationMs) => new Promise((resolve) => {
-        const startVolume = audio.volume;
+    const fadeToGain = (targetGain, durationMs) => new Promise((resolve) => {
+        const token = ++activeFadeToken;
+        const startGain = fadeGain;
         const startedAt = performance.now();
         const step = (now) => {
+            if (token !== activeFadeToken) {
+                resolve(false);
+                return;
+            }
             const progress = Math.min(1, (now - startedAt) / durationMs);
-            audio.volume = startVolume + (targetVolume - startVolume) * progress;
+            fadeGain = startGain + (targetGain - startGain) * progress;
+            applyEffectiveVolume();
             if (progress < 1) {
                 requestAnimationFrame(step);
             } else {
-                resolve();
+                resolve(true);
             }
         };
         requestAnimationFrame(step);
     });
+
+    const setFadeGain = (nextGain) => {
+        activeFadeToken++;
+        fadeGain = Math.max(0, Math.min(1, nextGain));
+        applyEffectiveVolume();
+    };
 
     const smoothSeekTo = async (targetSeconds) => {
         const audio = audioRef.value;
         if (!audio || smoothSeekInFlight) return;
         smoothSeekInFlight = true;
 
-        const restoreVolume = audio.volume;
+        const restoreGain = fadeGain;
         try {
-            await fadeVolume(audio, 0, 120);
+            await fadeToGain(0, 120);
             audio.currentTime = targetSeconds;
             await waitForAudioReady(audio);
-            await fadeVolume(audio, restoreVolume, 160);
+            await fadeToGain(restoreGain, 160);
         } catch (e) {
             if (audioRef.value) {
                 audioRef.value.currentTime = targetSeconds;
-                audioRef.value.volume = restoreVolume;
+                setFadeGain(restoreGain);
             }
         } finally {
-            if (audioRef.value) {
-                audioRef.value.volume = restoreVolume;
-            }
+            setFadeGain(restoreGain);
             smoothSeekInFlight = false;
+        }
+    };
+
+    const supportsTransitionFade = () => {
+        const platform = playerStore.nowPlaying?.music?.platform;
+        return SUPPORTED_TRANSITION_PLATFORMS.has(platform);
+    };
+
+    const startTrackFadeIn = async () => {
+        if (!supportsTransitionFade()) {
+            setFadeGain(1);
+            return;
+        }
+        setFadeGain(0);
+        await fadeToGain(1, TRANSITION_FADE_MS);
+    };
+
+    const updateTransitionFadeOut = (targetTime) => {
+        if (!audioRef.value || playerStore.isPaused || smoothSeekInFlight || !supportsTransitionFade()) return;
+        const duration = playerStore.nowPlaying?.music?.duration || 0;
+        if (!duration || duration <= TRANSITION_FADE_MS) return;
+        const remainingMs = duration - targetTime;
+        if (remainingMs <= TRANSITION_FADE_MS && remainingMs >= 0) {
+            const nextGain = Math.max(0, Math.min(1, remainingMs / TRANSITION_FADE_MS));
+            if (nextGain < fadeGain) {
+                fadeGain = nextGain;
+                applyEffectiveVolume();
+            }
+        } else if (!transitionFadeInPending && fadeGain < 1) {
+            setFadeGain(1);
         }
     };
 
@@ -124,6 +181,10 @@ export function useAudio(audioRef, playerStore) {
             isErrorState.value = false;
             updateMediaSession();
             requestWakeLock();
+            if (transitionFadeInPending) {
+                transitionFadeInPending = false;
+                startTrackFadeIn();
+            }
         } catch (e) {
             // NotAllowedError 是浏览器由于缺乏用户交互而拦截
             if (e.name === 'NotAllowedError') {
@@ -153,6 +214,7 @@ export function useAudio(audioRef, playerStore) {
         if (newPaused) {
             audioRef.value.pause();
             navigator.mediaSession.playbackState = 'paused';
+            setFadeGain(1);
             releaseWakeLock();
         } else {
             safePlay();
@@ -174,10 +236,16 @@ export function useAudio(audioRef, playerStore) {
 
         retryCount.value = 0;
         isErrorState.value = false;
+        transitionFadeInPending = supportsTransitionFade();
+        setFadeGain(transitionFadeInPending ? 0 : 1);
         // 切歌会导致 src 变化，自动触发 load -> canplay -> checkAutoPlay
         // 所以这里不需要手动 call play
         updateMediaSession();
-    });
+    }, { immediate: true });
+
+    if (userVolumeRef) {
+        watch(userVolumeRef, applyEffectiveVolume, { immediate: true });
+    }
 
     // === 4. 错误重试机制 ===
     const handleError = () => {
@@ -213,7 +281,7 @@ export function useAudio(audioRef, playerStore) {
             }
             // 2. 检查连接状态，必要时重连
             playerStore.tryReconnect();
-            playerStore.requestSyncRefresh('visible');
+            playerStore.requestSyncRefresh('visible', true);
         }
     };
     
@@ -222,7 +290,7 @@ export function useAudio(audioRef, playerStore) {
         if (navigator.onLine) {
             console.log('[Network] Back online, checking socket...');
             playerStore.tryReconnect();
-            playerStore.requestSyncRefresh('online');
+            playerStore.requestSyncRefresh('online', true);
         }
     };
 
@@ -236,6 +304,7 @@ export function useAudio(audioRef, playerStore) {
             if (!playerStore.nowPlaying) {
                 localProgress.value = 0;
                 if (audioRef.value) audioRef.value.playbackRate = 1;
+                setFadeGain(1);
                 return;
             }
 
@@ -247,6 +316,7 @@ export function useAudio(audioRef, playerStore) {
             // smooth seek 或媒体元素状态抖动时把歌词时间带回旧位置。
             localProgress.value = targetTime;
             playerStore.setPlaybackPosition(targetTime);
+            updateTransitionFadeOut(targetTime);
 
             // 3. 强行同步逻辑 (纠偏)
             if (audioRef.value && !isBuffering.value && !isErrorState.value && !playerStore.isSeekingPreview) {
@@ -268,13 +338,13 @@ export function useAudio(audioRef, playerStore) {
                         audioRef.value.playbackRate = 1;
                         audioRef.value.currentTime = targetTime / 1000;
                         playerStore.forceNextSyncSeek = false;
-                    } else if (absDrift <= 250) {
+                    } else if (absDrift <= SMALL_DRIFT_MS) {
                         audioRef.value.playbackRate = 1;
-                    } else if (absDrift <= 2000) {
+                    } else if (absDrift <= RATE_CORRECTION_DRIFT_MS) {
                         audioRef.value.playbackRate = drift > 0 ? 1.03 : 0.97;
                     } else if (document.hidden) {
                         audioRef.value.playbackRate = 1;
-                        if (absDrift > 10000 && audioRef.value.readyState >= 2) {
+                        if (absDrift > BACKGROUND_HARD_SEEK_DRIFT_MS && audioRef.value.readyState >= 2) {
                             console.log(`[Sync] Background hard seek: ${domTime} -> ${targetTime}`);
                             audioRef.value.currentTime = targetTime / 1000;
                         }
@@ -298,6 +368,7 @@ export function useAudio(audioRef, playerStore) {
         clearInterval(syncTimer);
         clearInterval(pingTimer);
         if (audioRef.value) audioRef.value.playbackRate = 1;
+        setFadeGain(1);
         releaseWakeLock();
     });
 

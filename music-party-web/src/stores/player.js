@@ -42,6 +42,7 @@ export const usePlayerStore = defineStore('player', () => {
     const forceNextSyncSeek = ref(false);
     const lastPingSentAt = ref(0);
     const lastResyncSentAt = ref(0);
+    const lastRttMs = ref(null);
     const localProgress = ref(0);
     const playbackPositionMs = ref(0);
     const isBuffering = ref(false);
@@ -90,10 +91,10 @@ export const usePlayerStore = defineStore('player', () => {
         return true;
     };
 
-    const requestSyncRefresh = (reason = 'refresh') => {
+    const requestSyncRefresh = (reason = 'refresh', force = false) => {
         if (!connected.value) return;
-        requestPing(reason);
-        requestResync(reason);
+        requestPing(reason, force);
+        requestResync(reason, force);
     };
 
     const handleSyncPong = (pong) => {
@@ -101,6 +102,7 @@ export const usePlayerStore = defineStore('player', () => {
         const clientReceiveTime = Date.now();
         const rtt = clientReceiveTime - pong.clientSendTime;
         if (rtt < 0 || rtt > 3000) return;
+        lastRttMs.value = rtt;
 
         const sampleOffset = (pong.serverSendTime + rtt / 2) - clientReceiveTime;
         if (hasClockSample.value && Math.abs(sampleOffset - serverClockOffset.value) > 10000) return;
@@ -162,6 +164,7 @@ export const usePlayerStore = defineStore('player', () => {
         const clientReceiveTime = Date.now();
         if (!hasClockSample.value) {
             serverClockOffset.value = serverTimestamp - clientReceiveTime;
+            hasClockSample.value = true;
         }
 
         // 记录服务器发来的进度和状态包对应的服务端时间
@@ -208,7 +211,7 @@ export const usePlayerStore = defineStore('player', () => {
         if (!connected.value) {
             socketService.forceReconnect();
         } else {
-            requestSyncRefresh('reconnect-check');
+            requestSyncRefresh('reconnect-check', true);
         }
     };
 
@@ -297,7 +300,13 @@ export const usePlayerStore = defineStore('player', () => {
 
     const sendLike = () => {
         if (requireAuth()) {
-            addLikedSong();
+            const music = nowPlaying.value?.music;
+            const key = getSongKey(music);
+            if (key && isSongLiked(music)) {
+                removeLikedSong(key);
+                return;
+            }
+            addLikedSong(music);
             socketService.send(WS_DEST.PLAYER_LIKE);
         }
     };
@@ -370,7 +379,7 @@ export const usePlayerStore = defineStore('player', () => {
 
     return {
         nowPlaying, queue, isPaused, isShuffle, isPauseLocked, isSkipLocked, isShuffleLocked, connected, isLoading, lyricText, lyricDetail, likedSongs,
-        localProgress, playbackPositionMs, isBuffering, isErrorState, streamListenerCount, lastSyncTime,
+        localProgress, playbackPositionMs, isBuffering, isErrorState, streamListenerCount, lastSyncTime, lastRttMs,
         isSeekingPreview, forceNextSyncSeek, setSeekingPreview,
         setPlaybackPosition,
         connect, tryReconnect, getCurrentProgress, syncState, handleSyncPong, requestPing, requestResync, requestSyncRefresh,

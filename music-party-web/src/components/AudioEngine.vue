@@ -43,7 +43,7 @@ const {
   isErrorState,
   handleError,
   checkAutoPlay
-} = useAudio(audioRef, player);
+} = useAudio(audioRef, player, computed(() => ui.volume));
 
 const audioSrc = computed(() => withPlaybackToken(player.nowPlaying?.music, user.userToken));
 
@@ -67,22 +67,12 @@ watch(() => player.isPaused, (paused) => {
   }
 });
 
-// 监听音量
-watch(() => ui.volume, (newVol) => {
-  if (audioRef.value) {
-    audioRef.value.volume = newVol;
-  }
-}, { immediate: true });
-
 const onCanPlay = () => {
   player.isBuffering = false;
   checkAutoPlay();
 };
 
 onMounted(() => {
-  if (audioRef.value) {
-    audioRef.value.volume = ui.volume;
-  }
   // 初始尝试播放静默音轨
   if (!player.isPaused) {
     silentAudioRef.value?.play().catch(() => {});
