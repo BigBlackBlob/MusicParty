@@ -34,7 +34,12 @@ public class MusicSocketController {
 
     @MessageMapping("/player/resync")
     public void requestResync(@Header("simpSessionId") String sessionId) {
-        musicPlayerService.broadcastFullPlayerState();
+        messagingTemplate.convertAndSendToUser(
+                sessionId,
+                "/queue/player/state",
+                musicPlayerService.getCurrentPlayerState(),
+                createSessionHeaders(sessionId)
+        );
     }
 
     @MessageMapping("/sync/ping")
