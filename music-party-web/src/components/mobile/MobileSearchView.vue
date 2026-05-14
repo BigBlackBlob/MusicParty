@@ -1,147 +1,253 @@
 <template>
-  <section class="flex h-full flex-col overflow-hidden bg-[var(--surface-0)]">
-    <div class="border-b border-[var(--border-default)] bg-[var(--surface-1)] px-4 py-4 flex flex-col gap-4">
-      <!-- Search Input -->
-      <div class="flex gap-2">
-        <div class="relative flex-1">
-          <input
-            id="mobile-search-input"
-            v-model="keyword"
-            class="w-full h-11 px-4 bg-[var(--surface-2)] border border-[var(--border-default)] rounded-[var(--radius-sm)] text-base text-[var(--text-primary)] outline-none focus:border-[var(--border-accent)] transition-all placeholder:text-[var(--text-tertiary)]"
-            placeholder="Search music..."
-            @keyup.enter="runSearch"
-          />
-        </div>
-        <IconButton variant="primary" size="lg" radius="sm" @click="runSearch">
-          <Search class="h-5 w-5" />
+  <section class="mobile-work-page">
+    <header class="mobile-search-header">
+      <form class="mobile-search-box" @submit.prevent="handleSearchAction">
+        <input
+          id="mobile-search-input"
+          v-model="keyword"
+          :placeholder="isAdminMode ? t('search.adminPlaceholder') : t('search.placeholder')"
+          autocomplete="off"
+          enterkeyhint="search"
+        />
+        <IconButton variant="primary" size="lg" radius="sm" type="submit" :disabled="loading" :aria-label="t('search.searchAria')">
+          <Loader2 v-if="loading" class="h-5 w-5 animate-spin" />
+          <Search v-else class="h-5 w-5" />
         </IconButton>
-      </div>
+      </form>
 
-      <!-- Platform Selection -->
-      <div class="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+      <div class="mobile-platforms" :aria-label="t('search.platformAria')">
         <button
           v-for="p in platforms"
           :key="p.id"
-          class="flex-shrink-0 px-4 py-2 rounded-[var(--radius-xs)] text-[9px] font-black uppercase tracking-widest transition-all border"
-          :class="platform === p.id
-            ? 'bg-[var(--accent)] border-[var(--accent)] text-[var(--text-inverse)]'
-            : 'bg-[var(--surface-3)] border-[var(--border-default)] text-[var(--text-tertiary)]'"
+          type="button"
+          :class="{ 'mobile-platforms__item--active': platform === p.id }"
           @click="platform = p.id"
         >
           {{ p.label }}
         </button>
       </div>
 
-      <!-- Search Type -->
       <SegmentedControl
         v-if="supportsAlbumSearch"
         v-model="searchType"
         :options="[
-          { label: '歌曲', value: 'song' },
-          { label: '专辑', value: 'album' }
+          { label: t('search.song'), value: 'song' },
+          { label: t('search.album'), value: 'album' }
         ]"
       />
-    </div>
+    </header>
 
-    <!-- Results -->
-    <div class="flex-1 overflow-y-auto px-3 py-3">
-      <div v-if="loading" class="flex flex-col items-center justify-center py-20 gap-4 opacity-50">
+    <div class="mobile-work-list">
+      <div v-if="loading" class="mobile-empty">
         <Loader2 class="h-8 w-8 animate-spin text-[var(--accent)]" />
-        <span class="text-[10px] font-bold uppercase tracking-widest text-[var(--text-tertiary)]">Searching Room...</span>
+        <span>{{ t('search.loading') }}</span>
       </div>
 
-      <template v-else-if="searchType === 'album' && supportsAlbumSearch">
-        <div v-if="albums.length === 0" class="py-20 text-center text-xs font-bold text-[var(--text-tertiary)] uppercase tracking-widest">No albums found</div>
-        <div v-for="album in albums" :key="album.id" class="flex items-center gap-4 p-3 bg-[var(--surface-1)] border border-[var(--border-default)] rounded-[var(--radius-md)] mb-2 shadow-sm">
-          <div class="h-14 w-14 flex-shrink-0 overflow-hidden rounded-[var(--radius-xs)] bg-[var(--surface-3)]">
-            <CoverImage :src="album.coverUrl" class="h-full w-full object-cover" />
-          </div>
-          <div class="min-w-0 flex-1">
-            <div class="text-sm font-bold truncate">{{ album.name }}</div>
-            <div class="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">{{ album.artistName || 'Unknown Artist' }}</div>
-            <div class="text-[9px] text-[var(--text-tertiary)] uppercase font-bold">{{ album.trackCount }} Tracks</div>
-          </div>
-          <IconButton variant="primary" size="sm" @click="player.enqueueAlbum('netease', album.id)">
-            <Plus class="h-4 w-4" />
-          </IconButton>
+      <template v-else-if="resultMode === 'album'">
+        <div v-if="albums.length === 0" class="mobile-empty">
+          <strong>{{ hasSearched ? t('search.noAlbums') : t('search.searchAlbums') }}</strong>
+          <span>{{ hasSearched ? t('search.tryDifferent') : t('search.albumHint') }}</span>
         </div>
+
+        <TrackListItem
+          v-for="album in albums"
+          v-else
+          :key="album.id"
+          :title="album.name"
+          :artist="album.artistName || t('common.unknownArtist')"
+          :cover-url="album.coverUrl"
+        >
+          <template #meta>
+            {{ album.trackCount || 0 }} {{ t('queue.tracks') }}
+          </template>
+          <template #suffix>
+            <IconButton variant="primary" size="sm" @click="handleAddClick(album)" :aria-label="t('search.addAlbum')">
+              <Plus class="h-4 w-4" />
+            </IconButton>
+          </template>
+        </TrackListItem>
       </template>
 
       <template v-else>
-        <div v-if="songs.length === 0" class="py-20 text-center text-xs font-bold text-[var(--text-tertiary)] uppercase tracking-widest">No tracks found</div>
-        <div class="space-y-1">
-          <TrackListItem
-            v-for="song in songs"
-            :key="song.id"
-            :title="song.name"
-            :artist="song.artists.join(' / ')"
-            :cover-url="song.coverUrl"
-          >
-            <template #suffix>
-              <IconButton variant="primary" size="sm" @click="player.enqueue(platform, song.id)">
-                <Plus class="h-4 w-4" />
-              </IconButton>
-            </template>
-          </TrackListItem>
+        <div v-if="songs.length === 0" class="mobile-empty">
+          <strong>{{ hasSearched ? t('search.noResults') : t('search.searchSongs') }}</strong>
+          <span>{{ hasSearched ? t('search.noResultsDesc') : t('search.startHint') }}</span>
         </div>
+
+        <TrackListItem
+          v-for="song in songs"
+          v-else
+          :key="`${song.platform || platform}:${song.id}`"
+          :title="song.name"
+          :artist="formatArtists(song.artists)"
+          :cover-url="song.coverUrl"
+        >
+          <template #meta>
+            {{ song.platform || platform }}
+          </template>
+          <template #suffix>
+            <IconButton variant="primary" size="sm" @click="handleAddClick(song)" :aria-label="t('search.addSong')">
+              <Plus class="h-4 w-4" />
+            </IconButton>
+          </template>
+        </TrackListItem>
       </template>
     </div>
   </section>
 </template>
 
 <script setup>
-import { ref, watch } from 'vue';
+import { computed, onMounted, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { Loader2, Plus, Search } from 'lucide-vue-next';
-import { musicApi } from '../../api/music';
 import { usePlayerStore } from '../../stores/player';
-import { useUserStore } from '../../stores/user';
-import { usePlatforms } from '../../composables/usePlatforms';
-import { useToast } from '../../composables/useToast';
-import { extractErrorMessage } from '../../utils/errors';
-import CoverImage from '../CoverImage.vue';
-
-// UI Primitives
+import { useSearchLogic } from '../../composables/useSearchLogic';
 import IconButton from '../ui/IconButton.vue';
 import SegmentedControl from '../ui/SegmentedControl.vue';
 import TrackListItem from '../ui/TrackListItem.vue';
 
+const { t } = useI18n();
 const player = usePlayerStore();
-const userStore = useUserStore();
-const { error } = useToast();
-const platform = ref('netease');
-const { platforms, supportsAlbumSearch } = usePlatforms(platform);
-const searchType = ref('song');
-const keyword = ref('');
-const songs = ref([]);
-const albums = ref([]);
-const loading = ref(false);
+const {
+  platform,
+  platforms,
+  supportsAlbumSearch,
+  loadPlatforms,
+  keyword,
+  songs,
+  albums,
+  loading,
+  searchType,
+  isAdminMode,
+  hasSubmittedSearch,
+  doSearch
+} = useSearchLogic();
 
-const runSearch = async () => {
-  const q = keyword.value.trim();
-  if (!q) return;
-  loading.value = true;
-  songs.value = [];
-  albums.value = [];
-  try {
-    if (supportsAlbumSearch.value && searchType.value === 'album') {
-      albums.value = await musicApi.searchNeteaseAlbums(q);
-    } else {
-      songs.value = await musicApi.search(platform.value, q, userStore.userToken);
-    }
-  } catch (e) {
-    console.error('Mobile search failed:', e);
-    error(extractErrorMessage(e, '搜索失败'));
-  } finally {
-    loading.value = false;
+const hasSearched = computed(() => hasSubmittedSearch.value || songs.value.length > 0 || albums.value.length > 0);
+const resultMode = computed(() => searchType.value === 'album' && supportsAlbumSearch.value ? 'album' : 'song');
+
+const handleSearchAction = () => doSearch();
+
+const handleAddClick = (item) => {
+  if (resultMode.value === 'album') {
+    player.enqueueAlbum(platform.value, item.id);
+    return;
   }
+  player.enqueue(platform.value, item.id);
 };
 
-watch(platform, (next) => {
-  if (!supportsAlbumSearch.value) searchType.value = 'song';
+const formatArtists = (artists) => Array.isArray(artists) && artists.length ? artists.join(' / ') : t('common.unknownArtist');
+
+watch(supportsAlbumSearch, (supported) => {
+  if (!supported && searchType.value === 'album') searchType.value = 'song';
 });
+
+onMounted(loadPlatforms);
 </script>
 
 <style scoped>
-.no-scrollbar::-webkit-scrollbar { display: none; }
-.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.mobile-work-page {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  background: transparent;
+}
+
+.mobile-search-header {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-bottom: 1px solid var(--surface-glass-border);
+  background: var(--surface-glass-bg);
+  backdrop-filter: blur(20px);
+  padding: 14px 16px;
+}
+
+.mobile-search-box {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 48px;
+  gap: 10px;
+}
+
+.mobile-search-box input {
+  min-width: 0;
+  height: 48px;
+  border: 1px solid var(--surface-glass-border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-glass-bg);
+  color: var(--text-primary);
+  font-size: 16px;
+  outline: none;
+  padding: 0 14px;
+}
+
+.mobile-search-box input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(211, 194, 243, 0.2);
+}
+
+.mobile-platforms {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.mobile-platforms::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-platforms button {
+  flex: 0 0 auto;
+  min-height: 34px;
+  border: 1px solid var(--surface-glass-border);
+  border-radius: var(--radius-xs);
+  background: var(--surface-glass-control);
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 800;
+  padding: 0 12px;
+  text-transform: uppercase;
+  transition: all 0.2s ease;
+}
+
+.mobile-platforms__item--active {
+  border-color: var(--accent) !important;
+  background: var(--accent) !important;
+  color: var(--text-inverse) !important;
+}
+
+.mobile-work-list {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
+}
+
+.mobile-empty {
+  display: flex;
+  min-height: 240px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.mobile-empty strong {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.mobile-empty span {
+  max-width: 230px;
+  font-size: 12px;
+  line-height: 1.5;
+}
 </style>

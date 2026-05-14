@@ -8,9 +8,11 @@ import { musicApi } from '../api/music';
 export const useUiStore = defineStore('ui', () => {
     const initialTheme = localStorage.getItem('theme') || 'dark';
     const isDarkMode = ref(initialTheme !== 'light');
+    const locale = ref(localStorage.getItem('mp_locale') || 'en');
     const isLiteMode = ref(false);
     const forceMobileLayout = ref(localStorage.getItem('mp_force_mobile_layout') === 'true');
     const mobilePreviewWidth = ref(parseInt(localStorage.getItem('mp_mobile_preview_width') || '390', 10));
+    const mobileActiveTab = ref(localStorage.getItem('mp_mobile_active_tab') || 'now');
     const mainStageScale = ref(Number(localStorage.getItem('mp_main_stage_scale') || 1));
     const globalZoomLevel = ref(Number(localStorage.getItem('mp_global_zoom_level') || 1));
     const volume = ref(parseFloat(localStorage.getItem(STORAGE_KEYS.VOLUME) || '0.5'));
@@ -147,8 +149,18 @@ export const useUiStore = defineStore('ui', () => {
         mobilePreviewWidth.value = Math.max(320, Math.min(768, next));
     };
 
+    const setMobileActiveTab = (tab) => {
+        if (['now', 'queue', 'search', 'chat'].includes(tab)) {
+            mobileActiveTab.value = tab;
+        }
+    };
+
     const toggleDarkMode = () => {
         isDarkMode.value = !isDarkMode.value;
+    };
+
+    const setLocale = (newLocale) => {
+        locale.value = newLocale;
     };
 
     const setVolume = (val) => {
@@ -253,12 +265,20 @@ export const useUiStore = defineStore('ui', () => {
         localStorage.setItem('mp_mobile_preview_width', newVal.toString());
     });
 
+    watch(mobileActiveTab, (newVal) => {
+        localStorage.setItem('mp_mobile_active_tab', newVal);
+    });
+
     watch(mainStageScale, (newVal) => {
         localStorage.setItem('mp_main_stage_scale', newVal.toString());
     });
 
     watch(globalZoomLevel, (newVal) => {
         localStorage.setItem('mp_global_zoom_level', newVal.toString());
+    });
+
+    watch(locale, (newVal) => {
+        localStorage.setItem('mp_locale', newVal);
     });
 
     watch(isDarkMode, (newVal) => {
@@ -274,12 +294,16 @@ export const useUiStore = defineStore('ui', () => {
         toggleForceMobileLayout,
         mobilePreviewWidth,
         setMobilePreviewWidth,
+        mobileActiveTab,
+        setMobileActiveTab,
         mainStageScale,
         setMainStageScale,
         globalZoomLevel,
         setGlobalZoomLevel,
         isDarkMode,
         toggleDarkMode,
+        locale,
+        setLocale,
         volume,
         setVolume,
         showLyricTranslation,

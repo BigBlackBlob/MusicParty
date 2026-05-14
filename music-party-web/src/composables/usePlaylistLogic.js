@@ -1,4 +1,5 @@
 import { ref, computed, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useUserStore } from '../stores/user.js';
 import { usePlayerStore } from '../stores/player.js';
 import { musicApi } from '../api/music.js';
@@ -10,6 +11,7 @@ export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef)
     const userStore = useUserStore();
     const playerStore = usePlayerStore();
     const { error } = useToast();
+    const { t } = useI18n();
 
     // State
     const playlists = ref([]);
@@ -41,7 +43,7 @@ export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef)
         } catch (e) {
             console.error('Fetch playlists failed:', e);
             playlists.value = [];
-            error(extractErrorMessage(e, 'Fetch Playlists Failed'));
+            error(extractErrorMessage(e, t('playlist.fetchPlaylistsFailed')));
         } finally {
             isPlaylistsLoading.value = false;
         }
@@ -57,7 +59,7 @@ export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef)
             userSearchResults.value = data;
         } catch (e) {
             console.error('User search failed:', e);
-            error(extractErrorMessage(e, 'User Search Failed'));
+            error(extractErrorMessage(e, t('playlist.userSearchFailed')));
         } finally {
             isSearchingUser.value = false;
         }
@@ -104,7 +106,7 @@ export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef)
         } catch (e) {
             console.error("Fetch songs failed", e);
             hasMore.value = false;
-            error(extractErrorMessage(e, 'Fetch Songs Failed'));
+            error(extractErrorMessage(e, t('playlist.fetchSongsFailed')));
         }
     };
 

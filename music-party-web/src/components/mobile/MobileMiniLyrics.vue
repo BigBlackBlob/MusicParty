@@ -95,7 +95,7 @@ const currentLineKey = computed(() => {
   min-height: 3.9rem;
   width: 100%;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   justify-content: flex-start;
   overflow: hidden;
   border: 0;
@@ -107,17 +107,19 @@ const currentLineKey = computed(() => {
 }
 
 .mini-lyrics__line {
-  display: block;
+  display: -webkit-box;
   width: 100%;
-  min-height: 1.7rem;
+  min-height: 1.5rem;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: clamp(1rem, 4.5vw, 1.35rem);
-  font-weight: 750;
-  line-height: 1.25;
+  font-size: clamp(0.9rem, 3.8vw, 1.08rem);
+  font-weight: 700;
+  line-height: 1.35;
   letter-spacing: 0;
-  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.22);
+  text-shadow: 0 2px 14px var(--surface-glass-bg);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .mini-lyrics__line-group {
@@ -132,16 +134,20 @@ const currentLineKey = computed(() => {
   width: 100%;
   min-height: 1.25rem;
   overflow: hidden;
-  font-size: 0.875rem;
-  line-height: 1.25rem;
+  font-size: 0.85rem;
+  line-height: 1.3;
 }
 
 .mini-lyrics__translation {
   color: var(--text-secondary);
-  font-weight: 560;
-  opacity: 0.82;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-weight: 500;
+  opacity: 0.9;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  margin-top: 2px;
 }
 
 .mini-lyrics__translation-spacer {

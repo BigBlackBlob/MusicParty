@@ -1,4 +1,4 @@
-export function extractErrorMessage(error, fallback = 'Request Failed') {
+export function extractErrorMessage(error, fallback = 'Request failed') {
   if (!error) return fallback;
 
   const responseMessage = error.response?.data?.message;

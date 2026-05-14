@@ -1,128 +1,167 @@
 <template>
-  <section class="flex h-full flex-col overflow-y-auto px-6 pt-8 pb-10 safe-area-bottom">
-    <div
-      class="flex flex-1 flex-col items-center justify-center gap-8"
-      :class="hasLyrics ? 'md:pt-4' : 'pb-10'"
-    >
-      <!-- Cover Art -->
-      <div
-        class="relative aspect-square w-full max-w-[300px] overflow-hidden rounded-[var(--radius-lg)] bg-[var(--surface-3)] shadow-2xl transition-all border border-[var(--border-default)]"
-        :class="hasLyrics ? 'scale-90' : 'scale-100'"
-      >
-        <CoverImage
-          :src="music?.coverUrl"
-          :alt="music?.name"
-          loading="eager"
-          decoding="async"
-          class="h-full w-full object-cover transition-transform duration-700"
-          :class="player.isPaused ? 'scale-100' : 'scale-110'"
-        />
+  <section class="mobile-now-page">
+    <div class="mobile-stage">
+      <div class="mobile-cover-container">
+        <button
+          type="button"
+          class="mobile-cover group"
+          :class="{ 'mobile-cover--paused': player.isPaused }"
+          :disabled="!music"
+          @click="toggleLike"
+          :aria-label="isLiked ? t('player.unlike') : t('player.like')"
+        >
+          <CoverImage
+            :src="music?.coverUrl"
+            :alt="trackTitle"
+            loading="eager"
+            decoding="async"
+            class="h-full w-full object-cover transition-transform duration-700 ease-out group-active:scale-[0.98]"
+          />
+          <div class="absolute inset-0 rounded-2xl shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] pointer-events-none" />
+
+          <span v-if="player.isLoading || player.isBuffering" class="mobile-cover__status">
+            <span class="h-8 w-8 animate-spin rounded-full border-[2.5px] border-white/20 border-t-white" />
+            <span class="tracking-widest mt-3">{{ player.isBuffering ? t('player.buffering') : t('player.loading') }}</span>
+          </span>
+        </button>
       </div>
 
-      <!-- Info Area -->
-      <div class="w-full text-left">
+      <div class="mobile-track-info">
+        <div class="mobile-track-info__meta font-mono">
+          <span v-if="platformLabel" class="meta-pill">{{ platformLabel }}</span>
+          <span v-if="requesterName" class="meta-pill">{{ t('player.requestedByShort') }}: {{ requesterName }}</span>
+          <span v-if="player.streamListenerCount > 0" class="meta-pill">{{ player.streamListenerCount }} {{ t('player.listenersShort') }}</span>
+        </div>
+        <h1 class="mobile-track-info__title">{{ trackTitle }}</h1>
+        <p class="mobile-track-info__artist">{{ artistLine }}</p>
+
         <MobileMiniLyrics
           v-if="hasLyrics"
-          class="mb-6"
+          class="w-full flex-shrink-0 mt-2"
           :lyrics="player.lyricDetail.lyric || player.lyricText"
           :translated-lyrics="ui.showLyricTranslation ? player.lyricDetail.translatedLyric : ''"
           :show-translation="ui.showLyricTranslation"
           :current-time-ms="player.playbackPositionMs"
           @open="lyricsExpanded = true"
         />
+      </div>
 
-        <div class="flex items-center gap-2 mb-2">
-          <div class="h-1.5 w-1.5 rounded-full bg-[var(--accent)] animate-pulse" v-if="!player.isPaused"></div>
-          <span class="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--accent)]">
-            {{ player.isLoading ? 'Syncing' : nowPlaying ? 'Now Playing' : 'Idle' }}
-          </span>
-        </div>
-
-        <h1 class="text-3xl font-black leading-tight text-[var(--text-primary)] tracking-tighter line-clamp-2">
-          {{ music?.name || 'Waiting...' }}
-        </h1>
-        <p class="mt-1 text-base font-bold text-[var(--text-secondary)] truncate">
-          {{ music?.artists?.join(' / ') || 'Music Party' }}
-        </p>
-        <p v-if="nowPlaying?.enqueuedByName" class="mt-4 text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-widest">
-          Requested by {{ nowPlaying.enqueuedByName }}
-        </p>
+      <div v-if="player.isErrorState" class="mobile-error mt-4 mx-4">
+        <strong>{{ t('player.playbackError') }}</strong>
+        <span>{{ t('player.loadError') }}</span>
       </div>
     </div>
 
-    <!-- Controls Card -->
-    <div class="mt-auto p-6 rounded-[var(--radius-lg)] border border-[var(--border-default)] bg-[var(--surface-1)] shadow-xl flex flex-col gap-6">
-      <ProgressScrubber
-        :current-ms="player.playbackPositionMs"
-        :duration="music?.duration || 0"
-        :can-seek="canSeek"
-        :is-error="player.isErrorState"
-        @seek="player.seek"
-      />
+    <div class="mobile-controls">
+      <div class="px-5 w-full pt-2 pb-4">
+        <ProgressScrubber
+          :current-ms="player.playbackPositionMs"
+          :duration="durationMs"
+          :can-seek="canSeek"
+          :is-error="player.isErrorState"
+          :markers="player.nowPlaying?.likeMarkers || []"
+          @preview-start="player.setSeekingPreview(true)"
+          @preview-end="player.setSeekingPreview(false)"
+          @seek="player.seek"
+        />
+      </div>
 
-      <div class="flex items-center justify-between">
-        <div class="relative">
-          <IconButton @click="toggleVolumePanel" :variant="volumePanelOpen ? 'primary' : 'secondary'">
-            <VolumeX v-if="ui.volume === 0" class="h-5 w-5" />
-            <Volume1 v-else-if="ui.volume < 0.5" class="h-5 w-5" />
-            <Volume2 v-else class="h-5 w-5" />
+      <div class="mobile-transport px-6 pb-6">
+        <IconButton
+          @click="toggleVolumePanel"
+          :variant="volumePanelOpen ? 'secondary' : 'ghost'"
+          class="text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+          :aria-label="t('player.volume')"
+        >
+          <VolumeX v-if="ui.volume === 0" class="h-5 w-5" />
+          <Volume1 v-else-if="ui.volume < 0.5" class="h-5 w-5" />
+          <Volume2 v-else class="h-5 w-5" />
+        </IconButton>
+
+        <div class="flex items-center gap-6 md:gap-8">
+          <IconButton
+            @click="player.playNext"
+            :disabled="player.isSkipLocked"
+            :aria-label="t('player.next')"
+            class="text-[var(--text-primary)] transition-transform active:scale-90"
+          >
+            <SkipForward class="h-7 w-7 fill-current" />
           </IconButton>
 
-          <Transition name="mobile-volume-popover">
-            <div v-if="volumePanelOpen" ref="volumePanelRef" class="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 p-4 bg-[var(--surface-4)] border border-[var(--border-default)] rounded-[var(--radius-lg)] shadow-2xl flex flex-col items-center gap-4 min-w-[64px]">
-              <span class="text-[10px] font-bold text-[var(--text-primary)]">{{ Math.round(ui.volume * 100) }}%</span>
-              <div ref="volumeTrackRef" class="h-32 w-8 relative flex flex-col items-center" @pointerdown="handleVolumePointerDown">
-                <div class="w-1.5 h-full bg-[var(--progress-track)] rounded-full overflow-hidden relative">
-                  <div class="absolute bottom-0 left-0 right-0 bg-[var(--accent)] rounded-full" :style="{ height: ui.volume * 100 + '%' }"></div>
-                </div>
-              </div>
-            </div>
-          </Transition>
+          <button
+            @click="player.togglePause"
+            :disabled="player.isPauseLocked && !player.isPaused"
+            class="mobile-play-btn"
+            :aria-label="player.isPaused ? t('player.play') : t('player.pause')"
+          >
+            <Play v-if="player.isPaused" class="ml-1 h-9 w-9 fill-current" />
+            <Pause v-else class="h-9 w-9 fill-current" />
+          </button>
+
+          <IconButton
+            @click="toggleLike"
+            :variant="isLiked ? 'secondary' : 'ghost'"
+            :disabled="!music"
+            class="transition-transform active:scale-90"
+            :aria-label="isLiked ? t('player.unlike') : t('player.like')"
+          >
+            <Heart class="h-7 w-7 transition-colors duration-300" :class="isLiked ? 'fill-[var(--accent)] text-[var(--accent)]' : 'text-[var(--text-primary)]'" />
+          </IconButton>
         </div>
 
-        <IconButton @click="player.toggleShuffle" :variant="player.isShuffle ? 'primary' : 'ghost'">
+        <IconButton
+          @click="player.toggleShuffle"
+          :variant="player.isShuffle ? 'secondary' : 'ghost'"
+          :disabled="player.isShuffleLocked"
+          class="text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+          :aria-label="t('player.shuffle')"
+        >
           <Shuffle class="h-5 w-5" />
         </IconButton>
-
-        <IconButton size="xl" variant="primary" radius="lg" @click="player.togglePause">
-          <Play v-if="player.isPaused" class="h-8 w-8 fill-current ml-1" />
-          <Pause v-else class="h-8 w-8 fill-current" />
-        </IconButton>
-
-        <IconButton @click="player.playNext">
-          <SkipForward class="h-5 w-5 fill-current" />
-        </IconButton>
-
-        <IconButton @click="handleMobileLike" :variant="hasLiked ? 'primary' : 'ghost'">
-          <Heart class="h-5 w-5" :class="hasLiked ? 'fill-current' : ''" />
-        </IconButton>
       </div>
-    </div>
 
-    <!-- Lyrics Overlay -->
-    <Transition name="slide-up">
-      <div v-if="lyricsExpanded" class="fixed inset-0 z-[var(--z-modal)] bg-[var(--surface-0)] flex flex-col" @click.self="lyricsExpanded = false">
-        <div class="px-6 py-4 flex items-center justify-between border-b border-[var(--border-default)] pt-safe">
-          <div class="min-w-0">
-            <h3 class="text-sm font-bold text-[var(--text-primary)] truncate">{{ music?.name }}</h3>
-            <p class="text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-widest">Full Lyrics</p>
-          </div>
-          <IconButton variant="secondary" size="sm" @click="lyricsExpanded = false">
-            <X class="h-4 w-4" />
-          </IconButton>
-        </div>
-        <div class="flex-1 overflow-hidden p-6 bg-[var(--surface-1)]">
-          <AppleLyricsPanel
-            :lyrics="player.lyricDetail.lyric || player.lyricText"
-            :translated-lyrics="player.lyricDetail.translatedLyric"
-            :show-translation="ui.showLyricTranslation"
-            :current-time-ms="player.playbackPositionMs"
-            :is-playing="!player.isPaused"
-            :is-dark-mode="ui.isDarkMode"
-            :bg-color="ui.dynamicAccent?.accent || ''"
-            @toggle-translation="ui.toggleLyricTranslation"
+      <Transition name="mobile-volume-popover">
+        <div v-if="volumePanelOpen" ref="volumePanelRef" class="mobile-volume-panel">
+          <button class="mobile-volume-panel__mute" type="button" @click="toggleMute">
+            {{ ui.volume === 0 ? t('player.muted') : `${Math.round(ui.volume * 100)}%` }}
+          </button>
+          <input
+            :value="ui.volume"
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            :aria-label="t('player.volume')"
+            class="accent-[var(--accent)]"
+            @input="event => ui.setVolume(Number(event.target.value))"
           />
         </div>
+      </Transition>
+    </div>
+
+    <Transition name="slide-up">
+      <div v-if="lyricsExpanded" class="mobile-lyrics-overlay">
+        <div class="mobile-lyrics-overlay__bar">
+          <div class="min-w-0">
+            <h2 class="text-sm font-bold text-[var(--text-primary)] truncate">{{ trackTitle }}</h2>
+            <p class="text-[11px] text-[var(--text-tertiary)] truncate mt-0.5">{{ artistLine }}</p>
+          </div>
+          <IconButton variant="secondary" size="sm" @click="lyricsExpanded = false" :aria-label="t('player.closeLyrics')" class="rounded-full bg-black/20 hover:bg-black/40">
+            <X class="h-5 w-5" />
+          </IconButton>
+        </div>
+        <AppleLyricsPanel
+          class="min-h-0 flex-1"
+          :lyrics="player.lyricDetail.lyric || player.lyricText"
+          :translated-lyrics="player.lyricDetail.translatedLyric"
+          :show-translation="ui.showLyricTranslation"
+          :current-time-ms="player.playbackPositionMs"
+          :is-playing="!player.isPaused"
+          :is-dark-mode="ui.isDarkMode"
+          :bg-color="ui.dynamicAccent?.accent || ''"
+          mobile
+          @toggle-translation="ui.toggleLyricTranslation"
+        />
       </div>
     </Transition>
   </section>
@@ -130,275 +169,311 @@
 
 <script setup>
 import { computed, onUnmounted, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { Heart, Pause, Play, Shuffle, SkipForward, Volume1, Volume2, VolumeX, X } from 'lucide-vue-next';
-import { usePlayerStore } from '../../stores/player';
-import { useUiStore } from '../../stores/ui';
-import { useUserStore } from '../../stores/user';
-import { useToast } from '../../composables/useToast';
+import { useNowPlayingViewModel } from '../../composables/useNowPlayingViewModel';
 import { parseLyrics } from '../../utils/parser';
 import AppleLyricsPanel from '../AppleLyricsPanel.vue';
 import CoverImage from '../CoverImage.vue';
-import MobileMiniLyrics from './MobileMiniLyrics.vue';
-
-// UI Primitives
 import IconButton from '../ui/IconButton.vue';
 import ProgressScrubber from '../ui/ProgressScrubber.vue';
+import MobileMiniLyrics from './MobileMiniLyrics.vue';
 
-defineEmits(['open-search']);
-
-const player = usePlayerStore();
-const ui = useUiStore();
-const user = useUserStore();
-const { error } = useToast();
-const nowPlaying = computed(() => player.nowPlaying);
-const music = computed(() => nowPlaying.value?.music);
+const { t } = useI18n();
+const {
+  player,
+  ui,
+  music,
+  trackTitle,
+  artistLine,
+  platformLabel,
+  requesterName,
+  durationMs,
+  canSeek,
+  isLiked,
+  toggleLike
+} = useNowPlayingViewModel({ artistSeparator: ' / ' });
 const lyricsExpanded = ref(false);
 const volumePanelOpen = ref(false);
 const volumePanelRef = ref(null);
-const volumeTrackRef = ref(null);
-const activeVolumePointerId = ref(null);
+
 const lyricLines = computed(() => parseLyrics(player.lyricDetail.lyric || player.lyricText));
 const hasLyrics = computed(() => lyricLines.value.length >= 5);
-const canSeek = computed(() => !!nowPlaying.value && nowPlaying.value.enqueuedById === user.userToken);
-const hasLiked = computed(() => player.isSongLiked(music.value));
 
 const toggleVolumePanel = () => {
   volumePanelOpen.value = !volumePanelOpen.value;
 };
 
-const closeVolumePanel = () => {
+const toggleMute = () => {
+  ui.setVolume(ui.volume === 0 ? 0.75 : 0);
+};
+
+const handleDocumentPointerDown = (event) => {
+  if (!volumePanelOpen.value) return;
+  if (volumePanelRef.value?.contains(event.target)) return;
   volumePanelOpen.value = false;
 };
 
-const setVolumeFromPointer = (e) => {
-  if (!volumeTrackRef.value) return;
-  const rect = volumeTrackRef.value.getBoundingClientRect();
-  const y = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
-  const nextVolume = 1 - (y / rect.height);
-  ui.setVolume(parseFloat(nextVolume.toFixed(2)));
-};
-
-const handleVolumePointerDown = (e) => {
-  e.preventDefault();
-  activeVolumePointerId.value = e.pointerId;
-  volumeTrackRef.value?.setPointerCapture?.(e.pointerId);
-  setVolumeFromPointer(e);
-  window.addEventListener('pointermove', handleVolumePointerMove);
-  window.addEventListener('pointerup', handleVolumePointerUp);
-  window.addEventListener('pointercancel', handleVolumePointerCancel);
-};
-
-const handleVolumePointerMove = (e) => {
-  if (activeVolumePointerId.value !== null && e.pointerId !== activeVolumePointerId.value) return;
-  setVolumeFromPointer(e);
-};
-
-const cleanupVolumeDrag = (e) => {
-  const pointerId = activeVolumePointerId.value ?? e?.pointerId;
-  if (pointerId !== undefined && volumeTrackRef.value?.hasPointerCapture?.(pointerId)) {
-    volumeTrackRef.value.releasePointerCapture(pointerId);
-  }
-  activeVolumePointerId.value = null;
-  window.removeEventListener('pointermove', handleVolumePointerMove);
-  window.removeEventListener('pointerup', handleVolumePointerUp);
-  window.removeEventListener('pointercancel', handleVolumePointerCancel);
-};
-
-const handleVolumePointerUp = (e) => {
-  if (activeVolumePointerId.value !== null && e.pointerId !== activeVolumePointerId.value) return;
-  cleanupVolumeDrag(e);
-};
-
-const handleVolumePointerCancel = (e) => {
-  if (activeVolumePointerId.value !== null && e.pointerId !== activeVolumePointerId.value) return;
-  cleanupVolumeDrag(e);
-};
-
-const handleMobileLike = () => {
-  if (!nowPlaying.value) return;
-  player.sendLike();
-};
-
-const handleDocumentPointerDown = (e) => {
-  if (!volumePanelOpen.value) return;
-  if (volumePanelRef.value?.contains(e.target)) return;
-  closeVolumePanel();
-};
-
-watch(() => music.value?.coverUrl, (coverUrl) => {
-  ui.updateAccentFromCover(coverUrl);
-}, { immediate: true });
-
 watch(volumePanelOpen, (open) => {
-  if (open) {
-    document.addEventListener('pointerdown', handleDocumentPointerDown, true);
-  } else {
-    document.removeEventListener('pointerdown', handleDocumentPointerDown, true);
-  }
+  if (open) document.addEventListener('pointerdown', handleDocumentPointerDown, true);
+  else document.removeEventListener('pointerdown', handleDocumentPointerDown, true);
 });
 
 onUnmounted(() => {
-  window.removeEventListener('pointermove', handleVolumePointerMove);
-  window.removeEventListener('pointerup', handleVolumePointerUp);
-  window.removeEventListener('pointercancel', handleVolumePointerCancel);
   document.removeEventListener('pointerdown', handleDocumentPointerDown, true);
 });
 </script>
 
 <style scoped>
-.safe-area-bottom {
-  padding-bottom: calc(2rem + env(safe-area-inset-bottom));
-}
-
-.pt-safe {
-  padding-top: env(safe-area-inset-top);
-}
-
-.mobile-volume-popover-enter-active,
-.mobile-volume-popover-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.mobile-volume-popover-enter-from,
-.mobile-volume-popover-leave-to {
-  opacity: 0;
-  transform: translateX(-50%) translateY(8px) scale(0.95);
-}
-
-.slide-up-enter-active, .slide-up-leave-active {
-  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
-}
-.slide-up-enter-from { transform: translateY(100%); opacity: 0; }
-.slide-up-leave-to { transform: translateY(100%); opacity: 0; }
-</style>
-
-<style scoped>
-.mobile-now-playing {
-  padding-bottom: calc(1rem + env(safe-area-inset-bottom));
-  overscroll-behavior: contain;
-}
-
-.mobile-lyrics-overlay {
+.mobile-now-page {
+  position: relative;
   display: flex;
-  height: var(--app-height, 100dvh);
-  min-height: var(--app-height, 100dvh);
   flex-direction: column;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
-  padding-top: calc(env(safe-area-inset-top) + 1rem);
-  padding-bottom: calc(env(safe-area-inset-bottom) + 1rem);
+  --mobile-controls-height: auto;
 }
 
-.mobile-control {
-  display: inline-flex;
-  min-width: 3rem;
-  min-height: 3rem;
-  align-items: center;
+.mobile-stage {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: 24px;
+}
+
+.mobile-cover-container {
+  width: 100%;
+  padding: clamp(16px, 4vh, 32px) 24px 16px;
+  display: flex;
   justify-content: center;
-  border-radius: 9999px;
-  border: 1px solid var(--border-default);
+}
+
+.mobile-cover {
+  position: relative;
+  display: block;
+  width: 100%;
+  max-width: 400px;
+  aspect-ratio: 1;
+  border-radius: 16px;
   background: var(--surface-2);
+  box-shadow: 0 32px 64px -12px rgba(0, 0, 0, 0.5), 0 16px 24px -8px rgba(0, 0, 0, 0.3);
+  transition: filter 0.5s ease;
+}
+
+.mobile-cover:disabled {
+  cursor: default;
+}
+
+.mobile-cover--paused {
+  filter: saturate(0.8) brightness(0.85);
+}
+
+.mobile-cover__status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-glass-bg);
+  backdrop-filter: blur(4px);
+  color: white;
+  border-radius: inherit;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.mobile-track-info {
+  width: 100%;
+  padding: 0 24px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mobile-track-info__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.meta-pill {
+  background: var(--surface-glass-control);
+  border: 1px solid var(--surface-glass-border);
+  padding: 3px 8px;
+  border-radius: var(--radius-xs);
+  color: var(--text-primary);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 2px 8px var(--surface-glass-bg);
+}
+
+.mobile-track-info__title {
+  color: var(--text-primary);
+  font-size: clamp(24px, 7vw, 32px);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  text-shadow: 0 2px 12px var(--surface-glass-bg);
+}
+
+.mobile-track-info__artist {
   color: var(--text-secondary);
+  font-size: clamp(16px, 4.5vw, 18px);
+  font-weight: 500;
+  line-height: 1.3;
+  opacity: 0.95;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+  text-shadow: 0 1px 8px var(--surface-glass-bg);
 }
 
-.mobile-controls-row {
-  display: grid;
-  grid-template-columns: 3rem 3rem 4rem 3rem 3rem;
-  align-items: center;
-  justify-content: center;
-  gap: 1rem;
+.mobile-error {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-left: 3px solid var(--error);
+  background: var(--error-soft-bg);
+  padding: 12px 16px;
+  color: var(--text-primary);
+  font-size: 13px;
+  border-radius: 0 8px 8px 0;
 }
 
-.mobile-primary-control {
-  display: inline-flex;
-  min-width: 4rem;
-  min-height: 4rem;
+.mobile-controls {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: transparent;
+  position: relative;
+  z-index: 10;
+}
+
+.mobile-transport {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.mobile-play-btn {
+  display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 9999px;
-  background: var(--accent);
-  color: var(--text-inverse);
-  box-shadow: 0 18px 40px color-mix(in srgb, var(--accent) 24%, transparent);
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  color: var(--surface-0);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+}
+
+.mobile-play-btn:active {
+  transform: scale(0.92);
+}
+
+.mobile-play-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .mobile-volume-panel {
   position: absolute;
-  bottom: calc(100% + 0.75rem);
-  left: 50%;
+  inset-inline: 24px;
+  bottom: calc(100% + 16px);
   z-index: 20;
   display: flex;
-  min-width: 4.75rem;
-  min-height: 12rem;
-  transform: translateX(-50%);
-  flex-direction: column;
   align-items: center;
-  gap: 0.75rem;
-  border: 1px solid var(--border-default);
-  border-radius: 1.5rem;
-  background: var(--surface-4);
-  padding: 0.85rem 0.75rem;
-  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.28);
+  gap: 16px;
+  border: 1px solid var(--surface-glass-border);
+  border-radius: 12px;
+  background: var(--surface-glass-panel);
+  backdrop-filter: blur(24px);
+  padding: 14px 20px;
+  box-shadow: 0 24px 48px var(--surface-glass-bg);
 }
 
-.mobile-volume-track {
-  position: relative;
+.mobile-volume-panel__mute {
+  flex-shrink: 0;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  width: 44px;
+  text-align: left;
+}
+
+.mobile-volume-panel input[type=range] {
+  flex: 1;
+  min-width: 0;
+}
+
+.mobile-lyrics-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-tutorial);
   display: flex;
-  width: 2.75rem;
-  min-height: 8.5rem;
-  touch-action: none;
+  flex-direction: column;
+  background: var(--surface-0);
+  padding-top: env(safe-area-inset-top);
+}
+
+.mobile-lyrics-overlay__bar {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  outline: none;
-}
-
-.mobile-volume-track:focus-visible {
-  border-radius: 1rem;
-  box-shadow: 0 0 0 3px var(--accent-muted);
-}
-
-.mobile-volume-track__rail {
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-default);
+  background: var(--surface-1);
   position: relative;
-  height: 8rem;
-  width: 0.55rem;
-  overflow: hidden;
-  border-radius: 9999px;
-  background: var(--progress-track);
-}
-
-.mobile-volume-track__fill {
-  position: absolute;
-  inset-inline: 0;
-  bottom: 0;
-  border-radius: 9999px;
-  background: var(--accent);
-}
-
-.mobile-volume-track__thumb {
-  position: absolute;
-  left: 50%;
-  width: 1.15rem;
-  height: 1.15rem;
-  transform: translateX(-50%);
-  border: 3px solid var(--surface-4);
-  border-radius: 9999px;
-  background: var(--accent);
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.24);
+  z-index: 10;
 }
 
 .mobile-volume-popover-enter-active,
-.mobile-volume-popover-leave-active {
-  transition: opacity 180ms ease, transform 180ms ease;
+.mobile-volume-popover-leave-active,
+.slide-up-enter-active,
+.slide-up-leave-active {
+  transition: opacity 240ms cubic-bezier(0.16, 1, 0.3, 1), transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .mobile-volume-popover-enter-from,
 .mobile-volume-popover-leave-to {
   opacity: 0;
-  transform: translateX(-50%) translateY(0.35rem) scale(0.96);
+  transform: translateY(12px) scale(0.95);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .mobile-volume-popover-enter-active,
-  .mobile-volume-popover-leave-active {
-    transition-duration: 0.01ms;
+.slide-up-enter-from,
+.slide-up-leave-to {
+  opacity: 0;
+  transform: translateY(100%);
+}
+
+@media (max-height: 700px) {
+  .mobile-cover-container {
+    padding: 16px 32px 8px;
+  }
+  .mobile-play-btn {
+    width: 64px;
+    height: 64px;
   }
 }
 </style>

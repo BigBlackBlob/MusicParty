@@ -21,23 +21,25 @@
         >
           <div class="flex items-center gap-2 text-xs font-semibold tracking-[0.12em] text-[var(--text-secondary)]">
             <MessageSquare class="w-3.5 h-3.5 text-[var(--accent)]" />
-            聊天
+            {{ t('chat.title') }}
           </div>
-          <button @click="chatStore.toggleChat" class="min-w-[44px] min-h-[44px] inline-flex items-center justify-center p-1 text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)] active:scale-[0.96]" aria-label="关闭聊天">
+          <button @click="chatStore.toggleChat" class="min-w-[44px] min-h-[44px] inline-flex items-center justify-center p-1 text-[var(--text-tertiary)] transition-colors hover:text-[var(--text-primary)] active:scale-[0.96]" :aria-label="t('common.close')" :title="t('common.close')">
             <X class="w-4 h-4" />
           </button>
         </div>
 
         <div class="flex border-b border-[var(--border-default)] bg-[var(--surface-2)]">
           <button
-              v-for="tab in ['CHAT', 'SYSTEM']"
-              :key="tab"
-              @click="activeTab = tab"
+              v-for="tab in chatTabs"
+              :key="tab.value"
+              @click="activeTab = tab.value"
               class="relative flex-1 px-3 py-2 text-xs font-semibold tracking-[0.14em] transition-colors"
-              :class="activeTab === tab ? 'text-[var(--text-primary)] bg-[var(--surface-3)]' : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]/60'"
+              :class="activeTab === tab.value ? 'text-[var(--text-primary)] bg-[var(--surface-3)]' : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]/60'"
+              :aria-label="tab.label"
+              :title="tab.label"
           >
-            {{ tabLabel(tab) }}
-            <span v-if="activeTab === tab" class="absolute inset-x-3 bottom-0 h-px bg-[var(--accent)]"></span>
+            {{ tab.label }}
+            <span v-if="activeTab === tab.value" class="absolute inset-x-3 bottom-0 h-px bg-[var(--accent)]"></span>
           </button>
         </div>
 
@@ -51,7 +53,7 @@
           </div>
 
           <div v-if="processedMessages.length === 0" class="py-8 text-center text-xs text-[var(--text-tertiary)]">
-            当前没有{{ activeTab === 'CHAT' ? '聊天' : '系统' }}记录
+            {{ t('chat.empty') }}
           </div>
 
           <div v-for="item in processedMessages" :key="item.msg.id">
@@ -98,27 +100,27 @@
           </div>
         </div>
 
-        <div v-if="activeTab === 'CHAT'" class="flex gap-2 border-t border-[var(--border-default)] bg-[var(--surface-1)] p-2">
+        <div v-if="activeTab === CHAT_TAB" class="flex gap-2 border-t border-[var(--border-default)] bg-[var(--surface-1)] p-2">
           <input
               v-model="inputContent"
               @keyup.enter="send"
               @mousedown.stop
               @touchstart.stop
-              placeholder="输入消息..."
+              :placeholder="t('chat.placeholder')"
               class="min-w-0 flex-1 rounded-xl border border-[var(--border-default)] bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none transition-colors placeholder:text-[var(--text-tertiary)] focus:border-[var(--border-accent)] focus:ring-2 focus:ring-[var(--accent-muted)]"
-              aria-label="消息内容"
+              :aria-label="t('chat.placeholder')"
           />
           <button
               @click="send"
               class="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl bg-[var(--accent)] px-3 text-[var(--text-inverse)] transition-colors hover:bg-[var(--accent-hover)] active:scale-[0.96]"
-              aria-label="发送消息"
+              :aria-label="t('chat.send')"
           >
             <Send class="h-4 w-4" />
           </button>
         </div>
 
         <div v-else class="flex h-8 items-center justify-center border-t border-[var(--border-default)] bg-[var(--surface-1)]">
-          <span class="text-xs font-mono text-[var(--text-tertiary)]">系统消息只读</span>
+          <span class="text-xs font-mono text-[var(--text-tertiary)]">{{ t('chat.readOnly') }}</span>
         </div>
       </div>
     </Transition>
@@ -146,24 +148,36 @@
 
 <script setup>
 import { ref, watch, nextTick, computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useChatStore } from '../stores/chat';
-import { usePlayerStore } from '../stores/player';
 import { useUserStore } from '../stores/user';
+import { useChatViewModel } from '../composables/useChatViewModel';
 import { useWindowSize } from '@vueuse/core';
 import { MessageSquare, X, Send, Terminal, Zap, Loader2 } from 'lucide-vue-next';
-import dayjs from 'dayjs';
 
 const chatStore = useChatStore();
-const playerStore = usePlayerStore();
 const userStore = useUserStore();
+const { t } = useI18n();
 const { width: windowWidth } = useWindowSize();
+const CHAT_TAB = 'CHAT';
+const SYSTEM_TAB = 'SYSTEM';
 
 const isMobile = computed(() => windowWidth.value < 768);
+const chatTabs = computed(() => ([
+  { value: CHAT_TAB, label: t('chat.tabChat') },
+  { value: SYSTEM_TAB, label: t('chat.tabSystem') }
+]));
 
 const inputContent = ref('');
 const msgListRef = ref(null);
-const activeTab = ref('CHAT');
-const tabLabel = (tab) => tab === 'CHAT' ? '聊天' : '系统';
+const activeTab = ref(CHAT_TAB);
+const {
+  processedMessages,
+  isSelf,
+  formatTime,
+  markAsRead,
+  sendMessage
+} = useChatViewModel(activeTab);
 
 let startDragPos = { x: 0, y: 0 };
 const handlePointerDown = (e) => {
@@ -189,32 +203,6 @@ const dynamicWindowClasses = computed(() => {
     return ['fixed', 'inset-0', 'm-auto', 'h-[75vh]', 'w-[90vw]', 'max-h-[600px]', 'max-w-[420px]', 'rounded-xl'];
   }
   return ['h-[50vh]', 'w-[340px]', 'md:h-[480px]', 'rounded-lg'];
-});
-
-const isSelf = (msg) => msg.userId === userStore.userToken;
-const formatTime = (ts) => dayjs(ts).format('MM-DD HH:mm');
-
-const processedMessages = computed(() => {
-  const filtered = chatStore.messages.filter((msg) => {
-    if (activeTab.value === 'CHAT') return msg.type === 'CHAT' || msg.type === 'LIKE' || msg.type === 'PLAY_START';
-    if (activeTab.value === 'SYSTEM') return msg.type === 'SYSTEM' || msg.type === 'LIKE' || msg.type === 'PLAY_START';
-    return false;
-  });
-
-  const result = [];
-  let lastTime = 0;
-  const TIME_THRESHOLD = 3 * 60 * 1000;
-
-  for (const msg of filtered) {
-    let showTime = false;
-    if (msg.timestamp - lastTime > TIME_THRESHOLD) {
-      showTime = true;
-      lastTime = msg.timestamp;
-    }
-    result.push({ msg, showTime });
-  }
-
-  return result;
 });
 
 const scrollToBottom = async (force = false) => {
@@ -248,9 +236,7 @@ const handleScroll = (e) => {
 };
 
 const send = () => {
-  const text = inputContent.value.trim();
-  if (!text) return;
-  playerStore.sendChatMessage(text);
+  if (!sendMessage(inputContent.value)) return;
   inputContent.value = '';
   setTimeout(() => scrollToBottom(true), 100);
 };
@@ -261,7 +247,7 @@ const toggleChat = () => {
 
 watch([() => chatStore.isOpen, activeTab], async ([isOpen]) => {
   if (isOpen) {
-    chatStore.unreadCount = 0;
+    markAsRead();
     await scrollToBottom(true);
   }
 });
