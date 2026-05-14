@@ -1,5 +1,5 @@
 <template>
-  <section class="mobile-now-page">
+  <section class="mobile-now-page" :class="`mobile-now-page--${ui.mobileNowDensity}`">
     <div class="mobile-stage">
       <div class="mobile-cover-container">
         <button
@@ -37,7 +37,7 @@
 
         <MobileMiniLyrics
           v-if="hasLyrics"
-          class="w-full flex-shrink-0 mt-2"
+          class="mobile-mini-lyrics-slot w-full flex-shrink-0"
           :lyrics="player.lyricDetail.lyric || player.lyricText"
           :translated-lyrics="ui.showLyricTranslation ? player.lyricDetail.translatedLyric : ''"
           :show-translation="ui.showLyricTranslation"
@@ -53,7 +53,7 @@
     </div>
 
     <div class="mobile-controls">
-      <div class="px-5 w-full pt-2 pb-4">
+      <div class="mobile-progress-wrap">
         <ProgressScrubber
           :current-ms="player.playbackPositionMs"
           :duration="durationMs"
@@ -66,7 +66,7 @@
         />
       </div>
 
-      <div class="mobile-transport px-6 pb-6">
+      <div class="mobile-transport">
         <IconButton
           @click="toggleVolumePanel"
           :variant="volumePanelOpen ? 'secondary' : 'ghost'"
@@ -233,6 +233,52 @@ onUnmounted(() => {
   min-height: 0;
   overflow: hidden;
   --mobile-controls-height: auto;
+  --mobile-cover-vw: 76vw;
+  --mobile-cover-max: 320px;
+  --mobile-stage-pad-top: clamp(12px, 2.6dvh, 22px);
+  --mobile-cover-pad-x: 24px;
+  --mobile-cover-pad-bottom: 14px;
+  --mobile-track-gap: 4px;
+  --mobile-meta-gap: 6px;
+  --mobile-meta-margin-bottom: 6px;
+  --mobile-title-max: 32px;
+  --mobile-artist-max: 18px;
+  --mobile-mini-lyrics-margin: 8px;
+  --mobile-progress-pad-x: 20px;
+  --mobile-progress-pad-top: 8px;
+  --mobile-progress-pad-bottom: 16px;
+  --mobile-transport-pad-x: 24px;
+  --mobile-transport-pad-bottom: 24px;
+  --mobile-play-size: 72px;
+  --mobile-transport-center-gap: 24px;
+}
+
+.mobile-now-page--compact {
+  --mobile-cover-vw: 68vw;
+  --mobile-cover-max: 260px;
+  --mobile-stage-pad-top: clamp(10px, 2dvh, 16px);
+  --mobile-cover-pad-bottom: 10px;
+  --mobile-track-gap: 3px;
+  --mobile-meta-margin-bottom: 4px;
+  --mobile-title-max: 28px;
+  --mobile-artist-max: 16px;
+  --mobile-mini-lyrics-margin: 6px;
+  --mobile-progress-pad-top: 4px;
+  --mobile-progress-pad-bottom: 12px;
+  --mobile-transport-pad-bottom: 16px;
+  --mobile-play-size: 66px;
+  --mobile-transport-center-gap: 20px;
+}
+
+.mobile-now-page--relaxed {
+  --mobile-cover-vw: 84vw;
+  --mobile-cover-max: 360px;
+  --mobile-stage-pad-top: clamp(16px, 3.4dvh, 28px);
+  --mobile-cover-pad-bottom: 18px;
+  --mobile-track-gap: 6px;
+  --mobile-mini-lyrics-margin: 10px;
+  --mobile-progress-pad-bottom: 18px;
+  --mobile-transport-pad-bottom: 28px;
 }
 
 .mobile-stage {
@@ -247,7 +293,7 @@ onUnmounted(() => {
 
 .mobile-cover-container {
   width: 100%;
-  padding: clamp(16px, 4vh, 32px) 24px 16px;
+  padding: var(--mobile-stage-pad-top) var(--mobile-cover-pad-x) var(--mobile-cover-pad-bottom);
   display: flex;
   justify-content: center;
 }
@@ -255,8 +301,8 @@ onUnmounted(() => {
 .mobile-cover {
   position: relative;
   display: block;
-  width: 100%;
-  max-width: 400px;
+  width: min(var(--mobile-cover-vw), var(--mobile-cover-max));
+  max-width: 100%;
   aspect-ratio: 1;
   border-radius: 16px;
   background: var(--surface-2);
@@ -293,15 +339,15 @@ onUnmounted(() => {
   text-align: left;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--mobile-track-gap);
 }
 
 .mobile-track-info__meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--mobile-meta-gap);
   align-items: center;
-  margin-bottom: 6px;
+  margin-bottom: var(--mobile-meta-margin-bottom);
 }
 
 .meta-pill {
@@ -320,7 +366,7 @@ onUnmounted(() => {
 
 .mobile-track-info__title {
   color: var(--text-primary);
-  font-size: clamp(24px, 7vw, 32px);
+  font-size: clamp(22px, 6.4vw, var(--mobile-title-max));
   font-weight: 800;
   line-height: 1.1;
   letter-spacing: -0.01em;
@@ -333,7 +379,7 @@ onUnmounted(() => {
 
 .mobile-track-info__artist {
   color: var(--text-secondary);
-  font-size: clamp(16px, 4.5vw, 18px);
+  font-size: clamp(15px, 4vw, var(--mobile-artist-max));
   font-weight: 500;
   line-height: 1.3;
   opacity: 0.95;
@@ -365,19 +411,33 @@ onUnmounted(() => {
   z-index: 10;
 }
 
+.mobile-progress-wrap {
+  width: 100%;
+  padding: var(--mobile-progress-pad-top) var(--mobile-progress-pad-x) var(--mobile-progress-pad-bottom);
+}
+
 .mobile-transport {
   display: flex;
   align-items: center;
   justify-content: space-between;
   width: 100%;
+  padding: 0 var(--mobile-transport-pad-x) var(--mobile-transport-pad-bottom);
+}
+
+.mobile-transport > .flex {
+  gap: var(--mobile-transport-center-gap);
+}
+
+.mobile-mini-lyrics-slot {
+  margin-top: var(--mobile-mini-lyrics-margin);
 }
 
 .mobile-play-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 72px;
-  height: 72px;
+  width: var(--mobile-play-size);
+  height: var(--mobile-play-size);
   border-radius: 50%;
   background: var(--text-primary);
   color: var(--surface-0);
@@ -468,12 +528,47 @@ onUnmounted(() => {
 }
 
 @media (max-height: 700px) {
-  .mobile-cover-container {
-    padding: 16px 32px 8px;
+  .mobile-now-page {
+    --mobile-cover-vw: 68vw;
+    --mobile-cover-max: 270px;
+    --mobile-stage-pad-top: clamp(10px, 2dvh, 16px);
+    --mobile-cover-pad-x: 32px;
+    --mobile-cover-pad-bottom: 8px;
+    --mobile-title-max: 28px;
+    --mobile-artist-max: 16px;
+    --mobile-progress-pad-top: 4px;
+    --mobile-progress-pad-bottom: 12px;
+    --mobile-transport-pad-bottom: 16px;
+    --mobile-play-size: 64px;
+    --mobile-transport-center-gap: 20px;
   }
-  .mobile-play-btn {
-    width: 64px;
-    height: 64px;
+
+  .mobile-now-page--compact {
+    --mobile-cover-vw: 62vw;
+    --mobile-cover-max: 240px;
+  }
+}
+
+@media (max-height: 620px) {
+  .mobile-now-page {
+    --mobile-cover-vw: 58vw;
+    --mobile-cover-max: 220px;
+    --mobile-stage-pad-top: 8px;
+    --mobile-cover-pad-bottom: 6px;
+    --mobile-track-gap: 2px;
+    --mobile-meta-gap: 4px;
+    --mobile-meta-margin-bottom: 2px;
+    --mobile-mini-lyrics-margin: 4px;
+    --mobile-progress-pad-top: 2px;
+    --mobile-progress-pad-bottom: 10px;
+    --mobile-transport-pad-bottom: 12px;
+    --mobile-play-size: 60px;
+    --mobile-transport-center-gap: 16px;
+  }
+
+  .mobile-track-info__meta {
+    max-height: 22px;
+    overflow: hidden;
   }
 }
 </style>
