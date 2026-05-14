@@ -88,6 +88,22 @@
                 </div>
               </div>
 
+              <!-- Now playing density -->
+              <div>
+                <h3 class="text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-wider mb-3">{{ t('settings.mobileNowDensity') }}</h3>
+                <div class="flex gap-2">
+                  <button
+                    v-for="density in mobileNowDensityOptions"
+                    :key="density"
+                    class="flex-1 py-2.5 rounded-md border text-sm font-bold transition-colors"
+                    :class="ui.mobileNowDensity === density ? 'border-[var(--accent)] bg-[var(--accent-subtle)] text-[var(--text-primary)]' : 'border-[var(--border-subtle)] bg-[var(--surface-control)] text-[var(--text-secondary)]'"
+                    @click="ui.setMobileNowDensity(density)"
+                  >
+                    {{ t(`settings.${density}`) }}
+                  </button>
+                </div>
+              </div>
+
               <!-- Members -->
               <div>
                 <div class="flex items-center justify-between mb-3">
@@ -139,6 +155,7 @@ import MobileSearchView from './MobileSearchView.vue';
 const { t, locale: i18nLocale } = useI18n();
 
 const showSettings = ref(false);
+const mobileNowDensityOptions = ['compact', 'standard', 'relaxed'];
 const chat = useChatStore();
 const player = usePlayerStore();
 const ui = useUiStore();

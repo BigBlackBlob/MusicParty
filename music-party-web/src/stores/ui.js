@@ -6,6 +6,7 @@ import client from '../api/client';
 import { musicApi } from '../api/music';
 
 export const useUiStore = defineStore('ui', () => {
+    const mobileNowDensityOptions = ['compact', 'standard', 'relaxed'];
     const initialTheme = localStorage.getItem('theme') || 'dark';
     const isDarkMode = ref(initialTheme !== 'light');
     const locale = ref(localStorage.getItem('mp_locale') || 'en');
@@ -13,6 +14,7 @@ export const useUiStore = defineStore('ui', () => {
     const forceMobileLayout = ref(localStorage.getItem('mp_force_mobile_layout') === 'true');
     const mobilePreviewWidth = ref(parseInt(localStorage.getItem('mp_mobile_preview_width') || '390', 10));
     const mobileActiveTab = ref(localStorage.getItem('mp_mobile_active_tab') || 'now');
+    const mobileNowDensity = ref(mobileNowDensityOptions.includes(localStorage.getItem('mp_mobile_now_density')) ? localStorage.getItem('mp_mobile_now_density') : 'standard');
     const mainStageScale = ref(Number(localStorage.getItem('mp_main_stage_scale') || 1));
     const globalZoomLevel = ref(Number(localStorage.getItem('mp_global_zoom_level') || 1));
     const volume = ref(parseFloat(localStorage.getItem(STORAGE_KEYS.VOLUME) || '0.5'));
@@ -155,6 +157,12 @@ export const useUiStore = defineStore('ui', () => {
         }
     };
 
+    const setMobileNowDensity = (value) => {
+        if (mobileNowDensityOptions.includes(value)) {
+            mobileNowDensity.value = value;
+        }
+    };
+
     const toggleDarkMode = () => {
         isDarkMode.value = !isDarkMode.value;
     };
@@ -269,6 +277,10 @@ export const useUiStore = defineStore('ui', () => {
         localStorage.setItem('mp_mobile_active_tab', newVal);
     });
 
+    watch(mobileNowDensity, (newVal) => {
+        localStorage.setItem('mp_mobile_now_density', newVal);
+    });
+
     watch(mainStageScale, (newVal) => {
         localStorage.setItem('mp_main_stage_scale', newVal.toString());
     });
@@ -296,6 +308,8 @@ export const useUiStore = defineStore('ui', () => {
         setMobilePreviewWidth,
         mobileActiveTab,
         setMobileActiveTab,
+        mobileNowDensity,
+        setMobileNowDensity,
         mainStageScale,
         setMainStageScale,
         globalZoomLevel,
