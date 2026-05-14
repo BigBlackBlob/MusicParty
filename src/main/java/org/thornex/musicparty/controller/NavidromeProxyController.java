@@ -107,7 +107,7 @@ public class NavidromeProxyController {
             @PathVariable String coverArtId,
             @RequestParam(required = false) String token) {
 
-        if (!navidromeAccessService.isEnabled()) {
+        if (token == null || !navidromeAccessService.canUseByToken(token)) {
             return Mono.just(ResponseEntity.status(HttpStatus.FORBIDDEN).build());
         }
 

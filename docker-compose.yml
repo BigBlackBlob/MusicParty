@@ -22,13 +22,14 @@ services:
       - "8848:8080" 
     environment:
       # [必填] 管理员密码，用于在搜索框输入指令控制系统
-      - ADMIN_PASSWORD=admin123
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?Set ADMIN_PASSWORD before starting MusicParty}
       
       # [必填] 网易云 API 地址，指向上面的容器名
       - NETEASE_API_URL=http://netease-api:3000
       
       # [基础配置]
       - BASE_URL=http://localhost:8848    #你的基础url，用于直播流链接的拼接
+      - ALLOWED_ORIGINS=http://localhost:8848 # 逗号分隔；生产环境填写实际访问 Origin
       - APP_AUTHOR_NAME=ThorNex      # 页面左上角显示的作者名
       - APP_BACK_WORDS=MUSIC PARTY    # 中间背景装饰文字
       

@@ -45,7 +45,7 @@ http://localhost:8848
 正式部署前至少修改这些环境变量：
 
 ```yaml
-- ADMIN_PASSWORD=change-me
+- ADMIN_PASSWORD=use-a-long-random-password
 - BASE_URL=https://music.example.com
 - NETEASE_COOKIE=
 - BILIBILI_SESSDATA=
@@ -57,8 +57,9 @@ http://localhost:8848
 
 | 变量名 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `ADMIN_PASSWORD` | 是 | `admin123` | 管理员命令密码。生产环境必须修改。 |
+| `ADMIN_PASSWORD` | 是 | 无 | 管理员命令密码。必须显式设置，不能使用 `admin123`、`change-me` 等弱默认值。 |
 | `BASE_URL` | 否 | `http://localhost:8080` | 对外访问地址，生成直播流链接时使用。 |
+| `ALLOWED_ORIGINS` | 否 | 从 `BASE_URL` 与本地开发地址派生 | WebSocket 允许的 Origin，多个值用英文逗号分隔。 |
 | `APP_AUTHOR_NAME` | 否 | `ThorNex` | 页面品牌/作者名。 |
 | `APP_BACK_WORDS` | 否 | `THORNEX` | 播放区背景装饰文字。 |
 | `NETEASE_API_URL` | 是 | `http://netease-api:3000` | NeteaseCloudMusicApi 地址。 |

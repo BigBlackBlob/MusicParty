@@ -163,7 +163,7 @@ public class MusicPlayerService {
 
         // Handle failed items
         if (nextItem.status() == QueueItemStatus.FAILED ||
-                (statusMap.get(nextItem.music().id()) == QueueItemStatus.FAILED)) {
+                (statusMap.get(MusicQueueManager.musicKey(nextItem.music())) == QueueItemStatus.FAILED)) {
             log.warn("Skipping failed song: {}", nextItem.music().name());
             eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", "加载失败: " + nextItem.music().name()));
             playNextInQueue(); // Recursively try next
@@ -805,9 +805,9 @@ public class MusicPlayerService {
         Map<String, QueueItemStatus> statusMap = new HashMap<>();
         for (MusicQueueItem item : queueManager.getQueueSnapshot()) {
             if ("bilibili".equals(item.music().platform())) {
-                statusMap.put(item.music().id(), mapCacheStatusToEnum(localCacheService.getStatus(item.music().id())));
+                statusMap.put(MusicQueueManager.musicKey(item.music()), mapCacheStatusToEnum(localCacheService.getStatus(item.music().id())));
             } else {
-                statusMap.put(item.music().id(), QueueItemStatus.READY);
+                statusMap.put(MusicQueueManager.musicKey(item.music()), QueueItemStatus.READY);
             }
         }
         return statusMap;

@@ -77,7 +77,7 @@
 
               <div v-else class="space-y-2">
                 <div v-for="item in displayItems" :key="`${searchType}:${item.id}`" class="flex cursor-pointer items-center gap-4 rounded-lg border border-transparent p-3 transition-all hover:border-border-subtle hover:bg-[var(--surface-control-hover)]">
-                  <img v-if="item.coverUrl" :src="item.coverUrl" class="w-10 h-10 rounded object-cover" />
+                  <CoverImage v-if="item.coverUrl" :src="item.coverUrl" :alt="item.name" class="w-10 h-10 rounded object-cover" />
                   <div v-else class="flex h-10 w-10 items-center justify-center rounded bg-[var(--surface-control)]">
                     <span class="material-symbols-outlined text-[20px] text-text-muted">{{ resultMode === 'album' ? 'album' : 'music_note' }}</span>
                   </div>
@@ -104,6 +104,7 @@ import { useI18n } from 'vue-i18n';
 import { usePlayerStore } from '../stores/player';
 import { useSearchLogic } from '../composables/useSearchLogic';
 import { DialogRoot, DialogPortal, DialogOverlay, DialogContent } from 'reka-ui';
+import CoverImage from './CoverImage.vue';
 
 const props = defineProps(['isOpen']);
 const emit = defineEmits(['close']);
