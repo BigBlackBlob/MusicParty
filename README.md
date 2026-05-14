@@ -12,8 +12,6 @@
 
 ## 预览
 
-> 截图文件放在 `docs/assets/readme/`。如果你在本地重新截图，只需要覆盖同名文件。
-
 ![桌面端主界面](docs/assets/readme/desktop.png)
 
 ![移动端播放界面](docs/assets/readme/mobile.png)
