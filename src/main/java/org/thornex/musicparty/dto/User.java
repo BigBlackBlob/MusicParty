@@ -10,6 +10,7 @@ public class User {
     private final String sessionToken;
     private final String publicId;
     private String sessionId;   // 当前的 WebSocket 会话 ID (会变)
+    private String roomId = "lounge";
     private String name;
     private boolean isGuest;
     private long lastActiveTime;

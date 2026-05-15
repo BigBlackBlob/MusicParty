@@ -1,6 +1,8 @@
 package org.thornex.musicparty.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.User;
 import org.thornex.musicparty.dto.UserSummary;
 
@@ -12,7 +14,7 @@ class UserServiceIdentityTests {
 
     @Test
     void createsServerIssuedSessionTokenAndPublicId() {
-        UserService service = new UserService(event -> {});
+        UserService service = createService();
 
         User user = service.handleConnect("session-1", null, "Alice");
 
@@ -23,7 +25,7 @@ class UserServiceIdentityTests {
 
     @Test
     void reconnectsOnlyWithKnownSessionToken() {
-        UserService service = new UserService(event -> {});
+        UserService service = createService();
         User first = service.handleConnect("session-1", null, "Alice");
 
         User reconnected = service.handleConnect("session-2", first.getSessionToken(), "Ignored");
@@ -36,12 +38,19 @@ class UserServiceIdentityTests {
 
     @Test
     void onlineSummariesExposeOnlyPublicIdentity() {
-        UserService service = new UserService(event -> {});
+        UserService service = createService();
         User user = service.handleConnect("session-1", null, "Alice");
 
         List<UserSummary> summaries = service.getOnlineUserSummaries();
 
         assertThat(summaries).containsExactly(new UserSummary(user.getPublicId(), "Alice", false));
         assertThat(summaries.getFirst().publicId()).isNotEqualTo(user.getSessionToken());
+    }
+
+    private UserService createService() {
+        return new UserService(
+                event -> {},
+                new RoomService(new ObjectMapper(), event -> {}, new AppProperties())
+        );
     }
 }

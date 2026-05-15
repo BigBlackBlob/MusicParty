@@ -17,12 +17,18 @@ public class SystemMessageEvent extends ApplicationEvent {
     private final PlayerAction action;
     private final String userId; // 触发者的 Token，可为 "SYSTEM"
     private final String payload; // 附加信息（如歌曲名）
+    private final String roomId;
 
     public SystemMessageEvent(Object source, Level level, PlayerAction action, String userId, String payload) {
+        this(source, level, action, userId, payload, "lounge");
+    }
+
+    public SystemMessageEvent(Object source, Level level, PlayerAction action, String userId, String payload, String roomId) {
         super(source);
         this.level = level;
         this.action = action;
         this.userId = userId;
         this.payload = payload;
+        this.roomId = roomId;
     }
 }

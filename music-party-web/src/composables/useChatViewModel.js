@@ -12,11 +12,12 @@ export const useChatViewModel = (activeTabRef) => {
     const user = useUserStore();
 
     const isSelf = (msg) => msg.userId === user.publicId;
-    const tabLabel = (tab) => tab === 'CHAT' ? '聊天' : '系统';
+    const tabLabel = (tab) => tab === 'CHAT' ? '聊天' : (tab === 'PUBLIC' ? '公共' : '系统');
     const formatTime = (ts) => dayjs(ts).format('MM-DD HH:mm');
 
     const filteredMessages = computed(() => {
         const activeTab = activeTabRef?.value || 'CHAT';
+        if (activeTab === 'PUBLIC') return chat.publicMessages;
         return chat.messages.filter((msg) => {
             if (activeTab === 'CHAT') return msg.type === 'CHAT' || msg.type === 'LIKE' || msg.type === 'PLAY_START';
             if (activeTab === 'SYSTEM') return msg.type === 'SYSTEM' || msg.type === 'LIKE' || msg.type === 'PLAY_START';
@@ -40,12 +41,19 @@ export const useChatViewModel = (activeTabRef) => {
 
     const markAsRead = () => {
         chat.unreadCount = 0;
+        if ((activeTabRef?.value || 'CHAT') === 'PUBLIC') {
+            chat.publicUnreadCount = 0;
+        }
     };
 
     const sendMessage = (content) => {
         const text = String(content || '').trim();
         if (!text) return false;
-        player.sendChatMessage(text);
+        if ((activeTabRef?.value || 'CHAT') === 'PUBLIC') {
+            player.sendPublicChatMessage(text);
+        } else {
+            player.sendChatMessage(text);
+        }
         return true;
     };
 

@@ -9,10 +9,16 @@ import org.thornex.musicparty.dto.PlayerState;
  */
 @Getter
 public class PlayerStateEvent extends ApplicationEvent {
+    private final String roomId;
     private final PlayerState state;
 
     public PlayerStateEvent(Object source, PlayerState state) {
+        this(source, "lounge", state);
+    }
+
+    public PlayerStateEvent(Object source, String roomId, PlayerState state) {
         super(source);
+        this.roomId = roomId;
         this.state = state;
     }
 }

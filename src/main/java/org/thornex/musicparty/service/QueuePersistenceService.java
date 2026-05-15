@@ -23,7 +23,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class QueuePersistenceService {
 
-    private final MusicQueueManager musicQueueManager;
+    private final MusicPlayerService musicPlayerService;
     private final ChatService chatService;
     private final AppProperties appProperties;
     private final ObjectMapper objectMapper;
@@ -47,9 +47,15 @@ public class QueuePersistenceService {
         try {
             File file = getPersistenceFile();
             PersistentData data = new PersistentData();
-            data.setQueue(musicQueueManager.getQueueSnapshot());
-            data.setHistory(musicQueueManager.getHistorySnapshot());
-            data.setChatHistory(chatService.getHistoryFull());
+            musicPlayerService.getActiveRoomIds().forEach(roomId -> {
+                RoomPersistentData roomData = new RoomPersistentData();
+                MusicQueueManager manager = musicPlayerService.getSession(roomId).getQueueManager();
+                roomData.setQueue(manager.getQueueSnapshot());
+                roomData.setHistory(manager.getHistorySnapshot());
+                roomData.setChatHistory(chatService.getHistoryFull(roomId));
+                data.getRooms().put(roomId, roomData);
+            });
+            data.setPublicChatHistory(chatService.getPublicHistoryFull());
 
             objectMapper.writeValue(file, data);
             log.debug("Queue, music history and chat history saved to {}", file.getAbsolutePath());
@@ -68,14 +74,25 @@ public class QueuePersistenceService {
         try {
             PersistentData data = objectMapper.readValue(file, new TypeReference<PersistentData>() {});
             
-            musicQueueManager.restore(
-                data.getQueue() != null ? data.getQueue() : Collections.emptyList(),
-                data.getHistory() != null ? data.getHistory() : Collections.emptyList()
-            );
+            if (data.getRooms() != null && !data.getRooms().isEmpty()) {
+                data.getRooms().forEach((roomId, roomData) -> {
+                    musicPlayerService.getSession(roomId).getQueueManager().restore(
+                            roomData.getQueue() != null ? roomData.getQueue() : Collections.emptyList(),
+                            roomData.getHistory() != null ? roomData.getHistory() : Collections.emptyList()
+                    );
+                    chatService.restore(roomId, roomData.getChatHistory() != null ? roomData.getChatHistory() : Collections.emptyList());
+                });
+            } else {
+                musicPlayerService.getSession(RoomService.DEFAULT_ROOM_ID).getQueueManager().restore(
+                    data.getQueue() != null ? data.getQueue() : Collections.emptyList(),
+                    data.getHistory() != null ? data.getHistory() : Collections.emptyList()
+                );
+                chatService.restore(RoomService.DEFAULT_ROOM_ID, data.getChatHistory() != null ? data.getChatHistory() : Collections.emptyList());
+            }
 
-            chatService.restore(data.getChatHistory() != null ? data.getChatHistory() : Collections.emptyList());
+            chatService.restorePublic(data.getPublicChatHistory() != null ? data.getPublicChatHistory() : Collections.emptyList());
 
-            log.info("Restored {} queue items, {} music history items and {} chat messages from {}", 
+            log.info("Restored {} queue items, {} music history items and {} chat messages from {}",
                 data.getQueue() != null ? data.getQueue().size() : 0, 
                 data.getHistory() != null ? data.getHistory().size() : 0, 
                 data.getChatHistory() != null ? data.getChatHistory().size() : 0,
@@ -96,6 +113,15 @@ public class QueuePersistenceService {
 
     @Data
     private static class PersistentData {
+        private List<MusicQueueItem> queue;
+        private List<Music> history;
+        private List<org.thornex.musicparty.dto.ChatMessage> chatHistory;
+        private java.util.Map<String, RoomPersistentData> rooms = new java.util.HashMap<>();
+        private List<org.thornex.musicparty.dto.ChatMessage> publicChatHistory;
+    }
+
+    @Data
+    private static class RoomPersistentData {
         private List<MusicQueueItem> queue;
         private List<Music> history;
         private List<org.thornex.musicparty.dto.ChatMessage> chatHistory;
