@@ -11,6 +11,9 @@
       <div v-if="selectionMode" class="flex h-5 w-5 items-center justify-center rounded-full border transition-colors" :class="selected ? 'border-primary bg-primary text-on-primary' : 'border-border-default bg-surface-raised text-transparent'" @click.stop="emit('toggle-select')">
         <span class="material-symbols-outlined text-[12px]">check</span>
       </div>
+      <div v-else-if="!userStore.isGuest" class="drag-handle cursor-grab active:cursor-grabbing text-text-muted hover:text-text-primary p-1">
+        <span class="material-symbols-outlined text-[18px]">drag_indicator</span>
+      </div>
     </template>
 
     <template #meta>

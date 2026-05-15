@@ -35,7 +35,7 @@ public class AppProperties {
 
     @Data
     public static class PlayerConfig {
-        private int maxPlaylistImportSize = 100;
+        private int maxPlaylistImportSize = 50;
     }
 
     @Data

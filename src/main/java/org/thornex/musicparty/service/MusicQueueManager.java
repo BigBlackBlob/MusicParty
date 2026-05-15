@@ -365,6 +365,19 @@ public class MusicQueueManager {
         queue.clear();
     }
 
+    public synchronized void reorder(int oldIndex, int newIndex) {
+        if (oldIndex < 0 || oldIndex >= queue.size() || newIndex < 0 || newIndex >= queue.size() || oldIndex == newIndex) {
+            return;
+        }
+
+        List<MusicQueueItem> list = new ArrayList<>(queue);
+        MusicQueueItem item = list.remove(oldIndex);
+        list.add(newIndex, item);
+
+        queue.clear();
+        queue.addAll(list);
+    }
+
     public List<MusicQueueItem> getQueueSnapshot() {
         return new ArrayList<>(queue);
     }

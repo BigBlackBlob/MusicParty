@@ -255,6 +255,11 @@ export const usePlayerStore = defineStore('player', () => {
         return true;
     };
 
+    const reorderQueue = (oldIndex, newIndex) => {
+        if (!requireAuth()) return;
+        socketService.send(WS_DEST.QUEUE_REORDER, { oldIndex, newIndex });
+    };
+
     const bindAccount = (platform, accountId) => {
         socketService.send(WS_DEST.USER_BIND, { platform, accountId });
         userStore.updateBinding(platform, accountId);
@@ -386,6 +391,7 @@ export const usePlayerStore = defineStore('player', () => {
         playNext, togglePause, toggleShuffle,
         seek,
         enqueue, enqueuePlaylist, enqueueAlbum, topSong, removeSong, topSongs, removeSongs, topSongsCompat, removeSongsCompat,
+        reorderQueue,
         bindAccount, renameUser, sendChatMessage, sendLike, addLikedSong, removeLikedSong, isSongLiked
     };
 });

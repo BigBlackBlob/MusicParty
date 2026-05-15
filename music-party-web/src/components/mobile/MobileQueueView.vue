@@ -46,48 +46,52 @@
           <span>{{ t('queue.emptyDesc') }}</span>
         </div>
 
-        <TrackListItem
-          v-for="(item, index) in player.queue"
-          v-else
-          :key="item.queueId || `${item.music?.platform}:${item.music?.id}:${index}`"
-          :title="item.music?.name"
-          :artist="formatArtists(item.music?.artists)"
-          :cover-url="item.music?.coverUrl"
-          :active="isSelected(item.queueId)"
-          clickable
-          @click="handleQueueItemClick(item.queueId)"
-          @activate="handleQueueItemClick(item.queueId)"
-          @pointerdown="startLongPress(item.queueId)"
-          @pointerup="clearLongPress"
-          @pointerleave="clearLongPress"
-          @pointercancel="clearLongPress"
-        >
-          <template #prefix>
-            <div class="mobile-list-prefix">
-              <span v-if="!selectionMode">{{ index + 1 }}</span>
-              <span
-                v-else
-                class="mobile-check"
-                :class="{ 'mobile-check--selected': isSelected(item.queueId) }"
-              >
-                <Check v-if="isSelected(item.queueId)" class="h-3 w-3" />
-              </span>
-            </div>
-          </template>
-          <template #meta>
-            {{ item.status || '' }}
-          </template>
-          <template #suffix>
-            <div v-if="!selectionMode && !user.isGuest" class="flex items-center gap-1">
-              <IconButton size="sm" variant="ghost" @click.stop="player.topSong(item.queueId)" :aria-label="t('queue.top')">
-                <ArrowUpToLine class="h-3.5 w-3.5" />
-              </IconButton>
-              <IconButton size="sm" variant="ghost" @click.stop="player.removeSong(item.queueId)" :aria-label="t('queue.remove')">
-                <Trash2 class="h-3.5 w-3.5 text-[var(--error)]" />
-              </IconButton>
-            </div>
-          </template>
-        </TrackListItem>
+        <div v-else ref="queueListRef" class="flex flex-col gap-[6px]">
+          <TrackListItem
+            v-for="(item, index) in player.queue"
+            :key="item.queueId || `${item.music?.platform}:${item.music?.id}:${index}`"
+            :title="item.music?.name"
+            :artist="formatArtists(item.music?.artists)"
+            :cover-url="item.music?.coverUrl"
+            :active="isSelected(item.queueId)"
+            clickable
+            @click="handleQueueItemClick(item.queueId)"
+            @activate="handleQueueItemClick(item.queueId)"
+            @pointerdown="startLongPress(item.queueId)"
+            @pointerup="clearLongPress"
+            @pointerleave="clearLongPress"
+            @pointercancel="clearLongPress"
+          >
+            <template #prefix>
+              <div class="mobile-list-prefix">
+                <div v-if="!selectionMode && !user.isGuest" class="mobile-drag-handle mr-2 text-text-muted">
+                  <GripVertical class="h-4 w-4" />
+                </div>
+                <span v-if="!selectionMode">{{ index + 1 }}</span>
+                <span
+                  v-else
+                  class="mobile-check"
+                  :class="{ 'mobile-check--selected': isSelected(item.queueId) }"
+                >
+                  <Check v-if="isSelected(item.queueId)" class="h-3 w-3" />
+                </span>
+              </div>
+            </template>
+            <template #meta>
+              {{ item.status || '' }}
+            </template>
+            <template #suffix>
+              <div v-if="!selectionMode && !user.isGuest" class="flex items-center gap-1">
+                <IconButton size="sm" variant="ghost" @click.stop="player.topSong(item.queueId)" :aria-label="t('queue.top')">
+                  <ArrowUpToLine class="h-3.5 w-3.5" />
+                </IconButton>
+                <IconButton size="sm" variant="ghost" @click.stop="player.removeSong(item.queueId)" :aria-label="t('queue.remove')">
+                  <Trash2 class="h-3.5 w-3.5 text-[var(--error)]" />
+                </IconButton>
+              </div>
+            </template>
+          </TrackListItem>
+        </div>
       </template>
 
       <template v-else>
@@ -148,9 +152,10 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue';
+import { computed, ref, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { ArrowUpToLine, Check, CheckSquare, Download, Trash2, X } from 'lucide-vue-next';
+import { ArrowUpToLine, Check, CheckSquare, Download, Trash2, X, GripVertical } from 'lucide-vue-next';
+import Sortable from 'sortablejs';
 import { usePlayerStore } from '../../stores/player';
 import { useUserStore } from '../../stores/user';
 import { createLikedSongsFilename, createLikedSongsText } from '../../utils/likedSongs';
@@ -169,6 +174,9 @@ const longPressTimer = ref(null);
 const longPressTriggered = ref(false);
 const LONG_PRESS_MS = 450;
 
+const queueListRef = ref(null);
+let sortableInstance = null;
+
 const {
   selectionMode,
   selectedCount,
@@ -181,6 +189,36 @@ const {
   isSelected,
   selectAll
 } = useQueueSelection(queue);
+
+onMounted(() => {
+  initSortable();
+});
+
+watch([activeView, selectionMode, queueListRef], () => {
+  if (activeView.value === 'queue' && !selectionMode.value) {
+    if (!sortableInstance) initSortable();
+  } else {
+    if (sortableInstance) {
+      sortableInstance.destroy();
+      sortableInstance = null;
+    }
+  }
+});
+
+const initSortable = () => {
+  if (!queueListRef.value) return;
+  sortableInstance = new Sortable(queueListRef.value, {
+    animation: 150,
+    handle: '.mobile-drag-handle',
+    ghostClass: 'opacity-40',
+    delay: 100, // 给长按留一点空间
+    onEnd: (evt) => {
+      if (evt.oldIndex !== evt.newIndex) {
+        player.reorderQueue(evt.oldIndex, evt.newIndex);
+      }
+    }
+  });
+};
 
 const activeCount = computed(() => activeView.value === 'queue' ? player.queue.length : player.likedSongs.length);
 

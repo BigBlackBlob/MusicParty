@@ -74,15 +74,17 @@
         </div>
 
         <div v-else class="flex min-h-0 flex-1 flex-col gap-2">
-          <QueueItem
-            v-for="(item, index) in queue"
-            :key="item.queueId || `${item.music?.platform || 'track'}:${item.music?.id || index}`"
-            :item="item"
-            :index="index"
-            :selection-mode="selectionMode"
-            :selected="isSelected(item.queueId)"
-            @toggle-select="toggleSelected(item.queueId)"
-          />
+          <div ref="queueListRef" class="flex flex-col gap-2">
+            <QueueItem
+              v-for="(item, index) in queue"
+              :key="item.queueId || `${item.music?.platform || 'track'}:${item.music?.id || index}`"
+              :item="item"
+              :index="index"
+              :selection-mode="selectionMode"
+              :selected="isSelected(item.queueId)"
+              @toggle-select="toggleSelected(item.queueId)"
+            />
+          </div>
         </div>
       </div>
 
@@ -91,8 +93,9 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import Sortable from 'sortablejs';
 import { usePlayerStore } from '../stores/player';
 import QueueItem from './QueueItem.vue';
 import TrackListItem from './ui/TrackListItem.vue';
@@ -103,6 +106,9 @@ const player = usePlayerStore();
 const { t } = useI18n();
 const queue = computed(() => player.queue);
 const activeView = ref('queue');
+const queueListRef = ref(null);
+let sortableInstance = null;
+
 const {
   selectionMode,
   selectedCount,
@@ -114,6 +120,35 @@ const {
   isSelected,
   selectAll
 } = useQueueSelection(queue);
+
+onMounted(() => {
+  initSortable();
+});
+
+watch([activeView, selectionMode, queueListRef], () => {
+  if (activeView.value === 'queue' && !selectionMode.value) {
+    if (!sortableInstance) initSortable();
+  } else {
+    if (sortableInstance) {
+      sortableInstance.destroy();
+      sortableInstance = null;
+    }
+  }
+});
+
+const initSortable = () => {
+  if (!queueListRef.value) return;
+  sortableInstance = new Sortable(queueListRef.value, {
+    animation: 150,
+    handle: '.drag-handle',
+    ghostClass: 'opacity-40',
+    onEnd: (evt) => {
+      if (evt.oldIndex !== evt.newIndex) {
+        player.reorderQueue(evt.oldIndex, evt.newIndex);
+      }
+    }
+  });
+};
 
 const batchTop = () => {
   const ids = selectedIds.value;
