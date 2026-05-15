@@ -18,6 +18,7 @@ create table if not exists user_profile (
     public_id text primary key,
     display_name text not null,
     is_guest integer not null,
+    current_room_id text not null default 'lounge',
     created_at integer not null,
     last_seen_at integer not null
 );

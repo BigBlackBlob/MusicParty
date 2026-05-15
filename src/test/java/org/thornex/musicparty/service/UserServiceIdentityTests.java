@@ -63,7 +63,7 @@ class UserServiceIdentityTests {
         InMemoryUserProfileRepository userProfiles = new InMemoryUserProfileRepository();
         UserService service = createService(userProfiles);
 
-        userProfiles.upsertProfile(new PersistedUserProfile("u_known", "Alice", false, 1L, 1L));
+        userProfiles.upsertProfile(new PersistedUserProfile("u_known", "Alice", false, "room-1", 1L, 1L));
         userProfiles.upsertSession(new PersistedSession(sha256("server-issued-token"), "u_known", 1L, 1L));
 
         User restored = service.handleConnect("session-2", "server-issued-token", "Ignored");
@@ -71,6 +71,35 @@ class UserServiceIdentityTests {
         assertThat(restored.getPublicId()).isEqualTo("u_known");
         assertThat(restored.getName()).isEqualTo("Alice");
         assertThat(restored.getSessionToken()).isEqualTo("server-issued-token");
+        assertThat(restored.getRoomId()).isEqualTo(RoomService.DEFAULT_ROOM_ID);
+    }
+
+    @Test
+    void persistsCurrentRoomAndRestoresOwnedRoomWhenPresent() {
+        InMemoryUserProfileRepository userProfiles = new InMemoryUserProfileRepository();
+        RoomService roomService = new RoomService(
+                new ObjectMapper(),
+                event -> {},
+                new AppProperties(),
+                new InMemoryRoomRepository(),
+                new InMemoryMigrationStateRepository()
+        );
+        roomService.init();
+        UserService service = new UserService(event -> {}, roomService, userProfiles);
+        User user = service.handleConnect("session-1", null, "Alice");
+        String createdRoomId = roomService.createRoom("Alice Room", user.getPublicId(), false, null).roomId();
+
+        service.handleConnect("session-2", user.getSessionToken(), "Ignored", createdRoomId);
+        service.disconnectUser("session-2");
+
+        UserService restartedService = new UserService(event -> {}, roomService, userProfiles);
+        User restored = restartedService.handleConnect("session-3", user.getSessionToken(), "Ignored");
+
+        assertThat(userProfiles.findByPublicId(user.getPublicId())).isPresent()
+                .get()
+                .extracting(PersistedUserProfile::currentRoomId)
+                .isEqualTo(createdRoomId);
+        assertThat(restored.getRoomId()).isEqualTo(createdRoomId);
     }
 
     private UserService createService() {
@@ -178,6 +207,23 @@ class UserServiceIdentityTests {
         @Override
         public Optional<PersistedSession> findSessionByHash(String sessionTokenHash) {
             return Optional.ofNullable(sessions.get(sessionTokenHash));
+        }
+
+        @Override
+        public void moveUsersToRoom(String fromRoomId, String toRoomId) {
+            profiles.replaceAll((publicId, profile) -> {
+                if (!fromRoomId.equals(profile.currentRoomId())) {
+                    return profile;
+                }
+                return new PersistedUserProfile(
+                        profile.publicId(),
+                        profile.displayName(),
+                        profile.guest(),
+                        toRoomId,
+                        profile.createdAt(),
+                        profile.lastSeenAt()
+                );
+            });
         }
     }
 }

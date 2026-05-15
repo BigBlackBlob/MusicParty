@@ -7,4 +7,5 @@ public interface UserProfileRepository {
     Optional<PersistedUserProfile> findByPublicId(String publicId);
     void upsertSession(PersistedSession session);
     Optional<PersistedSession> findSessionByHash(String sessionTokenHash);
+    void moveUsersToRoom(String fromRoomId, String toRoomId);
 }

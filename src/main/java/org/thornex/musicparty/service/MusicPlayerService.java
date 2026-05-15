@@ -84,13 +84,21 @@ public class MusicPlayerService {
     }
 
     public void removeRoom(String roomId) {
+        removeRoom(roomId, false);
+    }
+
+    public void removeRoom(String roomId, boolean skipPersistenceCleanup) {
         String normalized = roomId == null || roomId.isBlank() ? RoomService.DEFAULT_ROOM_ID : roomId;
         RoomPlayerSession removed = sessions.remove(normalized);
         if (removed != null) {
-            removed.flushPersistentState();
-            removed.resetSystem(false);
+            if (!skipPersistenceCleanup) {
+                removed.flushPersistentState();
+            }
+            removed.resetSystem(false, !skipPersistenceCleanup);
         }
-        roomStatePersistenceService.deletePlaybackState(normalized);
+        if (!skipPersistenceCleanup) {
+            roomStatePersistenceService.deletePlaybackState(normalized);
+        }
     }
 
     @Scheduled(fixedRate = 1000)
@@ -609,17 +617,25 @@ public class MusicPlayerService {
         }
 
         public void resetSystem(boolean notify) {
+            resetSystem(notify, true);
+        }
+
+        public void resetSystem(boolean notify, boolean persist) {
             currentMusic.set(null);
             currentEnqueuerId.set(null);
             currentEnqueuerName.set(null);
             updatePlaybackAnchor(0);
             queueManager.clearAll();
-            roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
-            roomStatePersistenceService.persistHistorySnapshot(roomId, queueManager.getHistorySnapshot());
+            if (persist) {
+                roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
+                roomStatePersistenceService.persistHistorySnapshot(roomId, queueManager.getHistorySnapshot());
+            }
             isPaused.set(false);
             isShuffle.set(false);
             isLoading.set(false);
-            persistPlaybackStateSnapshot();
+            if (persist) {
+                persistPlaybackStateSnapshot();
+            }
             bumpPlayEpochAndStateVersion();
             broadcastFullPlayerState();
             broadcastQueueUpdate();

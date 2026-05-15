@@ -275,6 +275,10 @@ public class ChatService {
         roomStatePersistenceService.deleteRoomData(roomId);
     }
 
+    public void evictRoomHistory(String roomId) {
+        roomHistories.remove(roomId);
+    }
+
     private ConcurrentLinkedDeque<ChatMessage> roomHistory(String roomId) {
         String key = roomId == null || roomId.isBlank() ? RoomService.DEFAULT_ROOM_ID : roomId;
         return roomHistories.computeIfAbsent(key, this::loadRoomHistory);

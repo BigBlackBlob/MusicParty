@@ -145,7 +145,6 @@ public class RoomService {
         }
         rooms.remove(roomId);
         roomRepository.softDelete(roomId, System.currentTimeMillis());
-        publishRoomList();
         return true;
     }
 

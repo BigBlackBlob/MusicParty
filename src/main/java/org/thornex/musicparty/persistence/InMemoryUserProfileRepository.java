@@ -28,4 +28,21 @@ public class InMemoryUserProfileRepository implements UserProfileRepository {
     public Optional<PersistedSession> findSessionByHash(String sessionTokenHash) {
         return Optional.ofNullable(sessions.get(sessionTokenHash));
     }
+
+    @Override
+    public void moveUsersToRoom(String fromRoomId, String toRoomId) {
+        profiles.replaceAll((publicId, profile) -> {
+            if (!fromRoomId.equals(profile.currentRoomId())) {
+                return profile;
+            }
+            return new PersistedUserProfile(
+                    profile.publicId(),
+                    profile.displayName(),
+                    profile.guest(),
+                    toRoomId,
+                    profile.createdAt(),
+                    profile.lastSeenAt()
+            );
+        });
+    }
 }

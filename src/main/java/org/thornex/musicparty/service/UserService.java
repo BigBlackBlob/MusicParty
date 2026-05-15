@@ -59,7 +59,6 @@ public class UserService {
      */
     public User handleConnect(String sessionId, String sessionTokenFront, String nameFront, String requestedRoomId) {
         User user;
-        String roomId = roomService.normalizeRoomId(requestedRoomId);
         long now = System.currentTimeMillis();
 
         // 1. 尝试找回老用户
@@ -98,6 +97,9 @@ public class UserService {
             user = registerNewUser(sessionId, nameFront);
         }
 
+        String roomId = StringUtils.hasText(requestedRoomId)
+                ? roomService.normalizeRoomId(requestedRoomId)
+                : roomService.normalizeRoomId(user.getRoomId());
         user.setRoomId(roomId);
         user.setLastActiveTime(now);
         sessionToToken.put(sessionId, user.getSessionToken());
@@ -109,7 +111,7 @@ public class UserService {
     }
 
     public User handleConnect(String sessionId, String sessionTokenFront, String nameFront) {
-        return handleConnect(sessionId, sessionTokenFront, nameFront, RoomService.DEFAULT_ROOM_ID);
+        return handleConnect(sessionId, sessionTokenFront, nameFront, null);
     }
 
     public Optional<User> disconnectUser(String sessionId) {
@@ -282,6 +284,11 @@ public class UserService {
         return movedSessions;
     }
 
+    public void movePersistedUsersToDefaultRoom(String roomId) {
+        String normalized = roomId == null || roomId.isBlank() ? RoomService.DEFAULT_ROOM_ID : roomId;
+        userProfileRepository.moveUsersToRoom(normalized, RoomService.DEFAULT_ROOM_ID);
+    }
+
     @Scheduled(fixedRate = 3600000)
     public void cleanupExpiredUsers() {
         long now = System.currentTimeMillis();
@@ -357,6 +364,7 @@ public class UserService {
     private User toUser(PersistedUserProfile profile, String sessionToken, String sessionId) {
         User user = new User(sessionToken, profile.publicId(), sessionId, profile.displayName());
         user.setGuest(profile.guest());
+        user.setRoomId(roomService.normalizeRoomId(profile.currentRoomId()));
         user.setLastActiveTime(profile.lastSeenAt());
         usersBySessionToken.put(sessionToken, user);
         usersByPublicId.put(profile.publicId(), user);
@@ -374,6 +382,7 @@ public class UserService {
                 user.getPublicId(),
                 user.getName(),
                 user.isGuest(),
+                roomService.normalizeRoomId(user.getRoomId()),
                 profileCreatedAt,
                 timestamp
         ));
