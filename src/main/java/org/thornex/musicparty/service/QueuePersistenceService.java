@@ -6,7 +6,6 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.event.EventListener;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -14,7 +13,6 @@ import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.ChatMessage;
 import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.dto.MusicQueueItem;
-import org.thornex.musicparty.event.RoomDeletedEvent;
 import org.thornex.musicparty.persistence.ChatRepository;
 import org.thornex.musicparty.persistence.MigrationStateRepository;
 import org.thornex.musicparty.persistence.PersistedHistoryEntry;
@@ -100,12 +98,6 @@ public class QueuePersistenceService {
         } catch (Exception e) {
             log.error("Failed to load persistence data from {}", file.getAbsolutePath(), e);
         }
-    }
-
-    @EventListener
-    public void onRoomDeleted(RoomDeletedEvent event) {
-        queueRepository.deleteRoomData(event.getRoomId());
-        chatRepository.deleteRoomHistory(event.getRoomId());
     }
 
     private File getPersistenceFile() {

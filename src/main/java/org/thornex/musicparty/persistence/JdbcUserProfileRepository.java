@@ -18,6 +18,7 @@ public class JdbcUserProfileRepository implements UserProfileRepository {
             rs.getString("public_id"),
             rs.getString("display_name"),
             rs.getBoolean("is_guest"),
+            rs.getString("current_room_id"),
             rs.getLong("created_at"),
             rs.getLong("last_seen_at")
     );
@@ -33,17 +34,19 @@ public class JdbcUserProfileRepository implements UserProfileRepository {
     @Override
     public void upsertProfile(PersistedUserProfile profile) {
         jdbcTemplate.update("""
-                insert into user_profile(public_id, display_name, is_guest, created_at, last_seen_at)
-                values (?, ?, ?, ?, ?)
+                insert into user_profile(public_id, display_name, is_guest, current_room_id, created_at, last_seen_at)
+                values (?, ?, ?, ?, ?, ?)
                 on conflict(public_id) do update set
                   display_name = excluded.display_name,
                   is_guest = excluded.is_guest,
+                  current_room_id = excluded.current_room_id,
                   created_at = excluded.created_at,
                   last_seen_at = excluded.last_seen_at
                 """,
                 profile.publicId(),
                 profile.displayName(),
                 profile.guest(),
+                profile.currentRoomId(),
                 profile.createdAt(),
                 profile.lastSeenAt());
     }
@@ -51,7 +54,7 @@ public class JdbcUserProfileRepository implements UserProfileRepository {
     @Override
     public Optional<PersistedUserProfile> findByPublicId(String publicId) {
         List<PersistedUserProfile> rows = jdbcTemplate.query("""
-                select public_id, display_name, is_guest, created_at, last_seen_at
+                select public_id, display_name, is_guest, current_room_id, created_at, last_seen_at
                 from user_profile
                 where public_id = ?
                 """, USER_PROFILE_ROW_MAPPER, publicId);
@@ -82,5 +85,14 @@ public class JdbcUserProfileRepository implements UserProfileRepository {
                 where session_token_hash = ?
                 """, SESSION_ROW_MAPPER, sessionTokenHash);
         return rows.stream().findFirst();
+    }
+
+    @Override
+    public void moveUsersToRoom(String fromRoomId, String toRoomId) {
+        jdbcTemplate.update("""
+                update user_profile
+                set current_room_id = ?, last_seen_at = ?
+                where current_room_id = ?
+                """, toRoomId, System.currentTimeMillis(), fromRoomId);
     }
 }

@@ -8,13 +8,12 @@ import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessageType;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.annotation.SubscribeMapping;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Controller;
 import org.thornex.musicparty.dto.*;
 import org.thornex.musicparty.enums.MessageType;
-import org.thornex.musicparty.event.RoomDeletedEvent;
 import org.thornex.musicparty.service.ChatService;
 import org.thornex.musicparty.service.MusicPlayerService;
+import org.thornex.musicparty.service.RoomLifecycleService;
 import org.thornex.musicparty.service.RoomService;
 import org.thornex.musicparty.service.UserService;
 
@@ -29,15 +28,15 @@ public class MusicSocketController {
     private final SimpMessagingTemplate messagingTemplate;
     private final ChatService chatService;
     private final RoomService roomService;
-    private final ApplicationEventPublisher eventPublisher;
+    private final RoomLifecycleService roomLifecycleService;
 
-    public MusicSocketController(MusicPlayerService musicPlayerService, UserService userService, SimpMessagingTemplate messagingTemplate, ChatService chatService, RoomService roomService, ApplicationEventPublisher eventPublisher) {
+    public MusicSocketController(MusicPlayerService musicPlayerService, UserService userService, SimpMessagingTemplate messagingTemplate, ChatService chatService, RoomService roomService, RoomLifecycleService roomLifecycleService) {
         this.musicPlayerService = musicPlayerService;
         this.userService = userService;
         this.messagingTemplate = messagingTemplate;
         this.chatService = chatService;
         this.roomService = roomService;
-        this.eventPublisher = eventPublisher;
+        this.roomLifecycleService = roomLifecycleService;
     }
 
     @MessageMapping("/player/resync")
@@ -199,11 +198,7 @@ public class MusicSocketController {
         userService.getUser(sessionId).ifPresent(user -> {
             String roomId = request.roomId();
             boolean isAdmin = roomService.isAdminPassword(request.adminPassword());
-            if (roomService.deleteRoom(roomId, user.getPublicId(), isAdmin)) {
-                userService.moveUsersToDefaultRoom(roomId);
-                musicPlayerService.removeRoom(roomId);
-                chatService.deleteRoomHistory(roomId);
-                eventPublisher.publishEvent(new RoomDeletedEvent(this, roomId));
+            if (roomLifecycleService.deleteRoom(roomId, user.getPublicId(), isAdmin)) {
             } else {
                 PlayerEvent errorEvent = new PlayerEvent("ERROR", "ROOM_DELETE_FAILED", user.getPublicId(), "无权删除该房间", null);
                 messagingTemplate.convertAndSendToUser(sessionId, "/queue/events", errorEvent, createSessionHeaders(sessionId));
