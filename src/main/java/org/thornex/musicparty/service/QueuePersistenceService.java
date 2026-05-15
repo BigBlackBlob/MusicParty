@@ -6,15 +6,21 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.event.EventListener;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.thornex.musicparty.config.AppProperties;
+import org.thornex.musicparty.dto.ChatMessage;
 import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.dto.MusicQueueItem;
+import org.thornex.musicparty.event.RoomDeletedEvent;
+import org.thornex.musicparty.persistence.ChatRepository;
+import org.thornex.musicparty.persistence.PersistedHistoryEntry;
+import org.thornex.musicparty.persistence.QueueRepository;
 
 import java.io.File;
-import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -27,6 +33,9 @@ public class QueuePersistenceService {
     private final ChatService chatService;
     private final AppProperties appProperties;
     private final ObjectMapper objectMapper;
+    private final QueueRepository queueRepository;
+    private final ChatRepository chatRepository;
+    private final RoomService roomService;
 
     @PostConstruct
     public void init() {
@@ -45,20 +54,15 @@ public class QueuePersistenceService {
 
     private synchronized void saveData() {
         try {
-            File file = getPersistenceFile();
-            PersistentData data = new PersistentData();
-            musicPlayerService.getActiveRoomIds().forEach(roomId -> {
-                RoomPersistentData roomData = new RoomPersistentData();
+            roomService.listRooms().forEach(room -> {
+                String roomId = room.roomId();
                 MusicQueueManager manager = musicPlayerService.getSession(roomId).getQueueManager();
-                roomData.setQueue(manager.getQueueSnapshot());
-                roomData.setHistory(manager.getHistorySnapshot());
-                roomData.setChatHistory(chatService.getHistoryFull(roomId));
-                data.getRooms().put(roomId, roomData);
+                queueRepository.replaceQueue(roomId, manager.getQueueSnapshot());
+                queueRepository.replaceHistory(roomId, manager.getHistorySnapshot());
+                chatRepository.replaceMessages(roomId, chatService.getHistoryFull(roomId));
             });
-            data.setPublicChatHistory(chatService.getPublicHistoryFull());
-
-            objectMapper.writeValue(file, data);
-            log.debug("Queue, music history and chat history saved to {}", file.getAbsolutePath());
+            chatRepository.replaceMessages(null, chatService.getPublicHistoryFull());
+            log.debug("Queue, music history and chat history saved to SQLite");
         } catch (Exception e) {
             log.error("Failed to save persistence data", e);
         }
@@ -67,39 +71,30 @@ public class QueuePersistenceService {
     private synchronized void loadData() {
         File file = getPersistenceFile();
         if (!file.exists()) {
-            log.info("No persistence file found at {}, starting fresh.", file.getAbsolutePath());
+            restoreDatabaseData();
+            log.info("No legacy persistence file found at {}, restored from SQLite if available.", file.getAbsolutePath());
             return;
         }
 
         try {
-            PersistentData data = objectMapper.readValue(file, new TypeReference<PersistentData>() {});
-            
-            if (data.getRooms() != null && !data.getRooms().isEmpty()) {
-                data.getRooms().forEach((roomId, roomData) -> {
-                    musicPlayerService.getSession(roomId).getQueueManager().restore(
-                            roomData.getQueue() != null ? roomData.getQueue() : Collections.emptyList(),
-                            roomData.getHistory() != null ? roomData.getHistory() : Collections.emptyList()
-                    );
-                    chatService.restore(roomId, roomData.getChatHistory() != null ? roomData.getChatHistory() : Collections.emptyList());
-                });
-            } else {
-                musicPlayerService.getSession(RoomService.DEFAULT_ROOM_ID).getQueueManager().restore(
-                    data.getQueue() != null ? data.getQueue() : Collections.emptyList(),
-                    data.getHistory() != null ? data.getHistory() : Collections.emptyList()
-                );
-                chatService.restore(RoomService.DEFAULT_ROOM_ID, data.getChatHistory() != null ? data.getChatHistory() : Collections.emptyList());
+            if (restoreDatabaseData()) {
+                log.info("Restored persistence data from SQLite");
+                return;
             }
 
-            chatService.restorePublic(data.getPublicChatHistory() != null ? data.getPublicChatHistory() : Collections.emptyList());
-
-            log.info("Restored {} queue items, {} music history items and {} chat messages from {}",
-                data.getQueue() != null ? data.getQueue().size() : 0, 
-                data.getHistory() != null ? data.getHistory().size() : 0, 
-                data.getChatHistory() != null ? data.getChatHistory().size() : 0,
-                file.getAbsolutePath());
+            PersistentData data = objectMapper.readValue(file, new TypeReference<PersistentData>() {});
+            importLegacyData(data);
+            saveData();
+            log.info("Imported legacy persistence data from {} into SQLite", file.getAbsolutePath());
         } catch (Exception e) {
             log.error("Failed to load persistence data from {}", file.getAbsolutePath(), e);
         }
+    }
+
+    @EventListener
+    public void onRoomDeleted(RoomDeletedEvent event) {
+        queueRepository.deleteRoomData(event.getRoomId());
+        chatRepository.deleteRoomHistory(event.getRoomId());
     }
 
     private File getPersistenceFile() {
@@ -109,6 +104,56 @@ public class QueuePersistenceService {
             file.getParentFile().mkdirs();
         }
         return file;
+    }
+
+    private boolean restoreDatabaseData() {
+        boolean restoredAny = false;
+
+        for (var room : roomService.listRooms()) {
+            String roomId = room.roomId();
+            List<MusicQueueItem> queue = queueRepository.loadQueue(roomId);
+            List<Music> history = queueRepository.loadHistory(roomId, appProperties.getQueue().getHistorySize()).stream()
+                    .map(PersistedHistoryEntry::music)
+                    .toList();
+            List<ChatMessage> chatHistory = restoreChronological(chatRepository.fetchMessages(roomId, 0, appProperties.getChat().getMaxHistorySize()));
+
+            if (!queue.isEmpty() || !history.isEmpty() || !chatHistory.isEmpty()) {
+                restoredAny = true;
+            }
+
+            musicPlayerService.getSession(roomId).getQueueManager().restore(queue, history);
+            chatService.restore(roomId, chatHistory);
+        }
+
+        List<ChatMessage> publicHistory = restoreChronological(chatRepository.fetchMessages(null, 0, appProperties.getChat().getMaxHistorySize()));
+        chatService.restorePublic(publicHistory);
+        return restoredAny || !publicHistory.isEmpty();
+    }
+
+    private void importLegacyData(PersistentData data) {
+        if (data.getRooms() != null && !data.getRooms().isEmpty()) {
+            data.getRooms().forEach((roomId, roomData) -> {
+                musicPlayerService.getSession(roomId).getQueueManager().restore(
+                        roomData.getQueue() != null ? roomData.getQueue() : Collections.emptyList(),
+                        roomData.getHistory() != null ? roomData.getHistory() : Collections.emptyList()
+                );
+                chatService.restore(roomId, roomData.getChatHistory() != null ? roomData.getChatHistory() : Collections.emptyList());
+            });
+        } else {
+            musicPlayerService.getSession(RoomService.DEFAULT_ROOM_ID).getQueueManager().restore(
+                    data.getQueue() != null ? data.getQueue() : Collections.emptyList(),
+                    data.getHistory() != null ? data.getHistory() : Collections.emptyList()
+            );
+            chatService.restore(RoomService.DEFAULT_ROOM_ID, data.getChatHistory() != null ? data.getChatHistory() : Collections.emptyList());
+        }
+
+        chatService.restorePublic(data.getPublicChatHistory() != null ? data.getPublicChatHistory() : Collections.emptyList());
+    }
+
+    private List<ChatMessage> restoreChronological(List<ChatMessage> reverseChronological) {
+        List<ChatMessage> chronological = new ArrayList<>(reverseChronological);
+        Collections.reverse(chronological);
+        return chronological;
     }
 
     @Data

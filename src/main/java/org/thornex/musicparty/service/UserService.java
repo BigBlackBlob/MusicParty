@@ -10,7 +10,13 @@ import org.thornex.musicparty.dto.UserSummary;
 import org.thornex.musicparty.enums.PlayerAction;
 import org.thornex.musicparty.event.SystemMessageEvent;
 import org.thornex.musicparty.event.UserCountChangeEvent;
+import org.thornex.musicparty.persistence.PersistedSession;
+import org.thornex.musicparty.persistence.PersistedUserProfile;
+import org.thornex.musicparty.persistence.UserProfileRepository;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.stream.Collectors;
@@ -28,6 +34,7 @@ public class UserService {
 
     private final ApplicationEventPublisher eventPublisher;
     private final RoomService roomService;
+    private final UserProfileRepository userProfileRepository;
 
     // 延迟任务调度器，用于处理断连抖动
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
@@ -36,9 +43,10 @@ public class UserService {
     private static final long USER_EXPIRATION_MS = 1 * 60 * 60 * 1000L;
     private static final long LEAVE_DELAY_SEC = 10; // 10秒延迟判定真正离开
 
-    public UserService(ApplicationEventPublisher eventPublisher, RoomService roomService) {
+    public UserService(ApplicationEventPublisher eventPublisher, RoomService roomService, UserProfileRepository userProfileRepository) {
         this.eventPublisher = eventPublisher;
         this.roomService = roomService;
+        this.userProfileRepository = userProfileRepository;
         this.roomService.setOnlineCountProvider(this::getOnlineCount);
     }
 
@@ -52,6 +60,7 @@ public class UserService {
     public User handleConnect(String sessionId, String sessionTokenFront, String nameFront, String requestedRoomId) {
         User user;
         String roomId = roomService.normalizeRoomId(requestedRoomId);
+        long now = System.currentTimeMillis();
 
         // 1. 尝试找回老用户
         if (StringUtils.hasText(sessionTokenFront) && usersBySessionToken.containsKey(sessionTokenFront)) {
@@ -76,23 +85,24 @@ public class UserService {
             }
             user.setSessionId(sessionId);
         }
+        else if (StringUtils.hasText(sessionTokenFront)) {
+            user = restorePersistedUser(sessionTokenFront, sessionId).orElse(null);
+            if (user != null) {
+                log.info("Persisted User Restored: {} (PublicId: {}) -> Session: {}", user.getName(), user.getPublicId(), sessionId);
+            } else {
+                user = registerNewUser(sessionId, nameFront);
+            }
+        }
         // 2. 新用户注册
         else {
-            String newSessionToken = UUID.randomUUID().toString();
-            String publicId = generatePublicId();
-            String initialName = StringUtils.hasText(nameFront) ? nameFront : "游客";
-            initialName = deduplicateName(initialName);
-
-            user = new User(newSessionToken, publicId, sessionId, initialName);
-            usersBySessionToken.put(newSessionToken, user);
-            usersByPublicId.put(publicId, user);
-            log.info("New User Registered: {} (PublicId: {})", initialName, publicId);
-            // 注意：新注册的游客不发加入日志，只有改名后才发
+            user = registerNewUser(sessionId, nameFront);
         }
 
         user.setRoomId(roomId);
-        user.setLastActiveTime(System.currentTimeMillis());
+        user.setLastActiveTime(now);
         sessionToToken.put(sessionId, user.getSessionToken());
+        persistUser(user, now);
+        roomService.markRoomActive(roomId);
         eventPublisher.publishEvent(new UserCountChangeEvent(this, roomId, getOnlineUserSummaries(roomId).size()));
         roomService.publishRoomList();
         return user;
@@ -115,6 +125,7 @@ public class UserService {
                 String roomId = user.getRoomId();
                 user.setSessionId(null); // 标记离线
                 user.setLastActiveTime(System.currentTimeMillis());
+                persistUser(user, user.getLastActiveTime());
                 log.info("User Offline (Pending Confirmation): {}", user.getName());
 
                 // 延迟发送离开日志
@@ -178,6 +189,7 @@ public class UserService {
             log.info("User Renamed: '{}' -> '{}'", oldName, finalName);
             user.setName(finalName);
             user.setGuest(false); // 改名成功，移除游客身份
+            persistUser(user, System.currentTimeMillis());
 
             // 1. 如果是从游客变成正式用户 -> 发布加入事件
             if (wasGuest) {
@@ -252,12 +264,13 @@ public class UserService {
     }
 
     public List<String> moveUsersToDefaultRoom(String roomId) {
-        String normalized = roomService.normalizeRoomId(roomId);
+        String normalized = roomId == null || roomId.isBlank() ? RoomService.DEFAULT_ROOM_ID : roomId;
         List<String> movedSessions = new ArrayList<>();
         usersBySessionToken.values().forEach(user -> {
             if (normalized.equals(user.getRoomId())) {
                 String oldSessionId = user.getSessionId();
                 user.setRoomId(RoomService.DEFAULT_ROOM_ID);
+                persistUser(user, System.currentTimeMillis());
                 if (oldSessionId != null) {
                     movedSessions.add(oldSessionId);
                 }
@@ -308,5 +321,69 @@ public class UserService {
             publicId = "u_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         } while (usersByPublicId.containsKey(publicId));
         return publicId;
+    }
+
+    private User registerNewUser(String sessionId, String nameFront) {
+        String newSessionToken = UUID.randomUUID().toString();
+        String publicId = generatePublicId();
+        String initialName = StringUtils.hasText(nameFront) ? nameFront : "游客";
+        initialName = deduplicateName(initialName);
+
+        User user = new User(newSessionToken, publicId, sessionId, initialName);
+        usersBySessionToken.put(newSessionToken, user);
+        usersByPublicId.put(publicId, user);
+        log.info("New User Registered: {} (PublicId: {})", initialName, publicId);
+        return user;
+    }
+
+    private Optional<User> restorePersistedUser(String sessionToken, String sessionId) {
+        return userProfileRepository.findSessionByHash(hashSessionToken(sessionToken))
+                .flatMap(session -> userProfileRepository.findByPublicId(session.publicId())
+                        .map(profile -> toUser(profile, sessionToken, sessionId)));
+    }
+
+    private User toUser(PersistedUserProfile profile, String sessionToken, String sessionId) {
+        User user = new User(sessionToken, profile.publicId(), sessionId, profile.displayName());
+        user.setGuest(profile.guest());
+        user.setLastActiveTime(profile.lastSeenAt());
+        usersBySessionToken.put(sessionToken, user);
+        usersByPublicId.put(profile.publicId(), user);
+        return user;
+    }
+
+    private void persistUser(User user, long timestamp) {
+        long profileCreatedAt = userProfileRepository.findByPublicId(user.getPublicId())
+                .map(PersistedUserProfile::createdAt)
+                .orElse(timestamp);
+        long sessionCreatedAt = userProfileRepository.findSessionByHash(hashSessionToken(user.getSessionToken()))
+                .map(PersistedSession::createdAt)
+                .orElse(timestamp);
+        userProfileRepository.upsertProfile(new PersistedUserProfile(
+                user.getPublicId(),
+                user.getName(),
+                user.isGuest(),
+                profileCreatedAt,
+                timestamp
+        ));
+        userProfileRepository.upsertSession(new PersistedSession(
+                hashSessionToken(user.getSessionToken()),
+                user.getPublicId(),
+                sessionCreatedAt,
+                timestamp
+        ));
+    }
+
+    private String hashSessionToken(String sessionToken) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = digest.digest(sessionToken.getBytes(StandardCharsets.UTF_8));
+            StringBuilder builder = new StringBuilder(bytes.length * 2);
+            for (byte value : bytes) {
+                builder.append(String.format("%02x", value));
+            }
+            return builder.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
     }
 }
