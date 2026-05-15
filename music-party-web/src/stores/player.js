@@ -8,6 +8,7 @@ import { useChatStore } from './chat';
 import { socketService } from '../services/socket';
 import { createSocketSubscriptions, createSocketCallbacks } from '../services/socketHandler'; // 引入新文件
 import { musicApi } from '../api/music';
+import { roomApi } from '../api/rooms';
 import { WS_DEST } from '../constants/api';
 import { STORAGE_KEYS } from '../constants/keys';
 
@@ -189,8 +190,8 @@ export const usePlayerStore = defineStore('player', () => {
         const authHeaders = {
             'user-name': localStorage.getItem(STORAGE_KEYS.USERNAME) || '游客',
             'session-token': userStore.sessionToken,
-            'room-password': localStorage.getItem(STORAGE_KEYS.ROOM_PASSWORD) || '',
-            'room-id': roomStore.currentRoomId
+            'room-id': roomStore.currentRoomId,
+            'room-access-token': roomStore.getRoomAccessToken(roomStore.currentRoomId)
         };
 
         // 使用抽离出的订阅配置
@@ -240,8 +241,16 @@ export const usePlayerStore = defineStore('player', () => {
         setTimeout(() => connect(), 100);
     };
 
-    const switchRoom = (roomId) => {
+    const switchRoom = async (roomId, password = '') => {
         if (!roomId || roomId === roomStore.currentRoomId) return;
+        const targetRoom = roomStore.rooms.find(room => room.roomId === roomId);
+        if (targetRoom?.privateRoom) {
+            const cachedToken = roomStore.getRoomAccessToken(roomId);
+            if (!cachedToken || password) {
+                const verifyResponse = await roomApi.verify(roomId, password, userStore.sessionToken);
+                roomStore.setRoomAccessToken(roomId, verifyResponse.roomAccessToken || '');
+            }
+        }
         roomStore.setCurrentRoom(roomId);
         reconnectToCurrentRoom();
     };

@@ -103,6 +103,10 @@ public class RoomService {
         return admin || (requesterPublicId != null && requesterPublicId.equals(room.creatorPublicId()));
     }
 
+    public boolean canManage(String roomId, String requesterPublicId, boolean admin) {
+        return canDelete(roomId, requesterPublicId, admin);
+    }
+
     public RoomInfo getRoom(String roomId) {
         return toInfo(rooms.get(normalizeRoomId(roomId)));
     }
@@ -136,6 +140,67 @@ public class RoomService {
         long now = System.currentTimeMillis();
         rooms.computeIfPresent(normalized, (key, room) -> room.withLastActiveAt(now));
         roomRepository.touch(normalized, now);
+    }
+
+    public RoomInfo updateRoomSettings(String roomId,
+                                       String requesterPublicId,
+                                       boolean admin,
+                                       String rawName,
+                                       boolean privateRoom,
+                                       String rawPassword,
+                                       boolean keepExistingPassword) {
+        StoredRoom existing = rooms.get(roomId);
+        if (existing == null || existing.system()) {
+            throw new IllegalArgumentException("Room not found");
+        }
+        if (!canManage(roomId, requesterPublicId, admin)) {
+            throw new IllegalArgumentException("No permission to update room");
+        }
+
+        String name = sanitizeName(rawName);
+        if (name.isEmpty()) {
+            throw new IllegalArgumentException("Room name cannot be empty");
+        }
+        boolean nameExists = rooms.values().stream()
+                .filter(room -> !room.roomId().equals(roomId))
+                .anyMatch(room -> room.name().equalsIgnoreCase(name));
+        if (nameExists) {
+            throw new IllegalArgumentException("Room name already exists");
+        }
+
+        String visibility = privateRoom ? VISIBILITY_PRIVATE : VISIBILITY_PUBLIC;
+        String passwordHash = null;
+        int passwordVersion = existing.passwordVersion();
+
+        if (privateRoom) {
+            if (keepExistingPassword && VISIBILITY_PRIVATE.equals(existing.visibility()) && existing.passwordHash() != null) {
+                passwordHash = existing.passwordHash();
+            } else {
+                if (rawPassword == null || rawPassword.isBlank()) {
+                    throw new IllegalArgumentException("Private room password cannot be empty");
+                }
+                passwordHash = RoomPasswordHasher.hash(rawPassword);
+                passwordVersion++;
+            }
+        } else if (VISIBILITY_PRIVATE.equals(existing.visibility())) {
+            passwordVersion++;
+        }
+
+        StoredRoom updated = new StoredRoom(
+                existing.roomId(),
+                name,
+                existing.creatorPublicId(),
+                existing.createdAt(),
+                System.currentTimeMillis(),
+                existing.system(),
+                visibility,
+                passwordHash,
+                passwordVersion
+        );
+        rooms.put(roomId, updated);
+        roomRepository.upsert(toPersistedRoom(updated, null));
+        publishRoomList();
+        return toInfo(updated);
     }
 
     public boolean isAdminPassword(String value) {
