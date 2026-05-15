@@ -60,6 +60,14 @@ public class RoomStatePersistenceService {
         chatRepository.replaceMessages(null, messages);
     }
 
+    public List<ChatMessage> loadRoomMessages(String roomId, int limit) {
+        return restoreChronological(chatRepository.fetchMessages(roomId, 0, limit));
+    }
+
+    public List<ChatMessage> loadPublicMessages(int limit) {
+        return restoreChronological(chatRepository.fetchMessages(null, 0, limit));
+    }
+
     public void deleteRoomData(String roomId) {
         queueRepository.deleteRoomData(roomId);
         chatRepository.deleteRoomHistory(roomId);
@@ -86,5 +94,11 @@ public class RoomStatePersistenceService {
 
     public void deletePlaybackState(String roomId) {
         playbackStateRepository.delete(roomId);
+    }
+
+    private List<ChatMessage> restoreChronological(List<ChatMessage> reverseChronological) {
+        java.util.ArrayList<ChatMessage> chronological = new java.util.ArrayList<>(reverseChronological);
+        java.util.Collections.reverse(chronological);
+        return chronological;
     }
 }

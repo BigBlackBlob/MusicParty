@@ -8,6 +8,7 @@ import org.thornex.musicparty.dto.ChatMessage;
 import org.thornex.musicparty.dto.User;
 import org.thornex.musicparty.enums.MessageType;
 import org.thornex.musicparty.enums.PlayerAction;
+import org.thornex.musicparty.event.RoomSessionEvictedEvent;
 import org.thornex.musicparty.event.SystemMessageEvent;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.service.command.ChatCommand;
@@ -24,6 +25,7 @@ public class ChatService {
 
     private final Map<String, ConcurrentLinkedDeque<ChatMessage>> roomHistories = new java.util.concurrent.ConcurrentHashMap<>();
     private final ConcurrentLinkedDeque<ChatMessage> publicHistory = new ConcurrentLinkedDeque<>();
+    private volatile boolean publicHistoryLoaded = false;
     private final SimpMessagingTemplate messagingTemplate;
     private final UserService userService;
     private final AppProperties appProperties;
@@ -100,6 +102,7 @@ public class ChatService {
     }
 
     public void addPublicMessage(ChatMessage message) {
+        publicHistoryLoaded = true;
         publicHistory.addLast(message);
         trimHistory(publicHistory);
         roomStatePersistenceService.persistPublicMessage(message);
@@ -137,6 +140,7 @@ public class ChatService {
     }
 
     public List<ChatMessage> getPublicHistory(int offset, int limit) {
+        ensurePublicHistoryLoaded();
         return sliceHistory(publicHistory, offset, limit);
     }
 
@@ -152,6 +156,7 @@ public class ChatService {
     }
 
     public List<ChatMessage> getPublicHistoryFull() {
+        ensurePublicHistoryLoaded();
         return new ArrayList<>(publicHistory);
     }
 
@@ -176,6 +181,7 @@ public class ChatService {
         if (loadedHistory != null) {
             publicHistory.addAll(loadedHistory);
         }
+        publicHistoryLoaded = true;
         roomStatePersistenceService.replacePublicMessages(new ArrayList<>(publicHistory));
     }
 
@@ -271,7 +277,30 @@ public class ChatService {
 
     private ConcurrentLinkedDeque<ChatMessage> roomHistory(String roomId) {
         String key = roomId == null || roomId.isBlank() ? RoomService.DEFAULT_ROOM_ID : roomId;
-        return roomHistories.computeIfAbsent(key, ignored -> new ConcurrentLinkedDeque<>());
+        return roomHistories.computeIfAbsent(key, this::loadRoomHistory);
+    }
+
+    @EventListener
+    public void onRoomSessionEvicted(RoomSessionEvictedEvent event) {
+        if (!RoomService.DEFAULT_ROOM_ID.equals(event.getRoomId())) {
+            roomHistories.remove(event.getRoomId());
+        }
+    }
+
+    private ConcurrentLinkedDeque<ChatMessage> loadRoomHistory(String roomId) {
+        ConcurrentLinkedDeque<ChatMessage> history = new ConcurrentLinkedDeque<>();
+        history.addAll(roomStatePersistenceService.loadRoomMessages(roomId, appProperties.getChat().getMaxHistorySize()));
+        return history;
+    }
+
+    private void ensurePublicHistoryLoaded() {
+        if (publicHistoryLoaded) {
+            return;
+        }
+        List<ChatMessage> loaded = roomStatePersistenceService.loadPublicMessages(appProperties.getChat().getMaxHistorySize());
+        publicHistory.clear();
+        publicHistory.addAll(loaded);
+        publicHistoryLoaded = true;
     }
 
     private List<ChatMessage> sliceHistory(ConcurrentLinkedDeque<ChatMessage> history, int offset, int limit) {
