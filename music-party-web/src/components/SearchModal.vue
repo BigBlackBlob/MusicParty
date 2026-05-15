@@ -106,7 +106,7 @@ import { useSearchLogic } from '../composables/useSearchLogic';
 import { DialogRoot, DialogPortal, DialogOverlay, DialogContent } from 'reka-ui';
 import CoverImage from './CoverImage.vue';
 
-const props = defineProps(['isOpen']);
+defineProps(['isOpen']);
 const emit = defineEmits(['close']);
 const playerStore = usePlayerStore();
 const { t } = useI18n();

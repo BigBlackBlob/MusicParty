@@ -55,7 +55,7 @@ export const usePlayerStore = defineStore('player', () => {
     try {
         const savedLikedSongs = JSON.parse(localStorage.getItem(STORAGE_KEYS.LIKED_SONGS) || '[]');
         likedSongs.value = Array.isArray(savedLikedSongs) ? savedLikedSongs : [];
-    } catch (e) {
+    } catch {
         likedSongs.value = [];
     }
 

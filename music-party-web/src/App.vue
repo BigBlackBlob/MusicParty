@@ -86,7 +86,7 @@ const toastInstance = ref(null);
 const chatOverlayRef = ref(null);
 const { register } = useToast();
 
-const { shortcuts } = useShortcuts({
+useShortcuts({
   onSearch: () => handleSearchClick(),
   onCloseModals: () => {
     showSearch.value = false;

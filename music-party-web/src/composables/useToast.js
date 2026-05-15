@@ -5,7 +5,7 @@ export function useToast() {
 
     // 保持 API 兼容性
     // register 不再需要，因为 store 是全局的
-    const register = (instance) => {
+    const register = () => {
         console.warn('useToast: register() is deprecated. ToastNotification uses Pinia store now.');
     };
 

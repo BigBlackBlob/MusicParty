@@ -2,7 +2,6 @@ import { usePlayerStore } from '../stores/player';
 import { useUserStore } from '../stores/user';
 import { useChatStore } from '../stores/chat';
 import { useToast } from '../composables/useToast';
-import {socketService} from "./socket.js";
 import {WS_DEST} from "../constants/api.js";
 
 /**
@@ -152,5 +151,3 @@ export const createSocketCallbacks = () => {
     };
 };
 
-// 为了兼容旧代码命名，导出这个别名
-const handleEventMessage = handleGameEvent;

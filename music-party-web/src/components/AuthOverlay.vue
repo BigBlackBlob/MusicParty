@@ -122,7 +122,7 @@ const verify = async (pwd, isAuto = false) => {
     localStorage.setItem(STORAGE_KEYS.ROOM_PASSWORD, pwd);
     passed.value = true;
     emit('unlocked');
-  } catch (e) {
+  } catch {
     if (!isAuto) {
       errorKey.value = 'auth.errors.invalidPassword';
       inputPassword.value = '';
@@ -151,7 +151,7 @@ const performSetup = async (pwd) => {
     if (pwd) localStorage.setItem(STORAGE_KEYS.ROOM_PASSWORD, pwd);
     passed.value = true;
     emit('unlocked');
-  } catch (e) {
+  } catch {
     errorKey.value = 'auth.errors.setupFailed';
     loading.value = false;
   }

@@ -80,7 +80,6 @@ const {
   filteredMessages,
   processedMessages,
   isSelf,
-  tabLabel,
   formatTime,
   markAsRead,
   sendMessage,
