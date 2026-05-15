@@ -46,6 +46,10 @@ app:
       max-message-length: ${CHAT_MAX_LENGTH:200}
     cache:
       max-size: ${CACHE_MAX_SIZE:1GB}
+    database:
+      enabled: ${DB_ENABLED:true}
+      path: ${DB_PATH:data/musicparty.db}
+      init-schema: ${DB_INIT_SCHEMA:true}
     auth:
       rate-limit:
         enabled: ${AUTH_RATE_LIMIT_ENABLED:true}

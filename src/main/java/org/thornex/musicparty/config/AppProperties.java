@@ -23,6 +23,7 @@ public class AppProperties {
     private ChatConfig chat = new ChatConfig();
     private CacheConfig cache = new CacheConfig();
     private AuthConfig auth = new AuthConfig();
+    private DatabaseConfig database = new DatabaseConfig();
 
     @Data
     public static class QueueConfig {
@@ -48,6 +49,13 @@ public class AppProperties {
     @Data
     public static class CacheConfig {
         private org.springframework.util.unit.DataSize maxSize = org.springframework.util.unit.DataSize.ofGigabytes(1);
+    }
+
+    @Data
+    public static class DatabaseConfig {
+        private boolean enabled = true;
+        private String path = "data/musicparty.db";
+        private boolean initSchema = true;
     }
 
     @Data
