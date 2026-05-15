@@ -17,6 +17,7 @@ import java.io.File;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.ToIntFunction;
@@ -29,6 +30,7 @@ public class RoomService {
     private static final String DEFAULT_ROOM_NAME = "Lounge";
     private static final String ROOMS_FILE = "data/rooms.json";
     private static final String VISIBILITY_PUBLIC = "PUBLIC";
+    private static final String VISIBILITY_PRIVATE = "PRIVATE";
 
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
@@ -63,9 +65,16 @@ public class RoomService {
     }
 
     public RoomInfo createRoom(String rawName, String creatorPublicId) {
+        return createRoom(rawName, creatorPublicId, false, null);
+    }
+
+    public RoomInfo createRoom(String rawName, String creatorPublicId, boolean privateRoom, String rawPassword) {
         String name = sanitizeName(rawName);
         if (name.isEmpty()) {
             throw new IllegalArgumentException("Room name cannot be empty");
+        }
+        if (privateRoom && (rawPassword == null || rawPassword.isBlank())) {
+            throw new IllegalArgumentException("Private room password cannot be empty");
         }
         boolean exists = rooms.values().stream().anyMatch(room -> room.name().equalsIgnoreCase(name));
         if (exists) {
@@ -78,7 +87,10 @@ public class RoomService {
         } while (rooms.containsKey(roomId));
 
         long now = System.currentTimeMillis();
-        StoredRoom room = new StoredRoom(roomId, name, creatorPublicId, now, now, false);
+        String visibility = privateRoom ? VISIBILITY_PRIVATE : VISIBILITY_PUBLIC;
+        String passwordHash = privateRoom ? RoomPasswordHasher.hash(rawPassword) : null;
+        int passwordVersion = privateRoom ? 1 : 0;
+        StoredRoom room = new StoredRoom(roomId, name, creatorPublicId, now, now, false, visibility, passwordHash, passwordVersion);
         rooms.put(roomId, room);
         roomRepository.upsert(toPersistedRoom(room, null));
         publishRoomList();
@@ -93,6 +105,20 @@ public class RoomService {
 
     public RoomInfo getRoom(String roomId) {
         return toInfo(rooms.get(normalizeRoomId(roomId)));
+    }
+
+    public Optional<RoomAccessMetadata> getRoomAccessMetadata(String roomId) {
+        String key = roomId == null || roomId.isBlank() ? DEFAULT_ROOM_ID : roomId;
+        StoredRoom room = rooms.get(key);
+        if (room == null) {
+            return Optional.empty();
+        }
+        return Optional.of(new RoomAccessMetadata(
+                room.roomId(),
+                VISIBILITY_PRIVATE.equals(room.visibility()),
+                room.passwordHash(),
+                room.passwordVersion()
+        ));
     }
 
     public boolean deleteRoom(String roomId, String requesterPublicId, boolean admin) {
@@ -125,7 +151,15 @@ public class RoomService {
         if (room == null) {
             room = rooms.get(DEFAULT_ROOM_ID);
         }
-        return new RoomInfo(room.roomId(), room.name(), room.creatorPublicId(), room.createdAt(), room.system(), onlineCountProvider.applyAsInt(room.roomId()));
+        return new RoomInfo(
+                room.roomId(),
+                room.name(),
+                room.creatorPublicId(),
+                room.createdAt(),
+                VISIBILITY_PRIVATE.equals(room.visibility()),
+                room.system(),
+                onlineCountProvider.applyAsInt(room.roomId())
+        );
     }
 
     private String sanitizeName(String rawName) {
@@ -139,7 +173,7 @@ public class RoomService {
 
     private void ensureDefaultRoom() {
         StoredRoom defaultRoom = rooms.computeIfAbsent(DEFAULT_ROOM_ID,
-                ignored -> new StoredRoom(DEFAULT_ROOM_ID, DEFAULT_ROOM_NAME, "SYSTEM", 0L, System.currentTimeMillis(), true));
+                ignored -> new StoredRoom(DEFAULT_ROOM_ID, DEFAULT_ROOM_NAME, "SYSTEM", 0L, System.currentTimeMillis(), true, VISIBILITY_PUBLIC, null, 0));
         roomRepository.upsert(toPersistedRoom(defaultRoom, null));
     }
 
@@ -174,9 +208,9 @@ public class RoomService {
                 room.roomId(),
                 room.name(),
                 room.creatorPublicId(),
-                VISIBILITY_PUBLIC,
-                null,
-                0,
+                room.visibility(),
+                room.passwordHash(),
+                room.passwordVersion(),
                 room.system(),
                 room.createdAt(),
                 room.lastActiveAt(),
@@ -191,13 +225,29 @@ public class RoomService {
                 room.ownerPublicId(),
                 room.createdAt(),
                 room.lastActiveAt(),
-                room.system()
+                room.system(),
+                room.visibility() == null ? VISIBILITY_PUBLIC : room.visibility(),
+                room.passwordHash(),
+                room.passwordVersion()
         );
     }
 
-    private record StoredRoom(String roomId, String name, String creatorPublicId, long createdAt, long lastActiveAt, boolean system) {
+    public record RoomAccessMetadata(String roomId, boolean privateRoom, String passwordHash, int passwordVersion) {
+    }
+
+    private record StoredRoom(
+            String roomId,
+            String name,
+            String creatorPublicId,
+            long createdAt,
+            long lastActiveAt,
+            boolean system,
+            String visibility,
+            String passwordHash,
+            int passwordVersion
+    ) {
         private StoredRoom withLastActiveAt(long value) {
-            return new StoredRoom(roomId, name, creatorPublicId, createdAt, value, system);
+            return new StoredRoom(roomId, name, creatorPublicId, createdAt, value, system, visibility, passwordHash, passwordVersion);
         }
     }
 }

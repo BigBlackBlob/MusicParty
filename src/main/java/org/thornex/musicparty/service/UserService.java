@@ -311,6 +311,18 @@ public class UserService {
         return Optional.ofNullable(usersBySessionToken.get(sessionToken));
     }
 
+    public Optional<String> resolvePublicIdBySessionToken(String sessionToken) {
+        if (!StringUtils.hasText(sessionToken)) {
+            return Optional.empty();
+        }
+        User inMemory = usersBySessionToken.get(sessionToken);
+        if (inMemory != null) {
+            return Optional.of(inMemory.getPublicId());
+        }
+        return userProfileRepository.findSessionByHash(hashSessionToken(sessionToken))
+                .map(PersistedSession::publicId);
+    }
+
     public Optional<User> getUserByPublicId(String publicId) {
         return Optional.ofNullable(usersByPublicId.get(publicId));
     }

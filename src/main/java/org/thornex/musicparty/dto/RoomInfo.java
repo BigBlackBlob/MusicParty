@@ -5,6 +5,7 @@ public record RoomInfo(
         String name,
         String creatorPublicId,
         long createdAt,
+        boolean privateRoom,
         boolean system,
         int onlineCount
 ) {

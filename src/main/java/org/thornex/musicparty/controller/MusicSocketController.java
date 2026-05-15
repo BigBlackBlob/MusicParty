@@ -179,7 +179,12 @@ public class MusicSocketController {
         if (isGuest(sessionId)) return;
         userService.getUser(sessionId).ifPresent(user -> {
             try {
-                RoomInfo room = roomService.createRoom(request.name(), user.getPublicId());
+                RoomInfo room = roomService.createRoom(
+                        request.name(),
+                        user.getPublicId(),
+                        Boolean.TRUE.equals(request.isPrivate()),
+                        request.password()
+                );
                 messagingTemplate.convertAndSendToUser(sessionId, "/queue/rooms/created", room, createSessionHeaders(sessionId));
             } catch (IllegalArgumentException ex) {
                 PlayerEvent errorEvent = new PlayerEvent("ERROR", "ROOM_CREATE_FAILED", user.getPublicId(), ex.getMessage(), null);
