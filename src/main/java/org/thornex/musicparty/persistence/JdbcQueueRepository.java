@@ -80,6 +80,31 @@ public class JdbcQueueRepository implements QueueRepository {
                 historyEntry.playedAt());
     }
 
+    @Override
+    @Transactional
+    public void replaceHistory(String roomId, List<Music> historyItems) {
+        jdbcTemplate.update("delete from room_history where room_id = ?", roomId);
+        for (int i = 0; i < historyItems.size(); i++) {
+            Music music = historyItems.get(i);
+            jdbcTemplate.update("""
+                    insert into room_history(id, room_id, music_json, enqueuer_public_id, played_at)
+                    values (?, ?, ?, ?, ?)
+                    """,
+                    roomId + "-history-" + i,
+                    roomId,
+                    writeJson(music),
+                    null,
+                    System.currentTimeMillis() - i);
+        }
+    }
+
+    @Override
+    @Transactional
+    public void deleteRoomData(String roomId) {
+        jdbcTemplate.update("delete from room_queue where room_id = ?", roomId);
+        jdbcTemplate.update("delete from room_history where room_id = ?", roomId);
+    }
+
     private RowMapper<MusicQueueItem> queueItemRowMapper() {
         return (rs, rowNum) -> readJson(rs.getString("music_json"), QUEUE_ITEM_TYPE);
     }

@@ -10,9 +10,10 @@ import org.springframework.stereotype.Service;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.RoomInfo;
 import org.thornex.musicparty.event.RoomListUpdateEvent;
+import org.thornex.musicparty.persistence.PersistedRoom;
+import org.thornex.musicparty.persistence.RoomRepository;
 
 import java.io.File;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -27,10 +28,12 @@ public class RoomService {
     public static final String DEFAULT_ROOM_ID = "lounge";
     private static final String DEFAULT_ROOM_NAME = "Lounge";
     private static final String ROOMS_FILE = "data/rooms.json";
+    private static final String VISIBILITY_PUBLIC = "PUBLIC";
 
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
     private final AppProperties appProperties;
+    private final RoomRepository roomRepository;
     private final Map<String, StoredRoom> rooms = new ConcurrentHashMap<>();
     private volatile ToIntFunction<String> onlineCountProvider = roomId -> 0;
 
@@ -74,9 +77,10 @@ public class RoomService {
             roomId = "room-" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
         } while (rooms.containsKey(roomId));
 
-        StoredRoom room = new StoredRoom(roomId, name, creatorPublicId, System.currentTimeMillis(), false);
+        long now = System.currentTimeMillis();
+        StoredRoom room = new StoredRoom(roomId, name, creatorPublicId, now, now, false);
         rooms.put(roomId, room);
-        saveRooms();
+        roomRepository.upsert(toPersistedRoom(room, null));
         publishRoomList();
         return toInfo(room);
     }
@@ -96,9 +100,16 @@ public class RoomService {
             return false;
         }
         rooms.remove(roomId);
-        saveRooms();
+        roomRepository.softDelete(roomId, System.currentTimeMillis());
         publishRoomList();
         return true;
+    }
+
+    public void markRoomActive(String roomId) {
+        String normalized = normalizeRoomId(roomId);
+        long now = System.currentTimeMillis();
+        rooms.computeIfPresent(normalized, (key, room) -> room.withLastActiveAt(now));
+        roomRepository.touch(normalized, now);
     }
 
     public boolean isAdminPassword(String value) {
@@ -127,37 +138,66 @@ public class RoomService {
     }
 
     private void ensureDefaultRoom() {
-        rooms.putIfAbsent(DEFAULT_ROOM_ID, new StoredRoom(DEFAULT_ROOM_ID, DEFAULT_ROOM_NAME, "SYSTEM", 0L, true));
+        StoredRoom defaultRoom = rooms.computeIfAbsent(DEFAULT_ROOM_ID,
+                ignored -> new StoredRoom(DEFAULT_ROOM_ID, DEFAULT_ROOM_NAME, "SYSTEM", 0L, System.currentTimeMillis(), true));
+        roomRepository.upsert(toPersistedRoom(defaultRoom, null));
     }
 
     private void loadRooms() {
+        List<PersistedRoom> persistedRooms = roomRepository.findAllActive();
+        if (!persistedRooms.isEmpty()) {
+            persistedRooms.stream()
+                    .map(this::fromPersistedRoom)
+                    .forEach(room -> rooms.put(room.roomId(), room));
+            return;
+        }
+
         File file = new File(ROOMS_FILE);
         if (!file.exists()) return;
         try {
             List<StoredRoom> loaded = objectMapper.readValue(file, new TypeReference<List<StoredRoom>>() {});
             for (StoredRoom room : loaded) {
                 if (room != null && room.roomId() != null && !room.roomId().isBlank() && !room.system()) {
-                    rooms.put(room.roomId(), room);
+                    StoredRoom normalizedRoom = room.lastActiveAt() <= 0 ? room.withLastActiveAt(room.createdAt()) : room;
+                    rooms.put(normalizedRoom.roomId(), normalizedRoom);
+                    roomRepository.upsert(toPersistedRoom(normalizedRoom, null));
                 }
             }
+            log.info("Imported {} rooms from legacy JSON file {}", rooms.size(), file.getAbsolutePath());
         } catch (Exception e) {
             log.error("Failed to load rooms from {}", file.getAbsolutePath(), e);
         }
     }
 
-    private synchronized void saveRooms() {
-        File file = new File(ROOMS_FILE);
-        if (file.getParentFile() != null && !file.getParentFile().exists()) {
-            file.getParentFile().mkdirs();
-        }
-        List<StoredRoom> persisted = new ArrayList<>(rooms.values().stream().filter(room -> !room.system()).toList());
-        try {
-            objectMapper.writeValue(file, persisted);
-        } catch (Exception e) {
-            log.error("Failed to save rooms to {}", file.getAbsolutePath(), e);
-        }
+    private PersistedRoom toPersistedRoom(StoredRoom room, Long deletedAt) {
+        return new PersistedRoom(
+                room.roomId(),
+                room.name(),
+                room.creatorPublicId(),
+                VISIBILITY_PUBLIC,
+                null,
+                0,
+                room.system(),
+                room.createdAt(),
+                room.lastActiveAt(),
+                deletedAt
+        );
     }
 
-    private record StoredRoom(String roomId, String name, String creatorPublicId, long createdAt, boolean system) {
+    private StoredRoom fromPersistedRoom(PersistedRoom room) {
+        return new StoredRoom(
+                room.id(),
+                room.name(),
+                room.ownerPublicId(),
+                room.createdAt(),
+                room.lastActiveAt(),
+                room.system()
+        );
+    }
+
+    private record StoredRoom(String roomId, String name, String creatorPublicId, long createdAt, long lastActiveAt, boolean system) {
+        private StoredRoom withLastActiveAt(long value) {
+            return new StoredRoom(roomId, name, creatorPublicId, createdAt, value, system);
+        }
     }
 }

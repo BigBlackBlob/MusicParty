@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 import org.thornex.musicparty.dto.ChatMessage;
 import org.thornex.musicparty.enums.MessageType;
 
@@ -48,5 +49,23 @@ public class JdbcChatRepository implements ChatRepository {
                 order by created_at desc
                 limit ? offset ?
                 """, CHAT_MESSAGE_ROW_MAPPER, roomId, roomId, limit, offset);
+    }
+
+    @Override
+    @Transactional
+    public void replaceMessages(String roomId, List<ChatMessage> messages) {
+        if (roomId == null) {
+            jdbcTemplate.update("delete from chat_message where room_id is null");
+        } else {
+            jdbcTemplate.update("delete from chat_message where room_id = ?", roomId);
+        }
+        for (ChatMessage message : messages) {
+            appendMessage(roomId, message);
+        }
+    }
+
+    @Override
+    public void deleteRoomHistory(String roomId) {
+        jdbcTemplate.update("delete from chat_message where room_id = ?", roomId);
     }
 }
