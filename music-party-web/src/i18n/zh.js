@@ -60,6 +60,7 @@ export default {
     english: '英文',
     chinese: '中文',
     toggleTheme: '切换主题',
+    queueAutoHidden: '当前缩放下队列已自动隐藏',
     moreActiveUsers: '还有 {count} 位活跃用户'
   },
   nav: {

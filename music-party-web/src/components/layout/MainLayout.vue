@@ -307,11 +307,11 @@ const getInitials = (name = '') => {
 }
 
 .desktop-stage-grid--queue {
-  grid-template-columns: minmax(0, var(--panel-width)) minmax(0, 1fr) minmax(0, var(--panel-width));
+  grid-template-columns: minmax(0, var(--panel-width)) minmax(min(100%, 360px), 1fr) minmax(0, var(--panel-width));
 }
 
 .desktop-stage-grid--lyrics {
-  grid-template-columns: minmax(0, var(--panel-width)) minmax(0, 1fr);
+  grid-template-columns: minmax(0, var(--panel-width)) minmax(min(100%, 360px), 1fr);
 }
 
 @media (max-width: 1180px) {

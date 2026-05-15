@@ -30,16 +30,20 @@
 
     <MainLayout
       v-else-if="hasStarted"
-      :is-queue-visible="isQueueVisible"
+      :is-queue-visible="effectiveQueueVisible"
       @search="handleSearchClick"
       @toggle-mobile-chat="handleMobileChat"
     >
       <template #default>
         <!-- Center Stage & Lyrics -->
-        <CenterConsole :is-queue-visible="isQueueVisible" @toggle-queue="handleQueueToggle" />
+        <CenterConsole
+          :is-queue-visible="effectiveQueueVisible"
+          :is-queue-auto-suppressed="autoQueueSuppressed"
+          @toggle-queue="handleQueueToggle"
+        />
 
         <!-- Right Panel: Queue -->
-        <div v-show="isQueueVisible" class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden" id="right-queue-panel">
+        <div v-show="effectiveQueueVisible" class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden" id="right-queue-panel">
           <QueueList />
         </div>
       </template>
@@ -81,7 +85,7 @@ const userStore = useUserStore();
 const uiStore = useUiStore();
 const hasStarted = ref(false);
 const showSearch = ref(false);
-const isQueueVisible = ref(true);
+const userQueueVisible = ref(true);
 const toastInstance = ref(null);
 const chatOverlayRef = ref(null);
 const { register } = useToast();
@@ -96,6 +100,40 @@ useShortcuts({
 const { width } = useWindowSize();
 const isMobileLayout = computed(() => uiStore.forceMobileLayout || width.value < 768);
 const usePreviewShell = computed(() => uiStore.forceMobileLayout && width.value >= 768);
+const MIN_READABLE_LYRICS_WIDTH = 360;
+const DESKTOP_STAGE_HORIZONTAL_PADDING = 40;
+const DESKTOP_STAGE_MAX_WIDTH = 1520;
+const DESKTOP_PANEL_WIDE_WIDTH = 420;
+const DESKTOP_PANEL_NARROW_WIDTH = 360;
+const DESKTOP_STAGE_WIDE_GAP = 24;
+const DESKTOP_STAGE_NARROW_GAP = 18;
+
+const desktopPanelWidth = computed(() => (
+  width.value <= 1180 ? DESKTOP_PANEL_NARROW_WIDTH : DESKTOP_PANEL_WIDE_WIDTH
+));
+
+const desktopStageGap = computed(() => (
+  width.value <= 1180 ? DESKTOP_STAGE_NARROW_GAP : DESKTOP_STAGE_WIDE_GAP
+));
+
+const desktopStageWidth = computed(() => {
+  const zoom = Math.max(1, Number(uiStore.globalZoomLevel) || 1);
+  const viewportWidth = Math.max(0, width.value / zoom - DESKTOP_STAGE_HORIZONTAL_PADDING);
+  const scaledMaxWidth = DESKTOP_STAGE_MAX_WIDTH * uiStore.mainStageScale;
+  return Math.max(0, Math.min(scaledMaxWidth, viewportWidth));
+});
+
+const autoQueueSuppressed = computed(() => {
+  if (isMobileLayout.value || !userQueueVisible.value) return false;
+
+  const lyricsWidthWithQueue = desktopStageWidth.value
+    - (desktopPanelWidth.value * 2)
+    - (desktopStageGap.value * 2);
+
+  return lyricsWidthWithQueue < MIN_READABLE_LYRICS_WIDTH;
+});
+
+const effectiveQueueVisible = computed(() => userQueueVisible.value && !autoQueueSuppressed.value);
 let autoLiteTimer = null;
 let autoLiteSuppressedUntil = 0;
 const AUTO_LITE_DELAY_MS = 180000;
@@ -166,7 +204,7 @@ const handleMobileChat = () => {
 };
 
 const handleQueueToggle = () => {
-  isQueueVisible.value = !isQueueVisible.value;
+  userQueueVisible.value = !userQueueVisible.value;
 };
 
 onMounted(() => {

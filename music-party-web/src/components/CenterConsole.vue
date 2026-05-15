@@ -125,7 +125,12 @@
                 :aria-label="t('player.volume')"
               />
             </div>
-            <button class="flex items-center justify-center text-primary transition-colors hover:text-text-primary" :title="t('nav.queue')" @click="emit('toggle-queue')">
+            <button
+              class="flex items-center justify-center text-primary transition-colors hover:text-text-primary"
+              :title="queueToggleTitle"
+              :aria-label="queueToggleTitle"
+              @click="emit('toggle-queue')"
+            >
               <span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">queue_music</span>
             </button>
           </div>
@@ -153,17 +158,21 @@
 </template>
 
 <script setup>
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import CoverImage from './CoverImage.vue';
 import AppleLyricsPanel from './AppleLyricsPanel.vue';
 import { useNowPlayingViewModel } from '../composables/useNowPlayingViewModel';
 import { formatDuration } from '../utils/format';
 
-defineProps({
+const props = defineProps({
   isQueueVisible: {
     type: Boolean,
     default: true
+  },
+  isQueueAutoSuppressed: {
+    type: Boolean,
+    default: false
   }
 });
 const emit = defineEmits(['toggle-queue']);
@@ -191,6 +200,11 @@ const {
 const titleViewportRef = ref(null);
 const titleTrackRef = ref(null);
 const shouldScrollTitle = ref(false);
+const queueToggleTitle = computed(() => (
+  props.isQueueAutoSuppressed
+    ? `${t('nav.queue')} (${t('settings.queueAutoHidden')})`
+    : t('nav.queue')
+));
 
 const handleSeek = (event) => {
   if (!canSeek.value) return;
