@@ -11,10 +11,16 @@ import java.util.List;
  */
 @Getter
 public class QueueUpdateEvent extends ApplicationEvent {
+    private final String roomId;
     private final List<MusicQueueItem> queue;
 
     public QueueUpdateEvent(Object source, List<MusicQueueItem> queue) {
+        this(source, "lounge", queue);
+    }
+
+    public QueueUpdateEvent(Object source, String roomId, List<MusicQueueItem> queue) {
         super(source);
+        this.roomId = roomId;
         this.queue = queue;
     }
 }

@@ -7,6 +7,8 @@ import org.springframework.stereotype.Component;
 import org.thornex.musicparty.dto.PlayerEvent;
 import org.thornex.musicparty.event.PlayerStateEvent;
 import org.thornex.musicparty.event.QueueUpdateEvent;
+import org.thornex.musicparty.event.RoomDeletedEvent;
+import org.thornex.musicparty.event.RoomListUpdateEvent;
 import org.thornex.musicparty.event.SystemMessageEvent;
 import org.thornex.musicparty.service.UserService;
 import org.thornex.musicparty.util.MessageFormatter;
@@ -23,7 +25,7 @@ public class WebSocketBroadcaster {
      */
     @EventListener
     public void onPlayerStateChanged(PlayerStateEvent event) {
-        messagingTemplate.convertAndSend("/topic/player/state", event.getState());
+        messagingTemplate.convertAndSend("/topic/rooms/" + event.getRoomId() + "/player/state", event.getState());
     }
 
     /**
@@ -31,7 +33,7 @@ public class WebSocketBroadcaster {
      */
     @EventListener
     public void onQueueChanged(QueueUpdateEvent event) {
-        messagingTemplate.convertAndSend("/topic/player/queue", event.getQueue());
+        messagingTemplate.convertAndSend("/topic/rooms/" + event.getRoomId() + "/player/queue", event.getQueue());
     }
 
     /**
@@ -65,6 +67,17 @@ public class WebSocketBroadcaster {
                 formattedMessage,
                 event.getPayload()
         );
-        messagingTemplate.convertAndSend("/topic/player/events", playerEvent);
+        messagingTemplate.convertAndSend("/topic/rooms/" + event.getRoomId() + "/player/events", playerEvent);
+    }
+
+    @EventListener
+    public void onRoomListChanged(RoomListUpdateEvent event) {
+        messagingTemplate.convertAndSend("/topic/rooms/list", event.getRooms());
+    }
+
+    @EventListener
+    public void onRoomDeleted(RoomDeletedEvent event) {
+        PlayerEvent playerEvent = new PlayerEvent("WARN", "ROOM_DELETED", "SYSTEM", "房间已被删除，已返回 Lounge", event.getRoomId());
+        messagingTemplate.convertAndSend("/topic/rooms/" + event.getRoomId() + "/player/events", playerEvent);
     }
 }

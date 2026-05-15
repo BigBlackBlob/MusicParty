@@ -100,13 +100,13 @@
           </div>
         </div>
 
-        <div v-if="activeTab === CHAT_TAB" class="flex gap-2 border-t border-[var(--border-default)] bg-[var(--surface-1)] p-2">
+        <div v-if="activeTab === CHAT_TAB || activeTab === PUBLIC_TAB" class="flex gap-2 border-t border-[var(--border-default)] bg-[var(--surface-1)] p-2">
           <input
               v-model="inputContent"
               @keyup.enter="send"
               @mousedown.stop
               @touchstart.stop
-              :placeholder="t('chat.placeholder')"
+              :placeholder="activeTab === PUBLIC_TAB ? 'Message public channel...' : t('chat.placeholder')"
               class="min-w-0 flex-1 rounded-xl border border-[var(--border-default)] bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none transition-colors placeholder:text-[var(--text-tertiary)] focus:border-[var(--border-accent)] focus:ring-2 focus:ring-[var(--accent-muted)]"
               :aria-label="t('chat.placeholder')"
           />
@@ -131,15 +131,15 @@
         @pointerdown="handlePointerDown"
         @click="handleClick"
         class="pointer-events-auto relative flex h-11 w-11 select-none items-center justify-center overflow-hidden rounded-lg border border-border-default bg-surface-overlay/90 text-[var(--text-secondary)] shadow-lg backdrop-blur-xl transition-colors hover:bg-[var(--surface-3)] hover:text-[var(--text-primary)] active:scale-[0.96]"
-        :class="chatStore.unreadCount > 0 ? 'border-[var(--accent)] text-[var(--accent)]' : ''"
+        :class="totalUnreadCount > 0 ? 'border-[var(--accent)] text-[var(--accent)]' : ''"
     >
       <span
-          v-if="chatStore.unreadCount > 0"
+          v-if="totalUnreadCount > 0"
           class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,var(--accent-muted),transparent_60%)]"
       ></span>
 
-      <span v-if="chatStore.unreadCount > 0" class="relative z-10 font-mono text-sm font-semibold">
-        {{ chatStore.unreadCount > 99 ? '99+' : chatStore.unreadCount }}
+      <span v-if="totalUnreadCount > 0" class="relative z-10 font-mono text-sm font-semibold">
+        {{ totalUnreadCount > 99 ? '99+' : totalUnreadCount }}
       </span>
       <MessageSquare v-else class="relative z-10 h-5 w-5" />
     </div>
@@ -158,14 +158,17 @@ import { MessageSquare, X, Send, Terminal, Zap, Loader2 } from 'lucide-vue-next'
 const chatStore = useChatStore();
 const userStore = useUserStore();
 const { t } = useI18n();
+const totalUnreadCount = computed(() => chatStore.unreadCount + chatStore.publicUnreadCount);
 const { width: windowWidth } = useWindowSize();
 const CHAT_TAB = 'CHAT';
 const SYSTEM_TAB = 'SYSTEM';
+const PUBLIC_TAB = 'PUBLIC';
 
 const isMobile = computed(() => windowWidth.value < 768);
 const chatTabs = computed(() => ([
   { value: CHAT_TAB, label: t('chat.tabChat') },
-  { value: SYSTEM_TAB, label: t('chat.tabSystem') }
+  { value: SYSTEM_TAB, label: t('chat.tabSystem') },
+  { value: PUBLIC_TAB, label: 'PUBLIC' }
 ]));
 
 const inputContent = ref('');
@@ -223,6 +226,19 @@ const scrollToBottom = async (force = false) => {
 
 const handleScroll = (e) => {
   const el = e.target;
+  if (activeTab.value === PUBLIC_TAB) {
+    if (el.scrollTop < 20 && chatStore.publicHasMore && !chatStore.isLoadingPublicMore) {
+      const oldHeight = el.scrollHeight;
+      chatStore.loadMorePublicHistory();
+      const unwatch = watch(() => chatStore.publicMessages.length, async () => {
+        await nextTick();
+        const newHeight = el.scrollHeight;
+        el.scrollTop = newHeight - oldHeight;
+        unwatch();
+      });
+    }
+    return;
+  }
   if (el.scrollTop < 20 && chatStore.hasMore && !chatStore.isLoadingMore) {
     const oldHeight = el.scrollHeight;
     chatStore.loadMoreHistory();
