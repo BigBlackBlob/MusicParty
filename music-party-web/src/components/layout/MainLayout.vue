@@ -68,12 +68,12 @@
                    <span class="truncate font-compact text-sm font-bold">{{ room.name }}</span>
                    <span class="text-[10px] opacity-60 font-mono tracking-tight">{{ room.onlineCount || 0 }} {{ t('settings.active') }}</span>
                 </div>
-                
+
                 <div class="ml-3 flex items-center gap-2">
                   <span v-if="roomStore.currentRoomId === room.roomId" class="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]"></span>
-                  <button 
-                    v-if="canDeleteRoom(room)" 
-                    class="material-symbols-outlined text-[18px] opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:text-error transition-all" 
+                  <button
+                    v-if="canDeleteRoom(room)"
+                    class="material-symbols-outlined text-[18px] opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:text-error transition-all"
                     @click.stop="deleteRoom(room)"
                   >
                     delete

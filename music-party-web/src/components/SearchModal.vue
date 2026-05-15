@@ -89,7 +89,7 @@
                       <span class="material-symbols-outlined text-primary">playlist_add_check</span>
                       <span class="text-[12px] font-bold text-primary">{{ t('search.playlistLoaded', { count: playlistSongs.length }) }}</span>
                    </div>
-                   <button 
+                   <button
                     @click="addAllPlaylistSongs"
                     class="px-4 py-1.5 bg-primary text-on-primary rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-[var(--accent-hover)] transition-all shadow-lg shadow-primary/20"
                    >
@@ -113,7 +113,7 @@
                 <!-- Pagination Control -->
                 <div v-if="(searchType === SONG_SEARCH_TYPE || searchType === PLAYLIST_SEARCH_TYPE) && displayItems.length > 0 && (activeCurrentPage > 1 || activeCanGoNext)" class="pt-6 pb-4 flex items-center justify-center gap-6 border-t border-border-default/50 mt-4">
                    <!-- Prev -->
-                   <button 
+                   <button
                     @click="prevPage"
                     :disabled="activeCurrentPage <= 1 || loading"
                     class="group flex items-center justify-center w-10 h-10 rounded-full text-text-muted hover:text-primary hover:bg-surface-raised disabled:opacity-30 disabled:hover:text-text-muted transition-all"
@@ -124,7 +124,7 @@
 
                    <!-- Page Jump -->
                    <div class="flex items-center gap-3">
-                      <input 
+                      <input
                         type="number"
                         :value="activeCurrentPage"
                         @keyup.enter="e => jumpToPage(e.target.value)"
@@ -135,7 +135,7 @@
                    </div>
 
                    <!-- Next -->
-                   <button 
+                   <button
                     @click="nextPage"
                     :disabled="!activeCanGoNext || loading"
                     class="group flex items-center justify-center w-10 h-10 rounded-full text-text-muted hover:text-primary hover:bg-surface-raised disabled:opacity-30 disabled:hover:text-text-muted transition-all"
@@ -169,9 +169,9 @@ const SONG_SEARCH_TYPE = 'song';
 const ALBUM_SEARCH_TYPE = 'album';
 const PLAYLIST_SEARCH_TYPE = 'playlist';
 
-const { 
-  platform, platforms, supportsAlbumSearch, keyword, songs, albums, playlistSongs, loading, searchType, doSearch, loadPlatforms, isAdminMode, hasSubmittedSearch, 
-  currentPage, currentPlaylistPage, canGoNext, canGoPlaylistNext, nextPage, prevPage, addAllPlaylistSongs 
+const {
+  platform, platforms, supportsAlbumSearch, keyword, songs, albums, playlistSongs, loading, searchType, doSearch, loadPlatforms, isAdminMode, hasSubmittedSearch,
+  currentPage, currentPlaylistPage, canGoNext, canGoPlaylistNext, nextPage, prevPage, addAllPlaylistSongs
 } = useSearchLogic(emit);
 
 const hasSearched = computed(() => hasSubmittedSearch.value || songs.value.length > 0 || albums.value.length > 0 || playlistSongs.value.length > 0);

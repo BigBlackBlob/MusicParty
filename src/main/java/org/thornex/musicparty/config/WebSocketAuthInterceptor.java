@@ -14,9 +14,14 @@ import org.thornex.musicparty.service.RoomAccessService;
 import org.thornex.musicparty.service.RoomService;
 import org.thornex.musicparty.service.UserService;
 
+import java.util.HashMap;
+import java.util.Map;
+
 @Component
 @Slf4j
 public class WebSocketAuthInterceptor implements ChannelInterceptor {
+    private static final String AUTHORIZED_ROOM_ID_ATTRIBUTE = "authorizedRoomId";
+    private static final String ROOM_TOPIC_PREFIX = "/topic/rooms/";
 
     private final UserService userService;
     private final RoomService roomService;
@@ -32,16 +37,30 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
 
-        if (accessor == null || !StompCommand.CONNECT.equals(accessor.getCommand())) {
+        if (accessor == null) {
             return message;
         }
 
+        if (StompCommand.CONNECT.equals(accessor.getCommand())) {
+            authorizeConnect(accessor);
+            return message;
+        }
+
+        if (StompCommand.SUBSCRIBE.equals(accessor.getCommand())) {
+            authorizeSubscribe(accessor);
+        }
+
+        return message;
+    }
+
+    private void authorizeConnect(StompHeaderAccessor accessor) {
         String roomId = accessor.getFirstNativeHeader("room-id");
         RoomService.RoomAccessMetadata metadata = roomService.getRoomAccessMetadata(roomId)
                 .orElseThrow(() -> new MessageDeliveryException("UNKNOWN_ROOM"));
 
         if (!metadata.privateRoom()) {
-            return message;
+            rememberAuthorizedRoom(accessor, metadata.roomId());
+            return;
         }
 
         String sessionToken = accessor.getFirstNativeHeader("session-token");
@@ -53,7 +72,52 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
             throw new MessageDeliveryException("INVALID_ROOM_ACCESS_TOKEN");
         }
 
+        rememberAuthorizedRoom(accessor, metadata.roomId());
         log.info("WebSocket room access granted: session={}, room={}", accessor.getSessionId(), metadata.roomId());
-        return message;
+    }
+
+    private void authorizeSubscribe(StompHeaderAccessor accessor) {
+        String roomId = extractRoomIdFromDestination(accessor.getDestination());
+        if (!StringUtils.hasText(roomId)) {
+            return;
+        }
+
+        RoomService.RoomAccessMetadata metadata = roomService.getRoomAccessMetadata(roomId)
+                .orElseThrow(() -> new MessageDeliveryException("UNKNOWN_ROOM"));
+        if (!metadata.privateRoom()) {
+            return;
+        }
+
+        Object authorizedRoomId = sessionAttributes(accessor).get(AUTHORIZED_ROOM_ID_ATTRIBUTE);
+        if (!metadata.roomId().equals(authorizedRoomId)) {
+            log.warn("WebSocket subscription refused: unauthorized private room topic. Session={}, Room={}, Destination={}",
+                    accessor.getSessionId(), metadata.roomId(), accessor.getDestination());
+            throw new MessageDeliveryException("INVALID_ROOM_SUBSCRIPTION");
+        }
+    }
+
+    private String extractRoomIdFromDestination(String destination) {
+        if (!StringUtils.hasText(destination) || !destination.startsWith(ROOM_TOPIC_PREFIX)) {
+            return null;
+        }
+        String remainder = destination.substring(ROOM_TOPIC_PREFIX.length());
+        int separatorIndex = remainder.indexOf('/');
+        if (separatorIndex <= 0) {
+            return null;
+        }
+        return remainder.substring(0, separatorIndex);
+    }
+
+    private void rememberAuthorizedRoom(StompHeaderAccessor accessor, String roomId) {
+        sessionAttributes(accessor).put(AUTHORIZED_ROOM_ID_ATTRIBUTE, roomId);
+    }
+
+    private Map<String, Object> sessionAttributes(StompHeaderAccessor accessor) {
+        Map<String, Object> attributes = accessor.getSessionAttributes();
+        if (attributes == null) {
+            attributes = new HashMap<>();
+            accessor.setSessionAttributes(attributes);
+        }
+        return attributes;
     }
 }

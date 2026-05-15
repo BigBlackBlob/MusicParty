@@ -12,11 +12,11 @@
             <span class="material-symbols-outlined">close</span>
           </button>
         </div>
-        
+
         <div class="flex gap-4">
-          <input 
-            type="text" 
-            :placeholder="t('search.placeholder')" 
+          <input
+            type="text"
+            :placeholder="t('search.placeholder')"
             class="flex-1 bg-surface-overlay border border-border-default rounded-[var(--radius-sm)] px-4 py-3 text-sm focus:border-primary outline-none text-text-primary placeholder:text-text-tertiary transition-colors"
           />
           <button class="px-6 bg-primary text-on-primary font-black text-[10px] uppercase tracking-widest rounded-[var(--radius-sm)] hover:bg-primary-fixed-dim transition-colors">
@@ -41,7 +41,7 @@
              <button class="w-full text-left px-3 py-2 rounded-[var(--radius-sm)] text-[13px] font-bold text-text-muted hover:bg-surface-raised hover:text-text-primary transition-colors">{{ t('platforms.bilibili') }}</button>
           </div>
         </aside>
-        
+
         <!-- Results -->
         <main class="flex-1 p-6 overflow-y-auto bg-surface-stage space-y-2">
           <!-- Mock Track Item -->
@@ -55,7 +55,7 @@
             </div>
             <span class="text-text-muted font-mono text-[10px]">03:45</span>
           </div>
-          
+
           <div class="flex items-center gap-4 p-3 rounded-lg hover:bg-white/5 border border-transparent hover:border-border-subtle transition-all cursor-pointer">
             <div class="w-10 h-10 bg-surface-elevated rounded flex items-center justify-center">
               <span class="material-symbols-outlined text-text-muted">music_note</span>
