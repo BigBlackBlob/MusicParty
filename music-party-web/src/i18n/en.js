@@ -119,8 +119,6 @@ export default {
     exportLiked: 'Export liked songs'
   },
   search: {
-    placeholder: 'Search for a track...',
-    adminPlaceholder: 'Enter admin password',
     title: 'Search',
     discoverMusic: 'Discover Music',
     platforms: 'Platforms',
