@@ -17,6 +17,26 @@ public class InMemoryRoomRepository implements RoomRepository {
     }
 
     @Override
+    public List<PersistedRoom> findLobbyRooms(String requesterPublicId) {
+        return rooms.values().stream()
+                .filter(room -> room.deletedAt() == null)
+                .filter(room -> room.system()
+                        || "PUBLIC".equals(room.visibility())
+                        || (requesterPublicId != null && requesterPublicId.equals(room.ownerPublicId())))
+                .sorted((left, right) -> {
+                    if (left.system() != right.system()) {
+                        return left.system() ? -1 : 1;
+                    }
+                    int activeCompare = Long.compare(right.lastActiveAt(), left.lastActiveAt());
+                    if (activeCompare != 0) {
+                        return activeCompare;
+                    }
+                    return Long.compare(left.createdAt(), right.createdAt());
+                })
+                .toList();
+    }
+
+    @Override
     public Optional<PersistedRoom> findById(String roomId) {
         PersistedRoom room = rooms.get(roomId);
         return room == null || room.deletedAt() != null ? Optional.empty() : Optional.of(room);
