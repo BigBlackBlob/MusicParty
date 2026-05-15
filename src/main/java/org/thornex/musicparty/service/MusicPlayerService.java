@@ -440,6 +440,12 @@ public class MusicPlayerService {
             }
         }
 
+        public synchronized void reorderQueue(int oldIndex, int newIndex, String sessionId) {
+            queueManager.reorder(oldIndex, newIndex);
+            broadcastQueueUpdate();
+            broadcastFullPlayerState();
+        }
+
         public void skipToNext(String sessionId) {
             if (isRateLimited(sessionId)) return;
             if (isSkipLocked.get() && !"SYSTEM".equals(sessionId)) return;
