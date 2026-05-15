@@ -215,7 +215,8 @@ export default {
     decreaseFont: 'Decrease lyric size',
     increaseFont: 'Increase lyric size',
     toggleTranslation: 'Toggle translation',
-    translation: 'Translation'
+    translation: 'Translation',
+    open: 'Open lyrics'
   },
   platforms: {
     room: 'Room',

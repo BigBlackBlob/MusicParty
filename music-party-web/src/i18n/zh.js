@@ -215,7 +215,8 @@ export default {
     decreaseFont: '减小歌词字号',
     increaseFont: '增大歌词字号',
     toggleTranslation: '切换译文显示',
-    translation: '译文'
+    translation: '译文',
+    open: '打开歌词'
   },
   platforms: {
     room: '房间',
