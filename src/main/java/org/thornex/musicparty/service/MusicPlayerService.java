@@ -117,6 +117,7 @@ public class MusicPlayerService {
             RoomPlayerSession removed = sessions.remove(roomId);
             if (removed != null) {
                 removed.flushPersistentState();
+                eventPublisher.publishEvent(new RoomSessionEvictedEvent(this, roomId));
                 log.info("Evicted cold room session {}", roomId);
             }
         }

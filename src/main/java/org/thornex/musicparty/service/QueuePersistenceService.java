@@ -106,22 +106,9 @@ public class QueuePersistenceService {
     }
 
     private boolean restoreDatabaseData() {
-        boolean restoredAny = false;
-
-        for (var room : roomService.listRooms()) {
-            String roomId = room.roomId();
-            List<ChatMessage> chatHistory = restoreChronological(chatRepository.fetchMessages(roomId, 0, appProperties.getChat().getMaxHistorySize()));
-
-            if (!chatHistory.isEmpty()) {
-                restoredAny = true;
-            }
-
-            chatService.restore(roomId, chatHistory);
-        }
-
         List<ChatMessage> publicHistory = restoreChronological(chatRepository.fetchMessages(null, 0, appProperties.getChat().getMaxHistorySize()));
         chatService.restorePublic(publicHistory);
-        return restoredAny || !publicHistory.isEmpty();
+        return !publicHistory.isEmpty();
     }
 
     private void importLegacyData(PersistentData data) {
@@ -129,12 +116,12 @@ public class QueuePersistenceService {
             data.getRooms().forEach((roomId, roomData) -> {
                 queueRepository.replaceQueue(roomId, roomData.getQueue() != null ? roomData.getQueue() : Collections.emptyList());
                 queueRepository.replaceHistory(roomId, roomData.getHistory() != null ? roomData.getHistory() : Collections.emptyList());
-                chatService.restore(roomId, roomData.getChatHistory() != null ? roomData.getChatHistory() : Collections.emptyList());
+                chatRepository.replaceMessages(roomId, roomData.getChatHistory() != null ? roomData.getChatHistory() : Collections.emptyList());
             });
         } else {
             queueRepository.replaceQueue(RoomService.DEFAULT_ROOM_ID, data.getQueue() != null ? data.getQueue() : Collections.emptyList());
             queueRepository.replaceHistory(RoomService.DEFAULT_ROOM_ID, data.getHistory() != null ? data.getHistory() : Collections.emptyList());
-            chatService.restore(RoomService.DEFAULT_ROOM_ID, data.getChatHistory() != null ? data.getChatHistory() : Collections.emptyList());
+            chatRepository.replaceMessages(RoomService.DEFAULT_ROOM_ID, data.getChatHistory() != null ? data.getChatHistory() : Collections.emptyList());
         }
 
         chatService.restorePublic(data.getPublicChatHistory() != null ? data.getPublicChatHistory() : Collections.emptyList());
