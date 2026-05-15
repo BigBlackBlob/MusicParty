@@ -111,7 +111,7 @@ export function useSearchLogic(emit = () => {}) {
                 localStorage.setItem(PLAYLIST_CACHE_KEY, JSON.stringify(data));
                 localStorage.setItem(PLAYLIST_ID_CACHE_KEY, id);
                 localStorage.setItem(PLAYLIST_PAGE_CACHE_KEY, String(page));
-                
+
                 listMode.value = 'playlist';
                 hasSubmittedSearch.value = true;
                 canGoPlaylistNext.value = data.length === PLAYLIST_LIMIT;
@@ -132,7 +132,7 @@ export function useSearchLogic(emit = () => {}) {
         listMode.value = searchType.value === 'album' && supportsAlbumSearch.value ? 'albumSearch' : 'search';
         hasSubmittedSearch.value = true;
         loading.value = true;
-        
+
         try {
             if (searchType.value === 'album' && supportsAlbumSearch.value) {
                 const data = await musicApi.searchNeteaseAlbums(val);
@@ -143,7 +143,7 @@ export function useSearchLogic(emit = () => {}) {
                 const data = await musicApi.search(platform.value, val, userStore.sessionToken, offset, SEARCH_LIMIT);
                 songs.value = data;
                 localStorage.setItem(SONGS_CACHE_KEY, JSON.stringify(data));
-                
+
                 // 如果返回的数量达到 Limit，假设还有下一页
                 canGoNext.value = data.length === SEARCH_LIMIT;
 

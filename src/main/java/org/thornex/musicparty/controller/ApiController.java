@@ -84,7 +84,7 @@ public class ApiController {
             }
         }
 
-        log.info("API search request: platform={}, keywordLength={}, offset={}, limit={}", 
+        log.info("API search request: platform={}, keywordLength={}, offset={}, limit={}",
                 platform, keyword == null ? 0 : keyword.length(), offset, limit);
         return getService(platform).searchMusic(keyword, offset, limit)
                 .doOnSuccess(result -> log.info("API search success: platform={}, resultCount={}", platform, result == null ? 0 : result.size()))
