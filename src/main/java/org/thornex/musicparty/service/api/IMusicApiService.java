@@ -12,6 +12,9 @@ import java.util.List;
 public interface IMusicApiService {
     String getPlatformName();
     Mono<List<Music>> searchMusic(String keyword);
+    default Mono<List<Music>> searchMusic(String keyword, int offset, int limit) {
+        return searchMusic(keyword); // Default fallback for platforms not yet supporting pagination
+    }
     Mono<PlayableMusic> getPlayableMusic(String musicId);
     Mono<List<Playlist>> getUserPlaylists(String userId);
     Mono<List<Music>> getPlaylistMusics(String playlistId, int offset, int limit);

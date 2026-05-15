@@ -15,6 +15,7 @@ export const WS_DEST = {
     QUEUE_REMOVE: '/app/queue/remove',
     QUEUE_BATCH_TOP: '/app/queue/batch-top',
     QUEUE_BATCH_REMOVE: '/app/queue/batch-remove',
+    QUEUE_REORDER: '/app/queue/reorder',
     USER_BIND: '/app/user/bind',
     USER_RENAME: '/app/user/rename',
     SYNC_PING: '/app/sync/ping',

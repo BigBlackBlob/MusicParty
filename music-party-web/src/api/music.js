@@ -5,9 +5,15 @@ export const musicApi = {
     getPlatforms: (sessionToken) => client.get('/api/platforms', { params: { token: sessionToken } }),
 
     // 搜索歌曲
-    search: (platform, keyword, sessionToken) => client.get(
+    search: (platform, keyword, sessionToken, offset = 0, limit = 20) => client.get(
         `/api/search/${platform}/${keyword}`,
-        { params: platform === 'navidrome' ? { token: sessionToken } : {} }
+        {
+            params: {
+                offset,
+                limit,
+                ...(platform === 'navidrome' ? { token: sessionToken } : {})
+            }
+        }
     ),
 
     // 搜索网易云专辑

@@ -159,9 +159,14 @@ public class NeteaseMusicApiService implements IMusicApiService {
     // UPDATED: All API calls now use the raw cookie from getCookie()
     @Override
     public Mono<List<Music>> searchMusic(String keyword) {
+        return searchMusic(keyword, 0, 30);
+    }
+
+    @Override
+    public Mono<List<Music>> searchMusic(String keyword, int offset, int limit) {
         ensureConfigured();
         return webClient.get()
-                .uri(baseUrl + "/cloudsearch?keywords={keyword}&cookie={cookie}", keyword, getCookie())
+                .uri(baseUrl + "/cloudsearch?keywords={keyword}&limit={limit}&offset={offset}&cookie={cookie}", keyword, limit, offset, getCookie())
                 .retrieve()
                 .onStatus(HttpStatusCode::isError, response -> handleApiError("cloudsearch", response))
                 .bodyToMono(JsonNode.class)

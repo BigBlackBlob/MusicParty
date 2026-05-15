@@ -75,15 +75,18 @@ public class ApiController {
 
     @GetMapping("/search/{platform}/{keyword}")
     public Mono<List<Music>> searchMusic(@PathVariable String platform, @PathVariable String keyword,
-                                          @RequestParam(required = false) String token) {
+                                          @RequestParam(required = false) String token,
+                                          @RequestParam(defaultValue = "0") int offset,
+                                          @RequestParam(defaultValue = "20") int limit) {
         if ("navidrome".equals(platform)) {
             if (token == null || !navidromeAccessService.canUseBySessionToken(token)) {
                 return Mono.error(new ResponseStatusException(HttpStatus.FORBIDDEN));
             }
         }
 
-        log.info("API search request: platform={}, keywordLength={}", platform, keyword == null ? 0 : keyword.length());
-        return getService(platform).searchMusic(keyword)
+        log.info("API search request: platform={}, keywordLength={}, offset={}, limit={}", 
+                platform, keyword == null ? 0 : keyword.length(), offset, limit);
+        return getService(platform).searchMusic(keyword, offset, limit)
                 .doOnSuccess(result -> log.info("API search success: platform={}, resultCount={}", platform, result == null ? 0 : result.size()))
                 .doOnError(error -> log.error("API search failed: platform={}, keyword={}", platform, keyword, error));
     }

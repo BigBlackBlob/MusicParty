@@ -130,6 +130,12 @@ public class MusicSocketController {
         musicPlayerService.removeSongsFromQueue(request.queueIds(), sessionId);
     }
 
+    @MessageMapping("/queue/reorder")
+    public void reorderQueue(@Payload QueueReorderRequest request, @Header("simpSessionId") String sessionId) {
+        if (isGuest(sessionId)) return;
+        musicPlayerService.reorderQueue(request.oldIndex(), request.newIndex(), sessionId);
+    }
+
     // 点赞接口
     @MessageMapping("/control/like")
     public void likeSong(@Header("simpSessionId") String sessionId) {

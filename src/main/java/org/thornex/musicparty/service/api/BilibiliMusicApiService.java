@@ -68,13 +68,19 @@ public class BilibiliMusicApiService implements IMusicApiService {
 
     @Override
     public Mono<List<Music>> searchMusic(String keyword) {
+        return searchMusic(keyword, 0, 20);
+    }
+
+    @Override
+    public Mono<List<Music>> searchMusic(String keyword, int offset, int limit) {
         ensureConfigured();
-        // 1. 准备请求参数（严格按照文档要求的 type 搜索）
+        // 1. 准备请求参数
+        int pageNumber = (offset / limit) + 1;
         Map<String, String> params = new HashMap<>();
         params.put("search_type", "video");
         params.put("keyword", keyword);
-        params.put("page", "1");      // 默认第一页
-        params.put("page_size", "20"); // 文档默认 20
+        params.put("page", String.valueOf(pageNumber));
+        params.put("page_size", String.valueOf(limit));
 
         // 2. 调用 WBI 签名服务
         Mono<List<Music>> requestMono = wbiService.signParams(params)
