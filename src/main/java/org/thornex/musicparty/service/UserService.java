@@ -27,6 +27,7 @@ public class UserService {
     private final Map<String, String> sessionToToken = new ConcurrentHashMap<>();
 
     private final ApplicationEventPublisher eventPublisher;
+    private final RoomService roomService;
 
     // 延迟任务调度器，用于处理断连抖动
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
@@ -35,8 +36,10 @@ public class UserService {
     private static final long USER_EXPIRATION_MS = 1 * 60 * 60 * 1000L;
     private static final long LEAVE_DELAY_SEC = 10; // 10秒延迟判定真正离开
 
-    public UserService(ApplicationEventPublisher eventPublisher) {
+    public UserService(ApplicationEventPublisher eventPublisher, RoomService roomService) {
         this.eventPublisher = eventPublisher;
+        this.roomService = roomService;
+        this.roomService.setOnlineCountProvider(this::getOnlineCount);
     }
 
     /**
@@ -46,8 +49,9 @@ public class UserService {
      * @param nameFront 前端传来的名字 (可能为空)
      * @return 最终确定的 User 对象
      */
-    public User handleConnect(String sessionId, String sessionTokenFront, String nameFront) {
+    public User handleConnect(String sessionId, String sessionTokenFront, String nameFront, String requestedRoomId) {
         User user;
+        String roomId = roomService.normalizeRoomId(requestedRoomId);
 
         // 1. 尝试找回老用户
         if (StringUtils.hasText(sessionTokenFront) && usersBySessionToken.containsKey(sessionTokenFront)) {
@@ -61,7 +65,7 @@ public class UserService {
             } else {
                 // 如果没有待执行任务，且用户之前是离线状态，且不是游客，则发布加入日志
                 if (user.getSessionId() == null && !user.isGuest()) {
-                    eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.USER_JOIN, user.getPublicId(), null));
+                    eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.USER_JOIN, user.getPublicId(), null, user.getRoomId()));
                 }
             }
 
@@ -86,10 +90,16 @@ public class UserService {
             // 注意：新注册的游客不发加入日志，只有改名后才发
         }
 
+        user.setRoomId(roomId);
         user.setLastActiveTime(System.currentTimeMillis());
         sessionToToken.put(sessionId, user.getSessionToken());
-        eventPublisher.publishEvent(new UserCountChangeEvent(this, getOnlineUserSummaries().size()));
+        eventPublisher.publishEvent(new UserCountChangeEvent(this, roomId, getOnlineUserSummaries(roomId).size()));
+        roomService.publishRoomList();
         return user;
+    }
+
+    public User handleConnect(String sessionId, String sessionTokenFront, String nameFront) {
+        return handleConnect(sessionId, sessionTokenFront, nameFront, RoomService.DEFAULT_ROOM_ID);
     }
 
     public Optional<User> disconnectUser(String sessionId) {
@@ -102,6 +112,7 @@ public class UserService {
             // 只有当断开的 Session ID 等于用户当前的主 Session ID 时，才认为用户真的掉线了
             // 如果不等，说明用户已经连接了新的 Session (比如打开了新标签页，关闭了旧标签页)，此时忽略旧连接的断开
             if (sessionId.equals(user.getSessionId())) {
+                String roomId = user.getRoomId();
                 user.setSessionId(null); // 标记离线
                 user.setLastActiveTime(System.currentTimeMillis());
                 log.info("User Offline (Pending Confirmation): {}", user.getName());
@@ -112,12 +123,13 @@ public class UserService {
                     ScheduledFuture<?> future = scheduler.schedule(() -> {
                         pendingLeaveEvents.remove(sessionToken);
                         log.info("User Leave Confirmed: {}", user.getName());
-                        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.USER_LEAVE, user.getPublicId(), null));
+                        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.USER_LEAVE, user.getPublicId(), null, roomId));
                     }, LEAVE_DELAY_SEC, TimeUnit.SECONDS);
                     pendingLeaveEvents.put(sessionToken, future);
                 }
 
-                eventPublisher.publishEvent(new UserCountChangeEvent(this, getOnlineUserSummaries().size()));
+                eventPublisher.publishEvent(new UserCountChangeEvent(this, roomId, getOnlineUserSummaries(roomId).size()));
+                roomService.publishRoomList();
                 return Optional.of(user);
             } else {
                 log.debug("Ignored disconnect for stale session {} (Current: {})", sessionId, user.getSessionId());
@@ -153,7 +165,7 @@ public class UserService {
 
             // 检查是否重名 (排除自己)
             boolean exists = usersBySessionToken.values().stream()
-                    .anyMatch(u -> u.getName().equalsIgnoreCase(finalName) && !u.getPublicId().equals(user.getPublicId()));
+                    .anyMatch(u -> user.getRoomId().equals(u.getRoomId()) && u.getName().equalsIgnoreCase(finalName) && !u.getPublicId().equals(user.getPublicId()));
 
             if (exists) {
                 log.warn("Rename failed: {} is already taken.", finalName);
@@ -169,12 +181,12 @@ public class UserService {
 
             // 1. 如果是从游客变成正式用户 -> 发布加入事件
             if (wasGuest) {
-                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.USER_JOIN, user.getPublicId(), null));
+                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.USER_JOIN, user.getPublicId(), null, user.getRoomId()));
             }
             // 2. 如果是正式用户改名 -> 发布系统通知
             else if (!oldName.equals(finalName)) {
                 String renameMsg = oldName + " 已更名为 " + finalName;
-                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, null, "SYSTEM", renameMsg));
+                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, null, "SYSTEM", renameMsg, user.getRoomId()));
             }
 
             return true;
@@ -202,22 +214,59 @@ public class UserService {
         }).orElse(false);
     }
 
-    public List<UserSummary> getOnlineUserSummaries() {
+    public List<UserSummary> getOnlineUserSummaries(String roomId) {
         return usersBySessionToken.values().stream()
                 // 只返回在线用户 (sessionId != null)
                 .filter(u -> u.getSessionId() != null)
+                .filter(u -> roomService.normalizeRoomId(roomId).equals(u.getRoomId()))
                 .map(user -> new UserSummary(user.getPublicId(), user.getName(), user.isGuest()))
                 .toList();
+    }
+
+    public List<UserSummary> getOnlineUserSummaries() {
+        return getOnlineUserSummaries(RoomService.DEFAULT_ROOM_ID);
     }
 
     /**
      * 获取最近活跃的 public id (包括当前在线和正在等待断连确认的用户)
      */
-    public Set<String> getRecentlyActivePublicIds() {
+    public Set<String> getRecentlyActivePublicIds(String roomId) {
+        String normalizedRoomId = roomService.normalizeRoomId(roomId);
         return usersBySessionToken.values().stream()
                 .filter(u -> u.getSessionId() != null || pendingLeaveEvents.containsKey(u.getSessionToken()))
+                .filter(u -> normalizedRoomId.equals(u.getRoomId()))
                 .map(User::getPublicId)
                 .collect(Collectors.toSet());
+    }
+
+    public Set<String> getRecentlyActivePublicIds() {
+        return getRecentlyActivePublicIds(RoomService.DEFAULT_ROOM_ID);
+    }
+
+    public String getRoomIdForSession(String sessionId) {
+        return getUser(sessionId).map(User::getRoomId).orElse(RoomService.DEFAULT_ROOM_ID);
+    }
+
+    public int getOnlineCount(String roomId) {
+        return getOnlineUserSummaries(roomId).size();
+    }
+
+    public List<String> moveUsersToDefaultRoom(String roomId) {
+        String normalized = roomService.normalizeRoomId(roomId);
+        List<String> movedSessions = new ArrayList<>();
+        usersBySessionToken.values().forEach(user -> {
+            if (normalized.equals(user.getRoomId())) {
+                String oldSessionId = user.getSessionId();
+                user.setRoomId(RoomService.DEFAULT_ROOM_ID);
+                if (oldSessionId != null) {
+                    movedSessions.add(oldSessionId);
+                }
+            }
+        });
+        eventPublisher.publishEvent(new UserCountChangeEvent(this, normalized, 0));
+        eventPublisher.publishEvent(new UserCountChangeEvent(this, RoomService.DEFAULT_ROOM_ID, getOnlineUserSummaries(RoomService.DEFAULT_ROOM_ID).size()));
+        roomService.publishRoomList();
+        return movedSessions;
     }
 
     @Scheduled(fixedRate = 3600000)

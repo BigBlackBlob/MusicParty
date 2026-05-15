@@ -3,6 +3,8 @@
 import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
 import { useUserStore } from './user';
+import { useRoomStore } from './room';
+import { useChatStore } from './chat';
 import { socketService } from '../services/socket';
 import { createSocketSubscriptions, createSocketCallbacks } from '../services/socketHandler'; // 引入新文件
 import { musicApi } from '../api/music';
@@ -50,6 +52,7 @@ export const usePlayerStore = defineStore('player', () => {
     const isSeekingPreview = ref(false);
 
     const userStore = useUserStore();
+    const roomStore = useRoomStore();
     const LOCAL_COOLDOWN = 500; // 稍微调低一点冷却时间提升手感
 
     try {
@@ -186,7 +189,8 @@ export const usePlayerStore = defineStore('player', () => {
         const authHeaders = {
             'user-name': localStorage.getItem(STORAGE_KEYS.USERNAME) || '游客',
             'session-token': userStore.sessionToken,
-            'room-password': localStorage.getItem(STORAGE_KEYS.ROOM_PASSWORD) || ''
+            'room-password': localStorage.getItem(STORAGE_KEYS.ROOM_PASSWORD) || '',
+            'room-id': roomStore.currentRoomId
         };
 
         // 使用抽离出的订阅配置
@@ -205,6 +209,41 @@ export const usePlayerStore = defineStore('player', () => {
         const callbacks = createSocketCallbacks();
 
         socketService.connect(authHeaders, callbacks, subscriptions);
+    };
+
+    const resetRoomState = () => {
+        nowPlaying.value = null;
+        queue.value = [];
+        isPaused.value = false;
+        isShuffle.value = false;
+        isPauseLocked.value = false;
+        isSkipLocked.value = false;
+        isShuffleLocked.value = false;
+        lyricText.value = '';
+        lyricDetail.value = { lyric: '', translatedLyric: '', romanizedLyric: '' };
+        connected.value = false;
+        isLoading.value = false;
+        streamListenerCount.value = 0;
+        remotePosition.value = 0;
+        lastSyncTime.value = 0;
+        lastStateVersion.value = 0;
+        lastPlayEpoch.value = 0;
+        lastServerTimestamp.value = 0;
+        setPlaybackPosition(0);
+        useChatStore().resetRoomMessages();
+        userStore.setOnlineUsers([]);
+    };
+
+    const reconnectToCurrentRoom = () => {
+        socketService.disconnect();
+        resetRoomState();
+        setTimeout(() => connect(), 100);
+    };
+
+    const switchRoom = (roomId) => {
+        if (!roomId || roomId === roomStore.currentRoomId) return;
+        roomStore.setCurrentRoom(roomId);
+        reconnectToCurrentRoom();
     };
 
     const tryReconnect = () => {
@@ -320,6 +359,26 @@ export const usePlayerStore = defineStore('player', () => {
         if (requireAuth()) socketService.send(WS_DEST.CHAT_SEND, { content });
     };
 
+    const sendPublicChatMessage = (content) => {
+        if (requireAuth()) socketService.send(WS_DEST.PUBLIC_CHAT_SEND, { content });
+    };
+
+    const requestChatHistory = (initial = false) => {
+        socketService.send(WS_DEST.CHAT_HISTORY_FETCH, {
+            offset: initial ? 0 : useChatStore().messages.length,
+            limit: 50
+        });
+    };
+
+    const requestPublicChatHistory = (initial = false) => {
+        const chatStore = useChatStore();
+        if (initial && chatStore.publicMessages.length > 0) return;
+        socketService.send(WS_DEST.PUBLIC_CHAT_HISTORY_FETCH, {
+            offset: initial ? 0 : chatStore.publicMessages.length,
+            limit: 50
+        });
+    };
+
     // 歌词监听
     let lyricRequestId = 0;
     watch(() => `${nowPlaying.value?.music?.platform || ''}:${nowPlaying.value?.music?.id || ''}`, async (newKey, oldKey) => {
@@ -387,11 +446,11 @@ export const usePlayerStore = defineStore('player', () => {
         localProgress, playbackPositionMs, isBuffering, isErrorState, streamListenerCount, lastSyncTime, lastRttMs,
         isSeekingPreview, forceNextSyncSeek, setSeekingPreview,
         setPlaybackPosition,
-        connect, tryReconnect, getCurrentProgress, syncState, handleSyncPong, requestPing, requestResync, requestSyncRefresh,
+        connect, tryReconnect, reconnectToCurrentRoom, switchRoom, resetRoomState, getCurrentProgress, syncState, handleSyncPong, requestPing, requestResync, requestSyncRefresh,
         playNext, togglePause, toggleShuffle,
         seek,
         enqueue, enqueuePlaylist, enqueueAlbum, topSong, removeSong, topSongs, removeSongs, topSongsCompat, removeSongsCompat,
         reorderQueue,
-        bindAccount, renameUser, sendChatMessage, sendLike, addLikedSong, removeLikedSong, isSongLiked
+        bindAccount, renameUser, sendChatMessage, sendPublicChatMessage, requestChatHistory, requestPublicChatHistory, sendLike, addLikedSong, removeLikedSong, isSongLiked
     };
 });

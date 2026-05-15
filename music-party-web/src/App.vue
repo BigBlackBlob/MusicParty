@@ -13,11 +13,38 @@
     <div v-if="userStore.isAuthPassed && !hasStarted" class="absolute inset-0 z-[var(--z-overlay)] bg-[radial-gradient(circle_at_top,rgba(211,194,243,0.08),transparent_42%),var(--surface-0)] flex flex-col items-center justify-center space-y-8">
       <div class="text-4xl md:text-5xl font-bold tracking-tight text-[var(--text-primary)]">MUSIC PARTY</div>
       <div class="font-mono text-xs text-[var(--text-tertiary)] tracking-[0.3em]">准备就绪</div>
+      <div class="w-full max-w-md rounded-2xl border border-[var(--border-default)] bg-[var(--surface-4)]/80 p-4 shadow-lg backdrop-blur">
+        <div class="mb-3 flex items-center justify-between">
+          <span class="text-xs font-semibold tracking-[0.18em] text-[var(--text-tertiary)]">LISTENING ROOMS</span>
+          <button @click="roomStore.fetchRooms" class="text-xs text-[var(--accent)]">Refresh</button>
+        </div>
+        <div class="grid max-h-52 gap-2 overflow-y-auto">
+          <button
+              v-for="room in roomStore.rooms"
+              :key="room.roomId"
+              @click="roomStore.setCurrentRoom(room.roomId)"
+              class="flex items-center justify-between rounded-xl border px-3 py-3 text-left transition-colors"
+              :class="roomStore.currentRoomId === room.roomId ? 'border-[var(--accent)] bg-[var(--accent-subtle)]' : 'border-[var(--border-default)] bg-[var(--surface-2)] hover:bg-[var(--surface-3)]'"
+          >
+            <span class="font-semibold text-[var(--text-primary)]">{{ room.name }}</span>
+            <span class="text-xs text-[var(--text-tertiary)]">{{ room.onlineCount || 0 }} active</span>
+          </button>
+        </div>
+        <div class="mt-3 flex gap-2">
+          <input
+              v-model="newRoomName"
+              class="min-w-0 flex-1 rounded-xl border border-[var(--border-default)] bg-[var(--surface-2)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+              placeholder="Create a room..."
+              @keyup.enter="createRoom"
+          />
+          <button @click="createRoom" class="rounded-xl bg-[var(--accent)] px-4 text-sm font-semibold text-[var(--text-inverse)]">Create</button>
+        </div>
+      </div>
       <button
           @click="startGame"
           class="min-h-[44px] px-12 py-4 bg-[var(--accent)] text-[var(--text-inverse)] font-semibold text-lg hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-colors rounded-xl shadow-lg"
       >
-        进入房间
+        进入 {{ roomStore.currentRoom?.name || 'Lounge' }}
       </button>
     </div>
 
@@ -63,6 +90,7 @@ import { useEventListener, useWindowSize } from '@vueuse/core';
 import { usePlayerStore } from './stores/player';
 import { useUserStore } from './stores/user';
 import { useUiStore } from './stores/ui';
+import { useRoomStore } from './stores/room';
 import { useToast } from './composables/useToast';
 import { useShortcuts } from './composables/useShortcuts';
 
@@ -83,9 +111,11 @@ import MobilePreviewShell from './components/mobile/MobilePreviewShell.vue';
 const player = usePlayerStore();
 const userStore = useUserStore();
 const uiStore = useUiStore();
+const roomStore = useRoomStore();
 const hasStarted = ref(false);
 const showSearch = ref(false);
 const userQueueVisible = ref(true);
+const newRoomName = ref('');
 const toastInstance = ref(null);
 const chatOverlayRef = ref(null);
 const { register } = useToast();
@@ -148,6 +178,29 @@ const startGame = () => {
   player.connect();
 };
 
+const createRoom = () => {
+  const name = newRoomName.value.trim();
+  if (!name) return;
+
+  const submitCreate = () => {
+    roomStore.createRoom(name);
+    newRoomName.value = '';
+  };
+
+  if (!hasStarted.value) {
+    hasStarted.value = true;
+    player.connect();
+  }
+
+  if (userStore.isGuest) {
+    userStore.setPostNameAction(() => submitCreate());
+    userStore.showNameModal = true;
+    return;
+  }
+
+  submitCreate();
+};
+
 const clearAutoLiteTimer = () => {
   if (autoLiteTimer) {
     clearTimeout(autoLiteTimer);
@@ -208,6 +261,7 @@ const handleQueueToggle = () => {
 };
 
 onMounted(() => {
+  roomStore.fetchRooms();
   setAppViewportHeight();
   window.addEventListener('resize', setAppViewportHeight);
   window.visualViewport?.addEventListener('resize', setAppViewportHeight);
