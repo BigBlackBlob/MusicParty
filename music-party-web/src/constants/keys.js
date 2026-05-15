@@ -1,5 +1,5 @@
 export const STORAGE_KEYS = {
-    TOKEN: 'mp_user_token',
+    SESSION_TOKEN: 'mp_session_token',
     USERNAME: 'mp_username',
     BINDINGS: 'mp_bindings',
     ROOM_PASSWORD: 'mp_room_password',

@@ -36,7 +36,7 @@ public class StreamCommand implements ChatCommand {
             return;
         }
 
-        String token = tokenService.generateToken(user.getToken());
+        String token = tokenService.generateToken(user.getPublicId());
         
         String base = appProperties.getBaseUrl();
         if (base == null || base.isEmpty()) {

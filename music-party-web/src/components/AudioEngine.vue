@@ -45,7 +45,7 @@ const {
   checkAutoPlay
 } = useAudio(audioRef, player, computed(() => ui.volume));
 
-const audioSrc = computed(() => withPlaybackToken(player.nowPlaying?.music, user.userToken));
+const audioSrc = computed(() => withPlaybackToken(player.nowPlaying?.music, user.sessionToken));
 
 // 同步状态到 playerStore
 watch(localProgress, (val) => {
@@ -79,3 +79,4 @@ onMounted(() => {
   }
 });
 </script>
+

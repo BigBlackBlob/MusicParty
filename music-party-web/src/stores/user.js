@@ -1,26 +1,9 @@
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
+import { ref } from 'vue';
 import { STORAGE_KEYS } from '../constants/keys';
 
-const generateToken = () => {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
-    });
-}
-
-let storedToken = localStorage.getItem(STORAGE_KEYS.TOKEN);
-if (!storedToken) {
-    storedToken = generateToken();
-    localStorage.setItem(STORAGE_KEYS.TOKEN, storedToken);
-}
-const userToken = ref(storedToken);
-
-const storageName = localStorage.getItem(STORAGE_KEYS.USERNAME);
-const currentUser = ref({
-    name: storageName || '游客',
-    sessionId: ''
-});
+const sessionToken = ref(localStorage.getItem(STORAGE_KEYS.SESSION_TOKEN) || '');
+const publicId = ref('');
 
 export const useUserStore = defineStore('user', () => {
     const onlineUsers = ref([]);
@@ -47,11 +30,9 @@ export const useUserStore = defineStore('user', () => {
         if (!id) return 'Unknown';
         if (id === 'ADMIN') return 'AUTO_DJ';
 
-        // 如果 ID 是我自己 (比较 Token)
-        if (id === userToken.value) return currentUser.value.name;
+        if (id === publicId.value) return currentUser.value.name;
 
-        // 否则去在线列表里找 (通过 u.token 匹配)
-        const u = onlineUsers.value.find(u => u.token === id);
+        const u = onlineUsers.value.find(u => u.publicId === id);
 
         return u ? u.name : (fallbackName || 'Unknown Agent');
     };
@@ -61,8 +42,14 @@ export const useUserStore = defineStore('user', () => {
      * 逻辑：对比服务器认为的名字 (serverName) 和我本地存储的名字
      * serverIsGuest: 后端返回的当前是否为游客状态
      */
-    const initUser = (sessionId, serverName, serverIsGuest) => {
-        currentUser.value.sessionId = sessionId;
+    const initUser = (serverSessionToken, serverPublicId, serverName, serverIsGuest) => {
+        if (serverSessionToken) {
+            sessionToken.value = serverSessionToken;
+            localStorage.setItem(STORAGE_KEYS.SESSION_TOKEN, serverSessionToken);
+        }
+        if (serverPublicId) {
+            publicId.value = serverPublicId;
+        }
 
         // 1. 同步名字
         if (serverName) {
@@ -110,7 +97,7 @@ export const useUserStore = defineStore('user', () => {
     };
 
     // 废弃: 不再直接修改本地状态，改为等待 initUser 的后端回调
-    const saveName = (newName) => {
+    const saveName = () => {
         // Logic moved to initUser response handling
     }
 
@@ -134,7 +121,8 @@ export const useUserStore = defineStore('user', () => {
         isGuest,
         showNameModal,
         resolveName,
-        userToken,
+        sessionToken,
+        publicId,
         setPostNameAction,
         isAuthPassed,
         resetAuthentication

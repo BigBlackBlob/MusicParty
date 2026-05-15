@@ -237,7 +237,7 @@ export const useUiStore = defineStore('ui', () => {
         }
 
         const userStore = useUserStore();
-        const requestUrl = withNavidromeResourceToken(coverUrl, userStore.userToken);
+        const requestUrl = withNavidromeResourceToken(coverUrl, userStore.sessionToken);
 
         if (requestUrl === lastAccentCoverUrl.value && dynamicAccent.value) {
             return;
@@ -340,3 +340,4 @@ export const useUiStore = defineStore('ui', () => {
         updateAccentFromCover
     };
 });
+

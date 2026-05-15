@@ -11,7 +11,7 @@ export const useChatViewModel = (activeTabRef) => {
     const player = usePlayerStore();
     const user = useUserStore();
 
-    const isSelf = (msg) => msg.userId === user.userToken;
+    const isSelf = (msg) => msg.userId === user.publicId;
     const tabLabel = (tab) => tab === 'CHAT' ? '聊天' : '系统';
     const formatTime = (ts) => dayjs(ts).format('MM-DD HH:mm');
 
@@ -76,3 +76,4 @@ export const useChatViewModel = (activeTabRef) => {
         scrollToBottom
     };
 };
+

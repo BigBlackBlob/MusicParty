@@ -100,7 +100,7 @@ public class MusicSocketController {
         if (isGuest(sessionId)) return;
         musicPlayerService.seekTo(request.positionMs(), sessionId).ifPresent(message -> {
             userService.getUser(sessionId).ifPresent(user -> {
-                PlayerEvent errorEvent = new PlayerEvent("ERROR", "SEEK_DENIED", user.getToken(), message, null);
+                PlayerEvent errorEvent = new PlayerEvent("ERROR", "SEEK_DENIED", user.getPublicId(), message, null);
                 messagingTemplate.convertAndSendToUser(sessionId, "/queue/events", errorEvent, createSessionHeaders(sessionId));
             });
         });
@@ -143,13 +143,13 @@ public class MusicSocketController {
             musicPlayerService.broadcastOnlineUsers();
             // PUSH updated user info to the user
             userService.getUser(sessionId).ifPresent(user -> {
-                UserSummary summary = new UserSummary(user.getToken(), user.getSessionId(), user.getName(), user.isGuest());
+                CurrentUserResponse summary = new CurrentUserResponse(user.getSessionToken(), user.getPublicId(), user.getName(), user.isGuest());
                 messagingTemplate.convertAndSendToUser(sessionId, "/queue/me", summary, createSessionHeaders(sessionId));
             });
         } else {
             // RENAME_FAILED
             userService.getUser(sessionId).ifPresent(user -> {
-                PlayerEvent errorEvent = new PlayerEvent("ERROR", "RENAME_FAILED", user.getToken(), "该名称已被占用或包含非法字符，请更换。", null);
+                PlayerEvent errorEvent = new PlayerEvent("ERROR", "RENAME_FAILED", user.getPublicId(), "该名称已被占用或包含非法字符，请更换。", null);
                 messagingTemplate.convertAndSendToUser(sessionId, "/queue/events", errorEvent, createSessionHeaders(sessionId));
             });
         }
@@ -171,10 +171,10 @@ public class MusicSocketController {
     }
 
     @SubscribeMapping("/user/me")
-    public UserSummary getMyUserInfo(@Header("simpSessionId") String sessionId) {
+    public CurrentUserResponse getMyUserInfo(@Header("simpSessionId") String sessionId) {
         return userService.getUser(sessionId)
-                .map(u -> new UserSummary(u.getToken(), u.getSessionId(), u.getName(), u.isGuest()))
-                .orElse(new UserSummary(sessionId, sessionId, "Unknown", true));
+                .map(u -> new CurrentUserResponse(u.getSessionToken(), u.getPublicId(), u.getName(), u.isGuest()))
+                .orElse(new CurrentUserResponse("", "", "Unknown", true));
     }
 
     private boolean isGuest(String sessionId) {
@@ -197,11 +197,11 @@ public class MusicSocketController {
 
         userService.getUser(sessionId).ifPresent(user -> {
             // 3. Rate Limit Check
-            if (!chatService.canUserSendMessage(user.getToken())) return;
+            if (!chatService.canUserSendMessage(user.getPublicId())) return;
 
             ChatMessage message = new ChatMessage(
                     java.util.UUID.randomUUID().toString(),
-                    user.getToken(),
+                    user.getPublicId(),
                     user.getName(), 
                     request.content().trim(),
                     System.currentTimeMillis(),

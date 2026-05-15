@@ -5,7 +5,6 @@ import org.springframework.context.event.EventListener;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 import org.thornex.musicparty.dto.PlayerEvent;
-import org.thornex.musicparty.dto.User;
 import org.thornex.musicparty.event.PlayerStateEvent;
 import org.thornex.musicparty.event.QueueUpdateEvent;
 import org.thornex.musicparty.event.SystemMessageEvent;
@@ -46,8 +45,8 @@ public class WebSocketBroadcaster {
 
         String userName = "SYSTEM";
         if (!"SYSTEM".equals(event.getUserId())) {
-            userName = userService.getUserByToken(event.getUserId())
-                    .map(User::getName)
+            userName = userService.getUserByPublicId(event.getUserId())
+                    .map(org.thornex.musicparty.dto.User::getName)
                     .orElse("Unknown");
         }
 

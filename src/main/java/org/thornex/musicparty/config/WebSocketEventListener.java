@@ -27,12 +27,12 @@ public class WebSocketEventListener {
         String sessionId = headerAccessor.getSessionId();
 
         String initialName = headerAccessor.getFirstNativeHeader("user-name");
-        String token = headerAccessor.getFirstNativeHeader("user-token");
+        String sessionToken = headerAccessor.getFirstNativeHeader("session-token");
 
         log.info("WebSocket Connect Request: Session={}, InitialName={}", sessionId, initialName);
 
         if (sessionId != null) {
-            userService.handleConnect(sessionId, token, initialName);
+            userService.handleConnect(sessionId, sessionToken, initialName);
             musicPlayerService.broadcastOnlineUsers();
         }
     }

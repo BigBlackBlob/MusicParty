@@ -26,7 +26,7 @@ export const useChatStore = defineStore('chat', () => {
         }
 
         // 未读计数逻辑：窗口关闭 && 不是自己发的 && 是普通聊天消息
-        const isSelf = msg.userId === userStore.userToken;
+        const isSelf = msg.userId === userStore.publicId;
         if (!isOpen.value && !isSelf && msg.type === 'CHAT') {
             unreadCount.value++;
         }

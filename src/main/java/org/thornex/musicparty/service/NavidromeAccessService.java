@@ -44,9 +44,9 @@ public class NavidromeAccessService {
                 .orElse(false);
     }
 
-    public boolean canUseByToken(String token) {
+    public boolean canUseBySessionToken(String token) {
         if (!isEnabled() || !isConfigured()) return false;
-        return userService.getUserByToken(token)
+        return userService.getUserBySessionToken(token)
                 .map(this::canUseUser)
                 .orElse(false);
     }

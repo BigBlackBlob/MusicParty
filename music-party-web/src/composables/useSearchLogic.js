@@ -70,7 +70,7 @@ export function useSearchLogic(emit = () => {}) {
             if (searchType.value === 'album' && supportsAlbumSearch.value) {
                 albums.value = await musicApi.searchNeteaseAlbums(val);
             } else {
-                const data = await musicApi.search(platform.value, val, userStore.userToken);
+                const data = await musicApi.search(platform.value, val, userStore.sessionToken);
                 songs.value = data;
                 const missingCoverCount = Array.isArray(data)
                     ? data.filter(song => !song?.coverUrl || !String(song.coverUrl).trim()).length
@@ -103,3 +103,4 @@ export function useSearchLogic(emit = () => {}) {
         doSearch
     };
 }
+

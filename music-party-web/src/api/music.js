@@ -2,12 +2,12 @@ import client from './client';
 
 export const musicApi = {
     // 获取当前用户可用平台
-    getPlatforms: (token) => client.get('/api/platforms', { params: { token } }),
+    getPlatforms: (sessionToken) => client.get('/api/platforms', { params: { token: sessionToken } }),
 
     // 搜索歌曲
-    search: (platform, keyword, token) => client.get(
+    search: (platform, keyword, sessionToken) => client.get(
         `/api/search/${platform}/${keyword}`,
-        { params: platform === 'navidrome' ? { token } : {} }
+        { params: platform === 'navidrome' ? { token: sessionToken } : {} }
     ),
 
     // 搜索网易云专辑

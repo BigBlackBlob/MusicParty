@@ -47,7 +47,7 @@ export const useNowPlayingViewModel = (options = {}) => {
     const isRequester = computed(() => {
         if (!nowPlaying.value) return false;
         const requesterId = nowPlaying.value.enqueuedById || nowPlaying.value.requestedBy || nowPlaying.value.userId || nowPlaying.value.requesterId;
-        return requesterId === user.userToken;
+        return requesterId === user.publicId;
     });
 
     const canSeek = computed(() => {
@@ -98,3 +98,4 @@ export const useNowPlayingViewModel = (options = {}) => {
         toggleLike
     };
 };
+

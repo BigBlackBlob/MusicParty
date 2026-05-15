@@ -55,7 +55,7 @@
             <div class="mr-4 flex -space-x-2 items-center cursor-pointer transition-transform hover:scale-105" @click="toggleUserList">
               <div
                 v-for="user in visibleUsers"
-                :key="user.token || user.sessionId || user.name"
+                :key="user.publicId || user.name"
                 class="flex h-8 w-8 items-center justify-center rounded-full border-2 border-surface-overlay bg-accent-subtle text-primary shadow-lg"
                 :title="user.name"
               >
@@ -218,7 +218,7 @@ const currentCover = computed(() => currentMusic.value?.coverUrl || '');
 const visibleUsers = computed(() => {
   const users = userStore.onlineUsers.length
     ? userStore.onlineUsers
-    : [{ name: userStore.currentUser.name, token: userStore.userToken }];
+    : [{ name: userStore.currentUser.name, publicId: userStore.publicId }];
   return users.slice(0, 3);
 });
 const extraUserCount = computed(() => Math.max(0, userStore.onlineUsers.length - visibleUsers.value.length));
@@ -322,3 +322,4 @@ const getInitials = (name = '') => {
   }
 }
 </style>
+

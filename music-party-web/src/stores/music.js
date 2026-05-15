@@ -22,7 +22,7 @@ export const useMusicStore = defineStore('music', () => {
         isLoading.value = true;
         loadInFlight = (async () => {
             try {
-                const data = await musicApi.getPlatforms(userStore.userToken);
+                const data = await musicApi.getPlatforms(userStore.sessionToken);
                 platforms.value = Array.isArray(data) && data.length > 0 ? data : [...defaultPlatforms];
             } catch (e) {
                 console.warn('Load platforms failed:', e);
@@ -42,7 +42,7 @@ export const useMusicStore = defineStore('music', () => {
 
     // 监听用户身份变化，自动刷新可用平台
     watch(
-        () => [userStore.currentUser.name, userStore.isGuest, userStore.userToken],
+        () => [userStore.currentUser.name, userStore.isGuest, userStore.sessionToken],
         () => {
             refreshPlatforms();
         }
@@ -55,3 +55,4 @@ export const useMusicStore = defineStore('music', () => {
         refreshPlatforms
     };
 });
+
