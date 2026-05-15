@@ -20,7 +20,7 @@ public class AuthController {
     // null 表示未初始化（需要 Setup）
     // "" (空字符串) 表示已初始化，但不需要密码
     // "xxx" 表示已初始化，且有密码
-    private final AtomicReference<String> roomPassword = new AtomicReference<>(null);
+    private final AtomicReference<String> roomPassword = new AtomicReference<>("");
     private final String adminPassword;
     private final AppProperties.AuthConfig authConfig;
 

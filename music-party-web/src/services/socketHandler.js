@@ -1,8 +1,9 @@
 import { usePlayerStore } from '../stores/player';
 import { useUserStore } from '../stores/user';
 import { useChatStore } from '../stores/chat';
+import { useRoomStore } from '../stores/room';
 import { useToast } from '../composables/useToast';
-import {WS_DEST} from "../constants/api.js";
+import {WS_DEST, roomTopic} from "../constants/api.js";
 
 /**
  * 处理游戏/播放器事件通知 (Toast)
@@ -29,6 +30,17 @@ function handleGameEvent(event) {
             userStore.resetAuthentication();
             window.location.reload();
         }, 1500);
+        return;
+    }
+
+    if (event.action === 'ROOM_DELETED') {
+        const roomStore = useRoomStore();
+        const playerStore = usePlayerStore();
+        const chatStore = useChatStore();
+        error(event.message || '房间已被删除，已返回 Lounge');
+        roomStore.setCurrentRoom('lounge');
+        playerStore.reconnectToCurrentRoom();
+        chatStore.resetRoomMessages();
         return;
     }
 
@@ -77,32 +89,47 @@ export const createSocketSubscriptions = () => {
     const playerStore = usePlayerStore();
     const userStore = useUserStore();
     const chatStore = useChatStore();
+    const roomStore = useRoomStore();
+    const roomId = roomStore.currentRoomId;
 
     return {
         // 1. 状态同步
-        [WS_DEST.TOPIC_STATE]: (state) => playerStore.syncState(state),
+        [roomTopic(roomId, '/player/state')]: (state) => playerStore.syncState(state),
         [WS_DEST.USER_STATE]: (state) => playerStore.syncState(state),
         [WS_DEST.USER_SYNC_PONG]: (pong) => playerStore.handleSyncPong(pong),
 
         // 2. 用户列表
-        [WS_DEST.TOPIC_USERS]: (users) => userStore.setOnlineUsers(users),
+        [roomTopic(roomId, '/users/online')]: (users) => userStore.setOnlineUsers(users),
 
         // 3. 队列更新
-        [WS_DEST.TOPIC_QUEUE]: (data) => { playerStore.queue = data; },
+        [roomTopic(roomId, '/player/queue')]: (data) => { playerStore.queue = data; },
 
         // 4. 事件通知 (Toast)
-        [WS_DEST.TOPIC_EVENTS]: handleGameEvent,
+        [roomTopic(roomId, '/player/events')]: handleGameEvent,
         [WS_DEST.USER_EVENTS]: handleGameEvent,
 
         // 5. 聊天相关
-        [WS_DEST.TOPIC_CHAT]: (msg) => chatStore.addMessage(msg),
+        [roomTopic(roomId, '/chat')]: (msg) => chatStore.addMessage(msg),
+        [WS_DEST.TOPIC_PUBLIC_CHAT]: (msg) => chatStore.addPublicMessage(msg),
+        [WS_DEST.TOPIC_ROOMS_LIST]: (rooms) => roomStore.setRooms(rooms),
         [WS_DEST.USER_PRIVATE_CHAT]: (msg) => chatStore.addMessage(msg),
 
         // 初始历史记录
         [WS_DEST.APP_CHAT_HISTORY]: (history) => chatStore.setHistory(history),
 
         // 分页历史记录回调
-        [WS_DEST.USER_CHAT_HISTORY]: (moreMessages) => chatStore.prependHistory(moreMessages)
+        [WS_DEST.USER_CHAT_HISTORY]: (moreMessages) => {
+            if (chatStore.messages.length === 0) chatStore.setHistory(moreMessages);
+            else chatStore.prependHistory(moreMessages);
+        },
+        [WS_DEST.USER_PUBLIC_CHAT_HISTORY]: (moreMessages) => {
+            if (chatStore.publicMessages.length === 0) chatStore.setPublicHistory(moreMessages);
+            else chatStore.prependPublicHistory(moreMessages);
+        },
+        [WS_DEST.USER_ROOM_CREATED]: (room) => {
+            roomStore.setRooms([...roomStore.rooms.filter(item => item.roomId !== room.roomId), room]);
+            playerStore.switchRoom(room.roomId);
+        }
     };
 };
 
@@ -122,6 +149,8 @@ export const createSocketCallbacks = () => {
             // 发起同步
             setTimeout(() => {
                 playerStore.requestResync('connect', true);
+                playerStore.requestChatHistory(true);
+                playerStore.requestPublicChatHistory(true);
             }, 300);
             // 恢复绑定
             Object.entries(userStore.bindings).forEach(([platform, id]) => {

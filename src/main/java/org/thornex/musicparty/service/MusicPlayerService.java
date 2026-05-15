@@ -16,7 +16,6 @@ import org.thornex.musicparty.event.*;
 import org.thornex.musicparty.exception.ApiRequestException;
 import org.thornex.musicparty.service.api.IMusicApiService;
 import org.thornex.musicparty.service.api.NeteaseMusicApiService;
-import org.thornex.musicparty.service.NavidromeAccessService;
 import org.thornex.musicparty.service.stream.LiveStreamService;
 
 import java.time.Duration;
@@ -32,240 +31,293 @@ import java.util.stream.Collectors;
 @Service
 @Slf4j
 public class MusicPlayerService {
-
     private final Map<String, IMusicApiService> apiServiceMap;
     private final UserService userService;
     private final LocalCacheService localCacheService;
-    // ChatService dependency removed to break circular reference
     private final LiveStreamService liveStreamService;
-    private final NavidromeAccessService navidromeAccessService;
-
-    // --- Refactored Dependencies ---
-    private final MusicQueueManager queueManager;
     private final ApplicationEventPublisher eventPublisher;
     private final AppProperties appProperties;
+    private final NavidromeAccessService navidromeAccessService;
+    private final RoomService roomService;
+    private final Map<String, RoomPlayerSession> sessions = new ConcurrentHashMap<>();
 
-    // --- Player State ---
-    private final AtomicReference<PlayableMusic> currentMusic = new AtomicReference<>(null);
-    private final AtomicReference<String> currentEnqueuerId = new AtomicReference<>(null);
-    private final AtomicReference<String> currentEnqueuerName = new AtomicReference<>(null);
-
-    // 核心计时逻辑
-    private final AtomicLong positionAnchor = new AtomicLong(0); // 上一次更新状态时的进度(ms)
-    private final AtomicLong timestampAnchor = new AtomicLong(0); // 上一次更新状态时的系统时间(ms)
-    private final AtomicLong positionUpdatedAt = new AtomicLong(0);
-
-
-    private final AtomicBoolean isShuffle = new AtomicBoolean(false);
-    private final AtomicBoolean isPaused = new AtomicBoolean(false);
-    private final AtomicBoolean isPauseLocked = new AtomicBoolean(false);
-    private final AtomicBoolean isSkipLocked = new AtomicBoolean(false);
-    private final AtomicBoolean isShuffleLocked = new AtomicBoolean(false);
-    private final AtomicBoolean isLoading = new AtomicBoolean(false);
-    private final AtomicBoolean isStreamActive = new AtomicBoolean(false);
-
-    private final Map<String, Object> likeLock = new HashMap<>();
-    private Set<String> currentLikedUserIds;
-    private List<Long> currentLikeMarkers;
-
-    private final AtomicLong lastControlTimestamp = new AtomicLong(0);
-    private static final long GLOBAL_COOLDOWN_MS = 1000;
-    private static final long IDLE_RESET_TIMEOUT_MS = Duration.ofHours(2).toMillis();
-
-    private final AtomicLong playHeadVersion = new AtomicLong(0);
-    private final AtomicLong stateVersion = new AtomicLong(0);
-    private final AtomicLong playEpoch = new AtomicLong(0);
-
-    public MusicPlayerService(List<IMusicApiService> apiServices, UserService userService,
+    public MusicPlayerService(List<IMusicApiService> apiServices,
+                              UserService userService,
                               LocalCacheService localCacheService,
                               LiveStreamService liveStreamService,
-                              MusicQueueManager queueManager,
                               ApplicationEventPublisher eventPublisher,
                               AppProperties appProperties,
-                              NavidromeAccessService navidromeAccessService) {
-        this.apiServiceMap = apiServices.stream()
-                .collect(Collectors.toMap(IMusicApiService::getPlatformName, Function.identity()));
+                              NavidromeAccessService navidromeAccessService,
+                              RoomService roomService) {
+        this.apiServiceMap = apiServices.stream().collect(Collectors.toMap(IMusicApiService::getPlatformName, Function.identity()));
         this.userService = userService;
         this.localCacheService = localCacheService;
         this.liveStreamService = liveStreamService;
-        this.queueManager = queueManager;
         this.eventPublisher = eventPublisher;
         this.appProperties = appProperties;
         this.navidromeAccessService = navidromeAccessService;
-        this.currentLikedUserIds = ConcurrentHashMap.newKeySet();
-        this.currentLikeMarkers = new CopyOnWriteArrayList<>();
+        this.roomService = roomService;
     }
 
     @PostConstruct
     public void init() {
         log.info("MusicPlayerService initialized with {} API services: {}", apiServiceMap.size(), apiServiceMap.keySet());
+        session(RoomService.DEFAULT_ROOM_ID);
+    }
+
+    public Set<String> getActiveRoomIds() {
+        Set<String> ids = new HashSet<>(sessions.keySet());
+        roomService.listRooms().forEach(room -> ids.add(room.roomId()));
+        return ids;
+    }
+
+    public RoomPlayerSession getSession(String roomId) {
+        return session(roomId);
+    }
+
+    public void removeRoom(String roomId) {
+        RoomPlayerSession removed = sessions.remove(roomService.normalizeRoomId(roomId));
+        if (removed != null) {
+            removed.resetSystem(false);
+        }
     }
 
     @Scheduled(fixedRate = 1000)
     public void playerLoop() {
-        if (isPaused.get()) {
-            return;
-        }
-
-        PlayableMusic music = currentMusic.get();
-
-        if (music != null) {
-            long currentPos = calculateCurrentPosition();
-
-            // 检查是否播放结束
-            if (currentPos >= music.duration() && music.duration() > 0) {
-                log.info("Song finished: {}", music.name());
-
-                Music finishedMusic = new Music(
-                        music.id(),
-                        music.name(),
-                        music.artists(),
-                        music.duration(),
-                        music.platform(),
-                        music.coverUrl()
-                );
-                queueManager.addToHistory(finishedMusic);
-
-                // 清空当前，触发下一首
-                currentMusic.set(null);
-                bumpPlayEpochAndStateVersion();
-                playNextInQueue();
-            }
-        } else {
-            if (userService.getOnlineUserSummaries().isEmpty() && !isStreamActive.get()) {
-                return;
-            }
-            if (!queueManager.getQueueSnapshot().isEmpty()) {
-                playNextInQueue();
-            }
-        }
+        getActiveRoomIds().forEach(roomId -> session(roomId).playerLoop());
     }
 
-    private synchronized void playNextInQueue() {
-        if (currentMusic.get() != null || isLoading.get()) {
-            return;
-        }
-
-        Map<String, QueueItemStatus> statusMap = buildStatusMap();
-
-        Set<String> recentlyActivePublicIds = userService.getRecentlyActivePublicIds();
-
-        MusicQueueItem nextItem = queueManager.pollNext(isShuffle.get(), statusMap, recentlyActivePublicIds);
-
-        if (nextItem == null) {
-            if (isLoading.get()) {
-                isLoading.set(false);
-                bumpStateVersion();
-            }
-            broadcastFullPlayerState();
-            return;
-        }
-
-        // Handle failed items
-        if (nextItem.status() == QueueItemStatus.FAILED ||
-                (statusMap.get(MusicQueueManager.musicKey(nextItem.music())) == QueueItemStatus.FAILED)) {
-            log.warn("Skipping failed song: {}", nextItem.music().name());
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", "加载失败: " + nextItem.music().name()));
-            playNextInQueue(); // Recursively try next
-            return;
-        }
-
-        // 增加版本号，这表示"开始一次新的播放尝试"
-        long currentVersion = playHeadVersion.incrementAndGet();
-        isLoading.set(true);
-        bumpStateVersion();
-        broadcastFullPlayerState();
-        isPaused.set(false);
-
-        log.info("Playing next: {}", nextItem.music().name());
-
-        try {
-            IMusicApiService service = getApiService(nextItem.music().platform());
-            service.getPlayableMusic(nextItem.music().id())
-                    .timeout(Duration.ofSeconds(10))
-                    .subscribe(
-                            playableMusic -> {
-                                // 检查版本号是否匹配
-                                // 如果在请求期间执行了 skip/stop，版本号会变，这里就应该丢弃结果
-                                if (playHeadVersion.get() == currentVersion) {
-                                    applyNewSong(playableMusic, nextItem);
-                                } else {
-                                    log.info("Discarded stale play result for {}", nextItem.music().name());
-                                }
-                            },
-                        error -> {
-                        log.error("Play failed for {}: {}", nextItem.music().name(), error.getMessage());
-                        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", nextItem.music().name()));
-                        isLoading.set(false);
-                        bumpStateVersion();
-                        broadcastFullPlayerState();
-                        playNextInQueue();
-                    });
-        } catch (Exception e) {
-            log.error("Unexpected error in playNextInQueue", e);
-            isLoading.set(false);
-            bumpStateVersion();
-            broadcastFullPlayerState();
-        }
-    }
-
-    private long calculateCurrentPosition() {
-        if (currentMusic.get() == null) return 0;
-        if (isPaused.get()) {
-            return positionAnchor.get();
-        } else {
-            long now = System.currentTimeMillis();
-            long elapsed = now - timestampAnchor.get();
-            return positionAnchor.get() + elapsed;
-        }
-    }
-
-    private void updatePlaybackAnchor(long positionMs) {
-        long now = System.currentTimeMillis();
-        positionAnchor.set(Math.max(0, positionMs));
-        timestampAnchor.set(now);
-        positionUpdatedAt.set(now);
-    }
-
-    private void bumpStateVersion() {
-        stateVersion.incrementAndGet();
-    }
-
-    private void bumpPlayEpochAndStateVersion() {
-        playEpoch.incrementAndGet();
-        bumpStateVersion();
-    }
-
-    private void applyNewSong(PlayableMusic music, MusicQueueItem queueItem) {
-        currentLikedUserIds.clear();
-        currentLikeMarkers.clear();
-
-        // 重置计时器
-        currentMusic.set(music);
-        currentEnqueuerId.set(queueItem.enqueuedBy().publicId());
-        currentEnqueuerName.set(queueItem.enqueuedBy().name());
-
-        updatePlaybackAnchor(0);
-        isPaused.set(false);
-
-        log.info("Now playing: {}", music.name());
-        isLoading.set(false);
-        bumpPlayEpochAndStateVersion();
-        broadcastFullPlayerState();
-        broadcastQueueUpdate();
-
-        // 发布开始播放事件 (用于聊天栏展示)
-        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.PLAY_START, queueItem.enqueuedBy().publicId(), music.name()));
+    @Scheduled(fixedRate = 600000)
+    public void cleanupIdlePlayer() {
+        sessions.values().forEach(RoomPlayerSession::cleanupIdlePlayer);
     }
 
     public PlayerState getCurrentPlayerState() {
-        PlayableMusic music = currentMusic.get();
-        NowPlayingInfo infoToSend = null;
+        return session(RoomService.DEFAULT_ROOM_ID).getCurrentPlayerState();
+    }
 
-        if (music != null) {
-            infoToSend = new NowPlayingInfo(
+    public PlayerState getCurrentPlayerState(String roomId) {
+        return session(roomId).getCurrentPlayerState();
+    }
+
+    public PlayerState getCurrentPlayerStateForSession(String sessionId) {
+        return session(userService.getRoomIdForSession(sessionId)).getCurrentPlayerState();
+    }
+
+    public void setLock(String type, boolean locked) {
+        sessions.values().forEach(s -> s.setLock(type, locked));
+    }
+
+    public void setAllLocks(boolean locked) {
+        sessions.values().forEach(s -> s.setAllLocks(locked));
+    }
+
+    public void enqueue(EnqueueRequest request, String sessionId) {
+        sessionForUser(sessionId).enqueue(request, sessionId);
+    }
+
+    public void enqueuePlaylist(EnqueuePlaylistRequest request, String sessionId) {
+        sessionForUser(sessionId).enqueuePlaylist(request, sessionId);
+    }
+
+    public void enqueueAlbum(EnqueueAlbumRequest request, String sessionId) {
+        sessionForUser(sessionId).enqueueAlbum(request, sessionId);
+    }
+
+    public void topSong(String queueId, String sessionId) {
+        sessionForUser(sessionId).topSong(queueId, sessionId);
+    }
+
+    public void topSongs(List<String> queueIds, String sessionId) {
+        sessionForUser(sessionId).topSongs(queueIds, sessionId);
+    }
+
+    public void removeSongFromQueue(String queueId, String sessionId) {
+        sessionForUser(sessionId).removeSongFromQueue(queueId, sessionId);
+    }
+
+    public void removeSongsFromQueue(List<String> queueIds, String sessionId) {
+        sessionForUser(sessionId).removeSongsFromQueue(queueIds, sessionId);
+    }
+
+    public void skipToNext(String sessionId) {
+        sessionForUser(sessionId).skipToNext(sessionId);
+    }
+
+    public void togglePause(String sessionId) {
+        sessionForUser(sessionId).togglePause(sessionId);
+    }
+
+    public Optional<String> seekTo(long positionMs, String sessionId) {
+        return sessionForUser(sessionId).seekTo(positionMs, sessionId);
+    }
+
+    public void toggleShuffle(String sessionId) {
+        sessionForUser(sessionId).toggleShuffle(sessionId);
+    }
+
+    public void likeSong(String sessionId) {
+        sessionForUser(sessionId).likeSong(sessionId);
+    }
+
+    public void resetSystem() {
+        sessions.values().forEach(s -> s.resetSystem(true));
+    }
+
+    public void clearQueue() {
+        sessions.values().forEach(RoomPlayerSession::clearQueue);
+    }
+
+    public void broadcastQueueUpdate() {
+        sessions.values().forEach(RoomPlayerSession::broadcastQueueUpdate);
+    }
+
+    public void broadcastFullPlayerState() {
+        sessions.values().forEach(RoomPlayerSession::broadcastFullPlayerState);
+    }
+
+    public void broadcastOnlineUsers() {
+        getActiveRoomIds().forEach(roomId -> session(roomId).broadcastFullPlayerState());
+    }
+
+    public void broadcastPasswordChanged() {
+        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, null, "SYSTEM", "PASSWORD_CHANGED", RoomService.DEFAULT_ROOM_ID));
+    }
+
+    @EventListener
+    public void handleDownloadEvent(DownloadStatusEvent event) {
+        sessions.values().forEach(session -> session.handleDownloadEvent(event));
+    }
+
+    @EventListener
+    public void onUserCountChanged(UserCountChangeEvent event) {
+        session(event.getRoomId()).onUserCountChanged(event);
+    }
+
+    @EventListener
+    public void onStreamStatusChanged(StreamStatusEvent event) {
+        session(RoomService.DEFAULT_ROOM_ID).onStreamStatusChanged(event);
+    }
+
+    private RoomPlayerSession sessionForUser(String sessionId) {
+        return session(userService.getRoomIdForSession(sessionId));
+    }
+
+    private RoomPlayerSession session(String roomId) {
+        String normalized = roomService.normalizeRoomId(roomId);
+        return sessions.computeIfAbsent(normalized, RoomPlayerSession::new);
+    }
+
+    public class RoomPlayerSession {
+        private final String roomId;
+        private final MusicQueueManager queueManager;
+        private final AtomicReference<PlayableMusic> currentMusic = new AtomicReference<>(null);
+        private final AtomicReference<String> currentEnqueuerId = new AtomicReference<>(null);
+        private final AtomicReference<String> currentEnqueuerName = new AtomicReference<>(null);
+        private final AtomicLong positionAnchor = new AtomicLong(0);
+        private final AtomicLong timestampAnchor = new AtomicLong(0);
+        private final AtomicLong positionUpdatedAt = new AtomicLong(0);
+        private final AtomicBoolean isShuffle = new AtomicBoolean(false);
+        private final AtomicBoolean isPaused = new AtomicBoolean(false);
+        private final AtomicBoolean isPauseLocked = new AtomicBoolean(false);
+        private final AtomicBoolean isSkipLocked = new AtomicBoolean(false);
+        private final AtomicBoolean isShuffleLocked = new AtomicBoolean(false);
+        private final AtomicBoolean isLoading = new AtomicBoolean(false);
+        private final AtomicBoolean isStreamActive = new AtomicBoolean(false);
+        private final Set<String> currentLikedUserIds = ConcurrentHashMap.newKeySet();
+        private final List<Long> currentLikeMarkers = new CopyOnWriteArrayList<>();
+        private final AtomicLong lastControlTimestamp = new AtomicLong(0);
+        private final AtomicLong playHeadVersion = new AtomicLong(0);
+        private final AtomicLong stateVersion = new AtomicLong(0);
+        private final AtomicLong playEpoch = new AtomicLong(0);
+
+        private static final long GLOBAL_COOLDOWN_MS = 1000;
+        private static final long IDLE_RESET_TIMEOUT_MS = 2 * 60 * 60 * 1000L;
+
+        private RoomPlayerSession(String roomId) {
+            this.roomId = roomId;
+            this.queueManager = new MusicQueueManager(appProperties);
+        }
+
+        public MusicQueueManager getQueueManager() {
+            return queueManager;
+        }
+
+        public void playerLoop() {
+            if (isPaused.get()) return;
+            PlayableMusic music = currentMusic.get();
+            if (music != null) {
+                long currentPos = calculateCurrentPosition();
+                if (currentPos >= music.duration() && music.duration() > 0) {
+                    queueManager.addToHistory(new Music(music.id(), music.name(), music.artists(), music.duration(), music.platform(), music.coverUrl()));
+                    currentMusic.set(null);
+                    bumpPlayEpochAndStateVersion();
+                    playNextInQueue();
+                }
+                return;
+            }
+            if (userService.getOnlineUserSummaries(roomId).isEmpty() && !isStreamActive.get()) return;
+            if (!queueManager.getQueueSnapshot().isEmpty()) playNextInQueue();
+        }
+
+        private synchronized void playNextInQueue() {
+            if (currentMusic.get() != null || isLoading.get()) return;
+            MusicQueueItem nextItem = queueManager.pollNext(isShuffle.get(), buildStatusMap(), userService.getRecentlyActivePublicIds(roomId));
+            if (nextItem == null) {
+                isLoading.set(false);
+                broadcastFullPlayerState();
+                return;
+            }
+            if (nextItem.status() == QueueItemStatus.FAILED) {
+                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", "加载失败: " + nextItem.music().name(), roomId));
+                playNextInQueue();
+                return;
+            }
+            long version = playHeadVersion.incrementAndGet();
+            isLoading.set(true);
+            bumpStateVersion();
+            broadcastFullPlayerState();
+            isPaused.set(false);
+            try {
+                getApiService(nextItem.music().platform()).getPlayableMusic(nextItem.music().id())
+                        .timeout(Duration.ofSeconds(10))
+                        .subscribe(playable -> {
+                            if (playHeadVersion.get() == version) applyNewSong(playable, nextItem);
+                        }, error -> {
+                            log.error("Play failed for {} in room {}", nextItem.music().name(), roomId, error);
+                            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", nextItem.music().name(), roomId));
+                            isLoading.set(false);
+                            bumpStateVersion();
+                            broadcastFullPlayerState();
+                            playNextInQueue();
+                        });
+            } catch (Exception e) {
+                isLoading.set(false);
+                bumpStateVersion();
+                broadcastFullPlayerState();
+            }
+        }
+
+        private void applyNewSong(PlayableMusic music, MusicQueueItem queueItem) {
+            currentLikedUserIds.clear();
+            currentLikeMarkers.clear();
+            currentMusic.set(music);
+            currentEnqueuerId.set(queueItem.enqueuedBy().publicId());
+            currentEnqueuerName.set(queueItem.enqueuedBy().name());
+            updatePlaybackAnchor(0);
+            isPaused.set(false);
+            isLoading.set(false);
+            bumpPlayEpochAndStateVersion();
+            broadcastFullPlayerState();
+            broadcastQueueUpdate();
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.PLAY_START, queueItem.enqueuedBy().publicId(), music.name(), roomId));
+        }
+
+        public PlayerState getCurrentPlayerState() {
+            PlayableMusic music = currentMusic.get();
+            NowPlayingInfo info = music == null ? null : new NowPlayingInfo(
                     music,
-                    calculateCurrentPosition(), // 直接返回计算好的进度
+                    calculateCurrentPosition(),
                     currentEnqueuerId.get(),
                     currentEnqueuerName.get(),
                     currentLikedUserIds,
@@ -273,571 +325,328 @@ public class MusicPlayerService {
                     playEpoch.get(),
                     positionUpdatedAt.get()
             );
+            return new PlayerState(
+                    info,
+                    getQueueWithUpdatedStatus(),
+                    isShuffle.get(),
+                    userService.getOnlineUserSummaries(roomId),
+                    isPaused.get(),
+                    isPauseLocked.get(),
+                    isSkipLocked.get(),
+                    isShuffleLocked.get(),
+                    isLoading.get(),
+                    RoomService.DEFAULT_ROOM_ID.equals(roomId) ? liveStreamService.getStreamListenerCount() : 0,
+                    System.currentTimeMillis(),
+                    stateVersion.get(),
+                    playEpoch.get()
+            );
         }
 
-        return new PlayerState(
-                infoToSend,
-                getQueueWithUpdatedStatus(),
-                isShuffle.get(),
-                userService.getOnlineUserSummaries(),
-                isPaused.get(),
-                isPauseLocked.get(),
-                isSkipLocked.get(),
-                isShuffleLocked.get(),
-                isLoading.get(),
-                liveStreamService.getStreamListenerCount(),
-                System.currentTimeMillis(),
-                stateVersion.get(),
-                playEpoch.get()
-        );
-    }
-
-    public void setLock(String type, boolean locked) {
-        AtomicBoolean targetLock;
-        String desc;
-        switch (type.toUpperCase()) {
-            case "PAUSE" -> { targetLock = isPauseLocked; desc = "暂停"; }
-            case "SKIP" -> { targetLock = isSkipLocked; desc = "切歌"; }
-            case "SHUFFLE" -> { targetLock = isShuffleLocked; desc = "随机播放"; }
-            default -> throw new IllegalArgumentException("Unknown lock type");
-        }
-
-        boolean old = targetLock.getAndSet(locked);
-        if (old != locked) {
-            log.info("{} lock set to: {}", desc, locked);
-            bumpStateVersion();
-            broadcastFullPlayerState();
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.SYSTEM_MESSAGE, "SYSTEM",
-                    locked ? "管理员锁定了" + desc : "管理员解锁了" + desc));
-        }
-    }
-
-    public void setAllLocks(boolean locked) {
-        boolean changed = isPauseLocked.getAndSet(locked) != locked;
-        changed = (isSkipLocked.getAndSet(locked) != locked) || changed;
-        changed = (isShuffleLocked.getAndSet(locked) != locked) || changed;
-        if (changed) {
-            bumpStateVersion();
-        }
-        broadcastFullPlayerState();
-        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.SYSTEM_MESSAGE, "SYSTEM",
-                locked ? "管理员锁定了所有控制" : "管理员解锁了所有控制"));
-    }
-
-    public void enqueue(EnqueueRequest request, String sessionId) {
-        Optional<User> userOpt = userService.getUser(sessionId);
-        if (userOpt.isEmpty()) return;
-        User enqueuer = userOpt.get();
-
-        if ("navidrome".equals(request.platform()) && !navidromeAccessService.canUseBySession(sessionId)) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "添加失败: 无权使用 Navidrome"));
-            return;
-        }
-
-        // Check user song limit
-        long userSongCount = queueManager.getQueueSnapshot().stream()
-                .filter(item -> item.enqueuedBy().publicId().equals(enqueuer.getPublicId()))
-                .count();
-
-        if (userSongCount >= appProperties.getQueue().getMaxUserSongs()) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "添加失败: 您的点歌数量已达上限 (" + appProperties.getQueue().getMaxUserSongs() + "首)"));
-            return;
-        }
-
-        IMusicApiService service = getApiService(request.platform());
-        service.getPlayableMusic(request.musicId())
-                .subscribe(playableMusic -> {
-                            Music music = new Music(playableMusic.id(), playableMusic.name(), playableMusic.artists(), playableMusic.duration(), playableMusic.platform(), playableMusic.coverUrl());
-
-                            QueueItemStatus initialStatus = "bilibili".equals(request.platform()) ? QueueItemStatus.PENDING : QueueItemStatus.READY;
-                            if ("bilibili".equals(request.platform())) {
-                                service.prefetchMusic(music.id());
-                            }
-
-                            MusicQueueItem newItem = queueManager.add(music, new UserSummary(enqueuer.getPublicId(), enqueuer.getName(), enqueuer.isGuest()), initialStatus);
-
-                            if (newItem != null) {
-                                log.info("{} enqueued: {}", enqueuer.getName(), music.name());
-                                broadcastQueueUpdate();
-                                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.ADD, enqueuer.getPublicId(), music.name()));
-                            }
-                        },
-                        error -> {
-                            log.error("Enqueue failed for musicId: {}", request.musicId(), error);
-                            String msg = error.getMessage().contains("Could not get Bilibili video info") ? "无效资源或API受限" : error.getMessage();
-                            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "添加失败: " + msg));
-                        });
-    }
-
-    // 点赞逻辑
-    public void likeSong(String sessionId) {
-        PlayableMusic music = currentMusic.get();
-        if (music == null) return;
-
-        String publicId = getUserPublicId(sessionId);
-
-        // 1. 检查去重 (单人单曲一次)
-        if (currentLikedUserIds.contains(publicId)) return;
-
-        // 2. 更新数据
-        currentLikedUserIds.add(publicId);
-
-        // 使用计算出的当前进度作为 Marker
-        long progress = calculateCurrentPosition();
-        currentLikeMarkers.add(progress);
-
-        log.info("Like received from {}", getUserName(sessionId));
-        bumpStateVersion();
-
-        // 3. 广播
-        // 广播事件用于触发特效
-        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.LIKE, publicId, music.name()));
-        // 广播状态更新进度条打点和用户列表
-        broadcastFullPlayerState();
-    }
-
-    public void enqueuePlaylist(EnqueuePlaylistRequest request, String sessionId) {
-        Optional<User> userOpt = userService.getUser(sessionId);
-        if (userOpt.isEmpty()) return;
-        User enqueuer = userOpt.get();
-
-        if ("navidrome".equals(request.platform())) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "Navidrome 暂不支持歌单导入"));
-            return;
-        }
-
-        // Check user song limit
-        long currentCount = queueManager.getQueueSnapshot().stream()
-                .filter(item -> item.enqueuedBy().publicId().equals(enqueuer.getPublicId()))
-                .count();
-        int maxUserSongs = appProperties.getQueue().getMaxUserSongs();
-
-        if (currentCount >= maxUserSongs) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "导入失败: 您的点歌数量已达上限"));
-            return;
-        }
-
-        // Calculate remaining quota
-        int remainingQuota = (int) (maxUserSongs - currentCount);
-        int importLimit = Math.min(appProperties.getPlayer().getMaxPlaylistImportSize(), remainingQuota);
-
-        IMusicApiService service = getApiService(request.platform());
-        service.getPlaylistMusics(request.playlistId(), 0, importLimit)
-                .subscribe(musics -> {
-                    int count = 0;
-                    QueueItemStatus initialStatus = "bilibili".equals(request.platform()) ? QueueItemStatus.PENDING : QueueItemStatus.READY;
-
-                    for (Music music : musics) {
-                        if ("bilibili".equals(request.platform())) {
-                            service.prefetchMusic(music.id());
-                        }
-                        MusicQueueItem newItem = queueManager.add(music, new UserSummary(enqueuer.getPublicId(), enqueuer.getName(), enqueuer.isGuest()), initialStatus);
-                        if (newItem != null) {
-                            count++;
-                        }
-                    }
-
-                    log.info("{} enqueued {} songs from playlist", enqueuer.getName(), count);
-                    broadcastQueueUpdate();
-                    eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.IMPORT_PLAYLIST, enqueuer.getPublicId(), String.valueOf(count)));
-                });
-    }
-
-    public void enqueueAlbum(EnqueueAlbumRequest request, String sessionId) {
-        Optional<User> userOpt = userService.getUser(sessionId);
-        if (userOpt.isEmpty()) return;
-        User enqueuer = userOpt.get();
-
-        if (!"netease".equals(request.platform())) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "当前仅支持导入网易云专辑"));
-            return;
-        }
-
-        IMusicApiService service = getApiService(request.platform());
-        if (!(service instanceof NeteaseMusicApiService neteaseService)) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "网易云专辑服务不可用"));
-            return;
-        }
-
-        long currentCount = queueManager.getQueueSnapshot().stream()
-                .filter(item -> item.enqueuedBy().publicId().equals(enqueuer.getPublicId()))
-                .count();
-        int maxUserSongs = appProperties.getQueue().getMaxUserSongs();
-
-        if (currentCount >= maxUserSongs) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "导入失败: 您的点歌数量已达上限"));
-            return;
-        }
-
-        int remainingQuota = (int) (maxUserSongs - currentCount);
-        int importLimit = Math.min(appProperties.getPlayer().getMaxPlaylistImportSize(), remainingQuota);
-
-        neteaseService.getAlbumMusics(request.albumId())
-                .subscribe(musics -> {
-                    int count = 0;
-                    for (Music music : musics.stream().limit(importLimit).toList()) {
-                        MusicQueueItem newItem = queueManager.add(music, new UserSummary(enqueuer.getPublicId(), enqueuer.getName(), enqueuer.isGuest()), QueueItemStatus.READY);
-                        if (newItem != null) {
-                            count++;
-                        }
-                    }
-
-                    log.info("{} enqueued {} songs from album {}", enqueuer.getName(), count, request.albumId());
-                    broadcastQueueUpdate();
-                    eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.IMPORT_PLAYLIST, enqueuer.getPublicId(), String.valueOf(count)));
-                }, error -> {
-                    log.error("Album import failed for albumId: {}", request.albumId(), error);
-                    eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "专辑导入失败: " + error.getMessage()));
-                });
-    }
-
-    public synchronized void topSong(String queueId, String sessionId) {
-        // 先调用 top 执行置顶操作
-        TopResult result = queueManager.top(queueId, isShuffle.get());
-        
-        if (result != TopResult.NONE) {
-            log.info("Song topped ({}) request by {}", result, getUserName(sessionId));
-            broadcastQueueUpdate();
-
-            // 只有全局置顶才发送系统消息广播
-            if (result == TopResult.GLOBAL) {
-                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.TOP, getUserPublicId(sessionId), "置顶成功"));
-            }
-            
-            if (currentMusic.get() == null) {
-                playNextInQueue();
-            }
-        }
-    }
-
-    public synchronized void topSongs(List<String> queueIds, String sessionId) {
-        if (queueIds == null || queueIds.isEmpty()) return;
-
-        List<MusicQueueItem> toppedItems = queueManager.topManyGlobal(queueIds);
-        if (!toppedItems.isEmpty()) {
-            log.info("{} songs topped by {}", toppedItems.size(), getUserName(sessionId));
-            broadcastQueueUpdate();
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.TOP, getUserPublicId(sessionId), "置顶 " + toppedItems.size() + " 首歌曲"));
-
-            if (currentMusic.get() == null) {
-                playNextInQueue();
-            }
-        }
-    }
-
-    public void removeSongFromQueue(String queueId, String sessionId) {
-        Optional<MusicQueueItem> removedItem = queueManager.remove(queueId);
-        if (removedItem.isPresent()) {
-            log.info("Removed song from queue by {}", getUserName(sessionId));
-            broadcastQueueUpdate();
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.REMOVE, getUserPublicId(sessionId), removedItem.get().music().name()));
-        }
-    }
-
-    public void removeSongsFromQueue(List<String> queueIds, String sessionId) {
-        if (queueIds == null || queueIds.isEmpty()) return;
-
-        List<MusicQueueItem> removedItems = queueManager.removeMany(queueIds);
-        if (!removedItems.isEmpty()) {
-            log.info("{} songs removed from queue by {}", removedItems.size(), getUserName(sessionId));
-            broadcastQueueUpdate();
-            broadcastFullPlayerState();
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.REMOVE, getUserPublicId(sessionId), "移除 " + removedItems.size() + " 首歌曲"));
-        }
-    }
-
-    public void skipToNext(String sessionId) {
-        if (isRateLimited(sessionId)) return;
-        if (isSkipLocked.get() && !"SYSTEM".equals(sessionId)) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, getUserPublicId(sessionId), "切歌功能已被锁定"));
-            return;
-        }
-
-        // 切歌时版本号自增，废弃之前的任何 pending 请求
-        playHeadVersion.incrementAndGet();
-        isLoading.set(false);
-
-        currentMusic.set(null);
-        updatePlaybackAnchor(0);
-        bumpPlayEpochAndStateVersion();
-
-        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.SKIP, getUserPublicId(sessionId), null));
-        playNextInQueue();
-    }
-
-    public void togglePause(String sessionId) {
-        if (currentMusic.get() == null) {
-            if (!queueManager.getQueueSnapshot().isEmpty()) {
-                playNextInQueue();
-            }
-            return;
-        }
-        if (isRateLimited(sessionId)) return;
-
-        // 锁定检查：如果是系统操作，放行。如果是用户操作，检查锁。
-        // 规则：如果不控制播放权限（允许从暂停->播放），则只有当当前是播放状态(即试图暂停)且锁定时才拦截。
-        if (!"SYSTEM".equals(sessionId)) {
-            if (isPauseLocked.get() && !isPaused.get()) {
-                // eventPublisher.publishEvent(...);
+        public void enqueue(EnqueueRequest request, String sessionId) {
+            Optional<User> userOpt = userService.getUser(sessionId);
+            if (userOpt.isEmpty()) return;
+            User enqueuer = userOpt.get();
+            if ("navidrome".equals(request.platform()) && !navidromeAccessService.canUseBySession(sessionId)) {
+                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "添加失败: 无权使用 Navidrome", roomId));
                 return;
             }
+            long count = queueManager.getQueueSnapshot().stream().filter(i -> i.enqueuedBy().publicId().equals(enqueuer.getPublicId())).count();
+            if (count >= appProperties.getQueue().getMaxUserSongs()) return;
+            IMusicApiService service = getApiService(request.platform());
+            service.getPlayableMusic(request.musicId()).subscribe(playable -> {
+                Music music = new Music(playable.id(), playable.name(), playable.artists(), playable.duration(), playable.platform(), playable.coverUrl());
+                QueueItemStatus initialStatus = "bilibili".equals(request.platform()) ? QueueItemStatus.PENDING : QueueItemStatus.READY;
+                if ("bilibili".equals(request.platform())) service.prefetchMusic(music.id());
+                MusicQueueItem item = queueManager.add(music, new UserSummary(enqueuer.getPublicId(), enqueuer.getName(), enqueuer.isGuest()), initialStatus);
+                if (item != null) {
+                    broadcastQueueUpdate();
+                    eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.ADD, enqueuer.getPublicId(), music.name(), roomId));
+                    if (currentMusic.get() == null) playNextInQueue();
+                }
+            }, error -> eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "添加失败: " + error.getMessage(), roomId)));
         }
 
-        // 核心：在切换状态的一瞬间，更新 Anchor
-        // 1. 先计算出当前的进度
-        long currentPos = calculateCurrentPosition();
-
-        // 2. 更新状态
-        boolean newState = !isPaused.get();
-        isPaused.set(newState);
-
-        // 3. 重置锚点：无论是暂停还是播放，当前进度都变成新的基准进度
-        updatePlaybackAnchor(currentPos);
-
-        log.info("Player {} by {}", newState ? "PAUSED" : "RESUMED", getUserName(sessionId));
-        bumpStateVersion();
-        broadcastFullPlayerState();
-        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, newState ? PlayerAction.PAUSE : PlayerAction.PLAY, getUserPublicId(sessionId), null));
-    }
-
-    public synchronized Optional<String> seekTo(long positionMs, String sessionId) {
-        PlayableMusic music = currentMusic.get();
-        if (music == null) {
-            return Optional.of("当前没有正在播放的歌曲");
+        public void enqueuePlaylist(EnqueuePlaylistRequest request, String sessionId) {
+            Optional<User> userOpt = userService.getUser(sessionId);
+            if (userOpt.isEmpty()) return;
+            User enqueuer = userOpt.get();
+            if ("navidrome".equals(request.platform())) return;
+            int importLimit = appProperties.getPlayer().getMaxPlaylistImportSize();
+            IMusicApiService service = getApiService(request.platform());
+            service.getPlaylistMusics(request.playlistId(), 0, importLimit).subscribe(musics -> {
+                int count = 0;
+                QueueItemStatus initialStatus = "bilibili".equals(request.platform()) ? QueueItemStatus.PENDING : QueueItemStatus.READY;
+                for (Music music : musics) {
+                    if ("bilibili".equals(request.platform())) service.prefetchMusic(music.id());
+                    if (queueManager.add(music, new UserSummary(enqueuer.getPublicId(), enqueuer.getName(), enqueuer.isGuest()), initialStatus) != null) count++;
+                }
+                broadcastQueueUpdate();
+                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.IMPORT_PLAYLIST, enqueuer.getPublicId(), String.valueOf(count), roomId));
+                if (currentMusic.get() == null) playNextInQueue();
+            });
         }
 
-        String requesterPublicId = getUserPublicId(sessionId);
-        String enqueuerPublicId = currentEnqueuerId.get();
-        if (!Objects.equals(enqueuerPublicId, requesterPublicId)) {
-            log.warn("Seek denied for user {} on song queued by {}", requesterPublicId, enqueuerPublicId);
-            return Optional.of("只有点播者可以调整这首歌的进度");
+        public void enqueueAlbum(EnqueueAlbumRequest request, String sessionId) {
+            Optional<User> userOpt = userService.getUser(sessionId);
+            if (userOpt.isEmpty() || !"netease".equals(request.platform())) return;
+            User enqueuer = userOpt.get();
+            IMusicApiService service = getApiService(request.platform());
+            if (!(service instanceof NeteaseMusicApiService neteaseService)) return;
+            neteaseService.getAlbumMusics(request.albumId()).subscribe(musics -> {
+                int count = 0;
+                for (Music music : musics.stream().limit(appProperties.getPlayer().getMaxPlaylistImportSize()).toList()) {
+                    if (queueManager.add(music, new UserSummary(enqueuer.getPublicId(), enqueuer.getName(), enqueuer.isGuest()), QueueItemStatus.READY) != null) count++;
+                }
+                broadcastQueueUpdate();
+                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.IMPORT_PLAYLIST, enqueuer.getPublicId(), String.valueOf(count), roomId));
+                if (currentMusic.get() == null) playNextInQueue();
+            });
         }
 
-        long duration = Math.max(0, music.duration());
-        long clampedPosition = duration > 0
-                ? Math.max(0, Math.min(positionMs, duration))
-                : Math.max(0, positionMs);
+        public synchronized void topSong(String queueId, String sessionId) {
+            TopResult result = queueManager.top(queueId, isShuffle.get());
+            if (result != TopResult.NONE) {
+                broadcastQueueUpdate();
+                if (result == TopResult.GLOBAL) eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.TOP, getUserPublicId(sessionId), "置顶成功", roomId));
+                if (currentMusic.get() == null) playNextInQueue();
+            }
+        }
 
-        updatePlaybackAnchor(clampedPosition);
-        log.info("Player seek to {}ms by {}", clampedPosition, getUserName(sessionId));
-        bumpPlayEpochAndStateVersion();
-        broadcastFullPlayerState();
-        return Optional.empty();
-    }
+        public synchronized void topSongs(List<String> queueIds, String sessionId) {
+            List<MusicQueueItem> topped = queueManager.topManyGlobal(queueIds);
+            if (!topped.isEmpty()) {
+                broadcastQueueUpdate();
+                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.TOP, getUserPublicId(sessionId), "置顶 " + topped.size() + " 首歌曲", roomId));
+            }
+        }
 
-    public void toggleShuffle(String sessionId) {
-        if (isRateLimited(sessionId)) return;
-        if (isShuffleLocked.get() && !"SYSTEM".equals(sessionId)) return;
+        public void removeSongFromQueue(String queueId, String sessionId) {
+            queueManager.remove(queueId).ifPresent(item -> {
+                broadcastQueueUpdate();
+                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.REMOVE, getUserPublicId(sessionId), item.music().name(), roomId));
+            });
+        }
 
-        // 使用标准的 CAS 循环来原子性地翻转布尔值
-        boolean current;
-        boolean newState;
-        do {
-            current = isShuffle.get();
-            newState = !current;
-        } while (!isShuffle.compareAndSet(current, newState));
+        public void removeSongsFromQueue(List<String> queueIds, String sessionId) {
+            List<MusicQueueItem> removed = queueManager.removeMany(queueIds);
+            if (!removed.isEmpty()) {
+                broadcastQueueUpdate();
+                broadcastFullPlayerState();
+                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.REMOVE, getUserPublicId(sessionId), "移除 " + removed.size() + " 首歌曲", roomId));
+            }
+        }
 
-        log.info("Shuffle mode set to {} by {}", newState, getUserName(sessionId));
-        bumpStateVersion();
-        broadcastFullPlayerState();
-        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO,
-                newState ? PlayerAction.SHUFFLE_ON : PlayerAction.SHUFFLE_OFF, getUserPublicId(sessionId), null));
-    }
+        public void skipToNext(String sessionId) {
+            if (isRateLimited(sessionId)) return;
+            if (isSkipLocked.get() && !"SYSTEM".equals(sessionId)) return;
+            playHeadVersion.incrementAndGet();
+            isLoading.set(false);
+            currentMusic.set(null);
+            updatePlaybackAnchor(0);
+            bumpPlayEpochAndStateVersion();
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.SKIP, getUserPublicId(sessionId), null, roomId));
+            playNextInQueue();
+        }
 
-    public void resetSystem() {
-        log.warn("!!!SYSTEM RESET INITIATED!!!");
-        currentMusic.set(null);
-        updatePlaybackAnchor(0);
-
-        queueManager.clearAll();
-        isPaused.set(false);
-        isShuffle.set(false);
-        isLoading.set(false);
-
-        bumpPlayEpochAndStateVersion();
-        broadcastFullPlayerState();
-        broadcastQueueUpdate();
-        log.warn("System reset complete.");
-        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.RESET, "SYSTEM", null));
-    }
-
-    public void clearQueue() {
-        queueManager.clearPendingQueue();
-        log.info("Queue cleared by Admin.");
-        // 广播队列更新
-        broadcastQueueUpdate();
-        // 发送全员通知
-        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.REMOVE, "SYSTEM", "播放列表已由管理员清空"));
-    }
-
-    @EventListener
-    public void handleDownloadEvent(DownloadStatusEvent event) {
-        boolean existsInQueue = queueManager.getQueueSnapshot().stream()
-                .anyMatch(item -> item.music().id().equals(event.getMusicId()));
-
-        if (existsInQueue) {
-            log.debug("Download status changed for {}, updating queue UI.", event.getMusicId());
-            broadcastQueueUpdate();
+        public void togglePause(String sessionId) {
             if (currentMusic.get() == null) {
-                playNextInQueue();
+                if (!queueManager.getQueueSnapshot().isEmpty()) playNextInQueue();
+                return;
             }
-        }
-    }
-
-    /**
-     * 监听用户数量变化事件
-     */
-    @EventListener
-    public void onUserCountChanged(UserCountChangeEvent event) {
-        if (event.getOnlineUserCount() == 0 && !isStreamActive.get()) {
-            enterIdleMode();
-        }
-    }
-
-    /**
-     * 监听直播流状态变化
-     */
-    @EventListener
-    public void onStreamStatusChanged(StreamStatusEvent event) {
-        boolean hasListeners = event.isHasListeners();
-        this.isStreamActive.set(hasListeners);
-        log.info("System: Stream active status changed to: {}, Count: {}", hasListeners, event.getListenerCount());
-
-        if (hasListeners) {
-            // 场景 A: 列表为空，有人连入流 -> 尝试开始播放下一首
-            if (currentMusic.get() == null) {
-                playNextInQueue();
-            } 
-            // 场景 B: 正在暂停中，且网页端没人，有人连入流 -> 自动恢复播放
-            else if (isPaused.get() && userService.getOnlineUserSummaries().isEmpty()) {
-                log.info("System: Auto-resuming player for new stream listener.");
-                togglePause("SYSTEM");
-            }
-        } else {
-            // 场景 C: 流用户离开，且网页端也没人 -> 进入休眠
-            if (userService.getOnlineUserSummaries().isEmpty()) {
-                enterIdleMode();
-            }
-        }
-        bumpStateVersion();
-        broadcastFullPlayerState();
-    }
-
-    /**
-     * 进入空闲模式，停止播放
-     */
-    private void enterIdleMode() {
-        log.info("Last user disconnected. Entering idle mode.");
-        isLoading.set(false);
-
-        // 如果正在播放，自动暂停，记录当前进度
-        if (currentMusic.get() != null && !isPaused.get()) {
+            if (isRateLimited(sessionId)) return;
+            if (!"SYSTEM".equals(sessionId) && isPauseLocked.get() && !isPaused.get()) return;
             long currentPos = calculateCurrentPosition();
+            boolean newState = !isPaused.get();
+            isPaused.set(newState);
+            updatePlaybackAnchor(currentPos);
+            bumpStateVersion();
+            broadcastFullPlayerState();
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, newState ? PlayerAction.PAUSE : PlayerAction.PLAY, getUserPublicId(sessionId), null, roomId));
+        }
 
-            if (isPaused.compareAndSet(false, true)) {
-                // 暂停时，更新锚点为刚才计算出的准确进度
-                updatePlaybackAnchor(currentPos);
+        public synchronized Optional<String> seekTo(long positionMs, String sessionId) {
+            PlayableMusic music = currentMusic.get();
+            if (music == null) return Optional.of("当前没有正在播放的歌曲");
+            if (!Objects.equals(currentEnqueuerId.get(), getUserPublicId(sessionId))) return Optional.of("只有点播者可以调整这首歌的进度");
+            long clamped = music.duration() > 0 ? Math.max(0, Math.min(positionMs, music.duration())) : Math.max(0, positionMs);
+            updatePlaybackAnchor(clamped);
+            bumpPlayEpochAndStateVersion();
+            broadcastFullPlayerState();
+            return Optional.empty();
+        }
 
-                log.info("Player paused as all users have disconnected. Position saved at: {}", currentPos);
+        public void toggleShuffle(String sessionId) {
+            if (isRateLimited(sessionId) || (isShuffleLocked.get() && !"SYSTEM".equals(sessionId))) return;
+            isShuffle.set(!isShuffle.get());
+            bumpStateVersion();
+            broadcastFullPlayerState();
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, isShuffle.get() ? PlayerAction.SHUFFLE_ON : PlayerAction.SHUFFLE_OFF, getUserPublicId(sessionId), null, roomId));
+        }
+
+        public void likeSong(String sessionId) {
+            PlayableMusic music = currentMusic.get();
+            if (music == null) return;
+            String publicId = getUserPublicId(sessionId);
+            if (!currentLikedUserIds.add(publicId)) return;
+            currentLikeMarkers.add(calculateCurrentPosition());
+            bumpStateVersion();
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.LIKE, publicId, music.name(), roomId));
+            broadcastFullPlayerState();
+        }
+
+        public void setLock(String type, boolean locked) {
+            AtomicBoolean target = switch (type.toUpperCase()) {
+                case "PAUSE" -> isPauseLocked;
+                case "SKIP" -> isSkipLocked;
+                case "SHUFFLE" -> isShuffleLocked;
+                default -> throw new IllegalArgumentException("Unknown lock type");
+            };
+            if (target.getAndSet(locked) != locked) {
                 bumpStateVersion();
                 broadcastFullPlayerState();
             }
         }
-    }
 
-    /**
-     * 定时清理长时间暂停的播放器状态
-     */
-    @Scheduled(fixedRate = 600000) // 每10分钟检查一次
-    public void cleanupIdlePlayer() {
-        if (isPaused.get() && currentMusic.get() != null) {
-            // 在暂停状态下，timestampAnchor 记录的是暂停开始的时间
-            long pausedDuration = System.currentTimeMillis() - timestampAnchor.get();
-            if (pausedDuration > IDLE_RESET_TIMEOUT_MS) {
-                log.info("Idle player timeout reached. Resetting now playing.");
-                currentMusic.set(null);
-                updatePlaybackAnchor(0);
-                isPaused.set(false);
-                bumpPlayEpochAndStateVersion();
+        public void setAllLocks(boolean locked) {
+            isPauseLocked.set(locked);
+            isSkipLocked.set(locked);
+            isShuffleLocked.set(locked);
+            bumpStateVersion();
+            broadcastFullPlayerState();
+        }
+
+        public void resetSystem(boolean notify) {
+            currentMusic.set(null);
+            updatePlaybackAnchor(0);
+            queueManager.clearAll();
+            isPaused.set(false);
+            isShuffle.set(false);
+            isLoading.set(false);
+            bumpPlayEpochAndStateVersion();
+            broadcastFullPlayerState();
+            broadcastQueueUpdate();
+            if (notify) eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.RESET, "SYSTEM", null, roomId));
+        }
+
+        public void clearQueue() {
+            queueManager.clearPendingQueue();
+            broadcastQueueUpdate();
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.REMOVE, "SYSTEM", "播放列表已由管理员清空", roomId));
+        }
+
+        public void handleDownloadEvent(DownloadStatusEvent event) {
+            boolean exists = queueManager.getQueueSnapshot().stream().anyMatch(item -> item.music().id().equals(event.getMusicId()));
+            if (exists) {
+                broadcastQueueUpdate();
+                if (currentMusic.get() == null) playNextInQueue();
+            }
+        }
+
+        public void onUserCountChanged(UserCountChangeEvent event) {
+            if (event.getOnlineUserCount() == 0 && !isStreamActive.get()) enterIdleMode();
+            broadcastFullPlayerState();
+        }
+
+        public void onStreamStatusChanged(StreamStatusEvent event) {
+            isStreamActive.set(event.isHasListeners());
+            if (event.isHasListeners() && currentMusic.get() == null) playNextInQueue();
+            else if (!event.isHasListeners() && userService.getOnlineUserSummaries(roomId).isEmpty()) enterIdleMode();
+            bumpStateVersion();
+            broadcastFullPlayerState();
+        }
+
+        public void cleanupIdlePlayer() {
+            if (isPaused.get() && currentMusic.get() != null) {
+                long pausedDuration = System.currentTimeMillis() - timestampAnchor.get();
+                if (pausedDuration > IDLE_RESET_TIMEOUT_MS) {
+                    currentMusic.set(null);
+                    updatePlaybackAnchor(0);
+                    isPaused.set(false);
+                    bumpPlayEpochAndStateVersion();
+                    broadcastFullPlayerState();
+                }
+            }
+        }
+
+        public void broadcastQueueUpdate() {
+            eventPublisher.publishEvent(new QueueUpdateEvent(this, roomId, getQueueWithUpdatedStatus()));
+        }
+
+        public void broadcastFullPlayerState() {
+            eventPublisher.publishEvent(new PlayerStateEvent(this, roomId, getCurrentPlayerState()));
+        }
+
+        private void enterIdleMode() {
+            isLoading.set(false);
+            if (currentMusic.get() != null && !isPaused.get()) {
+                updatePlaybackAnchor(calculateCurrentPosition());
+                isPaused.set(true);
+                bumpStateVersion();
                 broadcastFullPlayerState();
             }
         }
-    }
 
-    // --- Broadcasting and Helper Methods ---
+        private long calculateCurrentPosition() {
+            if (currentMusic.get() == null) return 0;
+            if (isPaused.get()) return positionAnchor.get();
+            return positionAnchor.get() + (System.currentTimeMillis() - timestampAnchor.get());
+        }
 
-    public void broadcastQueueUpdate() {
-        eventPublisher.publishEvent(new QueueUpdateEvent(this, getQueueWithUpdatedStatus()));
-    }
+        private void updatePlaybackAnchor(long positionMs) {
+            long now = System.currentTimeMillis();
+            positionAnchor.set(Math.max(0, positionMs));
+            timestampAnchor.set(now);
+            positionUpdatedAt.set(now);
+        }
 
-    public void broadcastFullPlayerState() {
-        eventPublisher.publishEvent(new PlayerStateEvent(this, getCurrentPlayerState()));
-    }
+        private void bumpStateVersion() {
+            stateVersion.incrementAndGet();
+        }
 
-    public void broadcastOnlineUsers() {
-        // This is triggered by UserService, so we can keep it simple or create another event type
-        broadcastFullPlayerState();
-    }
+        private void bumpPlayEpochAndStateVersion() {
+            playEpoch.incrementAndGet();
+            bumpStateVersion();
+        }
 
-    public void broadcastPasswordChanged() {
-        // Can create a specific event or use SystemMessageEvent
-        // For now, let's keep it simple
-        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, null, "SYSTEM", "PASSWORD_CHANGED"));
-    }
-
-    private List<MusicQueueItem> getQueueWithUpdatedStatus() {
-        return queueManager.getQueueSnapshot().stream().map(item -> {
-            if ("netease".equals(item.music().platform())) {
-                return item.status() == QueueItemStatus.READY ? item : item.withStatus(QueueItemStatus.READY);
-            }
-            if ("bilibili".equals(item.music().platform())) {
-                CacheStatus cacheStatus = localCacheService.getStatus(item.music().id());
-                QueueItemStatus newStatus = mapCacheStatusToEnum(cacheStatus);
-                if (item.status() != newStatus) {
-                    return item.withStatus(newStatus);
+        private List<MusicQueueItem> getQueueWithUpdatedStatus() {
+            return queueManager.getQueueSnapshot().stream().map(item -> {
+                if ("netease".equals(item.music().platform())) {
+                    return item.status() == QueueItemStatus.READY ? item : item.withStatus(QueueItemStatus.READY);
                 }
-            }
-            return item;
-        }).collect(Collectors.toList());
-    }
-
-    private Map<String, QueueItemStatus> buildStatusMap() {
-        Map<String, QueueItemStatus> statusMap = new HashMap<>();
-        for (MusicQueueItem item : queueManager.getQueueSnapshot()) {
-            if ("bilibili".equals(item.music().platform())) {
-                statusMap.put(MusicQueueManager.musicKey(item.music()), mapCacheStatusToEnum(localCacheService.getStatus(item.music().id())));
-            } else {
-                statusMap.put(MusicQueueManager.musicKey(item.music()), QueueItemStatus.READY);
-            }
+                if ("bilibili".equals(item.music().platform())) {
+                    QueueItemStatus newStatus = mapCacheStatusToEnum(localCacheService.getStatus(item.music().id()));
+                    if (item.status() != newStatus) return item.withStatus(newStatus);
+                }
+                return item;
+            }).collect(Collectors.toList());
         }
-        return statusMap;
-    }
 
-    private QueueItemStatus mapCacheStatusToEnum(CacheStatus status) {
-        if (status == null) return QueueItemStatus.PENDING;
-        return switch (status) {
-            case COMPLETED -> QueueItemStatus.READY;
-            case DOWNLOADING -> QueueItemStatus.DOWNLOADING;
-            case FAILED -> QueueItemStatus.FAILED;
-            default -> QueueItemStatus.PENDING;
-        };
-    }
-
-    /*private void resetPauseState() {
-        isPaused.set(false);
-        pauseStateChangeTime.set(0);
-        totalPausedTimeMillis.set(0);
-    }*/
-
-    private boolean isRateLimited(String userId) {
-        long now = System.currentTimeMillis();
-        if (now - lastControlTimestamp.get() < GLOBAL_COOLDOWN_MS) {
-            log.warn("Action rate limited for user: {}", userId);
-            // eventPublisher.publishEvent(...); // Optional: notify user about rate limit
-            return true;
+        private Map<String, QueueItemStatus> buildStatusMap() {
+            Map<String, QueueItemStatus> statusMap = new HashMap<>();
+            for (MusicQueueItem item : queueManager.getQueueSnapshot()) {
+                statusMap.put(MusicQueueManager.musicKey(item.music()), "bilibili".equals(item.music().platform())
+                        ? mapCacheStatusToEnum(localCacheService.getStatus(item.music().id()))
+                        : QueueItemStatus.READY);
+            }
+            return statusMap;
         }
-        lastControlTimestamp.set(now);
-        return false;
+
+        private QueueItemStatus mapCacheStatusToEnum(CacheStatus status) {
+            if (status == null) return QueueItemStatus.PENDING;
+            return switch (status) {
+                case COMPLETED -> QueueItemStatus.READY;
+                case DOWNLOADING -> QueueItemStatus.DOWNLOADING;
+                case FAILED -> QueueItemStatus.FAILED;
+                default -> QueueItemStatus.PENDING;
+            };
+        }
+
+        private boolean isRateLimited(String userId) {
+            long now = System.currentTimeMillis();
+            if (now - lastControlTimestamp.get() < GLOBAL_COOLDOWN_MS) return true;
+            lastControlTimestamp.set(now);
+            return false;
+        }
     }
 
     private IMusicApiService getApiService(String platform) {
@@ -849,9 +658,4 @@ public class MusicPlayerService {
     private String getUserPublicId(String sessionId) {
         return userService.getUser(sessionId).map(User::getPublicId).orElse("UNKNOWN_USER");
     }
-
-    private String getUserName(String sessionId) {
-        return userService.getUser(sessionId).map(User::getName).orElse("Unknown User");
-    }
 }
-

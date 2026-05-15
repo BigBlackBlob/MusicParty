@@ -34,12 +34,52 @@
       <header class="fixed top-0 z-50 flex h-[64px] w-full items-center justify-between bg-transparent px-5">
         <div class="flex min-w-0 items-center gap-5">
           <div class="flex items-center gap-2">
-            <span class="font-display text-[24px] font-black text-primary tracking-tighter flex items-center leading-none">{{ t('app.lounge') }}</span>
+            <button
+              class="font-display flex items-center gap-2 text-[24px] font-black leading-none tracking-tighter text-primary transition-opacity hover:opacity-80"
+              @click="toggleRoomMenu"
+              :title="`Current room: ${roomStore.currentRoom?.name || 'Lounge'}`"
+            >
+              <span>{{ roomStore.currentRoom?.name || t('app.lounge') }}</span>
+              <span class="material-symbols-outlined text-[18px]">expand_more</span>
+            </button>
             <span
               class="h-2 w-2 rounded-full"
               :class="playerStore.connected ? 'bg-[#22C55E] shadow-[0_0_14px_rgba(34,197,94,0.45)]' : 'bg-error'"
               :title="playerStore.connected ? t('settings.connected') : t('settings.disconnected')"
             />
+          </div>
+          <div
+            v-if="isRoomMenuOpen"
+            class="absolute left-5 top-14 z-50 w-[340px] rounded-lg border border-border-default bg-surface-overlay/95 p-3 shadow-lg backdrop-blur-xl"
+          >
+            <div class="mb-3 flex items-center justify-between">
+              <span class="font-micro text-micro uppercase tracking-[0.18em] text-text-muted">Rooms</span>
+              <button class="text-xs text-text-muted hover:text-text-primary" @click="roomStore.fetchRooms">Refresh</button>
+            </div>
+            <div class="max-h-[320px] space-y-1 overflow-y-auto pr-1">
+              <button
+                v-for="room in roomStore.rooms"
+                :key="room.roomId"
+                class="flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition-colors"
+                :class="roomStore.currentRoomId === room.roomId ? 'bg-primary text-on-primary' : 'hover:bg-[var(--surface-control-hover)]'"
+                @click="switchRoom(room.roomId)"
+              >
+                <span class="min-w-0 flex-1 truncate font-compact">{{ room.name }}</span>
+                <span class="ml-3 flex items-center gap-2 text-xs opacity-75">
+                  {{ room.onlineCount || 0 }} active
+                  <span v-if="canDeleteRoom(room)" class="material-symbols-outlined text-[16px] opacity-70" @click.stop="deleteRoom(room)">delete</span>
+                </span>
+              </button>
+            </div>
+            <div class="mt-3 flex gap-2 border-t border-border-subtle pt-3">
+              <input
+                v-model="newRoomName"
+                class="min-w-0 flex-1 rounded-md border border-border-subtle bg-[var(--surface-control)] px-3 py-2 text-sm outline-none focus:border-primary"
+                placeholder="New room..."
+                @keyup.enter="createRoom"
+              />
+              <button class="rounded-md bg-primary px-3 text-sm font-semibold text-on-primary" @click="createRoom">Create</button>
+            </div>
           </div>
           <div
             class="hidden min-w-[220px] cursor-pointer items-center gap-3 rounded-md border border-border-subtle bg-[var(--surface-control)] px-4 py-2 transition-colors hover:bg-[var(--surface-control-hover)] md:flex"
@@ -198,6 +238,7 @@ import UserList from '../UserList.vue';
 import { useUserStore } from '../../stores/user';
 import { useUiStore } from '../../stores/ui';
 import { usePlayerStore } from '../../stores/player';
+import { useRoomStore } from '../../stores/room';
 
 defineProps({
   isQueueVisible: {
@@ -210,9 +251,12 @@ const { t } = useI18n();
 const userStore = useUserStore();
 const uiStore = useUiStore();
 const playerStore = usePlayerStore();
+const roomStore = useRoomStore();
 
 const isSettingsOpen = ref(false);
 const isUserListOpen = ref(false);
+const isRoomMenuOpen = ref(false);
+const newRoomName = ref('');
 const currentMusic = computed(() => playerStore.nowPlaying?.music || null);
 const currentCover = computed(() => currentMusic.value?.coverUrl || '');
 const visibleUsers = computed(() => {
@@ -235,11 +279,45 @@ const handleSearchClick = () => {
 const toggleSettings = () => {
   isSettingsOpen.value = !isSettingsOpen.value;
   if (isSettingsOpen.value) isUserListOpen.value = false;
+  if (isSettingsOpen.value) isRoomMenuOpen.value = false;
 };
 
 const toggleUserList = () => {
   isUserListOpen.value = !isUserListOpen.value;
   if (isUserListOpen.value) isSettingsOpen.value = false;
+  if (isUserListOpen.value) isRoomMenuOpen.value = false;
+};
+
+const toggleRoomMenu = () => {
+  isRoomMenuOpen.value = !isRoomMenuOpen.value;
+  if (isRoomMenuOpen.value) {
+    isSettingsOpen.value = false;
+    isUserListOpen.value = false;
+    roomStore.fetchRooms();
+  }
+};
+
+const switchRoom = (roomId) => {
+  playerStore.switchRoom(roomId);
+  isRoomMenuOpen.value = false;
+};
+
+const createRoom = () => {
+  const name = newRoomName.value.trim();
+  if (!name) return;
+  if (userStore.isGuest) {
+    userStore.setPostNameAction(() => roomStore.createRoom(name));
+    userStore.showNameModal = true;
+    return;
+  }
+  roomStore.createRoom(name);
+  newRoomName.value = '';
+};
+
+const canDeleteRoom = (room) => !room.system && room.creatorPublicId && room.creatorPublicId === userStore.publicId;
+
+const deleteRoom = (room) => {
+  roomStore.deleteRoom(room.roomId);
 };
 
 const isScaleActive = (value) => Math.abs(uiStore.mainStageScale - value) < 0.011;

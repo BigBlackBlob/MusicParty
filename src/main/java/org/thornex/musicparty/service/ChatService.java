@@ -22,7 +22,8 @@ import java.util.stream.Collectors;
 @Slf4j
 public class ChatService {
 
-    private final ConcurrentLinkedDeque<ChatMessage> history = new ConcurrentLinkedDeque<>();
+    private final Map<String, ConcurrentLinkedDeque<ChatMessage>> roomHistories = new java.util.concurrent.ConcurrentHashMap<>();
+    private final ConcurrentLinkedDeque<ChatMessage> publicHistory = new ConcurrentLinkedDeque<>();
     private final SimpMessagingTemplate messagingTemplate;
     private final UserService userService;
     private final AppProperties appProperties;
@@ -80,9 +81,23 @@ public class ChatService {
         return false; // 普通消息，继续处理
     }
 
-    public void addMessage(ChatMessage message) {
+    public void addMessage(String roomId, ChatMessage message) {
+        ConcurrentLinkedDeque<ChatMessage> history = roomHistory(roomId);
         history.addLast(message);
-        if (history.size() > appProperties.getChat().getMaxHistorySize()) {
+        trimHistory(history);
+    }
+
+    public void addMessage(ChatMessage message) {
+        addMessage(RoomService.DEFAULT_ROOM_ID, message);
+    }
+
+    public void addPublicMessage(ChatMessage message) {
+        publicHistory.addLast(message);
+        trimHistory(publicHistory);
+    }
+
+    private void trimHistory(ConcurrentLinkedDeque<ChatMessage> history) {
+        while (history.size() > appProperties.getChat().getMaxHistorySize()) {
             history.removeFirst();
         }
     }
@@ -92,9 +107,9 @@ public class ChatService {
      * @param offset 跳过最近的多少条
      * @param limit 取多少条
      */
-    public List<ChatMessage> getHistory(int offset, int limit) {
+    public List<ChatMessage> getHistory(String roomId, int offset, int limit) {
         // 我们将其转为 List 进行倒序切片处理
-        List<ChatMessage> snapshot = new ArrayList<>(history);
+        List<ChatMessage> snapshot = new ArrayList<>(roomHistory(roomId));
         Collections.reverse(snapshot);
 
         if (offset >= snapshot.size()) {
@@ -108,34 +123,69 @@ public class ChatService {
         return page;
     }
 
+    public List<ChatMessage> getHistory(int offset, int limit) {
+        return getHistory(RoomService.DEFAULT_ROOM_ID, offset, limit);
+    }
+
+    public List<ChatMessage> getPublicHistory(int offset, int limit) {
+        return sliceHistory(publicHistory, offset, limit);
+    }
+
     /**
      * 获取全部聊天记录用于持久化
      */
+    public List<ChatMessage> getHistoryFull(String roomId) {
+        return new ArrayList<>(roomHistory(roomId));
+    }
+
     public List<ChatMessage> getHistoryFull() {
-        return new ArrayList<>(history);
+        return getHistoryFull(RoomService.DEFAULT_ROOM_ID);
+    }
+
+    public List<ChatMessage> getPublicHistoryFull() {
+        return new ArrayList<>(publicHistory);
     }
 
     /**
      * 恢复聊天记录
      */
-    public void restore(List<ChatMessage> loadedHistory) {
+    public void restore(String roomId, List<ChatMessage> loadedHistory) {
+        ConcurrentLinkedDeque<ChatMessage> history = roomHistory(roomId);
         history.clear();
         if (loadedHistory != null) {
             history.addAll(loadedHistory);
         }
     }
 
+    public void restore(List<ChatMessage> loadedHistory) {
+        restore(RoomService.DEFAULT_ROOM_ID, loadedHistory);
+    }
+
+    public void restorePublic(List<ChatMessage> loadedHistory) {
+        publicHistory.clear();
+        if (loadedHistory != null) {
+            publicHistory.addAll(loadedHistory);
+        }
+    }
+
+    public void clearHistory(String roomId) {
+        roomHistory(roomId).clear();
+    }
 
     public void clearHistory() {
-        history.clear();
+        clearHistory(RoomService.DEFAULT_ROOM_ID);
+    }
+
+    public void clearHistoryAndNotify(String roomId) {
+        clearHistory(roomId);
+        broadcastSystemMessage(roomId, "聊天记录已由管理员清空");
     }
 
     public void clearHistoryAndNotify() {
-        clearHistory();
-        broadcastSystemMessage("聊天记录已由管理员清空");
+        clearHistoryAndNotify(RoomService.DEFAULT_ROOM_ID);
     }
 
-    private void broadcastSystemMessage(String content) {
+    private void broadcastSystemMessage(String roomId, String content) {
         ChatMessage sysMsg = new ChatMessage(
                 UUID.randomUUID().toString(),
                 "SYSTEM",
@@ -144,8 +194,8 @@ public class ChatService {
                 System.currentTimeMillis(),
                 MessageType.SYSTEM
         );
-        addMessage(sysMsg);
-        messagingTemplate.convertAndSend("/topic/chat", sysMsg);
+        addMessage(roomId, sysMsg);
+        messagingTemplate.convertAndSend("/topic/rooms/" + roomId + "/chat", sysMsg);
     }
 
     /**
@@ -157,10 +207,11 @@ public class ChatService {
         // 忽略错误提示，只记录操作成功的事件（根据需求调整）
         // 这里我们记录所有 INFO, WARN, SUCCESS 级别的事件，忽略 ERROR (通常 ERROR 只弹 Toast)
         if (event.getLevel() == SystemMessageEvent.Level.ERROR) return;
+        String roomId = event.getRoomId();
 
         // 如果是 RESET 事件，清空历史
         if (event.getAction() == PlayerAction.RESET) {
-            clearHistory();
+            clearHistory(roomId);
             // 依然发送一条“系统已重置”的消息作为新历史的开始
         }
 
@@ -195,9 +246,30 @@ public class ChatService {
         );
 
         // 1. 存入历史
-        addMessage(sysMsg);
+        addMessage(roomId, sysMsg);
 
         // 2. 广播到聊天频道
-        messagingTemplate.convertAndSend("/topic/chat", sysMsg);
+        messagingTemplate.convertAndSend("/topic/rooms/" + roomId + "/chat", sysMsg);
+    }
+
+    public void deleteRoomHistory(String roomId) {
+        roomHistories.remove(roomId);
+    }
+
+    private ConcurrentLinkedDeque<ChatMessage> roomHistory(String roomId) {
+        String key = roomId == null || roomId.isBlank() ? RoomService.DEFAULT_ROOM_ID : roomId;
+        return roomHistories.computeIfAbsent(key, ignored -> new ConcurrentLinkedDeque<>());
+    }
+
+    private List<ChatMessage> sliceHistory(ConcurrentLinkedDeque<ChatMessage> history, int offset, int limit) {
+        List<ChatMessage> snapshot = new ArrayList<>(history);
+        Collections.reverse(snapshot);
+        if (offset >= snapshot.size()) {
+            return Collections.emptyList();
+        }
+        int end = Math.min(offset + limit, snapshot.size());
+        List<ChatMessage> page = snapshot.subList(offset, end);
+        Collections.reverse(page);
+        return page;
     }
 }
