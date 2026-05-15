@@ -1,12 +1,10 @@
 import { onMounted, onUnmounted } from 'vue';
 import { usePlayerStore } from '../stores/player';
 import { useUiStore } from '../stores/ui';
-import { useUserStore } from '../stores/user';
 
 export function useShortcuts(actions = {}) {
   const player = usePlayerStore();
   const ui = useUiStore();
-  const user = useUserStore();
 
   const handleKeyDown = (e) => {
     // Ignore if typing in an input or textarea

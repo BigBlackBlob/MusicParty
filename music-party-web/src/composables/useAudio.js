@@ -104,7 +104,7 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
             audio.currentTime = targetSeconds;
             await waitForAudioReady(audio);
             await fadeToGain(restoreGain, 160);
-        } catch (e) {
+        } catch {
             if (audioRef.value) {
                 audioRef.value.currentTime = targetSeconds;
                 setFadeGain(restoreGain);

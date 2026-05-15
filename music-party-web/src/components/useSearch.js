@@ -32,7 +32,7 @@ export function useSearchLogic(emit) {
                 success(t('search.adminExecuted'));
             }
             emit('close');
-        } catch (e) {
+        } catch {
             error(t('search.adminFailed'));
         } finally {
             isAdminMode.value = false;
