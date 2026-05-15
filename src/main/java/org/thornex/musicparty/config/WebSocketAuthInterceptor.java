@@ -9,57 +9,51 @@ import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.stereotype.Component;
-import org.thornex.musicparty.controller.AuthController;
+import org.springframework.util.StringUtils;
+import org.thornex.musicparty.service.RoomAccessService;
+import org.thornex.musicparty.service.RoomService;
+import org.thornex.musicparty.service.UserService;
 
 @Component
 @Slf4j
 public class WebSocketAuthInterceptor implements ChannelInterceptor {
 
-    private final AuthController authController;
-    private final String adminPassword;
+    private final UserService userService;
+    private final RoomService roomService;
+    private final RoomAccessService roomAccessService;
 
-    public WebSocketAuthInterceptor(AuthController authController, AppProperties appProperties) {
-        this.authController = authController;
-        this.adminPassword = appProperties.getAdminPassword();
+    public WebSocketAuthInterceptor(UserService userService, RoomService roomService, RoomAccessService roomAccessService) {
+        this.userService = userService;
+        this.roomService = roomService;
+        this.roomAccessService = roomAccessService;
     }
 
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
         StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
 
-        // 只拦截连接命令
-        if (StompCommand.CONNECT.equals(accessor.getCommand())) {
-            String inputPassword = accessor.getFirstNativeHeader("room-password");
-
-            // 调用 AuthController 获取当前的房间状态
-            // 这里的逻辑复用 AuthController 的校验逻辑，但通过内部方法调用
-            if (!isPasswordValid(inputPassword)) {
-                log.warn("WebSocket Connection Refused: Invalid Room Password. Session: {}", accessor.getSessionId());
-                // 抛出异常将直接导致连接断开，并向客户端发送 ERROR 帧
-                throw new MessageDeliveryException("INVALID_ROOM_PASSWORD");
-            }
-
-            log.info("WebSocket Authenticated: Session {}", accessor.getSessionId());
+        if (accessor == null || !StompCommand.CONNECT.equals(accessor.getCommand())) {
+            return message;
         }
+
+        String roomId = accessor.getFirstNativeHeader("room-id");
+        RoomService.RoomAccessMetadata metadata = roomService.getRoomAccessMetadata(roomId)
+                .orElseThrow(() -> new MessageDeliveryException("UNKNOWN_ROOM"));
+
+        if (!metadata.privateRoom()) {
+            return message;
+        }
+
+        String sessionToken = accessor.getFirstNativeHeader("session-token");
+        String roomAccessToken = accessor.getFirstNativeHeader("room-access-token");
+        String publicId = userService.resolvePublicIdBySessionToken(sessionToken).orElse(null);
+
+        if (!StringUtils.hasText(publicId) || !roomAccessService.validateAccessToken(metadata.roomId(), publicId, roomAccessToken)) {
+            log.warn("WebSocket Connection Refused: Invalid room access token. Session={}, Room={}", accessor.getSessionId(), metadata.roomId());
+            throw new MessageDeliveryException("INVALID_ROOM_ACCESS_TOKEN");
+        }
+
+        log.info("WebSocket room access granted: session={}, room={}", accessor.getSessionId(), metadata.roomId());
         return message;
-    }
-
-    private boolean isPasswordValid(String input) {
-        // 1. 获取当前房间真实密码
-        // 注意：我们需要在 AuthController 里增加一个 public 的访问方法获取当前密码值
-        String currentRoomPass = authController.getRawPassword();
-
-        // 2. 如果房间还没初始化，或者设置为无密码，允许连接
-        if (currentRoomPass == null || currentRoomPass.isEmpty()) {
-            return true;
-        }
-
-        // 3. 管理员密码（万能钥匙）
-        if (adminPassword != null && adminPassword.equals(input)) {
-            return true;
-        }
-
-        // 4. 比对房间密码
-        return currentRoomPass.equals(input);
     }
 }

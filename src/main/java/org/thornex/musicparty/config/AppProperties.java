@@ -65,6 +65,8 @@ public class AppProperties {
         private int maxAttempts = 5;
         private int windowSeconds = 60;
         private int blockDurationSeconds = 300;
+        private long roomAccessTokenTtlMs = 5 * 60 * 1000L;
+        private String roomAccessTokenSecret = "";
     }
 
     @Data
