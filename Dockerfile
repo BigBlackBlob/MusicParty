@@ -46,8 +46,15 @@ RUN mvn clean package -DskipTests
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
-# 安装 FFmpeg
-RUN apk add --no-cache ffmpeg
+# 安装 FFmpeg 和 Java AWT 运行所需的图形库/字体
+RUN apk add --no-cache \
+    ffmpeg \
+    fontconfig \
+    ttf-dejavu \
+    libxext \
+    libxrender \
+    libxtst \
+    libxi
 
 # 复制构建好的 JAR 包
 COPY --from=backend-builder /app/backend/target/*.jar app.jar
