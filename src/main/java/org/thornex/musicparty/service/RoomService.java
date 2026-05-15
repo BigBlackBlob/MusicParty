@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.RoomInfo;
 import org.thornex.musicparty.event.RoomListUpdateEvent;
+import org.thornex.musicparty.persistence.MigrationStateRepository;
 import org.thornex.musicparty.persistence.PersistedRoom;
 import org.thornex.musicparty.persistence.RoomRepository;
 
@@ -31,17 +32,19 @@ public class RoomService {
     private static final String ROOMS_FILE = "data/rooms.json";
     private static final String VISIBILITY_PUBLIC = "PUBLIC";
     private static final String VISIBILITY_PRIVATE = "PRIVATE";
+    private static final String ROOMS_JSON_MIGRATION_KEY = "legacy.rooms.json";
 
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
     private final AppProperties appProperties;
     private final RoomRepository roomRepository;
+    private final MigrationStateRepository migrationStateRepository;
     private final Map<String, StoredRoom> rooms = new ConcurrentHashMap<>();
     private volatile ToIntFunction<String> onlineCountProvider = roomId -> 0;
 
     @PostConstruct
     public void init() {
-        loadRooms();
+        loadRooms(new File(ROOMS_FILE));
         ensureDefaultRoom();
     }
 
@@ -242,16 +245,25 @@ public class RoomService {
         roomRepository.upsert(toPersistedRoom(defaultRoom, null));
     }
 
-    private void loadRooms() {
+    void loadRoomsForTest(File legacyFile) {
+        loadRooms(legacyFile);
+    }
+
+    private void loadRooms(File legacyFile) {
         List<PersistedRoom> persistedRooms = roomRepository.findAllActive();
         if (!persistedRooms.isEmpty()) {
             persistedRooms.stream()
                     .map(this::fromPersistedRoom)
                     .forEach(room -> rooms.put(room.roomId(), room));
+            migrationStateRepository.markCompleted(ROOMS_JSON_MIGRATION_KEY);
             return;
         }
 
-        File file = new File(ROOMS_FILE);
+        if (migrationStateRepository.isCompleted(ROOMS_JSON_MIGRATION_KEY)) {
+            return;
+        }
+
+        File file = legacyFile;
         if (!file.exists()) return;
         try {
             List<StoredRoom> loaded = objectMapper.readValue(file, new TypeReference<List<StoredRoom>>() {});
@@ -262,6 +274,7 @@ public class RoomService {
                     roomRepository.upsert(toPersistedRoom(normalizedRoom, null));
                 }
             }
+            migrationStateRepository.markCompleted(ROOMS_JSON_MIGRATION_KEY);
             log.info("Imported {} rooms from legacy JSON file {}", rooms.size(), file.getAbsolutePath());
         } catch (Exception e) {
             log.error("Failed to load rooms from {}", file.getAbsolutePath(), e);

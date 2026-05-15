@@ -9,6 +9,8 @@ import org.thornex.musicparty.persistence.InMemoryPlaybackStateRepository;
 import org.thornex.musicparty.persistence.InMemoryQueueRepository;
 import org.thornex.musicparty.persistence.InMemoryRoomRepository;
 import org.thornex.musicparty.persistence.InMemoryUserProfileRepository;
+import org.thornex.musicparty.persistence.InMemoryMigrationStateRepository;
+import org.thornex.musicparty.persistence.MigrationStateRepository;
 import org.thornex.musicparty.persistence.PlaybackStateRepository;
 import org.thornex.musicparty.persistence.QueueRepository;
 import org.thornex.musicparty.persistence.RoomRepository;
@@ -41,5 +43,10 @@ public class InMemoryPersistenceConfig {
     @Bean
     public PlaybackStateRepository playbackStateRepository() {
         return new InMemoryPlaybackStateRepository();
+    }
+
+    @Bean
+    public MigrationStateRepository migrationStateRepository() {
+        return new InMemoryMigrationStateRepository();
     }
 }

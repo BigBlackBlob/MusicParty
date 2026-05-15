@@ -16,6 +16,7 @@ import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.dto.MusicQueueItem;
 import org.thornex.musicparty.event.RoomDeletedEvent;
 import org.thornex.musicparty.persistence.ChatRepository;
+import org.thornex.musicparty.persistence.MigrationStateRepository;
 import org.thornex.musicparty.persistence.PersistedHistoryEntry;
 import org.thornex.musicparty.persistence.QueueRepository;
 
@@ -28,6 +29,7 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class QueuePersistenceService {
+    private static final String QUEUE_JSON_MIGRATION_KEY = "legacy.queue-data.json";
 
     private final MusicPlayerService musicPlayerService;
     private final ChatService chatService;
@@ -36,6 +38,7 @@ public class QueuePersistenceService {
     private final QueueRepository queueRepository;
     private final ChatRepository chatRepository;
     private final RoomService roomService;
+    private final MigrationStateRepository migrationStateRepository;
 
     @PostConstruct
     public void init() {
@@ -68,6 +71,19 @@ public class QueuePersistenceService {
     }
 
     private synchronized void loadData() {
+        if (isDatabaseInitialized()) {
+            restoreDatabaseData();
+            migrationStateRepository.markCompleted(QUEUE_JSON_MIGRATION_KEY);
+            log.info("Restored persistence data from SQLite");
+            return;
+        }
+
+        if (migrationStateRepository.isCompleted(QUEUE_JSON_MIGRATION_KEY)) {
+            restoreDatabaseData();
+            log.info("Legacy queue migration already completed; skipped JSON import.");
+            return;
+        }
+
         File file = getPersistenceFile();
         if (!file.exists()) {
             restoreDatabaseData();
@@ -76,14 +92,10 @@ public class QueuePersistenceService {
         }
 
         try {
-            if (restoreDatabaseData()) {
-                log.info("Restored persistence data from SQLite");
-                return;
-            }
-
             PersistentData data = objectMapper.readValue(file, new TypeReference<PersistentData>() {});
             importLegacyData(data);
             saveData();
+            migrationStateRepository.markCompleted(QUEUE_JSON_MIGRATION_KEY);
             log.info("Imported legacy persistence data from {} into SQLite", file.getAbsolutePath());
         } catch (Exception e) {
             log.error("Failed to load persistence data from {}", file.getAbsolutePath(), e);
@@ -109,6 +121,13 @@ public class QueuePersistenceService {
         List<ChatMessage> publicHistory = restoreChronological(chatRepository.fetchMessages(null, 0, appProperties.getChat().getMaxHistorySize()));
         chatService.restorePublic(publicHistory);
         return !publicHistory.isEmpty();
+    }
+
+    private boolean isDatabaseInitialized() {
+        return !roomService.listRooms().isEmpty()
+                || !queueRepository.loadQueue(RoomService.DEFAULT_ROOM_ID).isEmpty()
+                || !queueRepository.loadHistory(RoomService.DEFAULT_ROOM_ID, 1).isEmpty()
+                || !chatRepository.fetchMessages(null, 0, 1).isEmpty();
     }
 
     private void importLegacyData(PersistentData data) {

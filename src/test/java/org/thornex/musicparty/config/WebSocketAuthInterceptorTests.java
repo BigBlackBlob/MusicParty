@@ -9,6 +9,7 @@ import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.thornex.musicparty.persistence.InMemoryRoomRepository;
 import org.thornex.musicparty.persistence.InMemoryUserProfileRepository;
+import org.thornex.musicparty.persistence.InMemoryMigrationStateRepository;
 import org.thornex.musicparty.service.RoomAccessGrant;
 import org.thornex.musicparty.service.RoomAccessService;
 import org.thornex.musicparty.service.RoomService;
@@ -71,7 +72,7 @@ class WebSocketAuthInterceptorTests {
 
     private static final class TestContext {
         private final AppProperties properties = new AppProperties();
-        private final RoomService roomService = new RoomService(new ObjectMapper(), event -> {}, properties, new InMemoryRoomRepository());
+        private final RoomService roomService = new RoomService(new ObjectMapper(), event -> {}, properties, new InMemoryRoomRepository(), new InMemoryMigrationStateRepository());
         private final UserService userService = new UserService(event -> {}, roomService, new InMemoryUserProfileRepository());
         private final RoomAccessService roomAccessService = new RoomAccessService(properties, roomService);
 
