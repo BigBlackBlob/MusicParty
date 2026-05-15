@@ -5,6 +5,7 @@ export default {
   },
   common: {
     close: 'Close',
+    refresh: 'Refresh',
     export: 'Export',
     unknownArtist: 'Unknown Artist',
     by: 'by',
@@ -32,6 +33,11 @@ export default {
       passwordEmpty: 'Password cannot be empty',
       setupFailed: 'Setup failed'
     }
+  },
+  rooms: {
+    title: 'Rooms',
+    create: 'Create',
+    newRoomPlaceholder: 'New room name...'
   },
   settings: {
     title: 'Settings',

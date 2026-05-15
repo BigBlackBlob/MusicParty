@@ -18,6 +18,7 @@ export function useSearchLogic(emit = () => {}) {
     const ALBUMS_CACHE_KEY = 'mp_search_albums';
     const PLAYLIST_CACHE_KEY = 'mp_search_playlist_songs';
     const PLAYLIST_ID_CACHE_KEY = 'mp_search_playlist_id';
+    const PLAYLIST_PAGE_CACHE_KEY = 'mp_search_playlist_page';
 
     const platform = ref('netease');
     const { platforms, supportsAlbumSearch, loadPlatforms } = usePlatforms(platform);
@@ -30,8 +31,11 @@ export function useSearchLogic(emit = () => {}) {
     const loading = ref(false);
     const hasSubmittedSearch = ref(false);
     const currentPage = ref(1);
+    const currentPlaylistPage = ref(parseInt(localStorage.getItem(PLAYLIST_PAGE_CACHE_KEY) || '1'));
     const canGoNext = ref(true);
+    const canGoPlaylistNext = ref(true);
     const SEARCH_LIMIT = 20;
+    const PLAYLIST_LIMIT = 50;
 
     const listMode = ref('search'); // 'search' | 'playlist' | 'albumSearch' | 'album'
     const searchType = ref('song'); // 'song' | 'album' | 'playlist'
@@ -89,30 +93,28 @@ export function useSearchLogic(emit = () => {}) {
 
         // 2. 歌单解析逻辑
         if (searchType.value === 'playlist') {
-            const id = parseNeteasePlaylistId(val);
+            const id = parseNeteasePlaylistId(val) || playlistId.value;
             if (!id) {
-                if (playlistSongs.value.length > 0) {
-                    listMode.value = 'playlist';
-                    hasSubmittedSearch.value = true;
-                    return;
-                }
                 error(t('search.invalidPlaylistId'));
                 return;
             }
 
             platform.value = 'netease';
+            currentPlaylistPage.value = page;
+            const offset = (page - 1) * PLAYLIST_LIMIT;
+
             try {
                 loading.value = true;
-                const data = await musicApi.getPlaylistSongs('netease', id, 0, 100);
+                const data = await musicApi.getPlaylistSongs('netease', id, offset, PLAYLIST_LIMIT);
                 playlistSongs.value = data;
                 playlistId.value = id;
                 localStorage.setItem(PLAYLIST_CACHE_KEY, JSON.stringify(data));
                 localStorage.setItem(PLAYLIST_ID_CACHE_KEY, id);
+                localStorage.setItem(PLAYLIST_PAGE_CACHE_KEY, String(page));
                 
                 listMode.value = 'playlist';
                 hasSubmittedSearch.value = true;
-                canGoNext.value = false;
-                currentPage.value = 1;
+                canGoPlaylistNext.value = data.length === PLAYLIST_LIMIT;
                 return;
             } catch (e) {
                 error(extractErrorMessage(e, t('search.playlistFailed')));
@@ -161,13 +163,25 @@ export function useSearchLogic(emit = () => {}) {
     };
 
     const nextPage = () => {
-        if (loading.value || !canGoNext.value) return;
-        doSearch(currentPage.value + 1);
+        if (loading.value) return;
+        if (searchType.value === 'playlist') {
+            if (!canGoPlaylistNext.value) return;
+            doSearch(currentPlaylistPage.value + 1);
+        } else {
+            if (!canGoNext.value) return;
+            doSearch(currentPage.value + 1);
+        }
     };
 
     const prevPage = () => {
-        if (loading.value || currentPage.value <= 1) return;
-        doSearch(currentPage.value - 1);
+        if (loading.value) return;
+        if (searchType.value === 'playlist') {
+            if (currentPlaylistPage.value <= 1) return;
+            doSearch(currentPlaylistPage.value - 1);
+        } else {
+            if (currentPage.value <= 1) return;
+            doSearch(currentPage.value - 1);
+        }
     };
 
     const addAllPlaylistSongs = () => {
@@ -192,7 +206,9 @@ export function useSearchLogic(emit = () => {}) {
         isAdminMode,
         hasSubmittedSearch,
         currentPage,
+        currentPlaylistPage,
         canGoNext,
+        canGoPlaylistNext,
         doSearch,
         nextPage,
         prevPage,

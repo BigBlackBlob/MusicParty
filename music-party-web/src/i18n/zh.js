@@ -5,6 +5,7 @@ export default {
   },
   common: {
     close: '关闭',
+    refresh: '刷新',
     export: '导出',
     unknownArtist: '未知艺术家',
     by: '点歌人',
@@ -32,6 +33,11 @@ export default {
       passwordEmpty: '密码不能为空',
       setupFailed: '初始化失败'
     }
+  },
+  rooms: {
+    title: '房间',
+    create: '创建',
+    newRoomPlaceholder: '新房间名称...'
   },
   settings: {
     title: '设置',
