@@ -169,7 +169,7 @@ const SONG_SEARCH_TYPE = 'song';
 const ALBUM_SEARCH_TYPE = 'album';
 const PLAYLIST_SEARCH_TYPE = 'playlist';
 
-const { platform, platforms, supportsAlbumSearch, keyword, songs, albums, playlistSongs, playlistId, loading, searchType, doSearch, loadPlatforms, isAdminMode, hasSubmittedSearch, currentPage, canGoNext, nextPage, prevPage, addAllPlaylistSongs } = useSearchLogic(emit);
+const { platform, platforms, supportsAlbumSearch, keyword, songs, albums, playlistSongs, loading, searchType, doSearch, loadPlatforms, isAdminMode, hasSubmittedSearch, currentPage, canGoNext, nextPage, prevPage, addAllPlaylistSongs } = useSearchLogic(emit);
 const hasSearched = computed(() => hasSubmittedSearch.value || songs.value.length > 0 || albums.value.length > 0 || playlistSongs.value.length > 0);
 const resultMode = computed(() => {
   if (searchType.value === PLAYLIST_SEARCH_TYPE) return PLAYLIST_SEARCH_TYPE;

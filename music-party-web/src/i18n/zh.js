@@ -119,8 +119,6 @@ export default {
     exportLiked: '导出喜欢的歌'
   },
   search: {
-    placeholder: '搜索歌曲...',
-    adminPlaceholder: '输入管理员密码',
     title: '搜索',
     discoverMusic: '发现音乐',
     platforms: '音乐平台',
