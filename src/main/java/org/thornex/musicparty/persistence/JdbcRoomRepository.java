@@ -1,6 +1,7 @@
 package org.thornex.musicparty.persistence;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -12,6 +13,7 @@ import java.util.Optional;
 
 @Repository
 @RequiredArgsConstructor
+@ConditionalOnBean(JdbcTemplate.class)
 public class JdbcRoomRepository implements RoomRepository {
 
     private static final RowMapper<PersistedRoom> ROOM_ROW_MAPPER = new PersistedRoomRowMapper();

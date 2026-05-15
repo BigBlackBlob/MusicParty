@@ -1,6 +1,7 @@
 package org.thornex.musicparty.persistence;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -10,6 +11,7 @@ import java.util.Optional;
 
 @Repository
 @RequiredArgsConstructor
+@ConditionalOnBean(JdbcTemplate.class)
 public class JdbcUserProfileRepository implements UserProfileRepository {
 
     private static final RowMapper<PersistedUserProfile> USER_PROFILE_ROW_MAPPER = (rs, rowNum) -> new PersistedUserProfile(
