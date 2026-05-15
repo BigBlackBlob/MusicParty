@@ -39,6 +39,7 @@ public class MusicPlayerService {
     private final AppProperties appProperties;
     private final NavidromeAccessService navidromeAccessService;
     private final RoomService roomService;
+    private final RoomStatePersistenceService roomStatePersistenceService;
     private final Map<String, RoomPlayerSession> sessions = new ConcurrentHashMap<>();
 
     public MusicPlayerService(List<IMusicApiService> apiServices,
@@ -48,7 +49,8 @@ public class MusicPlayerService {
                               ApplicationEventPublisher eventPublisher,
                               AppProperties appProperties,
                               NavidromeAccessService navidromeAccessService,
-                              RoomService roomService) {
+                              RoomService roomService,
+                              RoomStatePersistenceService roomStatePersistenceService) {
         this.apiServiceMap = apiServices.stream().collect(Collectors.toMap(IMusicApiService::getPlatformName, Function.identity()));
         this.userService = userService;
         this.localCacheService = localCacheService;
@@ -57,6 +59,7 @@ public class MusicPlayerService {
         this.appProperties = appProperties;
         this.navidromeAccessService = navidromeAccessService;
         this.roomService = roomService;
+        this.roomStatePersistenceService = roomStatePersistenceService;
     }
 
     @PostConstruct
@@ -253,7 +256,10 @@ public class MusicPlayerService {
             if (music != null) {
                 long currentPos = calculateCurrentPosition();
                 if (currentPos >= music.duration() && music.duration() > 0) {
-                    queueManager.addToHistory(new Music(music.id(), music.name(), music.artists(), music.duration(), music.platform(), music.coverUrl()));
+                    Music finishedMusic = new Music(music.id(), music.name(), music.artists(), music.duration(), music.platform(), music.coverUrl());
+                    queueManager.addToHistory(finishedMusic);
+                    roomStatePersistenceService.appendHistoryEntry(roomId, finishedMusic, currentEnqueuerId.get());
+                    roomStatePersistenceService.persistHistorySnapshot(roomId, queueManager.getHistorySnapshot());
                     currentMusic.set(null);
                     bumpPlayEpochAndStateVersion();
                     playNextInQueue();
@@ -272,6 +278,7 @@ public class MusicPlayerService {
                 broadcastFullPlayerState();
                 return;
             }
+            roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
             if (nextItem.status() == QueueItemStatus.FAILED) {
                 eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", "加载失败: " + nextItem.music().name(), roomId));
                 playNextInQueue();
@@ -363,6 +370,7 @@ public class MusicPlayerService {
                 if ("bilibili".equals(request.platform())) service.prefetchMusic(music.id());
                 MusicQueueItem item = queueManager.add(music, new UserSummary(enqueuer.getPublicId(), enqueuer.getName(), enqueuer.isGuest()), initialStatus);
                 if (item != null) {
+                    roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
                     broadcastQueueUpdate();
                     eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.ADD, enqueuer.getPublicId(), music.name(), roomId));
                     if (currentMusic.get() == null) playNextInQueue();
@@ -384,6 +392,7 @@ public class MusicPlayerService {
                     if ("bilibili".equals(request.platform())) service.prefetchMusic(music.id());
                     if (queueManager.add(music, new UserSummary(enqueuer.getPublicId(), enqueuer.getName(), enqueuer.isGuest()), initialStatus) != null) count++;
                 }
+                roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
                 broadcastQueueUpdate();
                 eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.IMPORT_PLAYLIST, enqueuer.getPublicId(), String.valueOf(count), roomId));
                 if (currentMusic.get() == null) playNextInQueue();
@@ -401,6 +410,7 @@ public class MusicPlayerService {
                 for (Music music : musics.stream().limit(appProperties.getPlayer().getMaxPlaylistImportSize()).toList()) {
                     if (queueManager.add(music, new UserSummary(enqueuer.getPublicId(), enqueuer.getName(), enqueuer.isGuest()), QueueItemStatus.READY) != null) count++;
                 }
+                roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
                 broadcastQueueUpdate();
                 eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.IMPORT_PLAYLIST, enqueuer.getPublicId(), String.valueOf(count), roomId));
                 if (currentMusic.get() == null) playNextInQueue();
@@ -410,6 +420,7 @@ public class MusicPlayerService {
         public synchronized void topSong(String queueId, String sessionId) {
             TopResult result = queueManager.top(queueId, isShuffle.get());
             if (result != TopResult.NONE) {
+                roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
                 broadcastQueueUpdate();
                 if (result == TopResult.GLOBAL) eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.TOP, getUserPublicId(sessionId), "置顶成功", roomId));
                 if (currentMusic.get() == null) playNextInQueue();
@@ -419,6 +430,7 @@ public class MusicPlayerService {
         public synchronized void topSongs(List<String> queueIds, String sessionId) {
             List<MusicQueueItem> topped = queueManager.topManyGlobal(queueIds);
             if (!topped.isEmpty()) {
+                roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
                 broadcastQueueUpdate();
                 eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.TOP, getUserPublicId(sessionId), "置顶 " + topped.size() + " 首歌曲", roomId));
             }
@@ -426,6 +438,7 @@ public class MusicPlayerService {
 
         public void removeSongFromQueue(String queueId, String sessionId) {
             queueManager.remove(queueId).ifPresent(item -> {
+                roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
                 broadcastQueueUpdate();
                 eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.REMOVE, getUserPublicId(sessionId), item.music().name(), roomId));
             });
@@ -434,6 +447,7 @@ public class MusicPlayerService {
         public void removeSongsFromQueue(List<String> queueIds, String sessionId) {
             List<MusicQueueItem> removed = queueManager.removeMany(queueIds);
             if (!removed.isEmpty()) {
+                roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
                 broadcastQueueUpdate();
                 broadcastFullPlayerState();
                 eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.REMOVE, getUserPublicId(sessionId), "移除 " + removed.size() + " 首歌曲", roomId));
@@ -442,6 +456,7 @@ public class MusicPlayerService {
 
         public synchronized void reorderQueue(int oldIndex, int newIndex, String sessionId) {
             queueManager.reorder(oldIndex, newIndex);
+            roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
             broadcastQueueUpdate();
             broadcastFullPlayerState();
         }
@@ -529,6 +544,8 @@ public class MusicPlayerService {
             currentMusic.set(null);
             updatePlaybackAnchor(0);
             queueManager.clearAll();
+            roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
+            roomStatePersistenceService.persistHistorySnapshot(roomId, queueManager.getHistorySnapshot());
             isPaused.set(false);
             isShuffle.set(false);
             isLoading.set(false);
@@ -540,6 +557,7 @@ public class MusicPlayerService {
 
         public void clearQueue() {
             queueManager.clearPendingQueue();
+            roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
             broadcastQueueUpdate();
             eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.REMOVE, "SYSTEM", "播放列表已由管理员清空", roomId));
         }

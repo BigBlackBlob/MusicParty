@@ -27,14 +27,20 @@ public class ChatService {
     private final SimpMessagingTemplate messagingTemplate;
     private final UserService userService;
     private final AppProperties appProperties;
+    private final RoomStatePersistenceService roomStatePersistenceService;
     
     private final Map<String, ChatCommand> commandMap;
     private final Map<String, Long> lastMessageTime = new java.util.concurrent.ConcurrentHashMap<>();
 
-    public ChatService(SimpMessagingTemplate messagingTemplate, UserService userService, AppProperties appProperties, List<ChatCommand> commands) {
+    public ChatService(SimpMessagingTemplate messagingTemplate,
+                       UserService userService,
+                       AppProperties appProperties,
+                       RoomStatePersistenceService roomStatePersistenceService,
+                       List<ChatCommand> commands) {
         this.messagingTemplate = messagingTemplate;
         this.userService = userService;
         this.appProperties = appProperties;
+        this.roomStatePersistenceService = roomStatePersistenceService;
         this.commandMap = commands.stream().collect(Collectors.toMap(ChatCommand::getCommand, Function.identity()));
     }
 
@@ -82,9 +88,11 @@ public class ChatService {
     }
 
     public void addMessage(String roomId, ChatMessage message) {
-        ConcurrentLinkedDeque<ChatMessage> history = roomHistory(roomId);
+        String normalizedRoomId = roomId == null || roomId.isBlank() ? RoomService.DEFAULT_ROOM_ID : roomId;
+        ConcurrentLinkedDeque<ChatMessage> history = roomHistory(normalizedRoomId);
         history.addLast(message);
         trimHistory(history);
+        roomStatePersistenceService.persistRoomMessage(normalizedRoomId, message);
     }
 
     public void addMessage(ChatMessage message) {
@@ -94,6 +102,7 @@ public class ChatService {
     public void addPublicMessage(ChatMessage message) {
         publicHistory.addLast(message);
         trimHistory(publicHistory);
+        roomStatePersistenceService.persistPublicMessage(message);
     }
 
     private void trimHistory(ConcurrentLinkedDeque<ChatMessage> history) {
@@ -155,6 +164,7 @@ public class ChatService {
         if (loadedHistory != null) {
             history.addAll(loadedHistory);
         }
+        roomStatePersistenceService.replaceRoomMessages(roomId, new ArrayList<>(history));
     }
 
     public void restore(List<ChatMessage> loadedHistory) {
@@ -166,10 +176,12 @@ public class ChatService {
         if (loadedHistory != null) {
             publicHistory.addAll(loadedHistory);
         }
+        roomStatePersistenceService.replacePublicMessages(new ArrayList<>(publicHistory));
     }
 
     public void clearHistory(String roomId) {
         roomHistory(roomId).clear();
+        roomStatePersistenceService.replaceRoomMessages(roomId, List.of());
     }
 
     public void clearHistory() {
@@ -254,6 +266,7 @@ public class ChatService {
 
     public void deleteRoomHistory(String roomId) {
         roomHistories.remove(roomId);
+        roomStatePersistenceService.deleteRoomData(roomId);
     }
 
     private ConcurrentLinkedDeque<ChatMessage> roomHistory(String roomId) {
