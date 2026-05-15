@@ -61,8 +61,19 @@ public class RoomService {
 
     public List<RoomInfo> listRooms() {
         ensureDefaultRoom();
-        return rooms.values().stream()
+        return roomRepository.findAllActive().stream()
+                .map(this::fromPersistedRoom)
+                .peek(room -> rooms.put(room.roomId(), room))
                 .sorted(Comparator.comparing(StoredRoom::system).reversed().thenComparing(StoredRoom::createdAt))
+                .map(this::toInfo)
+                .toList();
+    }
+
+    public List<RoomInfo> listLobbyRooms(String requesterPublicId) {
+        ensureDefaultRoom();
+        return roomRepository.findLobbyRooms(requesterPublicId).stream()
+                .map(this::fromPersistedRoom)
+                .peek(room -> rooms.put(room.roomId(), room))
                 .map(this::toInfo)
                 .toList();
     }

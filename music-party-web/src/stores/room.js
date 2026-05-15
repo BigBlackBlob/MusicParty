@@ -4,10 +4,12 @@ import { STORAGE_KEYS } from '../constants/keys';
 import { socketService } from '../services/socket';
 import { WS_DEST } from '../constants/api';
 import { roomApi } from '../api/rooms';
+import { useUserStore } from './user';
 
 const DEFAULT_ROOM_ID = 'lounge';
 
 export const useRoomStore = defineStore('room', () => {
+    const userStore = useUserStore();
     const rooms = ref([]);
     const currentRoomId = ref(localStorage.getItem(STORAGE_KEYS.ROOM_ID) || DEFAULT_ROOM_ID);
     const isLoading = ref(false);
@@ -24,7 +26,7 @@ export const useRoomStore = defineStore('room', () => {
     const fetchRooms = async () => {
         isLoading.value = true;
         try {
-            const data = await roomApi.list();
+            const data = await roomApi.list(userStore.sessionToken);
             setRooms(Array.isArray(data) ? data : []);
         } finally {
             isLoading.value = false;

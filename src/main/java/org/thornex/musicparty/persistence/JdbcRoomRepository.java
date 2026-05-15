@@ -31,6 +31,21 @@ public class JdbcRoomRepository implements RoomRepository {
     }
 
     @Override
+    public List<PersistedRoom> findLobbyRooms(String requesterPublicId) {
+        return jdbcTemplate.query("""
+                select id, name, owner_public_id, visibility, password_hash, password_version, system, created_at, last_active_at, deleted_at
+                from room
+                where deleted_at is null
+                  and (
+                    system = 1
+                    or visibility = 'PUBLIC'
+                    or (? is not null and owner_public_id = ?)
+                  )
+                order by system desc, last_active_at desc, created_at asc
+                """, ROOM_ROW_MAPPER, requesterPublicId, requesterPublicId);
+    }
+
+    @Override
     public Optional<PersistedRoom> findById(String roomId) {
         List<PersistedRoom> rows = jdbcTemplate.query("""
                 select id, name, owner_public_id, visibility, password_hash, password_version, system, created_at, last_active_at, deleted_at

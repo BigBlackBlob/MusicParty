@@ -108,6 +108,11 @@ class UserServiceIdentityTests {
         }
 
         @Override
+        public List<PersistedRoom> findLobbyRooms(String requesterPublicId) {
+            return findAllActive();
+        }
+
+        @Override
         public Optional<PersistedRoom> findById(String roomId) {
             PersistedRoom room = rooms.get(roomId);
             return room == null || room.deletedAt() != null ? Optional.empty() : Optional.of(room);

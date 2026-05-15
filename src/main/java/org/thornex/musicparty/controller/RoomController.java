@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -30,8 +31,9 @@ public class RoomController {
     private final UserService userService;
 
     @GetMapping
-    public List<RoomInfo> listRooms() {
-        return roomService.listRooms();
+    public List<RoomInfo> listRooms(@RequestParam(required = false) String sessionToken) {
+        String requesterPublicId = userService.resolvePublicIdBySessionToken(sessionToken).orElse(null);
+        return roomService.listLobbyRooms(requesterPublicId);
     }
 
     @PostMapping("/{roomId}/verify")
