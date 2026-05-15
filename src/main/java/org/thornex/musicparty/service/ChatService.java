@@ -30,6 +30,8 @@ public class ChatService {
     private final UserService userService;
     private final AppProperties appProperties;
     private final RoomStatePersistenceService roomStatePersistenceService;
+    private final RoomStateMutationService roomStateMutationService;
+    private final AfterCommitExecutor afterCommitExecutor;
     
     private final Map<String, ChatCommand> commandMap;
     private final Map<String, Long> lastMessageTime = new java.util.concurrent.ConcurrentHashMap<>();
@@ -38,11 +40,15 @@ public class ChatService {
                        UserService userService,
                        AppProperties appProperties,
                        RoomStatePersistenceService roomStatePersistenceService,
+                       RoomStateMutationService roomStateMutationService,
+                       AfterCommitExecutor afterCommitExecutor,
                        List<ChatCommand> commands) {
         this.messagingTemplate = messagingTemplate;
         this.userService = userService;
         this.appProperties = appProperties;
         this.roomStatePersistenceService = roomStatePersistenceService;
+        this.roomStateMutationService = roomStateMutationService;
+        this.afterCommitExecutor = afterCommitExecutor;
         this.commandMap = commands.stream().collect(Collectors.toMap(ChatCommand::getCommand, Function.identity()));
     }
 
@@ -91,9 +97,7 @@ public class ChatService {
 
     public void addMessage(String roomId, ChatMessage message) {
         String normalizedRoomId = roomId == null || roomId.isBlank() ? RoomService.DEFAULT_ROOM_ID : roomId;
-        ConcurrentLinkedDeque<ChatMessage> history = roomHistory(normalizedRoomId);
-        history.addLast(message);
-        trimHistory(history);
+        appendToRoomHistory(normalizedRoomId, message);
         roomStatePersistenceService.persistRoomMessage(normalizedRoomId, message);
     }
 
@@ -164,12 +168,9 @@ public class ChatService {
      * 恢复聊天记录
      */
     public void restore(String roomId, List<ChatMessage> loadedHistory) {
-        ConcurrentLinkedDeque<ChatMessage> history = roomHistory(roomId);
-        history.clear();
-        if (loadedHistory != null) {
-            history.addAll(loadedHistory);
-        }
-        roomStatePersistenceService.replaceRoomMessages(roomId, new ArrayList<>(history));
+        List<ChatMessage> replacement = loadedHistory == null ? List.of() : new ArrayList<>(loadedHistory);
+        replaceRoomHistory(roomId, replacement);
+        roomStatePersistenceService.replaceRoomMessages(roomId, replacement);
     }
 
     public void restore(List<ChatMessage> loadedHistory) {
@@ -186,7 +187,7 @@ public class ChatService {
     }
 
     public void clearHistory(String roomId) {
-        roomHistory(roomId).clear();
+        replaceRoomHistory(roomId, List.of());
         roomStatePersistenceService.replaceRoomMessages(roomId, List.of());
     }
 
@@ -195,8 +196,15 @@ public class ChatService {
     }
 
     public void clearHistoryAndNotify(String roomId) {
-        clearHistory(roomId);
-        broadcastSystemMessage(roomId, "聊天记录已由管理员清空");
+        String normalizedRoomId = roomId == null || roomId.isBlank() ? RoomService.DEFAULT_ROOM_ID : roomId;
+        ChatMessage sysMsg = buildSystemChatMessage(normalizedRoomId, "SYSTEM", "SYSTEM", "聊天记录已由管理员清空", MessageType.SYSTEM);
+        roomStateMutationService.runInTransaction(() -> {
+            roomStatePersistenceService.replaceRoomMessages(normalizedRoomId, List.of(sysMsg));
+            afterCommitExecutor.run(() -> {
+                replaceRoomHistory(normalizedRoomId, List.of(sysMsg));
+                broadcastChatMessage(normalizedRoomId, sysMsg);
+            });
+        });
     }
 
     public void clearHistoryAndNotify() {
@@ -204,16 +212,15 @@ public class ChatService {
     }
 
     private void broadcastSystemMessage(String roomId, String content) {
-        ChatMessage sysMsg = new ChatMessage(
-                UUID.randomUUID().toString(),
-                "SYSTEM",
-                "SYSTEM",
-                content,
-                System.currentTimeMillis(),
-                MessageType.SYSTEM
-        );
-        addMessage(roomId, sysMsg);
-        messagingTemplate.convertAndSend("/topic/rooms/" + roomId + "/chat", sysMsg);
+        String normalizedRoomId = roomId == null || roomId.isBlank() ? RoomService.DEFAULT_ROOM_ID : roomId;
+        ChatMessage sysMsg = buildSystemChatMessage(normalizedRoomId, "SYSTEM", "SYSTEM", content, MessageType.SYSTEM);
+        roomStateMutationService.runInTransaction(() -> {
+            roomStatePersistenceService.persistRoomMessage(normalizedRoomId, sysMsg);
+            afterCommitExecutor.run(() -> {
+                appendToRoomHistory(normalizedRoomId, sysMsg);
+                broadcastChatMessage(normalizedRoomId, sysMsg);
+            });
+        });
     }
 
     /**
@@ -225,13 +232,7 @@ public class ChatService {
         // 忽略错误提示，只记录操作成功的事件（根据需求调整）
         // 这里我们记录所有 INFO, WARN, SUCCESS 级别的事件，忽略 ERROR (通常 ERROR 只弹 Toast)
         if (event.getLevel() == SystemMessageEvent.Level.ERROR) return;
-        String roomId = event.getRoomId();
-
-        // 如果是 RESET 事件，清空历史
-        if (event.getAction() == PlayerAction.RESET) {
-            clearHistory(roomId);
-            // 依然发送一条“系统已重置”的消息作为新历史的开始
-        }
+        String roomId = event.getRoomId() == null || event.getRoomId().isBlank() ? RoomService.DEFAULT_ROOM_ID : event.getRoomId();
 
         String userName = "SYSTEM";
         if (!"SYSTEM".equals(event.getUserId())) {
@@ -254,20 +255,22 @@ public class ChatService {
         String msgUserId = (event.getAction() == PlayerAction.LIKE || event.getAction() == PlayerAction.PLAY_START) ? event.getUserId() : "SYSTEM";
         String msgUserName = (event.getAction() == PlayerAction.LIKE || event.getAction() == PlayerAction.PLAY_START) ? userName : "SYSTEM";
 
-        ChatMessage sysMsg = new ChatMessage(
-                UUID.randomUUID().toString(),
-                msgUserId,
-                msgUserName,
-                content,
-                System.currentTimeMillis(),
-                type
-        );
+        ChatMessage sysMsg = buildSystemChatMessage(roomId, msgUserId, msgUserName, content, type);
 
-        // 1. 存入历史
-        addMessage(roomId, sysMsg);
+        if (event.getAction() == PlayerAction.RESET) {
+            roomStatePersistenceService.replaceRoomMessages(roomId, List.of(sysMsg));
+            afterCommitExecutor.run(() -> {
+                replaceRoomHistory(roomId, List.of(sysMsg));
+                broadcastChatMessage(roomId, sysMsg);
+            });
+            return;
+        }
 
-        // 2. 广播到聊天频道
-        messagingTemplate.convertAndSend("/topic/rooms/" + roomId + "/chat", sysMsg);
+        roomStatePersistenceService.persistRoomMessage(roomId, sysMsg);
+        afterCommitExecutor.run(() -> {
+            appendToRoomHistory(roomId, sysMsg);
+            broadcastChatMessage(roomId, sysMsg);
+        });
     }
 
     public void deleteRoomHistory(String roomId) {
@@ -282,6 +285,36 @@ public class ChatService {
     private ConcurrentLinkedDeque<ChatMessage> roomHistory(String roomId) {
         String key = roomId == null || roomId.isBlank() ? RoomService.DEFAULT_ROOM_ID : roomId;
         return roomHistories.computeIfAbsent(key, this::loadRoomHistory);
+    }
+
+    private void appendToRoomHistory(String roomId, ChatMessage message) {
+        ConcurrentLinkedDeque<ChatMessage> history = roomHistory(roomId);
+        history.addLast(message);
+        trimHistory(history);
+    }
+
+    private void replaceRoomHistory(String roomId, List<ChatMessage> messages) {
+        ConcurrentLinkedDeque<ChatMessage> history = roomHistory(roomId);
+        history.clear();
+        history.addAll(messages);
+    }
+
+    private ChatMessage buildSystemChatMessage(String roomId, String userId, String userName, String content, MessageType type) {
+        return new ChatMessage(
+                UUID.randomUUID().toString(),
+                userId,
+                userName,
+                content,
+                System.currentTimeMillis(),
+                type
+        );
+    }
+
+    private void broadcastChatMessage(String roomId, ChatMessage message) {
+        if (messagingTemplate == null) {
+            return;
+        }
+        messagingTemplate.convertAndSend("/topic/rooms/" + roomId + "/chat", message);
     }
 
     @EventListener

@@ -36,7 +36,7 @@ public class SqlitePersistenceConfig {
     }
 
     @Bean
-    public JdbcTemplate jdbcTemplate(DataSource sqliteDataSource) {
+    public JdbcTemplate jdbcTemplate(DataSource sqliteDataSource, SqliteSchemaInitializer initializer) {
         return new JdbcTemplate(sqliteDataSource);
     }
 

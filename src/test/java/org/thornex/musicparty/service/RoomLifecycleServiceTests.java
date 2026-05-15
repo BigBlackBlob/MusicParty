@@ -102,7 +102,8 @@ class RoomLifecycleServiceTests {
                             new InMemoryQueueRepository(),
                             new InMemoryChatRepository(),
                             new InMemoryPlaybackStateRepository()
-                    )
+                    ),
+                    new RoomStateMutationService(new TestTransactionManager())
             );
             this.removedRoomId = null;
             this.skipPersistenceCleanup = false;
@@ -128,6 +129,8 @@ class RoomLifecycleServiceTests {
                             new InMemoryChatRepository(),
                             new InMemoryPlaybackStateRepository()
                     ),
+                    new RoomStateMutationService(new TestTransactionManager()),
+                    new AfterCommitExecutor(),
                     List.of()
             );
         }
