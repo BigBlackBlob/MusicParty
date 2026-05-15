@@ -50,35 +50,45 @@
           </div>
           <div
             v-if="isRoomMenuOpen"
-            class="absolute left-5 top-14 z-50 w-[340px] rounded-lg border border-border-default bg-surface-overlay/95 p-3 shadow-lg backdrop-blur-xl"
+            class="absolute left-5 top-14 z-50 w-[340px] rounded-lg border border-border-default bg-surface-panel p-3 shadow-2xl backdrop-blur-xl"
           >
             <div class="mb-3 flex items-center justify-between">
-              <span class="font-micro text-micro uppercase tracking-[0.18em] text-text-muted">Rooms</span>
-              <button class="text-xs text-text-muted hover:text-text-primary" @click="roomStore.fetchRooms">Refresh</button>
+              <span class="font-micro text-[10px] font-black uppercase tracking-[0.18em] text-text-tertiary">{{ t('rooms.title') }}</span>
+              <button class="text-[10px] font-bold text-text-muted hover:text-primary transition-colors" @click="roomStore.fetchRooms">{{ t('common.refresh') }}</button>
             </div>
-            <div class="max-h-[320px] space-y-1 overflow-y-auto pr-1">
+            <div class="max-h-[320px] space-y-1 overflow-y-auto pr-1 custom-scrollbar">
               <button
                 v-for="room in roomStore.rooms"
                 :key="room.roomId"
-                class="flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition-colors"
-                :class="roomStore.currentRoomId === room.roomId ? 'bg-primary text-on-primary' : 'hover:bg-[var(--surface-control-hover)]'"
+                class="flex w-full items-center justify-between rounded-md px-3 py-2.5 text-left transition-all group"
+                :class="roomStore.currentRoomId === room.roomId ? 'bg-primary/15 text-primary' : 'text-text-secondary hover:bg-surface-raised hover:text-text-primary'"
                 @click="switchRoom(room.roomId)"
               >
-                <span class="min-w-0 flex-1 truncate font-compact">{{ room.name }}</span>
-                <span class="ml-3 flex items-center gap-2 text-xs opacity-75">
-                  {{ room.onlineCount || 0 }} active
-                  <span v-if="canDeleteRoom(room)" class="material-symbols-outlined text-[16px] opacity-70" @click.stop="deleteRoom(room)">delete</span>
-                </span>
+                <div class="flex flex-col min-w-0 flex-1">
+                   <span class="truncate font-compact text-sm font-bold">{{ room.name }}</span>
+                   <span class="text-[10px] opacity-60 font-mono tracking-tight">{{ room.onlineCount || 0 }} {{ t('settings.active') }}</span>
+                </div>
+                
+                <div class="ml-3 flex items-center gap-2">
+                  <span v-if="roomStore.currentRoomId === room.roomId" class="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]"></span>
+                  <button 
+                    v-if="canDeleteRoom(room)" 
+                    class="material-symbols-outlined text-[18px] opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:text-error transition-all" 
+                    @click.stop="deleteRoom(room)"
+                  >
+                    delete
+                  </button>
+                </div>
               </button>
             </div>
-            <div class="mt-3 flex gap-2 border-t border-border-subtle pt-3">
+            <div class="mt-3 flex gap-2 border-t border-border-default pt-3">
               <input
                 v-model="newRoomName"
-                class="min-w-0 flex-1 rounded-md border border-border-subtle bg-[var(--surface-control)] px-3 py-2 text-sm outline-none focus:border-primary"
-                placeholder="New room..."
+                class="min-w-0 flex-1 rounded-md border border-border-default bg-surface-raised px-3 py-2 text-sm outline-none focus:border-primary text-text-primary placeholder:text-text-tertiary transition-colors"
+                :placeholder="t('rooms.newRoomPlaceholder')"
                 @keyup.enter="createRoom"
               />
-              <button class="rounded-md bg-primary px-3 text-sm font-semibold text-on-primary" @click="createRoom">Create</button>
+              <button class="rounded-md bg-primary px-4 text-xs font-black uppercase tracking-widest text-on-primary hover:bg-[var(--accent-hover)] transition-colors" @click="createRoom">{{ t('rooms.create') }}</button>
             </div>
           </div>
           <div

@@ -111,11 +111,11 @@
                 </div>
 
                 <!-- Pagination Control -->
-                <div v-if="searchType === SONG_SEARCH_TYPE && displayItems.length > 0 && (currentPage > 1 || canGoNext)" class="pt-6 pb-4 flex items-center justify-center gap-6 border-t border-border-default/50 mt-4">
+                <div v-if="(searchType === SONG_SEARCH_TYPE || searchType === PLAYLIST_SEARCH_TYPE) && displayItems.length > 0 && (activeCurrentPage > 1 || activeCanGoNext)" class="pt-6 pb-4 flex items-center justify-center gap-6 border-t border-border-default/50 mt-4">
                    <!-- Prev -->
                    <button 
                     @click="prevPage"
-                    :disabled="currentPage <= 1 || loading"
+                    :disabled="activeCurrentPage <= 1 || loading"
                     class="group flex items-center justify-center w-10 h-10 rounded-full text-text-muted hover:text-primary hover:bg-surface-raised disabled:opacity-30 disabled:hover:text-text-muted transition-all"
                     :title="t('search.prevPage')"
                    >
@@ -126,8 +126,8 @@
                    <div class="flex items-center gap-3">
                       <input 
                         type="number"
-                        :value="currentPage"
-                        @keyup.enter="e => doSearch(parseInt(e.target.value))"
+                        :value="activeCurrentPage"
+                        @keyup.enter="e => jumpToPage(e.target.value)"
                         class="w-12 h-10 flex items-center justify-center rounded bg-surface-raised border border-border-default text-primary font-mono text-sm font-bold text-center outline-none focus:border-primary transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         min="1"
                         step="1"
@@ -137,7 +137,7 @@
                    <!-- Next -->
                    <button 
                     @click="nextPage"
-                    :disabled="!canGoNext || loading"
+                    :disabled="!activeCanGoNext || loading"
                     class="group flex items-center justify-center w-10 h-10 rounded-full text-text-muted hover:text-primary hover:bg-surface-raised disabled:opacity-30 disabled:hover:text-text-muted transition-all"
                     :title="t('search.nextPage')"
                    >
@@ -169,8 +169,15 @@ const SONG_SEARCH_TYPE = 'song';
 const ALBUM_SEARCH_TYPE = 'album';
 const PLAYLIST_SEARCH_TYPE = 'playlist';
 
-const { platform, platforms, supportsAlbumSearch, keyword, songs, albums, playlistSongs, loading, searchType, doSearch, loadPlatforms, isAdminMode, hasSubmittedSearch, currentPage, canGoNext, nextPage, prevPage, addAllPlaylistSongs } = useSearchLogic(emit);
+const { 
+  platform, platforms, supportsAlbumSearch, keyword, songs, albums, playlistSongs, loading, searchType, doSearch, loadPlatforms, isAdminMode, hasSubmittedSearch, 
+  currentPage, currentPlaylistPage, canGoNext, canGoPlaylistNext, nextPage, prevPage, addAllPlaylistSongs 
+} = useSearchLogic(emit);
+
 const hasSearched = computed(() => hasSubmittedSearch.value || songs.value.length > 0 || albums.value.length > 0 || playlistSongs.value.length > 0);
+const activeCurrentPage = computed(() => searchType.value === PLAYLIST_SEARCH_TYPE ? currentPlaylistPage.value : currentPage.value);
+const activeCanGoNext = computed(() => searchType.value === PLAYLIST_SEARCH_TYPE ? canGoPlaylistNext.value : canGoNext.value);
+
 const resultMode = computed(() => {
   if (searchType.value === PLAYLIST_SEARCH_TYPE) return PLAYLIST_SEARCH_TYPE;
   return searchType.value === ALBUM_SEARCH_TYPE && supportsAlbumSearch.value ? ALBUM_SEARCH_TYPE : SONG_SEARCH_TYPE;
@@ -215,6 +222,11 @@ const handleAddClick = (song) => {
 };
 
 onMounted(loadPlatforms);
+
+const jumpToPage = (rawValue) => {
+  const page = Math.max(1, Number.parseInt(rawValue, 10) || 1);
+  doSearch(page);
+};
 
 const formatArtists = (artists) => {
   if (Array.isArray(artists)) return artists.join(' / ');
