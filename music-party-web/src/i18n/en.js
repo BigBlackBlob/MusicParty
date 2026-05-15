@@ -60,6 +60,7 @@ export default {
     english: 'English',
     chinese: 'Chinese',
     toggleTheme: 'Toggle theme',
+    queueAutoHidden: 'queue is hidden at this zoom',
     moreActiveUsers: '{count} more active users'
   },
   nav: {
