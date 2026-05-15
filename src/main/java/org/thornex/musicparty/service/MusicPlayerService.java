@@ -41,6 +41,7 @@ public class MusicPlayerService {
     private final NavidromeAccessService navidromeAccessService;
     private final RoomService roomService;
     private final RoomStatePersistenceService roomStatePersistenceService;
+    private final RoomStateMutationService roomStateMutationService;
     private final Map<String, RoomPlayerSession> sessions = new ConcurrentHashMap<>();
 
     public MusicPlayerService(List<IMusicApiService> apiServices,
@@ -51,7 +52,8 @@ public class MusicPlayerService {
                               AppProperties appProperties,
                               NavidromeAccessService navidromeAccessService,
                               RoomService roomService,
-                              RoomStatePersistenceService roomStatePersistenceService) {
+                              RoomStatePersistenceService roomStatePersistenceService,
+                              RoomStateMutationService roomStateMutationService) {
         this.apiServiceMap = apiServices.stream().collect(Collectors.toMap(IMusicApiService::getPlatformName, Function.identity()));
         this.userService = userService;
         this.localCacheService = localCacheService;
@@ -61,6 +63,7 @@ public class MusicPlayerService {
         this.navidromeAccessService = navidromeAccessService;
         this.roomService = roomService;
         this.roomStatePersistenceService = roomStatePersistenceService;
+        this.roomStateMutationService = roomStateMutationService;
     }
 
     @PostConstruct
@@ -302,14 +305,15 @@ public class MusicPlayerService {
                 long currentPos = calculateCurrentPosition();
                 if (currentPos >= music.duration() && music.duration() > 0) {
                     Music finishedMusic = new Music(music.id(), music.name(), music.artists(), music.duration(), music.platform(), music.coverUrl());
-                    queueManager.addToHistory(finishedMusic);
-                    roomStatePersistenceService.appendHistoryEntry(roomId, finishedMusic, currentEnqueuerId.get());
-                    roomStatePersistenceService.persistHistorySnapshot(roomId, queueManager.getHistorySnapshot());
-                    currentMusic.set(null);
-                    currentEnqueuerId.set(null);
-                    currentEnqueuerName.set(null);
-                    persistPlaybackStateSnapshot();
-                    bumpPlayEpochAndStateVersion();
+                    roomStateMutationService.runInTransaction(() -> {
+                        queueManager.addToHistory(finishedMusic);
+                        roomStatePersistenceService.appendHistoryEntry(roomId, finishedMusic, currentEnqueuerId.get());
+                        currentMusic.set(null);
+                        currentEnqueuerId.set(null);
+                        currentEnqueuerName.set(null);
+                        persistPlaybackStateSnapshot();
+                        bumpPlayEpochAndStateVersion();
+                    });
                     playNextInQueue();
                 }
                 return;
@@ -426,9 +430,7 @@ public class MusicPlayerService {
                 MusicQueueItem item = queueManager.add(music, new UserSummary(enqueuer.getPublicId(), enqueuer.getName(), enqueuer.isGuest()), initialStatus);
                 if (item != null) {
                     touchHotActivity();
-                    roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
-                    broadcastQueueUpdate();
-                    eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.ADD, enqueuer.getPublicId(), music.name(), roomId));
+                    persistQueueMutation(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.ADD, enqueuer.getPublicId(), music.name(), roomId), false);
                     if (currentMusic.get() == null) playNextInQueue();
                 }
             }, error -> eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "添加失败: " + error.getMessage(), roomId)));
@@ -449,9 +451,7 @@ public class MusicPlayerService {
                     if (queueManager.add(music, new UserSummary(enqueuer.getPublicId(), enqueuer.getName(), enqueuer.isGuest()), initialStatus) != null) count++;
                 }
                 touchHotActivity();
-                roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
-                broadcastQueueUpdate();
-                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.IMPORT_PLAYLIST, enqueuer.getPublicId(), String.valueOf(count), roomId));
+                persistQueueMutation(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.IMPORT_PLAYLIST, enqueuer.getPublicId(), String.valueOf(count), roomId), false);
                 if (currentMusic.get() == null) playNextInQueue();
             });
         }
@@ -468,9 +468,7 @@ public class MusicPlayerService {
                     if (queueManager.add(music, new UserSummary(enqueuer.getPublicId(), enqueuer.getName(), enqueuer.isGuest()), QueueItemStatus.READY) != null) count++;
                 }
                 touchHotActivity();
-                roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
-                broadcastQueueUpdate();
-                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.IMPORT_PLAYLIST, enqueuer.getPublicId(), String.valueOf(count), roomId));
+                persistQueueMutation(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.IMPORT_PLAYLIST, enqueuer.getPublicId(), String.valueOf(count), roomId), false);
                 if (currentMusic.get() == null) playNextInQueue();
             });
         }
@@ -479,9 +477,10 @@ public class MusicPlayerService {
             TopResult result = queueManager.top(queueId, isShuffle.get());
             if (result != TopResult.NONE) {
                 touchHotActivity();
-                roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
-                broadcastQueueUpdate();
-                if (result == TopResult.GLOBAL) eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.TOP, getUserPublicId(sessionId), "置顶成功", roomId));
+                SystemMessageEvent systemMessage = result == TopResult.GLOBAL
+                        ? new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.TOP, getUserPublicId(sessionId), "置顶成功", roomId)
+                        : null;
+                persistQueueMutation(systemMessage, false);
                 if (currentMusic.get() == null) playNextInQueue();
             }
         }
@@ -490,18 +489,14 @@ public class MusicPlayerService {
             List<MusicQueueItem> topped = queueManager.topManyGlobal(queueIds);
             if (!topped.isEmpty()) {
                 touchHotActivity();
-                roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
-                broadcastQueueUpdate();
-                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.TOP, getUserPublicId(sessionId), "置顶 " + topped.size() + " 首歌曲", roomId));
+                persistQueueMutation(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.TOP, getUserPublicId(sessionId), "置顶 " + topped.size() + " 首歌曲", roomId), false);
             }
         }
 
         public void removeSongFromQueue(String queueId, String sessionId) {
             queueManager.remove(queueId).ifPresent(item -> {
                 touchHotActivity();
-                roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
-                broadcastQueueUpdate();
-                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.REMOVE, getUserPublicId(sessionId), item.music().name(), roomId));
+                persistQueueMutation(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.REMOVE, getUserPublicId(sessionId), item.music().name(), roomId), false);
             });
         }
 
@@ -509,19 +504,14 @@ public class MusicPlayerService {
             List<MusicQueueItem> removed = queueManager.removeMany(queueIds);
             if (!removed.isEmpty()) {
                 touchHotActivity();
-                roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
-                broadcastQueueUpdate();
-                broadcastFullPlayerState();
-                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.REMOVE, getUserPublicId(sessionId), "移除 " + removed.size() + " 首歌曲", roomId));
+                persistQueueMutation(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.REMOVE, getUserPublicId(sessionId), "移除 " + removed.size() + " 首歌曲", roomId), true);
             }
         }
 
         public synchronized void reorderQueue(int oldIndex, int newIndex, String sessionId) {
             queueManager.reorder(oldIndex, newIndex);
             touchHotActivity();
-            roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
-            broadcastQueueUpdate();
-            broadcastFullPlayerState();
+            persistQueueMutation(null, true);
         }
 
         public void skipToNext(String sessionId) {
@@ -534,9 +524,11 @@ public class MusicPlayerService {
             currentEnqueuerName.set(null);
             updatePlaybackAnchor(0);
             touchHotActivity();
-            persistPlaybackStateSnapshot();
-            bumpPlayEpochAndStateVersion();
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.SKIP, getUserPublicId(sessionId), null, roomId));
+            roomStateMutationService.runInTransaction(() -> {
+                persistPlaybackStateSnapshot();
+                bumpPlayEpochAndStateVersion();
+                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.SKIP, getUserPublicId(sessionId), null, roomId));
+            });
             playNextInQueue();
         }
 
@@ -626,28 +618,28 @@ public class MusicPlayerService {
             currentEnqueuerName.set(null);
             updatePlaybackAnchor(0);
             queueManager.clearAll();
-            if (persist) {
-                roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
-                roomStatePersistenceService.persistHistorySnapshot(roomId, queueManager.getHistorySnapshot());
-            }
             isPaused.set(false);
             isShuffle.set(false);
             isLoading.set(false);
-            if (persist) {
-                persistPlaybackStateSnapshot();
-            }
-            bumpPlayEpochAndStateVersion();
-            broadcastFullPlayerState();
-            broadcastQueueUpdate();
-            if (notify) eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.RESET, "SYSTEM", null, roomId));
+            roomStateMutationService.runInTransaction(() -> {
+                if (persist) {
+                    roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
+                    roomStatePersistenceService.persistHistorySnapshot(roomId, queueManager.getHistorySnapshot());
+                    persistPlaybackStateSnapshot();
+                }
+                bumpPlayEpochAndStateVersion();
+                broadcastFullPlayerState();
+                broadcastQueueUpdate();
+                if (notify) {
+                    eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.RESET, "SYSTEM", null, roomId));
+                }
+            });
         }
 
         public void clearQueue() {
             queueManager.clearPendingQueue();
             touchHotActivity();
-            roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
-            broadcastQueueUpdate();
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.REMOVE, "SYSTEM", "播放列表已由管理员清空", roomId));
+            persistQueueMutation(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.REMOVE, "SYSTEM", "播放列表已由管理员清空", roomId), false);
         }
 
         public void handleDownloadEvent(DownloadStatusEvent event) {
@@ -764,6 +756,19 @@ public class MusicPlayerService {
             roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
             roomStatePersistenceService.persistHistorySnapshot(roomId, queueManager.getHistorySnapshot());
             persistPlaybackStateSnapshot();
+        }
+
+        private void persistQueueMutation(SystemMessageEvent systemMessageEvent, boolean broadcastFullState) {
+            roomStateMutationService.runInTransaction(() -> {
+                roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
+                if (broadcastFullState) {
+                    broadcastFullPlayerState();
+                }
+                broadcastQueueUpdate();
+                if (systemMessageEvent != null) {
+                    eventPublisher.publishEvent(systemMessageEvent);
+                }
+            });
         }
 
         private void touchHotActivity() {
