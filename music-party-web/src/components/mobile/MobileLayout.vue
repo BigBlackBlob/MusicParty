@@ -113,7 +113,7 @@
                 <div class="flex flex-col gap-2">
                   <div
                     v-for="member in displayMembers"
-                    :key="member.token || member.sessionId || member.name"
+                    :key="member.publicId || member.name"
                     class="flex items-center gap-3 rounded-[var(--radius-md)] px-3 py-2.5 transition-colors bg-[var(--surface-control)]"
                   >
                     <div class="flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--surface-3)] text-xs font-bold uppercase text-[var(--text-secondary)]">
@@ -168,7 +168,7 @@ const activeTab = computed({
 const currentCover = computed(() => player.nowPlaying?.music?.coverUrl || '');
 const displayMembers = computed(() => {
   if (user.onlineUsers.length) return user.onlineUsers;
-  return [{ name: user.currentUser.name, token: user.userToken, isGuest: user.isGuest }];
+  return [{ name: user.currentUser.name, publicId: user.publicId, isGuest: user.isGuest }];
 });
 const headerSubtitle = computed(() => {
   if (!player.connected) return t('settings.disconnected');
@@ -304,3 +304,4 @@ watch(activeTab, (tab) => {
   opacity: 0;
 }
 </style>
+

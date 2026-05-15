@@ -24,7 +24,7 @@ public class ClearCommand implements ChatCommand {
 
     @Override
     public void execute(String args, User user) {
-        int count = queueManager.removeByUser(user.getToken());
+        int count = queueManager.removeByUser(user.getPublicId());
         
         if (count > 0) {
             // 发送系统通知 (聊天栏)
@@ -32,7 +32,7 @@ public class ClearCommand implements ChatCommand {
                     this, 
                     SystemMessageEvent.Level.INFO, 
                     PlayerAction.REMOVE, 
-                    user.getToken(), 
+                    user.getPublicId(), 
                     String.format("清空了自己点的 %d 首歌", count)
             ));
             

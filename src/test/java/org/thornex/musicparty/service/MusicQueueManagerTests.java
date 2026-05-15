@@ -15,7 +15,7 @@ class MusicQueueManagerTests {
     @Test
     void duplicateCheckIncludesPlatform() {
         MusicQueueManager manager = new MusicQueueManager(new AppProperties());
-        UserSummary user = new UserSummary("token", "session", "User", false);
+        UserSummary user = new UserSummary("public-id", "User", false);
 
         assertThat(manager.add(new Music("same-id", "Netease Song", List.of("A"), 1000, "netease", ""), user, QueueItemStatus.READY))
                 .isNotNull();
@@ -25,3 +25,4 @@ class MusicQueueManagerTests {
                 .isNull();
     }
 }
+

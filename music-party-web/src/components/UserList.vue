@@ -13,20 +13,20 @@
           id="tutorial-rename"
           class="flex items-center gap-3 rounded-2xl border border-[var(--border-default)] bg-[var(--surface-2)] px-3 py-2 transition-colors"
           :class="[
-              isEnqueuerById(userStore.userToken) ? 'border-[var(--accent)]/30 bg-[var(--accent-subtle)]' :
-              isLikedUser(userStore.userToken) ? 'bg-[var(--surface-3)]' : ''
+              isEnqueuerById(userStore.publicId) ? 'border-[var(--accent)]/30 bg-[var(--accent-subtle)]' :
+              isLikedUser(userStore.publicId) ? 'bg-[var(--surface-3)]' : ''
           ]"
       >
         <div
             class="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold transition-colors"
             :class="[
-                isEnqueuerById(userStore.userToken) ? 'bg-[var(--accent)] text-[var(--text-inverse)]' :
-                isLikedUser(userStore.userToken) ? 'bg-[var(--accent)] text-[var(--text-inverse)]' :
+                isEnqueuerById(userStore.publicId) ? 'bg-[var(--accent)] text-[var(--text-inverse)]' :
+                isLikedUser(userStore.publicId) ? 'bg-[var(--accent)] text-[var(--text-inverse)]' :
                 'bg-[var(--surface-3)] text-[var(--text-primary)]'
             ]"
         >
-          <span v-if="isEnqueuerById(userStore.userToken)" :aria-label="t('userList.dj')">{{ t('userList.dj') }}</span>
-          <Zap v-else-if="isLikedUser(userStore.userToken)" class="w-4 h-4 fill-current text-[var(--text-inverse)]" />
+          <span v-if="isEnqueuerById(userStore.publicId)" :aria-label="t('userList.dj')">{{ t('userList.dj') }}</span>
+          <Zap v-else-if="isLikedUser(userStore.publicId)" class="w-4 h-4 fill-current text-[var(--text-inverse)]" />
           <span v-else :aria-label="t('userList.me')">{{ t('userList.me') }}</span>
         </div>
         <div class="flex-1 min-w-0">
@@ -36,11 +36,11 @@
               @keyup.enter="doRename"
               class="w-full bg-transparent text-sm font-semibold outline-none border-b border-transparent focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-muted)]"
               :aria-label="t('userList.rename')"
-              :class="isEnqueuerById(userStore.userToken) ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'"
+              :class="isEnqueuerById(userStore.publicId) ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'"
           />
         </div>
 
-        <div v-if="isEnqueuerById(userStore.userToken)" class="flex gap-0.5 items-end h-4" :aria-label="t('userList.statusDJ')">
+        <div v-if="isEnqueuerById(userStore.publicId)" class="flex gap-0.5 items-end h-4" :aria-label="t('userList.statusDJ')">
           <div class="bar bar-1 bg-[var(--accent)]"></div>
           <div class="bar bar-2 bg-[var(--accent)]"></div>
           <div class="bar bar-3 bg-[var(--accent)]"></div>
@@ -51,33 +51,33 @@
       <!-- 其他人 -->
       <div
           v-for="u in others"
-          :key="u.sessionId"
+          :key="u.publicId"
           class="flex items-center gap-3 rounded-2xl border border-transparent bg-[var(--surface-2)] px-3 py-2 transition-colors hover:border-[var(--border-default)]"
           :class="[
-              isEnqueuerById(u.token) ? 'bg-[var(--accent-subtle)] border-[var(--accent)]/20' :
-              isLikedUser(u.token) ? 'bg-[var(--surface-3)]' : ''
+              isEnqueuerById(u.publicId) ? 'bg-[var(--accent-subtle)] border-[var(--accent)]/20' :
+              isLikedUser(u.publicId) ? 'bg-[var(--surface-3)]' : ''
           ]"
       >
         <div
             class="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold transition-colors"
             :class="[
-                isEnqueuerById(u.token) ? 'bg-[var(--accent)] text-[var(--text-inverse)]' :
-                isLikedUser(u.token) ? 'bg-[var(--accent)] text-[var(--text-inverse)]' :
+                isEnqueuerById(u.publicId) ? 'bg-[var(--accent)] text-[var(--text-inverse)]' :
+                isLikedUser(u.publicId) ? 'bg-[var(--accent)] text-[var(--text-inverse)]' :
                 'bg-[var(--surface-3)] text-[var(--text-secondary)]'
             ]"
         >
-          <span v-if="isEnqueuerById(u.token)" :aria-label="t('userList.dj')">{{ t('userList.dj') }}</span>
-          <Zap v-else-if="isLikedUser(u.token)" class="w-4 h-4 fill-current text-[var(--text-inverse)]" />
+          <span v-if="isEnqueuerById(u.publicId)" :aria-label="t('userList.dj')">{{ t('userList.dj') }}</span>
+          <Zap v-else-if="isLikedUser(u.publicId)" class="w-4 h-4 fill-current text-[var(--text-inverse)]" />
           <span v-else :aria-label="t('settings.member')">{{ t('settings.member') }}</span>
         </div>
         <div
             class="flex-1 truncate text-sm font-semibold"
-            :class="isEnqueuerById(u.token) ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'"
+            :class="isEnqueuerById(u.publicId) ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'"
         >
           {{ u.name }}
         </div>
 
-        <div v-if="isEnqueuerById(u.token)" class="flex gap-0.5 items-end h-4" :aria-label="t('userList.statusDJ')">
+        <div v-if="isEnqueuerById(u.publicId)" class="flex gap-0.5 items-end h-4" :aria-label="t('userList.statusDJ')">
           <div class="bar bar-1 bg-[var(--accent)]"></div>
           <div class="bar bar-2 bg-[var(--accent)]"></div>
           <div class="bar bar-3 bg-[var(--accent)]"></div>
@@ -123,7 +123,7 @@ const isLikedUser = (token) => {
 
 watch(() => me.value.name, (n) => newName.value = n);
 
-const others = computed(() => users.value.filter(u => u.token !== userStore.userToken));
+const others = computed(() => users.value.filter(u => u.publicId !== userStore.publicId));
 
 const doRename = () => {
   if(newName.value && newName.value !== me.value.name) {
@@ -165,3 +165,4 @@ const isEnqueuerById = (token) => {
   }
 }
 </style>
+

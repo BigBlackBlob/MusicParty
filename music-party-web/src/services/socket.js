@@ -9,7 +9,7 @@ class SocketService {
 
     /**
      * 初始化连接
-     * @param {Object} authHeaders - { 'user-name':..., 'user-token':..., 'room-password':... }
+     * @param {Object} authHeaders - { 'user-name':..., 'session-token':..., 'room-password':... }
      * @param {Object} callbacks - 回调函数集合
      * @param {Function} callbacks.onConnect - 连接成功
      * @param {Function} callbacks.onDisconnect - 连接断开

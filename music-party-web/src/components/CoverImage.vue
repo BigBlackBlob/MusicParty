@@ -48,7 +48,7 @@ const normalizedSrc = computed(() => {
 
   const trimmed = props.src.trim();
   if (!trimmed) return '';
-  const withToken = withNavidromeResourceToken(trimmed, userStore.userToken);
+  const withToken = withNavidromeResourceToken(trimmed, userStore.sessionToken);
   if (withToken !== trimmed) return withToken;
   if (trimmed.startsWith('//')) return `https:${trimmed}`;
   if (trimmed.startsWith('/') || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) return trimmed;
@@ -59,3 +59,4 @@ const normalizedSrc = computed(() => {
 
 watch(() => props.src, () => hasError.value = false);
 </script>
+

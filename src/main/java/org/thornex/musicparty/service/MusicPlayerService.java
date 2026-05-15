@@ -148,9 +148,9 @@ public class MusicPlayerService {
 
         Map<String, QueueItemStatus> statusMap = buildStatusMap();
 
-        Set<String> onlineUserTokens = userService.getRecentlyActiveUserTokens();
+        Set<String> recentlyActivePublicIds = userService.getRecentlyActivePublicIds();
 
-        MusicQueueItem nextItem = queueManager.pollNext(isShuffle.get(), statusMap, onlineUserTokens);
+        MusicQueueItem nextItem = queueManager.pollNext(isShuffle.get(), statusMap, recentlyActivePublicIds);
 
         if (nextItem == null) {
             if (isLoading.get()) {
@@ -242,7 +242,7 @@ public class MusicPlayerService {
 
         // 重置计时器
         currentMusic.set(music);
-        currentEnqueuerId.set(queueItem.enqueuedBy().token());
+        currentEnqueuerId.set(queueItem.enqueuedBy().publicId());
         currentEnqueuerName.set(queueItem.enqueuedBy().name());
 
         updatePlaybackAnchor(0);
@@ -255,7 +255,7 @@ public class MusicPlayerService {
         broadcastQueueUpdate();
 
         // 发布开始播放事件 (用于聊天栏展示)
-        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.PLAY_START, queueItem.enqueuedBy().token(), music.name()));
+        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.PLAY_START, queueItem.enqueuedBy().publicId(), music.name()));
     }
 
     public PlayerState getCurrentPlayerState() {
@@ -330,17 +330,17 @@ public class MusicPlayerService {
         User enqueuer = userOpt.get();
 
         if ("navidrome".equals(request.platform()) && !navidromeAccessService.canUseBySession(sessionId)) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "添加失败: 无权使用 Navidrome"));
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "添加失败: 无权使用 Navidrome"));
             return;
         }
 
         // Check user song limit
         long userSongCount = queueManager.getQueueSnapshot().stream()
-                .filter(item -> item.enqueuedBy().token().equals(enqueuer.getToken()))
+                .filter(item -> item.enqueuedBy().publicId().equals(enqueuer.getPublicId()))
                 .count();
 
         if (userSongCount >= appProperties.getQueue().getMaxUserSongs()) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "添加失败: 您的点歌数量已达上限 (" + appProperties.getQueue().getMaxUserSongs() + "首)"));
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "添加失败: 您的点歌数量已达上限 (" + appProperties.getQueue().getMaxUserSongs() + "首)"));
             return;
         }
 
@@ -354,18 +354,18 @@ public class MusicPlayerService {
                                 service.prefetchMusic(music.id());
                             }
 
-                            MusicQueueItem newItem = queueManager.add(music, new UserSummary(enqueuer.getToken(), enqueuer.getSessionId(), enqueuer.getName(), enqueuer.isGuest()), initialStatus);
+                            MusicQueueItem newItem = queueManager.add(music, new UserSummary(enqueuer.getPublicId(), enqueuer.getName(), enqueuer.isGuest()), initialStatus);
 
                             if (newItem != null) {
                                 log.info("{} enqueued: {}", enqueuer.getName(), music.name());
                                 broadcastQueueUpdate();
-                                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.ADD, enqueuer.getToken(), music.name()));
+                                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.ADD, enqueuer.getPublicId(), music.name()));
                             }
                         },
                         error -> {
                             log.error("Enqueue failed for musicId: {}", request.musicId(), error);
                             String msg = error.getMessage().contains("Could not get Bilibili video info") ? "无效资源或API受限" : error.getMessage();
-                            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "添加失败: " + msg));
+                            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "添加失败: " + msg));
                         });
     }
 
@@ -374,13 +374,13 @@ public class MusicPlayerService {
         PlayableMusic music = currentMusic.get();
         if (music == null) return;
 
-        String token = getUserToken(sessionId);
+        String publicId = getUserPublicId(sessionId);
 
         // 1. 检查去重 (单人单曲一次)
-        if (currentLikedUserIds.contains(token)) return;
+        if (currentLikedUserIds.contains(publicId)) return;
 
         // 2. 更新数据
-        currentLikedUserIds.add(token);
+        currentLikedUserIds.add(publicId);
 
         // 使用计算出的当前进度作为 Marker
         long progress = calculateCurrentPosition();
@@ -391,7 +391,7 @@ public class MusicPlayerService {
 
         // 3. 广播
         // 广播事件用于触发特效
-        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.LIKE, token, music.name()));
+        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.LIKE, publicId, music.name()));
         // 广播状态更新进度条打点和用户列表
         broadcastFullPlayerState();
     }
@@ -402,18 +402,18 @@ public class MusicPlayerService {
         User enqueuer = userOpt.get();
 
         if ("navidrome".equals(request.platform())) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "Navidrome 暂不支持歌单导入"));
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "Navidrome 暂不支持歌单导入"));
             return;
         }
 
         // Check user song limit
         long currentCount = queueManager.getQueueSnapshot().stream()
-                .filter(item -> item.enqueuedBy().token().equals(enqueuer.getToken()))
+                .filter(item -> item.enqueuedBy().publicId().equals(enqueuer.getPublicId()))
                 .count();
         int maxUserSongs = appProperties.getQueue().getMaxUserSongs();
 
         if (currentCount >= maxUserSongs) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "导入失败: 您的点歌数量已达上限"));
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "导入失败: 您的点歌数量已达上限"));
             return;
         }
 
@@ -431,7 +431,7 @@ public class MusicPlayerService {
                         if ("bilibili".equals(request.platform())) {
                             service.prefetchMusic(music.id());
                         }
-                        MusicQueueItem newItem = queueManager.add(music, new UserSummary(enqueuer.getToken(), enqueuer.getSessionId(), enqueuer.getName(), enqueuer.isGuest()), initialStatus);
+                        MusicQueueItem newItem = queueManager.add(music, new UserSummary(enqueuer.getPublicId(), enqueuer.getName(), enqueuer.isGuest()), initialStatus);
                         if (newItem != null) {
                             count++;
                         }
@@ -439,7 +439,7 @@ public class MusicPlayerService {
 
                     log.info("{} enqueued {} songs from playlist", enqueuer.getName(), count);
                     broadcastQueueUpdate();
-                    eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.IMPORT_PLAYLIST, enqueuer.getToken(), String.valueOf(count)));
+                    eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.IMPORT_PLAYLIST, enqueuer.getPublicId(), String.valueOf(count)));
                 });
     }
 
@@ -449,23 +449,23 @@ public class MusicPlayerService {
         User enqueuer = userOpt.get();
 
         if (!"netease".equals(request.platform())) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "当前仅支持导入网易云专辑"));
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "当前仅支持导入网易云专辑"));
             return;
         }
 
         IMusicApiService service = getApiService(request.platform());
         if (!(service instanceof NeteaseMusicApiService neteaseService)) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "网易云专辑服务不可用"));
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "网易云专辑服务不可用"));
             return;
         }
 
         long currentCount = queueManager.getQueueSnapshot().stream()
-                .filter(item -> item.enqueuedBy().token().equals(enqueuer.getToken()))
+                .filter(item -> item.enqueuedBy().publicId().equals(enqueuer.getPublicId()))
                 .count();
         int maxUserSongs = appProperties.getQueue().getMaxUserSongs();
 
         if (currentCount >= maxUserSongs) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "导入失败: 您的点歌数量已达上限"));
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "导入失败: 您的点歌数量已达上限"));
             return;
         }
 
@@ -476,7 +476,7 @@ public class MusicPlayerService {
                 .subscribe(musics -> {
                     int count = 0;
                     for (Music music : musics.stream().limit(importLimit).toList()) {
-                        MusicQueueItem newItem = queueManager.add(music, new UserSummary(enqueuer.getToken(), enqueuer.getSessionId(), enqueuer.getName(), enqueuer.isGuest()), QueueItemStatus.READY);
+                        MusicQueueItem newItem = queueManager.add(music, new UserSummary(enqueuer.getPublicId(), enqueuer.getName(), enqueuer.isGuest()), QueueItemStatus.READY);
                         if (newItem != null) {
                             count++;
                         }
@@ -484,10 +484,10 @@ public class MusicPlayerService {
 
                     log.info("{} enqueued {} songs from album {}", enqueuer.getName(), count, request.albumId());
                     broadcastQueueUpdate();
-                    eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.IMPORT_PLAYLIST, enqueuer.getToken(), String.valueOf(count)));
+                    eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.IMPORT_PLAYLIST, enqueuer.getPublicId(), String.valueOf(count)));
                 }, error -> {
                     log.error("Album import failed for albumId: {}", request.albumId(), error);
-                    eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getToken(), "专辑导入失败: " + error.getMessage()));
+                    eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "专辑导入失败: " + error.getMessage()));
                 });
     }
 
@@ -501,7 +501,7 @@ public class MusicPlayerService {
 
             // 只有全局置顶才发送系统消息广播
             if (result == TopResult.GLOBAL) {
-                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.TOP, getUserToken(sessionId), "置顶成功"));
+                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.TOP, getUserPublicId(sessionId), "置顶成功"));
             }
             
             if (currentMusic.get() == null) {
@@ -517,7 +517,7 @@ public class MusicPlayerService {
         if (!toppedItems.isEmpty()) {
             log.info("{} songs topped by {}", toppedItems.size(), getUserName(sessionId));
             broadcastQueueUpdate();
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.TOP, getUserToken(sessionId), "置顶 " + toppedItems.size() + " 首歌曲"));
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.TOP, getUserPublicId(sessionId), "置顶 " + toppedItems.size() + " 首歌曲"));
 
             if (currentMusic.get() == null) {
                 playNextInQueue();
@@ -530,7 +530,7 @@ public class MusicPlayerService {
         if (removedItem.isPresent()) {
             log.info("Removed song from queue by {}", getUserName(sessionId));
             broadcastQueueUpdate();
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.REMOVE, getUserToken(sessionId), removedItem.get().music().name()));
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.REMOVE, getUserPublicId(sessionId), removedItem.get().music().name()));
         }
     }
 
@@ -542,14 +542,14 @@ public class MusicPlayerService {
             log.info("{} songs removed from queue by {}", removedItems.size(), getUserName(sessionId));
             broadcastQueueUpdate();
             broadcastFullPlayerState();
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.REMOVE, getUserToken(sessionId), "移除 " + removedItems.size() + " 首歌曲"));
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.REMOVE, getUserPublicId(sessionId), "移除 " + removedItems.size() + " 首歌曲"));
         }
     }
 
     public void skipToNext(String sessionId) {
         if (isRateLimited(sessionId)) return;
         if (isSkipLocked.get() && !"SYSTEM".equals(sessionId)) {
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, getUserToken(sessionId), "切歌功能已被锁定"));
+            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, getUserPublicId(sessionId), "切歌功能已被锁定"));
             return;
         }
 
@@ -561,7 +561,7 @@ public class MusicPlayerService {
         updatePlaybackAnchor(0);
         bumpPlayEpochAndStateVersion();
 
-        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.SKIP, getUserToken(sessionId), null));
+        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.SKIP, getUserPublicId(sessionId), null));
         playNextInQueue();
     }
 
@@ -597,7 +597,7 @@ public class MusicPlayerService {
         log.info("Player {} by {}", newState ? "PAUSED" : "RESUMED", getUserName(sessionId));
         bumpStateVersion();
         broadcastFullPlayerState();
-        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, newState ? PlayerAction.PAUSE : PlayerAction.PLAY, getUserToken(sessionId), null));
+        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, newState ? PlayerAction.PAUSE : PlayerAction.PLAY, getUserPublicId(sessionId), null));
     }
 
     public synchronized Optional<String> seekTo(long positionMs, String sessionId) {
@@ -606,10 +606,10 @@ public class MusicPlayerService {
             return Optional.of("当前没有正在播放的歌曲");
         }
 
-        String requesterToken = getUserToken(sessionId);
-        String enqueuerToken = currentEnqueuerId.get();
-        if (!Objects.equals(enqueuerToken, requesterToken)) {
-            log.warn("Seek denied for user {} on song queued by {}", requesterToken, enqueuerToken);
+        String requesterPublicId = getUserPublicId(sessionId);
+        String enqueuerPublicId = currentEnqueuerId.get();
+        if (!Objects.equals(enqueuerPublicId, requesterPublicId)) {
+            log.warn("Seek denied for user {} on song queued by {}", requesterPublicId, enqueuerPublicId);
             return Optional.of("只有点播者可以调整这首歌的进度");
         }
 
@@ -641,7 +641,7 @@ public class MusicPlayerService {
         bumpStateVersion();
         broadcastFullPlayerState();
         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO,
-                newState ? PlayerAction.SHUFFLE_ON : PlayerAction.SHUFFLE_OFF, getUserToken(sessionId), null));
+                newState ? PlayerAction.SHUFFLE_ON : PlayerAction.SHUFFLE_OFF, getUserPublicId(sessionId), null));
     }
 
     public void resetSystem() {
@@ -846,11 +846,12 @@ public class MusicPlayerService {
         return service;
     }
 
-    private String getUserToken(String sessionId) {
-        return userService.getUser(sessionId).map(User::getToken).orElse("UNKNOWN_TOKEN");
+    private String getUserPublicId(String sessionId) {
+        return userService.getUser(sessionId).map(User::getPublicId).orElse("UNKNOWN_USER");
     }
 
     private String getUserName(String sessionId) {
         return userService.getUser(sessionId).map(User::getName).orElse("Unknown User");
     }
 }
+

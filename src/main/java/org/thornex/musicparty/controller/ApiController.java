@@ -58,7 +58,7 @@ public class ApiController {
         platforms.add(new MusicPlatform("bilibili", "bilibili", false));
 
         if (navidromeAccessService.isEnabled() && navidromeAccessService.isConfigured()
-                && token != null && navidromeAccessService.canUseByToken(token)) {
+                && token != null && navidromeAccessService.canUseBySessionToken(token)) {
             platforms.add(new MusicPlatform("navidrome", "navidrome", false));
         }
 
@@ -77,7 +77,7 @@ public class ApiController {
     public Mono<List<Music>> searchMusic(@PathVariable String platform, @PathVariable String keyword,
                                           @RequestParam(required = false) String token) {
         if ("navidrome".equals(platform)) {
-            if (token == null || !navidromeAccessService.canUseByToken(token)) {
+            if (token == null || !navidromeAccessService.canUseBySessionToken(token)) {
                 return Mono.error(new ResponseStatusException(HttpStatus.FORBIDDEN));
             }
         }

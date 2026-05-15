@@ -172,9 +172,9 @@ public class MusicQueueManager {
      * 从队列中移除指定用户的所有点歌
      * @return 移除的数量
      */
-    public synchronized int removeByUser(String userToken) {
+    public synchronized int removeByUser(String userPublicId) {
         List<MusicQueueItem> toRemove = queue.stream()
-                .filter(item -> item.enqueuedBy().token().equals(userToken))
+                .filter(item -> item.enqueuedBy().publicId().equals(userPublicId))
                 .toList();
         
         toRemove.forEach(queue::remove);
@@ -220,10 +220,10 @@ public class MusicQueueManager {
     /**
      * 从队列中取出下一首可播放的歌曲
      * @param isShuffle 是否启用随机模式
-     * @param onlineUserTokens 在线用户的 Token 集合 (用于优先调度)
+     * @param recentlyActivePublicIds 最近活跃用户的 public id 集合 (用于优先调度)
      * @return 下一首歌曲，如果队列为空则返回 null
      */
-    public synchronized MusicQueueItem pollNext(boolean isShuffle, Map<String, QueueItemStatus> statusMap, Set<String> onlineUserTokens) {
+    public synchronized MusicQueueItem pollNext(boolean isShuffle, Map<String, QueueItemStatus> statusMap, Set<String> recentlyActivePublicIds) {
         if (queue.isEmpty()) {
             return pollFromHistory(); // 队列为空时，尝试从历史记录播放
         }
@@ -252,62 +252,62 @@ public class MusicQueueManager {
 
         MusicQueueItem chosenItem;
         if (isShuffle) {
-            chosenItem = pollNextFairShuffle(availableItems, onlineUserTokens);
+            chosenItem = pollNextFairShuffle(availableItems, recentlyActivePublicIds);
         } else {
             chosenItem = availableItems.get(0); // 顺序播放，直接取第一个 (包含 USERTOP- 项，按物理顺序)
         }
 
         queue.remove(chosenItem);
-        lastPlayedUserToken.set(chosenItem.enqueuedBy().token());
+        lastPlayedUserToken.set(chosenItem.enqueuedBy().publicId());
         return chosenItem;
     }
 
     /**
      * "公平"随机播放算法：严格轮询 (Strict Round-Robin) + 在线优先 + 个人置顶优先
      */
-    private MusicQueueItem pollNextFairShuffle(List<MusicQueueItem> availableItems, Set<String> onlineUserTokens) {
+    private MusicQueueItem pollNextFairShuffle(List<MusicQueueItem> availableItems, Set<String> recentlyActivePublicIds) {
         // 1. 按用户分组
         Map<String, List<MusicQueueItem>> userSongsMap = new HashMap<>();
         for (MusicQueueItem item : availableItems) {
-            userSongsMap.computeIfAbsent(item.enqueuedBy().token(), k -> new ArrayList<>()).add(item);
+            userSongsMap.computeIfAbsent(item.enqueuedBy().publicId(), k -> new ArrayList<>()).add(item);
         }
 
-        List<String> allUserTokens = new ArrayList<>(userSongsMap.keySet());
+        List<String> allPublicIds = new ArrayList<>(userSongsMap.keySet());
         
         // 2. 筛选目标用户池：优先在线用户
-        List<String> onlineCandidates = allUserTokens.stream()
-                .filter(onlineUserTokens::contains)
+        List<String> onlineCandidates = allPublicIds.stream()
+                .filter(recentlyActivePublicIds::contains)
                 .toList();
 
-        List<String> targetUserTokens;
+        List<String> targetPublicIds;
         if (!onlineCandidates.isEmpty()) {
-            targetUserTokens = new ArrayList<>(onlineCandidates);
+            targetPublicIds = new ArrayList<>(onlineCandidates);
         } else {
-            targetUserTokens = allUserTokens;
+            targetPublicIds = allPublicIds;
         }
 
         // 3. 严格轮询逻辑
-        Collections.sort(targetUserTokens);
+        Collections.sort(targetPublicIds);
 
-        String lastToken = lastPlayedUserToken.get();
+        String lastPublicId = lastPlayedUserToken.get();
         int nextIndex = 0;
 
-        if (targetUserTokens.contains(lastToken)) {
-            int currentIndex = targetUserTokens.indexOf(lastToken);
-            nextIndex = (currentIndex + 1) % targetUserTokens.size();
+        if (targetPublicIds.contains(lastPublicId)) {
+            int currentIndex = targetPublicIds.indexOf(lastPublicId);
+            nextIndex = (currentIndex + 1) % targetPublicIds.size();
         } else {
             // 寻找 Token 排序中紧随其后的用户，而非直接重置为 0
             nextIndex = 0;
-            for (int i = 0; i < targetUserTokens.size(); i++) {
-                if (targetUserTokens.get(i).compareTo(lastToken) > 0) {
+            for (int i = 0; i < targetPublicIds.size(); i++) {
+                if (targetPublicIds.get(i).compareTo(lastPublicId) > 0) {
                     nextIndex = i;
                     break;
                 }
             }
         }
 
-        String selectedUserToken = targetUserTokens.get(nextIndex);
-        List<MusicQueueItem> userSongs = userSongsMap.get(selectedUserToken);
+        String selectedPublicId = targetPublicIds.get(nextIndex);
+        List<MusicQueueItem> userSongs = userSongsMap.get(selectedPublicId);
 
         // 4. 检查是否有个人置顶 (USERTOP-)
         Optional<MusicQueueItem> userTop = userSongs.stream()
@@ -421,7 +421,7 @@ public class MusicQueueManager {
         }
         Music randomSong = playHistory.get(new Random().nextInt(playHistory.size()));
 
-        UserSummary systemUser = new UserSummary("SYSTEM", "SYSTEM", "AutoDJ", false);
+        UserSummary systemUser = new UserSummary("SYSTEM", "AutoDJ", false);
 
         // 注意：历史记录出来的歌需要重新判断状态
         return new MusicQueueItem(
@@ -432,3 +432,4 @@ public class MusicQueueManager {
         );
     }
 }
+

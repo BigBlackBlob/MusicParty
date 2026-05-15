@@ -19,10 +19,11 @@ import java.util.stream.Collectors;
 @Slf4j
 public class UserService {
 
-    // 主存储：Token -> User
-    private final Map<String, User> usersByToken = new ConcurrentHashMap<>();
+    // 主存储：服务端签发的私有 Session Token -> User
+    private final Map<String, User> usersBySessionToken = new ConcurrentHashMap<>();
+    private final Map<String, User> usersByPublicId = new ConcurrentHashMap<>();
 
-    // 辅助索引：SessionId -> Token (用于快速查找当前发消息的是谁)
+    // 辅助索引：SessionId -> Session Token (用于快速查找当前发消息的是谁)
     private final Map<String, String> sessionToToken = new ConcurrentHashMap<>();
 
     private final ApplicationEventPublisher eventPublisher;
@@ -41,30 +42,30 @@ public class UserService {
     /**
      * 处理连接
      * @param sessionId WebSocket Session ID
-     * @param tokenFront 前端传来的 Token (可能为空)
+     * @param sessionTokenFront 前端传来的服务端签发 Session Token (可能为空)
      * @param nameFront 前端传来的名字 (可能为空)
      * @return 最终确定的 User 对象
      */
-    public User handleConnect(String sessionId, String tokenFront, String nameFront) {
+    public User handleConnect(String sessionId, String sessionTokenFront, String nameFront) {
         User user;
 
         // 1. 尝试找回老用户
-        if (StringUtils.hasText(tokenFront) && usersByToken.containsKey(tokenFront)) {
-            user = usersByToken.get(tokenFront);
+        if (StringUtils.hasText(sessionTokenFront) && usersBySessionToken.containsKey(sessionTokenFront)) {
+            user = usersBySessionToken.get(sessionTokenFront);
 
             // 🟢 检查是否有待执行的“离开”任务，如果有，说明是快速重连，直接取消
-            ScheduledFuture<?> pendingLeave = pendingLeaveEvents.remove(user.getToken());
+            ScheduledFuture<?> pendingLeave = pendingLeaveEvents.remove(user.getSessionToken());
             if (pendingLeave != null) {
                 pendingLeave.cancel(false);
                 log.info("User {} reconnected quickly, suppressed leave/join logs.", user.getName());
             } else {
                 // 如果没有待执行任务，且用户之前是离线状态，且不是游客，则发布加入日志
                 if (user.getSessionId() == null && !user.isGuest()) {
-                    eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.USER_JOIN, user.getToken(), null));
+                    eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.USER_JOIN, user.getPublicId(), null));
                 }
             }
 
-            log.info("User Reconnected: {} (Token: {}) -> New Session: {}", user.getName(), user.getToken(), sessionId);
+            log.info("User Reconnected: {} (PublicId: {}) -> New Session: {}", user.getName(), user.getPublicId(), sessionId);
             // ... (保持原有逻辑)
             if (user.getSessionId() != null) {
                 sessionToToken.remove(user.getSessionId());
@@ -73,18 +74,20 @@ public class UserService {
         }
         // 2. 新用户注册
         else {
-            String newToken = StringUtils.hasText(tokenFront) ? tokenFront : UUID.randomUUID().toString();
+            String newSessionToken = UUID.randomUUID().toString();
+            String publicId = generatePublicId();
             String initialName = StringUtils.hasText(nameFront) ? nameFront : "游客";
             initialName = deduplicateName(initialName);
 
-            user = new User(newToken, sessionId, initialName);
-            usersByToken.put(newToken, user);
-            log.info("New User Registered: {} (Token: {})", initialName, newToken);
+            user = new User(newSessionToken, publicId, sessionId, initialName);
+            usersBySessionToken.put(newSessionToken, user);
+            usersByPublicId.put(publicId, user);
+            log.info("New User Registered: {} (PublicId: {})", initialName, publicId);
             // 注意：新注册的游客不发加入日志，只有改名后才发
         }
 
         user.setLastActiveTime(System.currentTimeMillis());
-        sessionToToken.put(sessionId, user.getToken());
+        sessionToToken.put(sessionId, user.getSessionToken());
         eventPublisher.publishEvent(new UserCountChangeEvent(this, getOnlineUserSummaries().size()));
         return user;
     }
@@ -93,7 +96,7 @@ public class UserService {
         String token = sessionToToken.remove(sessionId);
         if (token == null) return Optional.empty();
 
-        User user = usersByToken.get(token);
+        User user = usersBySessionToken.get(token);
         if (user != null) {
             // 🟢 关键修复：多标签页支持
             // 只有当断开的 Session ID 等于用户当前的主 Session ID 时，才认为用户真的掉线了
@@ -105,13 +108,13 @@ public class UserService {
 
                 // 延迟发送离开日志
                 if (!user.isGuest()) {
-                    String userToken = user.getToken();
+                    String sessionToken = user.getSessionToken();
                     ScheduledFuture<?> future = scheduler.schedule(() -> {
-                        pendingLeaveEvents.remove(userToken);
+                        pendingLeaveEvents.remove(sessionToken);
                         log.info("User Leave Confirmed: {}", user.getName());
-                        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.USER_LEAVE, userToken, null));
+                        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.USER_LEAVE, user.getPublicId(), null));
                     }, LEAVE_DELAY_SEC, TimeUnit.SECONDS);
-                    pendingLeaveEvents.put(userToken, future);
+                    pendingLeaveEvents.put(sessionToken, future);
                 }
 
                 eventPublisher.publishEvent(new UserCountChangeEvent(this, getOnlineUserSummaries().size()));
@@ -126,7 +129,7 @@ public class UserService {
     public Optional<User> getUserBySession(String sessionId) {
         String token = sessionToToken.get(sessionId);
         if (token == null) return Optional.empty();
-        return Optional.ofNullable(usersByToken.get(token));
+        return Optional.ofNullable(usersBySessionToken.get(token));
     }
 
     public Optional<User> getUser(String sessionId) {
@@ -149,8 +152,8 @@ public class UserService {
             }
 
             // 检查是否重名 (排除自己)
-            boolean exists = usersByToken.values().stream()
-                    .anyMatch(u -> u.getName().equalsIgnoreCase(finalName) && !u.getToken().equals(user.getToken()));
+            boolean exists = usersBySessionToken.values().stream()
+                    .anyMatch(u -> u.getName().equalsIgnoreCase(finalName) && !u.getPublicId().equals(user.getPublicId()));
 
             if (exists) {
                 log.warn("Rename failed: {} is already taken.", finalName);
@@ -166,7 +169,7 @@ public class UserService {
 
             // 1. 如果是从游客变成正式用户 -> 发布加入事件
             if (wasGuest) {
-                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.USER_JOIN, user.getToken(), null));
+                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.USER_JOIN, user.getPublicId(), null));
             }
             // 2. 如果是正式用户改名 -> 发布系统通知
             else if (!oldName.equals(finalName)) {
@@ -189,7 +192,7 @@ public class UserService {
     }
 
     private boolean isNameTaken(String name) {
-        return usersByToken.values().stream().anyMatch(u -> u.getName().equalsIgnoreCase(name));
+        return usersBySessionToken.values().stream().anyMatch(u -> u.getName().equalsIgnoreCase(name));
     }
 
     public boolean bindAccount(String sessionId, String platform, String accountId) {
@@ -200,48 +203,61 @@ public class UserService {
     }
 
     public List<UserSummary> getOnlineUserSummaries() {
-        return usersByToken.values().stream()
+        return usersBySessionToken.values().stream()
                 // 只返回在线用户 (sessionId != null)
                 .filter(u -> u.getSessionId() != null)
-                .map(user -> new UserSummary(user.getToken(), user.getSessionId(), user.getName(), user.isGuest()))
+                .map(user -> new UserSummary(user.getPublicId(), user.getName(), user.isGuest()))
                 .toList();
     }
 
     /**
-     * 获取最近活跃的用户 Token (包括当前在线和正在等待断连确认的用户)
+     * 获取最近活跃的 public id (包括当前在线和正在等待断连确认的用户)
      */
-    public Set<String> getRecentlyActiveUserTokens() {
-        return usersByToken.values().stream()
-                .filter(u -> u.getSessionId() != null || pendingLeaveEvents.containsKey(u.getToken()))
-                .map(User::getToken)
+    public Set<String> getRecentlyActivePublicIds() {
+        return usersBySessionToken.values().stream()
+                .filter(u -> u.getSessionId() != null || pendingLeaveEvents.containsKey(u.getSessionToken()))
+                .map(User::getPublicId)
                 .collect(Collectors.toSet());
     }
 
     @Scheduled(fixedRate = 3600000)
     public void cleanupExpiredUsers() {
         long now = System.currentTimeMillis();
-        int initialSize = usersByToken.size();
+        int initialSize = usersBySessionToken.size();
 
         // removeIf 是线程安全的 (ConcurrentHashMap)
-        usersByToken.entrySet().removeIf(entry -> {
+        usersBySessionToken.entrySet().removeIf(entry -> {
             User user = entry.getValue();
             boolean isOffline = user.getSessionId() == null;
             boolean isExpired = (now - user.getLastActiveTime()) > USER_EXPIRATION_MS;
 
             if (isOffline && isExpired) {
-                log.debug("Cleaning up expired user: {} (Token: {})", user.getName(), user.getToken());
+                log.debug("Cleaning up expired user: {} (PublicId: {})", user.getName(), user.getPublicId());
+                usersByPublicId.remove(user.getPublicId());
                 return true; // 删除
             }
             return false; // 保留
         });
 
-        int finalSize = usersByToken.size();
+        int finalSize = usersBySessionToken.size();
         if (initialSize != finalSize) {
             log.info("Cleanup Complete. Removed {} expired users. Current memory users: {}", (initialSize - finalSize), finalSize);
         }
     }
 
-    public Optional<User> getUserByToken(String token) {
-        return Optional.ofNullable(usersByToken.get(token));
+    public Optional<User> getUserBySessionToken(String sessionToken) {
+        return Optional.ofNullable(usersBySessionToken.get(sessionToken));
+    }
+
+    public Optional<User> getUserByPublicId(String publicId) {
+        return Optional.ofNullable(usersByPublicId.get(publicId));
+    }
+
+    private String generatePublicId() {
+        String publicId;
+        do {
+            publicId = "u_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        } while (usersByPublicId.containsKey(publicId));
+        return publicId;
     }
 }

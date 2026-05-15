@@ -40,16 +40,16 @@ public class ChatService {
     /**
      * 检查是否允许发送消息（频率限制）
      */
-    public boolean canUserSendMessage(String userToken) {
+    public boolean canUserSendMessage(String userPublicId) {
         long now = System.currentTimeMillis();
-        long last = lastMessageTime.getOrDefault(userToken, 0L);
+        long last = lastMessageTime.getOrDefault(userPublicId, 0L);
         long minInterval = appProperties.getChat().getMinIntervalMs();
 
         if (now - last < minInterval) {
             return false;
         }
 
-        lastMessageTime.put(userToken, now);
+        lastMessageTime.put(userPublicId, now);
         return true;
     }
 
@@ -166,7 +166,7 @@ public class ChatService {
 
         String userName = "SYSTEM";
         if (!"SYSTEM".equals(event.getUserId())) {
-            userName = userService.getUserByToken(event.getUserId())
+            userName = userService.getUserByPublicId(event.getUserId())
                     .map(User::getName)
                     .orElse("Unknown");
         }

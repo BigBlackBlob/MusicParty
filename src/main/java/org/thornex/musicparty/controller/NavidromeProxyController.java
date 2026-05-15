@@ -47,7 +47,7 @@ public class NavidromeProxyController {
             @RequestParam(required = false) String token,
             @RequestHeader(value = "Range", required = false) String rangeHeader) {
 
-        if (token == null || !navidromeAccessService.canUseByToken(token)) {
+        if (token == null || !navidromeAccessService.canUseBySessionToken(token)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
 
@@ -107,7 +107,7 @@ public class NavidromeProxyController {
             @PathVariable String coverArtId,
             @RequestParam(required = false) String token) {
 
-        if (token == null || !navidromeAccessService.canUseByToken(token)) {
+        if (token == null || !navidromeAccessService.canUseBySessionToken(token)) {
             return Mono.just(ResponseEntity.status(HttpStatus.FORBIDDEN).build());
         }
 
