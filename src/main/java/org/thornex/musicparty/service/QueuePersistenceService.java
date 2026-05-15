@@ -54,8 +54,7 @@ public class QueuePersistenceService {
 
     private synchronized void saveData() {
         try {
-            roomService.listRooms().forEach(room -> {
-                String roomId = room.roomId();
+            musicPlayerService.getLoadedRoomIds().forEach(roomId -> {
                 MusicQueueManager manager = musicPlayerService.getSession(roomId).getQueueManager();
                 queueRepository.replaceQueue(roomId, manager.getQueueSnapshot());
                 queueRepository.replaceHistory(roomId, manager.getHistorySnapshot());
@@ -111,17 +110,12 @@ public class QueuePersistenceService {
 
         for (var room : roomService.listRooms()) {
             String roomId = room.roomId();
-            List<MusicQueueItem> queue = queueRepository.loadQueue(roomId);
-            List<Music> history = queueRepository.loadHistory(roomId, appProperties.getQueue().getHistorySize()).stream()
-                    .map(PersistedHistoryEntry::music)
-                    .toList();
             List<ChatMessage> chatHistory = restoreChronological(chatRepository.fetchMessages(roomId, 0, appProperties.getChat().getMaxHistorySize()));
 
-            if (!queue.isEmpty() || !history.isEmpty() || !chatHistory.isEmpty()) {
+            if (!chatHistory.isEmpty()) {
                 restoredAny = true;
             }
 
-            musicPlayerService.getSession(roomId).getQueueManager().restore(queue, history);
             chatService.restore(roomId, chatHistory);
         }
 
@@ -133,17 +127,13 @@ public class QueuePersistenceService {
     private void importLegacyData(PersistentData data) {
         if (data.getRooms() != null && !data.getRooms().isEmpty()) {
             data.getRooms().forEach((roomId, roomData) -> {
-                musicPlayerService.getSession(roomId).getQueueManager().restore(
-                        roomData.getQueue() != null ? roomData.getQueue() : Collections.emptyList(),
-                        roomData.getHistory() != null ? roomData.getHistory() : Collections.emptyList()
-                );
+                queueRepository.replaceQueue(roomId, roomData.getQueue() != null ? roomData.getQueue() : Collections.emptyList());
+                queueRepository.replaceHistory(roomId, roomData.getHistory() != null ? roomData.getHistory() : Collections.emptyList());
                 chatService.restore(roomId, roomData.getChatHistory() != null ? roomData.getChatHistory() : Collections.emptyList());
             });
         } else {
-            musicPlayerService.getSession(RoomService.DEFAULT_ROOM_ID).getQueueManager().restore(
-                    data.getQueue() != null ? data.getQueue() : Collections.emptyList(),
-                    data.getHistory() != null ? data.getHistory() : Collections.emptyList()
-            );
+            queueRepository.replaceQueue(RoomService.DEFAULT_ROOM_ID, data.getQueue() != null ? data.getQueue() : Collections.emptyList());
+            queueRepository.replaceHistory(RoomService.DEFAULT_ROOM_ID, data.getHistory() != null ? data.getHistory() : Collections.emptyList());
             chatService.restore(RoomService.DEFAULT_ROOM_ID, data.getChatHistory() != null ? data.getChatHistory() : Collections.emptyList());
         }
 

@@ -69,3 +69,23 @@ create table if not exists chat_message (
 );
 
 create index if not exists idx_chat_message_room_created on chat_message(room_id, created_at desc);
+
+create table if not exists room_playback_state (
+    room_id text primary key,
+    current_music_json text,
+    current_enqueuer_id text,
+    current_enqueuer_name text,
+    position_anchor integer not null,
+    timestamp_anchor integer not null,
+    position_updated_at integer not null,
+    is_shuffle integer not null default 0,
+    is_paused integer not null default 0,
+    is_pause_locked integer not null default 0,
+    is_skip_locked integer not null default 0,
+    is_shuffle_locked integer not null default 0,
+    is_loading integer not null default 0,
+    play_epoch integer not null default 0,
+    state_version integer not null default 0,
+    last_persisted_at integer not null,
+    foreign key (room_id) references room(id)
+);

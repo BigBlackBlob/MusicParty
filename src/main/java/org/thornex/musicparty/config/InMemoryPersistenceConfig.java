@@ -5,9 +5,11 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.thornex.musicparty.persistence.ChatRepository;
 import org.thornex.musicparty.persistence.InMemoryChatRepository;
+import org.thornex.musicparty.persistence.InMemoryPlaybackStateRepository;
 import org.thornex.musicparty.persistence.InMemoryQueueRepository;
 import org.thornex.musicparty.persistence.InMemoryRoomRepository;
 import org.thornex.musicparty.persistence.InMemoryUserProfileRepository;
+import org.thornex.musicparty.persistence.PlaybackStateRepository;
 import org.thornex.musicparty.persistence.QueueRepository;
 import org.thornex.musicparty.persistence.RoomRepository;
 import org.thornex.musicparty.persistence.UserProfileRepository;
@@ -34,5 +36,10 @@ public class InMemoryPersistenceConfig {
     @Bean
     public ChatRepository chatRepository() {
         return new InMemoryChatRepository();
+    }
+
+    @Bean
+    public PlaybackStateRepository playbackStateRepository() {
+        return new InMemoryPlaybackStateRepository();
     }
 }

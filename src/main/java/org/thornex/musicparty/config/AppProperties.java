@@ -37,6 +37,7 @@ public class AppProperties {
     @Data
     public static class PlayerConfig {
         private int maxPlaylistImportSize = 50;
+        private long roomEvictionIdleMs = 60 * 60 * 1000L;
     }
 
     @Data

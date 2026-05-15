@@ -40,6 +40,7 @@ app:
       max-user-songs: ${QUEUE_MAX_USER_SONGS:100}
     player:
       max-playlist-import-size: ${PLAYLIST_IMPORT_LIMIT:100}
+      room-eviction-idle-ms: ${ROOM_EVICTION_IDLE_MS:3600000}
     chat:
       max-history-size: ${CHAT_HISTORY_LIMIT:1000}
       min-interval-ms: ${CHAT_MIN_INTERVAL:1000}
