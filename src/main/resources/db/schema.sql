@@ -89,3 +89,8 @@ create table if not exists room_playback_state (
     last_persisted_at integer not null,
     foreign key (room_id) references room(id)
 );
+
+create table if not exists migration_state (
+    migration_key text primary key,
+    completed_at integer not null
+);

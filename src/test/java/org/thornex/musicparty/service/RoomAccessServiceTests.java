@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.RoomInfo;
+import org.thornex.musicparty.persistence.InMemoryMigrationStateRepository;
 import org.thornex.musicparty.persistence.InMemoryRoomRepository;
 import org.thornex.musicparty.persistence.PersistedRoom;
 
@@ -17,7 +18,7 @@ class RoomAccessServiceTests {
         AppProperties properties = new AppProperties();
         properties.setAdminPassword("admin-password-12345");
         InMemoryRoomRepository roomRepository = new InMemoryRoomRepository();
-        RoomService roomService = new RoomService(new ObjectMapper(), event -> {}, properties, roomRepository);
+        RoomService roomService = new RoomService(new ObjectMapper(), event -> {}, properties, roomRepository, new InMemoryMigrationStateRepository());
         roomService.init();
 
         RoomInfo room = roomService.createRoom("Secret Room", "u_owner", true, "letmein123");
@@ -39,7 +40,7 @@ class RoomAccessServiceTests {
     void rejectsWrongPasswordForPrivateRoom() {
         AppProperties properties = new AppProperties();
         InMemoryRoomRepository roomRepository = new InMemoryRoomRepository();
-        RoomService roomService = new RoomService(new ObjectMapper(), event -> {}, properties, roomRepository);
+        RoomService roomService = new RoomService(new ObjectMapper(), event -> {}, properties, roomRepository, new InMemoryMigrationStateRepository());
         roomService.init();
         RoomInfo room = roomService.createRoom("Secret Room", "u_owner", true, "letmein123");
 
@@ -54,7 +55,7 @@ class RoomAccessServiceTests {
     void publicRoomsDoNotNeedRoomAccessToken() {
         AppProperties properties = new AppProperties();
         InMemoryRoomRepository roomRepository = new InMemoryRoomRepository();
-        RoomService roomService = new RoomService(new ObjectMapper(), event -> {}, properties, roomRepository);
+        RoomService roomService = new RoomService(new ObjectMapper(), event -> {}, properties, roomRepository, new InMemoryMigrationStateRepository());
         roomService.init();
         RoomInfo room = roomService.createRoom("Open Room", "u_owner", false, null);
 
@@ -70,7 +71,7 @@ class RoomAccessServiceTests {
     void unknownRoomDoesNotFallBackToDefaultRoomDuringVerification() {
         AppProperties properties = new AppProperties();
         InMemoryRoomRepository roomRepository = new InMemoryRoomRepository();
-        RoomService roomService = new RoomService(new ObjectMapper(), event -> {}, properties, roomRepository);
+        RoomService roomService = new RoomService(new ObjectMapper(), event -> {}, properties, roomRepository, new InMemoryMigrationStateRepository());
         roomService.init();
         RoomAccessService accessService = new RoomAccessService(properties, roomService);
 
@@ -83,7 +84,7 @@ class RoomAccessServiceTests {
     void rotatingPrivateRoomPasswordInvalidatesExistingAccessTokens() {
         AppProperties properties = new AppProperties();
         InMemoryRoomRepository roomRepository = new InMemoryRoomRepository();
-        RoomService roomService = new RoomService(new ObjectMapper(), event -> {}, properties, roomRepository);
+        RoomService roomService = new RoomService(new ObjectMapper(), event -> {}, properties, roomRepository, new InMemoryMigrationStateRepository());
         roomService.init();
         RoomInfo room = roomService.createRoom("Secret Room", "u_owner", true, "letmein123");
 
@@ -103,7 +104,7 @@ class RoomAccessServiceTests {
     void ownerCanSwitchPrivateRoomBackToPublicWithoutPassword() {
         AppProperties properties = new AppProperties();
         InMemoryRoomRepository roomRepository = new InMemoryRoomRepository();
-        RoomService roomService = new RoomService(new ObjectMapper(), event -> {}, properties, roomRepository);
+        RoomService roomService = new RoomService(new ObjectMapper(), event -> {}, properties, roomRepository, new InMemoryMigrationStateRepository());
         roomService.init();
         RoomInfo room = roomService.createRoom("Secret Room", "u_owner", true, "letmein123");
 
@@ -121,7 +122,7 @@ class RoomAccessServiceTests {
     void nonOwnerCannotUpdateRoomSettings() {
         AppProperties properties = new AppProperties();
         InMemoryRoomRepository roomRepository = new InMemoryRoomRepository();
-        RoomService roomService = new RoomService(new ObjectMapper(), event -> {}, properties, roomRepository);
+        RoomService roomService = new RoomService(new ObjectMapper(), event -> {}, properties, roomRepository, new InMemoryMigrationStateRepository());
         roomService.init();
         RoomInfo room = roomService.createRoom("Secret Room", "u_owner", true, "letmein123");
 

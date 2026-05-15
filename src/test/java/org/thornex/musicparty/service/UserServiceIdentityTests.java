@@ -8,6 +8,7 @@ import org.thornex.musicparty.dto.UserSummary;
 import org.thornex.musicparty.persistence.PersistedRoom;
 import org.thornex.musicparty.persistence.PersistedSession;
 import org.thornex.musicparty.persistence.PersistedUserProfile;
+import org.thornex.musicparty.persistence.InMemoryMigrationStateRepository;
 import org.thornex.musicparty.persistence.RoomRepository;
 import org.thornex.musicparty.persistence.UserProfileRepository;
 
@@ -79,7 +80,7 @@ class UserServiceIdentityTests {
     private UserService createService(UserProfileRepository userProfileRepository) {
         return new UserService(
                 event -> {},
-                new RoomService(new ObjectMapper(), event -> {}, new AppProperties(), new InMemoryRoomRepository()),
+                new RoomService(new ObjectMapper(), event -> {}, new AppProperties(), new InMemoryRoomRepository(), new InMemoryMigrationStateRepository()),
                 userProfileRepository
         );
     }
