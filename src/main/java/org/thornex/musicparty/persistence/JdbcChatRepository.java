@@ -1,7 +1,7 @@
 package org.thornex.musicparty.persistence;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -13,7 +13,7 @@ import java.util.List;
 
 @Repository
 @RequiredArgsConstructor
-@ConditionalOnBean(JdbcTemplate.class)
+@ConditionalOnProperty(prefix = "app.music-api.database", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class JdbcChatRepository implements ChatRepository {
 
     private static final RowMapper<ChatMessage> CHAT_MESSAGE_ROW_MAPPER = (rs, rowNum) -> new ChatMessage(
