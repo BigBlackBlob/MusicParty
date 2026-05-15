@@ -3,7 +3,7 @@
     v-if="hasDisplayableLyrics"
     type="button"
     class="mini-lyrics"
-    aria-label="打开歌词"
+    :aria-label="t('lyrics.open')"
     @click="$emit('open')"
   >
     <Transition name="mini-lyric-line" mode="out-in">
@@ -22,7 +22,10 @@
 
 <script setup>
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { mergeTranslatedLyrics } from '../../utils/parser';
+
+const { t } = useI18n();
 
 const props = defineProps({
   lyrics: {

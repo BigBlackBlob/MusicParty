@@ -1,7 +1,13 @@
 <template>
   <div class="lyrics-shell relative flex h-full w-full flex-col" :class="{ 'lyrics-shell--mobile': mobile }" :style="shellStyle">
     <div class="lyrics-shell__inner relative flex h-full w-full min-w-0 flex-col overflow-hidden px-3 md:px-4">
-      <div class="flex h-full w-full flex-1 flex-col items-center justify-center min-h-0">
+      <div
+        class="relative flex h-full w-full flex-1 flex-col items-center justify-center min-h-0"
+        @mouseenter="revealControls"
+        @mouseleave="scheduleControlsHide"
+        @focusin="showControlsNow"
+        @focusout="scheduleControlsHide"
+      >
         <div v-if="showEmptyState" class="lyrics-empty-state flex min-h-0 w-full flex-1 items-center justify-center text-center text-sm font-medium" :class="emptyStateClass">
           {{ t('lyrics.empty') }}
         </div>
@@ -14,6 +20,7 @@
             @touchstart.passive="handleTouchStart"
             @touchmove.passive="handleTouchMove"
             @touchend.passive="handleTouchEnd"
+            @scroll.passive="handleScroll"
           >
             <div class="lyrics-scroll__content mx-auto flex w-full max-w-[min(760px,88vw)] flex-col" :class="containerAlignmentClass">
               <div class="lyrics-scroll__spacer w-full shrink-0"></div>
@@ -34,7 +41,7 @@
             </div>
           </div>
 
-          <div class="lyrics-controls mt-3 flex items-center justify-center gap-2 md:mt-4 w-full shrink-0">
+          <div class="lyrics-controls flex items-center justify-center gap-2" :class="{ 'lyrics-controls--visible': controlsVisible }">
             <button class="lyrics-control" type="button" @click="toggleAlignment" :aria-label="t('lyrics.toggleAlignment')" :title="t('lyrics.toggleAlignment')">
               <span class="material-symbols-outlined text-[18px]">{{ alignmentIcon }}</span>
             </button>
@@ -129,14 +136,18 @@ const activeTimeMs = computed(() => {
 const scrollRef = ref(null);
 const activeIndex = ref(-1);
 const isUserScrolling = ref(false);
+const controlsVisible = ref(false);
 const manualScrollTimer = ref(null);
+const controlsTimer = ref(null);
 const lastAutoScrollAt = ref(0);
 const lastScrolledIndex = ref(-2);
+const lastScrollTop = ref(0);
 const touchStartY = ref(0);
 const touchMoved = ref(false);
 const fontScale = ref(-2);
 let syncRequestId = 0;
 let scrollFrameId = null;
+let programmaticScroll = false;
 
 const alignmentIcon = computed(() => {
   switch (uiStore.lyricAlignment) {
@@ -166,6 +177,7 @@ const toggleAlignment = () => {
   const modes = ['center', 'left', 'right'];
   const currentIndex = modes.indexOf(uiStore.lyricAlignment);
   uiStore.setLyricAlignment(modes[(currentIndex + 1) % modes.length]);
+  syncActiveLine(true);
 };
 
 const scaledFont = (base) => `${Math.max(10, Math.round(base + fontScale.value * 2)) / 16}rem`;
@@ -283,6 +295,31 @@ const clearManualTimer = () => {
   }
 };
 
+const clearControlsTimer = () => {
+  if (controlsTimer.value) {
+    clearTimeout(controlsTimer.value);
+    controlsTimer.value = null;
+  }
+};
+
+const showControlsNow = () => {
+  clearControlsTimer();
+  controlsVisible.value = true;
+};
+
+const scheduleControlsHide = () => {
+  clearControlsTimer();
+  controlsTimer.value = setTimeout(() => {
+    controlsVisible.value = false;
+    controlsTimer.value = null;
+  }, 2500);
+};
+
+const revealControls = () => {
+  showControlsNow();
+  scheduleControlsHide();
+};
+
 const syncActiveLine = async (force = false) => {
   const requestId = ++syncRequestId;
   const nextIndex = getActiveIndex();
@@ -320,14 +357,20 @@ const syncActiveLine = async (force = false) => {
     lastAutoScrollAt.value = Date.now();
     lastScrolledIndex.value = targetIndex;
 
+    programmaticScroll = true;
     scrollRef.value.scrollTo({
       top: nextTop,
       behavior: (indexChanged && props.isPlaying && !force) ? 'smooth' : 'auto'
     });
+    window.setTimeout(() => {
+      programmaticScroll = false;
+      if (scrollRef.value) lastScrollTop.value = scrollRef.value.scrollTop;
+    }, 600);
   });
 };
 
 const handleUserScrollIntent = () => {
+  revealControls();
   isUserScrolling.value = true;
   clearManualTimer();
   manualScrollTimer.value = setTimeout(() => {
@@ -337,6 +380,14 @@ const handleUserScrollIntent = () => {
       syncActiveLine(true);
     }
   }, 3000);
+};
+
+const handleScroll = () => {
+  if (!scrollRef.value) return;
+  const nextTop = scrollRef.value.scrollTop;
+  const changedByUser = !programmaticScroll && Math.abs(nextTop - lastScrollTop.value) > 1;
+  lastScrollTop.value = nextTop;
+  if (changedByUser) handleUserScrollIntent();
 };
 
 const handleTouchStart = (e) => {
@@ -358,10 +409,14 @@ const handleTouchEnd = () => {
 
 const increaseFont = () => {
   fontScale.value = Math.min(4, fontScale.value + 1);
+  revealControls();
+  syncActiveLine(true);
 };
 
 const decreaseFont = () => {
   fontScale.value = Math.max(-2, fontScale.value - 1);
+  revealControls();
+  syncActiveLine(true);
 };
 
 watch(() => [activeTimeMs.value, props.showTranslation], () => {
@@ -384,6 +439,7 @@ watch(() => props.isPlaying, (playing) => {
 
 onBeforeUnmount(() => {
   clearManualTimer();
+  clearControlsTimer();
   if (scrollFrameId !== null) cancelAnimationFrame(scrollFrameId);
 });
 </script>
@@ -399,6 +455,7 @@ onBeforeUnmount(() => {
   max-height: 100%;
   scroll-behavior: auto;
   contain: layout style paint;
+  padding-bottom: 4.5rem;
 }
 
 .lyrics-scroll__spacer {
@@ -436,7 +493,7 @@ onBeforeUnmount(() => {
 .lyrics-shell--mobile .lyrics-scroll {
   width: 100%;
   padding-top: 4px;
-  padding-bottom: 6px;
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom));
   mask-image: linear-gradient(to bottom, transparent, black 8%, black 92%, transparent);
 }
 
@@ -475,15 +532,10 @@ onBeforeUnmount(() => {
 }
 
 .lyrics-shell--mobile .lyrics-controls {
-  position: sticky;
-  bottom: 0;
   display: grid;
   grid-template-columns: 2.5rem 2.5rem 2.5rem minmax(3.4rem, auto);
-  justify-content: center;
   gap: 8px;
-  margin-top: 8px;
-  padding: 8px 0 calc(4px + env(safe-area-inset-bottom));
-  background: color-mix(in srgb, var(--surface-0) 92%, transparent);
+  padding-bottom: calc(8px + env(safe-area-inset-bottom));
 }
 
 .lyrics-line__translation {
@@ -513,10 +565,27 @@ onBeforeUnmount(() => {
 }
 
 .lyrics-controls {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
   flex-shrink: 0;
   justify-content: center;
-  min-height: 2.5rem;
-  padding-bottom: env(safe-area-inset-bottom);
+  min-height: 4rem;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  background: linear-gradient(to top, color-mix(in srgb, var(--surface-0) 88%, transparent), transparent);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(12px);
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.lyrics-controls--visible,
+.lyrics-controls:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
 }
 
 .lyrics-control__label {
@@ -563,6 +632,10 @@ onBeforeUnmount(() => {
   }
 
   .lyrics-control {
+    transition-duration: 0.01ms;
+  }
+
+  .lyrics-controls {
     transition-duration: 0.01ms;
   }
 }

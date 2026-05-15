@@ -11,25 +11,25 @@
       <!-- 自己 -->
       <div
           id="tutorial-rename"
-          class="flex items-center gap-3 rounded-2xl border border-[var(--border-default)] bg-[var(--surface-2)] px-3 py-2 transition-colors"
+          class="flex min-w-0 items-center gap-3 rounded-2xl border border-[var(--border-default)] bg-[var(--surface-2)] px-3 py-2 transition-colors"
           :class="[
               isEnqueuerById(userStore.publicId) ? 'border-[var(--accent)]/30 bg-[var(--accent-subtle)]' :
               isLikedUser(userStore.publicId) ? 'bg-[var(--surface-3)]' : ''
           ]"
       >
         <div
-            class="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold transition-colors"
+            class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold uppercase transition-colors"
             :class="[
                 isEnqueuerById(userStore.publicId) ? 'bg-[var(--accent)] text-[var(--text-inverse)]' :
                 isLikedUser(userStore.publicId) ? 'bg-[var(--accent)] text-[var(--text-inverse)]' :
                 'bg-[var(--surface-3)] text-[var(--text-primary)]'
             ]"
         >
-          <span v-if="isEnqueuerById(userStore.publicId)" :aria-label="t('userList.dj')">{{ t('userList.dj') }}</span>
+          <span v-if="isEnqueuerById(userStore.publicId)" :aria-label="t('userList.dj')">DJ</span>
           <Zap v-else-if="isLikedUser(userStore.publicId)" class="w-4 h-4 fill-current text-[var(--text-inverse)]" />
-          <span v-else :aria-label="t('userList.me')">{{ t('userList.me') }}</span>
+          <span v-else :aria-label="t('userList.me')">{{ getInitials(me.name) }}</span>
         </div>
-        <div class="flex-1 min-w-0">
+        <div class="flex min-w-0 flex-1 flex-col gap-1">
           <input
               v-model="newName"
               @blur="doRename"
@@ -38,65 +38,78 @@
               :aria-label="t('userList.rename')"
               :class="isEnqueuerById(userStore.publicId) ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'"
           />
+          <div class="flex min-w-0 flex-wrap items-center gap-1.5">
+            <span class="member-badge" :class="isEnqueuerById(userStore.publicId) ? 'member-badge--accent' : ''">
+              {{ isEnqueuerById(userStore.publicId) ? t('userList.dj') : t('userList.me') }}
+            </span>
+            <span v-if="userStore.isGuest" class="member-badge">{{ t('settings.guest') }}</span>
+          </div>
         </div>
 
-        <div v-if="isEnqueuerById(userStore.publicId)" class="flex gap-0.5 items-end h-4" :aria-label="t('userList.statusDJ')">
+        <div v-if="isEnqueuerById(userStore.publicId)" class="flex h-4 w-4 shrink-0 items-end gap-0.5" :aria-label="t('userList.statusDJ')">
           <div class="bar bar-1 bg-[var(--accent)]"></div>
           <div class="bar bar-2 bg-[var(--accent)]"></div>
           <div class="bar bar-3 bg-[var(--accent)]"></div>
         </div>
-        <div v-else class="h-2 w-2 rounded-full bg-[var(--accent)] animate-pulse" :aria-label="t('userList.statusOnline')"></div>
+        <div v-else class="h-2 w-2 shrink-0 rounded-full bg-[var(--accent)] animate-pulse" :aria-label="t('userList.statusOnline')"></div>
       </div>
 
       <!-- 其他人 -->
       <div
           v-for="u in others"
           :key="u.publicId"
-          class="flex items-center gap-3 rounded-2xl border border-transparent bg-[var(--surface-2)] px-3 py-2 transition-colors hover:border-[var(--border-default)]"
+          class="flex min-w-0 items-center gap-3 rounded-2xl border border-transparent bg-[var(--surface-2)] px-3 py-2 transition-colors hover:border-[var(--border-default)]"
           :class="[
               isEnqueuerById(u.publicId) ? 'bg-[var(--accent-subtle)] border-[var(--accent)]/20' :
               isLikedUser(u.publicId) ? 'bg-[var(--surface-3)]' : ''
           ]"
       >
         <div
-            class="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold transition-colors"
+            class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold uppercase transition-colors"
             :class="[
                 isEnqueuerById(u.publicId) ? 'bg-[var(--accent)] text-[var(--text-inverse)]' :
                 isLikedUser(u.publicId) ? 'bg-[var(--accent)] text-[var(--text-inverse)]' :
                 'bg-[var(--surface-3)] text-[var(--text-secondary)]'
             ]"
         >
-          <span v-if="isEnqueuerById(u.publicId)" :aria-label="t('userList.dj')">{{ t('userList.dj') }}</span>
+          <span v-if="isEnqueuerById(u.publicId)" :aria-label="t('userList.dj')">DJ</span>
           <Zap v-else-if="isLikedUser(u.publicId)" class="w-4 h-4 fill-current text-[var(--text-inverse)]" />
-          <span v-else :aria-label="t('settings.member')">{{ t('settings.member') }}</span>
+          <span v-else :aria-label="t('settings.member')">{{ getInitials(u.name) }}</span>
         </div>
-        <div
-            class="flex-1 truncate text-sm font-semibold"
-            :class="isEnqueuerById(u.publicId) ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'"
-        >
-          {{ u.name }}
+        <div class="flex min-w-0 flex-1 flex-col gap-1">
+          <div
+              class="truncate text-sm font-semibold"
+              :class="isEnqueuerById(u.publicId) ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'"
+          >
+            {{ u.name }}
+          </div>
+          <div class="flex min-w-0 flex-wrap items-center gap-1.5">
+            <span class="member-badge" :class="isEnqueuerById(u.publicId) ? 'member-badge--accent' : ''">
+              {{ isEnqueuerById(u.publicId) ? t('userList.dj') : t('settings.member') }}
+            </span>
+            <span v-if="u.isGuest" class="member-badge">{{ t('settings.guest') }}</span>
+          </div>
         </div>
 
-        <div v-if="isEnqueuerById(u.publicId)" class="flex gap-0.5 items-end h-4" :aria-label="t('userList.statusDJ')">
+        <div v-if="isEnqueuerById(u.publicId)" class="flex h-4 w-4 shrink-0 items-end gap-0.5" :aria-label="t('userList.statusDJ')">
           <div class="bar bar-1 bg-[var(--accent)]"></div>
           <div class="bar bar-2 bg-[var(--accent)]"></div>
           <div class="bar bar-3 bg-[var(--accent)]"></div>
         </div>
-        <div v-else class="h-2 w-2 rounded-full bg-[var(--accent)]" :aria-label="t('userList.statusOnline')"></div>
+        <div v-else class="h-2 w-2 shrink-0 rounded-full bg-[var(--accent)]" :aria-label="t('userList.statusOnline')"></div>
       </div>
     </div>
 
     <!-- 直播流人数 -->
     <div v-if="playerStore.streamListenerCount > 0" class="mt-4 pt-3 border-t border-[var(--border-default)]">
-      <div class="flex items-center gap-3 rounded-2xl bg-[var(--surface-2)] px-3 py-2 opacity-70">
-        <div class="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--surface-3)] text-[10px] font-semibold text-[var(--text-secondary)]" :aria-label="t('userList.live')">
-          {{ t('userList.live') }}
+      <div class="flex min-w-0 items-center gap-3 rounded-2xl bg-[var(--surface-2)] px-3 py-2 opacity-70">
+        <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--surface-3)] text-[10px] font-semibold text-[var(--text-secondary)]" :aria-label="t('userList.live')">
+          LIVE
         </div>
-        <div class="text-xs font-semibold text-[var(--text-primary)]">
+        <div class="min-w-0 flex-1 truncate text-xs font-semibold text-[var(--text-primary)]">
           {{ t('userList.streamListeners', { count: playerStore.streamListenerCount }) }}
         </div>
-        <div class="flex-1"></div>
-        <div class="h-2 w-2 rounded-full bg-[var(--accent)] animate-pulse"></div>
+        <div class="h-2 w-2 shrink-0 rounded-full bg-[var(--accent)] animate-pulse"></div>
       </div>
     </div>
   </div>
@@ -116,9 +129,17 @@ const users = computed(() => userStore.onlineUsers);
 const me = computed(() => userStore.currentUser);
 const newName = ref(me.value.name);
 
-const isLikedUser = (token) => {
+const getInitials = (name) => {
+  const source = (name || '').trim();
+  if (!source) return '?';
+  const parts = source.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  return Array.from(source).slice(0, 2).join('').toUpperCase();
+};
+
+const isLikedUser = (publicId) => {
   if (!playerStore.nowPlaying) return false;
-  return playerStore.nowPlaying.likedUserIds?.includes(token);
+  return playerStore.nowPlaying.likedUserIds?.includes(publicId);
 };
 
 watch(() => me.value.name, (n) => newName.value = n);
@@ -131,11 +152,9 @@ const doRename = () => {
   }
 };
 
-const isEnqueuerById = (token) => {
+const isEnqueuerById = (publicId) => {
   if (!playerStore.nowPlaying) return false;
-  // 后端 NowPlayingInfo 现在存的是 enqueuedById (Token)
-  // 我们比较：这首歌的Token === 列表里该用户的Token
-  return playerStore.nowPlaying.enqueuedById === token;
+  return playerStore.nowPlaying.enqueuedById === publicId;
 };
 </script>
 
@@ -152,6 +171,31 @@ const isEnqueuerById = (token) => {
 .bar-1 { animation-duration: 0.6s; height: 60%; }
 .bar-2 { animation-duration: 0.8s; height: 100%; }
 .bar-3 { animation-duration: 0.5s; height: 40%; }
+
+.member-badge {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  background: var(--surface-3);
+  padding: 1px 6px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.35;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.member-badge--accent {
+  border-color: color-mix(in srgb, var(--accent) 38%, transparent);
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
 
 @keyframes bounce {
   0%, 100% { transform: scaleY(0.4); }
