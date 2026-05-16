@@ -30,7 +30,9 @@ jobs:
           cache: maven
 
       - name: Run backend tests
-        run: ./mvnw test
+        run: |
+          chmod +x ./mvnw
+          ./mvnw test
 
       # 设置 QEMU 和 Docker Buildx 以支持多架构构建 (可选，此处仅作为标准配置)
       - name: Set up Docker Buildx
