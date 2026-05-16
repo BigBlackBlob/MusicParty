@@ -34,7 +34,8 @@ class RoomLifecycleServiceTests {
         roomService.init();
 
         InMemoryUserProfileRepository userProfiles = new InMemoryUserProfileRepository();
-        UserService userService = new UserService(event -> {}, roomService, userProfiles);
+        RoomSessionCoordinator roomSessionCoordinator = new RoomSessionCoordinator(roomService, event -> {});
+        UserService userService = new UserService(event -> {}, roomService, roomSessionCoordinator, userProfiles);
         User owner = userService.handleConnect("session-1", null, "Alice");
         String roomId = roomService.createRoom("Focus", owner.getPublicId(), false, null).roomId();
 
@@ -56,7 +57,7 @@ class RoomLifecycleServiceTests {
                 persistenceService,
                 musicPlayerService,
                 chatService,
-                publishedEvents::add
+                new RoomSessionCoordinator(roomService, publishedEvents::add)
         );
 
         boolean deleted = lifecycleService.deleteRoom(roomId, owner.getPublicId(), false);
@@ -98,12 +99,29 @@ class RoomLifecycleServiceTests {
                     new AppProperties(),
                     null,
                     null,
+                    new RoomSessionCoordinator(new RoomService(
+                            new ObjectMapper(),
+                            event -> {},
+                            new AppProperties(),
+                            new InMemoryRoomRepository(),
+                            new InMemoryMigrationStateRepository()
+                    ), event -> {}),
                     new RoomStatePersistenceService(
                             new InMemoryQueueRepository(),
                             new InMemoryChatRepository(),
                             new InMemoryPlaybackStateRepository()
                     ),
-                    new RoomStateMutationService(new TestTransactionManager())
+                    new RoomStateMutationService(new TestTransactionManager()),
+                    new PlaybackTransitionService(
+                            new RoomStatePersistenceService(
+                                    new InMemoryQueueRepository(),
+                                    new InMemoryChatRepository(),
+                                    new InMemoryPlaybackStateRepository()
+                            ),
+                            new RoomStateMutationService(new TestTransactionManager()),
+                            event -> {},
+                            new AfterCommitExecutor()
+                    )
             );
             this.removedRoomId = null;
             this.skipPersistenceCleanup = false;
@@ -130,6 +148,7 @@ class RoomLifecycleServiceTests {
                             new InMemoryPlaybackStateRepository()
                     ),
                     new RoomStateMutationService(new TestTransactionManager()),
+                    new RoomSessionCoordinator(createRoomService(), event -> {}),
                     new AfterCommitExecutor(),
                     List.of()
             );
@@ -138,6 +157,18 @@ class RoomLifecycleServiceTests {
         @Override
         public void evictRoomHistory(String roomId) {
             this.evictedRoomId = roomId;
+        }
+
+        private static RoomService createRoomService() {
+            RoomService roomService = new RoomService(
+                    new ObjectMapper(),
+                    event -> {},
+                    new AppProperties(),
+                    new InMemoryRoomRepository(),
+                    new InMemoryMigrationStateRepository()
+            );
+            roomService.init();
+            return roomService;
         }
     }
 }

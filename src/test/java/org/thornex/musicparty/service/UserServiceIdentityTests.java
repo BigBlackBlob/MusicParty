@@ -2,9 +2,17 @@ package org.thornex.musicparty.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
+import org.sqlite.SQLiteDataSource;
 import org.thornex.musicparty.config.AppProperties;
+import org.thornex.musicparty.config.SqliteSchemaInitializer;
 import org.thornex.musicparty.dto.User;
 import org.thornex.musicparty.dto.UserSummary;
+import org.thornex.musicparty.event.UserCountChangeEvent;
+import org.thornex.musicparty.persistence.JdbcMigrationStateRepository;
+import org.thornex.musicparty.persistence.JdbcRoomRepository;
+import org.thornex.musicparty.persistence.JdbcUserProfileRepository;
 import org.thornex.musicparty.persistence.PersistedRoom;
 import org.thornex.musicparty.persistence.PersistedSession;
 import org.thornex.musicparty.persistence.PersistedUserProfile;
@@ -12,12 +20,15 @@ import org.thornex.musicparty.persistence.InMemoryMigrationStateRepository;
 import org.thornex.musicparty.persistence.RoomRepository;
 import org.thornex.musicparty.persistence.UserProfileRepository;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -85,14 +96,14 @@ class UserServiceIdentityTests {
                 new InMemoryMigrationStateRepository()
         );
         roomService.init();
-        UserService service = new UserService(event -> {}, roomService, userProfiles);
+        UserService service = new UserService(event -> {}, roomService, coordinator(roomService), userProfiles);
         User user = service.handleConnect("session-1", null, "Alice");
         String createdRoomId = roomService.createRoom("Alice Room", user.getPublicId(), false, null).roomId();
 
         service.handleConnect("session-2", user.getSessionToken(), "Ignored", createdRoomId);
         service.disconnectUser("session-2");
 
-        UserService restartedService = new UserService(event -> {}, roomService, userProfiles);
+        UserService restartedService = new UserService(event -> {}, roomService, coordinator(roomService), userProfiles);
         User restored = restartedService.handleConnect("session-3", user.getSessionToken(), "Ignored");
 
         assertThat(userProfiles.findByPublicId(user.getPublicId())).isPresent()
@@ -102,16 +113,171 @@ class UserServiceIdentityTests {
         assertThat(restored.getRoomId()).isEqualTo(createdRoomId);
     }
 
+    @Test
+    void switchingRoomsPublishesCountUpdatesForBothOldAndNewRoom() {
+        InMemoryUserProfileRepository userProfiles = new InMemoryUserProfileRepository();
+        RoomService roomService = new RoomService(
+                new ObjectMapper(),
+                event -> {},
+                new AppProperties(),
+                new InMemoryRoomRepository(),
+                new InMemoryMigrationStateRepository()
+        );
+        roomService.init();
+        List<Object> events = new java.util.ArrayList<>();
+        UserService service = new UserService(events::add, roomService, new RoomSessionCoordinator(roomService, events::add), userProfiles);
+
+        User user = service.handleConnect("session-1", null, "Alice");
+        String targetRoomId = roomService.createRoom("Focus", user.getPublicId(), false, null).roomId();
+        events.clear();
+
+        service.handleConnect("session-2", user.getSessionToken(), "Ignored", targetRoomId);
+
+        List<UserCountChangeEvent> countEvents = events.stream()
+                .filter(UserCountChangeEvent.class::isInstance)
+                .map(UserCountChangeEvent.class::cast)
+                .collect(Collectors.toList());
+        assertThat(countEvents).extracting(UserCountChangeEvent::getRoomId)
+                .containsExactlyInAnyOrder(RoomService.DEFAULT_ROOM_ID, targetRoomId);
+        assertThat(countEvents).filteredOn(event -> RoomService.DEFAULT_ROOM_ID.equals(event.getRoomId()))
+                .singleElement()
+                .extracting(UserCountChangeEvent::getOnlineUserCount)
+                .isEqualTo(0);
+        assertThat(countEvents).filteredOn(event -> targetRoomId.equals(event.getRoomId()))
+                .singleElement()
+                .extracting(UserCountChangeEvent::getOnlineUserCount)
+                .isEqualTo(1);
+    }
+
+    @Test
+    void restartedServiceDoesNotRestorePersistedIdentityAsOnlineUntilReconnect() {
+        InMemoryUserProfileRepository userProfiles = new InMemoryUserProfileRepository();
+        UserService service = createService(userProfiles);
+        User user = service.handleConnect("session-1", null, "Alice");
+
+        service.disconnectUser("session-1");
+        UserService restartedService = createService(userProfiles);
+
+        assertThat(restartedService.resolvePublicIdBySessionToken(user.getSessionToken())).contains(user.getPublicId());
+        assertThat(restartedService.getOnlineUserSummaries()).isEmpty();
+        assertThat(restartedService.getUserBySessionToken(user.getSessionToken())).isEmpty();
+    }
+
+    @Test
+    void staleDisconnectAfterReconnectDoesNotTakeUserOffline() {
+        InMemoryUserProfileRepository userProfiles = new InMemoryUserProfileRepository();
+        UserService service = createService(userProfiles);
+        User user = service.handleConnect("session-1", null, "Alice");
+
+        service.handleConnect("session-2", user.getSessionToken(), "Ignored");
+        service.disconnectUser("session-1");
+
+        assertThat(service.getOnlineUserSummaries()).containsExactly(new UserSummary(user.getPublicId(), "Alice", false));
+        assertThat(service.getUser("session-2")).isPresent()
+                .get()
+                .extracting(User::getSessionId)
+                .isEqualTo("session-2");
+    }
+
+    @Test
+    void bindAccountPersistsBindingsAndRestoresThemAfterRestart() {
+        InMemoryUserProfileRepository userProfiles = new InMemoryUserProfileRepository();
+        UserService service = createService(userProfiles);
+        User user = service.handleConnect("session-1", null, "Alice");
+
+        assertThat(service.bindAccount("session-1", "netease", "alice-001")).isTrue();
+
+        UserService restartedService = createService(userProfiles);
+        User restored = restartedService.handleConnect("session-2", user.getSessionToken(), "Ignored");
+
+        assertThat(restored.getBindings()).containsEntry("netease", "alice-001");
+    }
+
+    @Test
+    void bindAccountDoesNotUpdateMemoryWhenPersistenceFails() {
+        UserService service = createService(new FailingBindingsUserProfileRepository());
+        User user = service.handleConnect("session-1", null, "Alice");
+
+        try {
+            service.bindAccount("session-1", "netease", "alice-failed");
+        } catch (IllegalStateException ex) {
+            assertThat(ex).hasMessage("bindings write failed");
+        }
+
+        assertThat(user.getBindings()).isEmpty();
+    }
+
+    @Test
+    void bindAccountPersistsBindingsOnRealSqliteAndRestoresThemAfterRestart() throws Exception {
+        Path tempDir = Path.of("target", "tmp", "user-service-identity-tests");
+        Files.createDirectories(tempDir);
+        Path dbPath = tempDir.resolve("bindings.db");
+        Files.deleteIfExists(dbPath);
+
+        SQLiteDataSource dataSource = new SQLiteDataSource();
+        dataSource.setUrl("jdbc:sqlite:" + dbPath.toAbsolutePath());
+        ResourceDatabasePopulator populator = new ResourceDatabasePopulator(
+                new org.springframework.core.io.ClassPathResource("db/schema.sql")
+        );
+        new SqliteSchemaInitializer(dataSource, populator).initialize();
+
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+        UserProfileRepository userProfiles = new JdbcUserProfileRepository(jdbcTemplate);
+        RoomService roomService = new RoomService(
+                new ObjectMapper(),
+                event -> {},
+                new AppProperties(),
+                new JdbcRoomRepository(jdbcTemplate),
+                new JdbcMigrationStateRepository(jdbcTemplate)
+        );
+        roomService.init();
+
+        UserService service = new UserService(
+                event -> {},
+                roomService,
+                new RoomSessionCoordinator(roomService, event -> {}),
+                userProfiles
+        );
+        User user = service.handleConnect("session-1", null, "Alice");
+
+        assertThat(service.bindAccount("session-1", "netease", "alice-sqlite")).isTrue();
+
+        UserService restartedService = new UserService(
+                event -> {},
+                roomService,
+                new RoomSessionCoordinator(roomService, event -> {}),
+                userProfiles
+        );
+        User restored = restartedService.handleConnect("session-2", user.getSessionToken(), "Ignored");
+
+        assertThat(restored.getBindings()).containsEntry("netease", "alice-sqlite");
+        assertThat(jdbcTemplate.queryForObject("select count(1) from user_binding where public_id = ?", Integer.class, user.getPublicId()))
+                .isEqualTo(1);
+    }
+
     private UserService createService() {
         return createService(new InMemoryUserProfileRepository());
     }
 
     private UserService createService(UserProfileRepository userProfileRepository) {
+        RoomService roomService = new RoomService(
+                new ObjectMapper(),
+                event -> {},
+                new AppProperties(),
+                new InMemoryRoomRepository(),
+                new InMemoryMigrationStateRepository()
+        );
+        roomService.init();
         return new UserService(
                 event -> {},
-                new RoomService(new ObjectMapper(), event -> {}, new AppProperties(), new InMemoryRoomRepository(), new InMemoryMigrationStateRepository()),
+                roomService,
+                coordinator(roomService),
                 userProfileRepository
         );
+    }
+
+    private RoomSessionCoordinator coordinator(RoomService roomService) {
+        return new RoomSessionCoordinator(roomService, event -> {});
     }
 
     private static String sha256(String value) {
@@ -187,6 +353,7 @@ class UserServiceIdentityTests {
 
     private static final class InMemoryUserProfileRepository implements UserProfileRepository {
         private final Map<String, PersistedUserProfile> profiles = new ConcurrentHashMap<>();
+        private final Map<String, Map<String, String>> bindings = new ConcurrentHashMap<>();
         private final Map<String, PersistedSession> sessions = new ConcurrentHashMap<>();
 
         @Override
@@ -197,6 +364,18 @@ class UserServiceIdentityTests {
         @Override
         public Optional<PersistedUserProfile> findByPublicId(String publicId) {
             return Optional.ofNullable(profiles.get(publicId));
+        }
+
+        @Override
+        public Map<String, String> findBindingsByPublicId(String publicId) {
+            return Optional.ofNullable(bindings.get(publicId))
+                    .map(ConcurrentHashMap::new)
+                    .orElseGet(ConcurrentHashMap::new);
+        }
+
+        @Override
+        public void replaceBindings(String publicId, Map<String, String> bindings) {
+            this.bindings.put(publicId, new ConcurrentHashMap<>(bindings));
         }
 
         @Override
@@ -224,6 +403,45 @@ class UserServiceIdentityTests {
                         profile.lastSeenAt()
                 );
             });
+        }
+    }
+
+    private static final class FailingBindingsUserProfileRepository implements UserProfileRepository {
+        private final InMemoryUserProfileRepository delegate = new InMemoryUserProfileRepository();
+
+        @Override
+        public void upsertProfile(PersistedUserProfile profile) {
+            delegate.upsertProfile(profile);
+        }
+
+        @Override
+        public Optional<PersistedUserProfile> findByPublicId(String publicId) {
+            return delegate.findByPublicId(publicId);
+        }
+
+        @Override
+        public Map<String, String> findBindingsByPublicId(String publicId) {
+            return delegate.findBindingsByPublicId(publicId);
+        }
+
+        @Override
+        public void replaceBindings(String publicId, Map<String, String> bindings) {
+            throw new IllegalStateException("bindings write failed");
+        }
+
+        @Override
+        public void upsertSession(PersistedSession session) {
+            delegate.upsertSession(session);
+        }
+
+        @Override
+        public Optional<PersistedSession> findSessionByHash(String sessionTokenHash) {
+            return delegate.findSessionByHash(sessionTokenHash);
+        }
+
+        @Override
+        public void moveUsersToRoom(String fromRoomId, String toRoomId) {
+            delegate.moveUsersToRoom(fromRoomId, toRoomId);
         }
     }
 }

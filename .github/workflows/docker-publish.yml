@@ -8,9 +8,8 @@ on:
   workflow_dispatch:
 
 env:
-  # 默认使用 Docker Hub (docker.io). 如果使用 GitHub Container Registry, 改为 ghcr.io
-  REGISTRY: docker.io
-  IMAGE_NAME: kokinyal/musicparty
+  REGISTRY: ghcr.io
+  IMAGE_NAME: bigblackblob/musicparty
 
 jobs:
   build-and-push:
@@ -23,6 +22,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Run backend tests
+        run: ./mvnw test
+
       # 设置 QEMU 和 Docker Buildx 以支持多架构构建 (可选，此处仅作为标准配置)
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -33,8 +42,8 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       # 提取元数据 (tags, labels)
       - name: Extract Docker metadata

@@ -33,6 +33,14 @@ create table if not exists user_session (
 
 create index if not exists idx_user_session_public_id on user_session(public_id);
 
+create table if not exists user_binding (
+    public_id text not null,
+    platform text not null,
+    account_id text not null,
+    primary key (public_id, platform),
+    foreign key (public_id) references user_profile(public_id)
+);
+
 create table if not exists room_queue (
     id text primary key,
     room_id text not null,
@@ -85,6 +93,8 @@ create table if not exists room_playback_state (
     is_skip_locked integer not null default 0,
     is_shuffle_locked integer not null default 0,
     is_loading integer not null default 0,
+    liked_user_ids_json text,
+    like_markers_json text,
     play_epoch integer not null default 0,
     state_version integer not null default 0,
     last_persisted_at integer not null,

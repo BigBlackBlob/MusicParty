@@ -6,6 +6,8 @@ FRONTEND_DIR="$ROOT_DIR/music-party-web"
 LOG_DIR="$ROOT_DIR/.dev-logs"
 COOKIE_FILE="$ROOT_DIR/cookies.json"
 ENV_FILE="$ROOT_DIR/.env.local"
+HOST_TEMP_DIR=""
+HOST_TEMP_DIR_WIN=""
 
 for ((i = 1; i <= $#; i++)); do
   if [[ "${!i}" == "--env-file" ]]; then
@@ -192,6 +194,16 @@ fi
 
 mkdir -p "$LOG_DIR"
 mkdir -p "$LOG_DIR/tmp"
+HOST_TEMP_DIR="$LOG_DIR/host-temp"
+mkdir -p "$HOST_TEMP_DIR"
+if command -v cygpath >/dev/null 2>&1; then
+  HOST_TEMP_DIR_WIN="$(cygpath -aw "$HOST_TEMP_DIR")"
+else
+  HOST_TEMP_DIR_WIN="$HOST_TEMP_DIR"
+fi
+export TMPDIR="$HOST_TEMP_DIR"
+export TEMP="$HOST_TEMP_DIR_WIN"
+export TMP="$HOST_TEMP_DIR_WIN"
 export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-}"
 if [[ "$JAVA_TOOL_OPTIONS" != *"-Djava.io.tmpdir="* ]]; then
   if [[ -n "$JAVA_TOOL_OPTIONS" ]]; then
@@ -317,6 +329,7 @@ NETEASE_LOG="$LOG_DIR/netease-api.log"
   echo "netease-api-url: $NETEASE_API_URL"
   echo "backend-port: $BACKEND_PORT"
   echo "frontend-url: http://$FRONTEND_HOST:$FRONTEND_PORT"
+  echo "host-temp-dir: $HOST_TEMP_DIR_WIN"
   echo "navidrome-enabled: $NAVIDROME_ENABLED"
   echo "navidrome-base-url: $NAVIDROME_BASE_URL"
   echo "navidrome-allowed-users: $NAVIDROME_ALLOWED_USERS"
@@ -324,6 +337,7 @@ NETEASE_LOG="$LOG_DIR/netease-api.log"
 
 info "root: $ROOT_DIR"
 info "logs: $LOG_DIR"
+info "host temp dir: $HOST_TEMP_DIR_WIN"
 if [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then
   info "env file: $ENV_FILE"
 fi

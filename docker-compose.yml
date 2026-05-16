@@ -15,7 +15,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: thornex/music-party:latest
+    image: ghcr.io/bigblackblob/musicparty:latest
     container_name: music-party-app
     restart: always
     ports:

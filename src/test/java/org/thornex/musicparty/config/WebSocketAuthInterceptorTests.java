@@ -13,6 +13,7 @@ import org.thornex.musicparty.persistence.InMemoryMigrationStateRepository;
 import org.thornex.musicparty.service.RoomAccessGrant;
 import org.thornex.musicparty.service.RoomAccessService;
 import org.thornex.musicparty.service.RoomService;
+import org.thornex.musicparty.service.RoomSessionCoordinator;
 import org.thornex.musicparty.service.UserService;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -73,7 +74,7 @@ class WebSocketAuthInterceptorTests {
     private static final class TestContext {
         private final AppProperties properties = new AppProperties();
         private final RoomService roomService = new RoomService(new ObjectMapper(), event -> {}, properties, new InMemoryRoomRepository(), new InMemoryMigrationStateRepository());
-        private final UserService userService = new UserService(event -> {}, roomService, new InMemoryUserProfileRepository());
+        private final UserService userService = new UserService(event -> {}, roomService, new RoomSessionCoordinator(roomService, event -> {}), new InMemoryUserProfileRepository());
         private final RoomAccessService roomAccessService = new RoomAccessService(properties, roomService);
 
         private TestContext() {

@@ -7,6 +7,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class InMemoryUserProfileRepository implements UserProfileRepository {
 
     private final Map<String, PersistedUserProfile> profiles = new ConcurrentHashMap<>();
+    private final Map<String, Map<String, String>> bindingsByPublicId = new ConcurrentHashMap<>();
     private final Map<String, PersistedSession> sessions = new ConcurrentHashMap<>();
 
     @Override
@@ -17,6 +18,16 @@ public class InMemoryUserProfileRepository implements UserProfileRepository {
     @Override
     public Optional<PersistedUserProfile> findByPublicId(String publicId) {
         return Optional.ofNullable(profiles.get(publicId));
+    }
+
+    @Override
+    public Map<String, String> findBindingsByPublicId(String publicId) {
+        return new ConcurrentHashMap<>(bindingsByPublicId.getOrDefault(publicId, Map.of()));
+    }
+
+    @Override
+    public void replaceBindings(String publicId, Map<String, String> bindings) {
+        bindingsByPublicId.put(publicId, new ConcurrentHashMap<>(bindings == null ? Map.of() : bindings));
     }
 
     @Override

@@ -1,18 +1,14 @@
 package org.thornex.musicparty.controller;
 
-import org.springframework.messaging.MessageHeaders;
 import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
-import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
-import org.springframework.messaging.simp.SimpMessageType;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.annotation.SubscribeMapping;
 import org.springframework.stereotype.Controller;
 import org.thornex.musicparty.dto.*;
-import org.thornex.musicparty.enums.MessageType;
 import org.thornex.musicparty.service.ChatService;
 import org.thornex.musicparty.service.MusicPlayerService;
+import org.thornex.musicparty.service.MusicSocketSessionFacade;
 import org.thornex.musicparty.service.RoomLifecycleService;
 import org.thornex.musicparty.service.RoomService;
 import org.thornex.musicparty.service.UserService;
@@ -25,45 +21,33 @@ public class MusicSocketController {
 
     private final MusicPlayerService musicPlayerService;
     private final UserService userService;
-    private final SimpMessagingTemplate messagingTemplate;
     private final ChatService chatService;
     private final RoomService roomService;
     private final RoomLifecycleService roomLifecycleService;
+    private final MusicSocketSessionFacade musicSocketSessionFacade;
 
-    public MusicSocketController(MusicPlayerService musicPlayerService, UserService userService, SimpMessagingTemplate messagingTemplate, ChatService chatService, RoomService roomService, RoomLifecycleService roomLifecycleService) {
+    public MusicSocketController(MusicPlayerService musicPlayerService,
+                                 UserService userService,
+                                 ChatService chatService,
+                                 RoomService roomService,
+                                 RoomLifecycleService roomLifecycleService,
+                                 MusicSocketSessionFacade musicSocketSessionFacade) {
         this.musicPlayerService = musicPlayerService;
         this.userService = userService;
-        this.messagingTemplate = messagingTemplate;
         this.chatService = chatService;
         this.roomService = roomService;
         this.roomLifecycleService = roomLifecycleService;
+        this.musicSocketSessionFacade = musicSocketSessionFacade;
     }
 
     @MessageMapping("/player/resync")
     public void requestResync(@Header("simpSessionId") String sessionId) {
-        messagingTemplate.convertAndSendToUser(
-                sessionId,
-                "/queue/player/state",
-                musicPlayerService.getCurrentPlayerStateForSession(sessionId),
-                createSessionHeaders(sessionId)
-        );
+        musicSocketSessionFacade.sendPlayerResync(sessionId);
     }
 
     @MessageMapping("/sync/ping")
     public void syncPing(@Payload SyncPingRequest request, @Header("simpSessionId") String sessionId) {
-        long serverReceiveTime = System.currentTimeMillis();
-        SyncPongResponse response = new SyncPongResponse(
-                request.pingId(),
-                request.clientSendTime(),
-                serverReceiveTime,
-                System.currentTimeMillis()
-        );
-        messagingTemplate.convertAndSendToUser(
-                sessionId,
-                "/queue/sync/pong",
-                response,
-                createSessionHeaders(sessionId)
-        );
+        musicSocketSessionFacade.sendSyncPong(sessionId, request);
     }
 
     @MessageMapping("/enqueue")
@@ -105,12 +89,8 @@ public class MusicSocketController {
     @MessageMapping("/control/seek")
     public void seek(@Payload SeekRequest request, @Header("simpSessionId") String sessionId) {
         if (isGuest(sessionId)) return;
-        musicPlayerService.seekTo(request.positionMs(), sessionId).ifPresent(message -> {
-            userService.getUser(sessionId).ifPresent(user -> {
-                PlayerEvent errorEvent = new PlayerEvent("ERROR", "SEEK_DENIED", user.getPublicId(), message, null);
-                messagingTemplate.convertAndSendToUser(sessionId, "/queue/events", errorEvent, createSessionHeaders(sessionId));
-            });
-        });
+        musicPlayerService.seekTo(request.positionMs(), sessionId)
+                .ifPresent(message -> musicSocketSessionFacade.sendSeekDenied(sessionId, message));
     }
 
     @MessageMapping("/queue/top")
@@ -152,19 +132,8 @@ public class MusicSocketController {
 
     @MessageMapping("/user/rename")
     public void rename(RenameRequest request, @Header("simpSessionId") String sessionId) {
-        if (userService.renameUser(sessionId, request.newName())) {
-            musicPlayerService.broadcastOnlineUsers();
-            // PUSH updated user info to the user
-            userService.getUser(sessionId).ifPresent(user -> {
-                CurrentUserResponse summary = new CurrentUserResponse(user.getSessionToken(), user.getPublicId(), user.getName(), user.isGuest());
-                messagingTemplate.convertAndSendToUser(sessionId, "/queue/me", summary, createSessionHeaders(sessionId));
-            });
-        } else {
-            // RENAME_FAILED
-            userService.getUser(sessionId).ifPresent(user -> {
-                PlayerEvent errorEvent = new PlayerEvent("ERROR", "RENAME_FAILED", user.getPublicId(), "该名称已被占用或包含非法字符，请更换。", null);
-                messagingTemplate.convertAndSendToUser(sessionId, "/queue/events", errorEvent, createSessionHeaders(sessionId));
-            });
+        if (!musicSocketSessionFacade.renameAndBroadcast(sessionId, request.newName())) {
+            musicSocketSessionFacade.sendRenameFailed(sessionId);
         }
     }
 
@@ -184,10 +153,9 @@ public class MusicSocketController {
                         Boolean.TRUE.equals(request.isPrivate()),
                         request.password()
                 );
-                messagingTemplate.convertAndSendToUser(sessionId, "/queue/rooms/created", room, createSessionHeaders(sessionId));
+                musicSocketSessionFacade.sendRoomCreated(sessionId, room);
             } catch (IllegalArgumentException ex) {
-                PlayerEvent errorEvent = new PlayerEvent("ERROR", "ROOM_CREATE_FAILED", user.getPublicId(), ex.getMessage(), null);
-                messagingTemplate.convertAndSendToUser(sessionId, "/queue/events", errorEvent, createSessionHeaders(sessionId));
+                musicSocketSessionFacade.sendRoomCreateFailed(sessionId, ex.getMessage());
             }
         });
     }
@@ -200,8 +168,7 @@ public class MusicSocketController {
             boolean isAdmin = roomService.isAdminPassword(request.adminPassword());
             if (roomLifecycleService.deleteRoom(roomId, user.getPublicId(), isAdmin)) {
             } else {
-                PlayerEvent errorEvent = new PlayerEvent("ERROR", "ROOM_DELETE_FAILED", user.getPublicId(), "无权删除该房间", null);
-                messagingTemplate.convertAndSendToUser(sessionId, "/queue/events", errorEvent, createSessionHeaders(sessionId));
+                musicSocketSessionFacade.sendRoomDeleteFailed(sessionId);
             }
         });
     }
@@ -231,55 +198,13 @@ public class MusicSocketController {
     @MessageMapping("/chat")
     public void handleChat(ChatRequest request, @Header("simpSessionId") String sessionId) {
         if (isGuest(sessionId)) return;
-        
-        // 1. Check content validity
-        if (request.content() == null || request.content().trim().isEmpty()) return;
-        if (!chatService.isMessageLengthValid(request.content())) return;
-
-        // 2. Try process as command
-        if (chatService.processIncomingMessage(sessionId, request.content().trim())) {
-            return;
-        }
-
-        userService.getUser(sessionId).ifPresent(user -> {
-            // 3. Rate Limit Check
-            if (!chatService.canUserSendMessage(user.getPublicId())) return;
-
-            ChatMessage message = new ChatMessage(
-                    java.util.UUID.randomUUID().toString(),
-                    user.getPublicId(),
-                    user.getName(), 
-                    request.content().trim(),
-                    System.currentTimeMillis(),
-                    MessageType.CHAT
-            );
-
-            String roomId = userService.getRoomIdForSession(sessionId);
-            chatService.addMessage(roomId, message);
-
-            messagingTemplate.convertAndSend("/topic/rooms/" + roomId + "/chat", message);
-        });
+        chatService.handleRoomChat(sessionId, request);
     }
 
     @MessageMapping("/public-chat")
     public void handlePublicChat(ChatRequest request, @Header("simpSessionId") String sessionId) {
         if (isGuest(sessionId)) return;
-        if (request.content() == null || request.content().trim().isEmpty()) return;
-        if (!chatService.isMessageLengthValid(request.content())) return;
-
-        userService.getUser(sessionId).ifPresent(user -> {
-            if (!chatService.canUserSendMessage("public:" + user.getPublicId())) return;
-            ChatMessage message = new ChatMessage(
-                    UUID.randomUUID().toString(),
-                    user.getPublicId(),
-                    user.getName(),
-                    request.content().trim(),
-                    System.currentTimeMillis(),
-                    MessageType.CHAT
-            );
-            chatService.addPublicMessage(message);
-            messagingTemplate.convertAndSend("/topic/public/chat", message);
-        });
+        chatService.handlePublicChat(sessionId, request);
     }
 
     // 订阅时获取历史记录
@@ -292,29 +217,12 @@ public class MusicSocketController {
     @MessageMapping("/chat/history/fetch")
     public void fetchChatHistory(@Payload ChatHistoryFetchRequest request, @Header("simpSessionId") String sessionId) {
         List<ChatMessage> history = chatService.getHistory(userService.getRoomIdForSession(sessionId), request.offset(), request.limit());
-        messagingTemplate.convertAndSendToUser(
-                sessionId,
-                "/queue/chat/history",
-                history,
-                createSessionHeaders(sessionId)
-        );
+        musicSocketSessionFacade.sendRoomChatHistory(sessionId, history);
     }
 
     @MessageMapping("/public-chat/history/fetch")
     public void fetchPublicChatHistory(@Payload ChatHistoryFetchRequest request, @Header("simpSessionId") String sessionId) {
         List<ChatMessage> history = chatService.getPublicHistory(request.offset(), request.limit());
-        messagingTemplate.convertAndSendToUser(
-                sessionId,
-                "/queue/public-chat/history",
-                history,
-                createSessionHeaders(sessionId)
-        );
-    }
-
-    private MessageHeaders createSessionHeaders(String sessionId) {
-        SimpMessageHeaderAccessor headerAccessor = SimpMessageHeaderAccessor.create(SimpMessageType.MESSAGE);
-        headerAccessor.setSessionId(sessionId);
-        headerAccessor.setLeaveMutable(true);
-        return headerAccessor.getMessageHeaders();
+        musicSocketSessionFacade.sendPublicChatHistory(sessionId, history);
     }
 }
