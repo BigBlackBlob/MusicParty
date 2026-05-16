@@ -49,23 +49,73 @@
           <span>{{ hasSearched ? t('search.tryDifferent') : t('search.albumHint') }}</span>
         </div>
 
-        <TrackListItem
-          v-for="album in albums"
-          v-else
-          :key="album.id"
-          :title="album.name"
-          :artist="album.artistName || t('common.unknownArtist')"
-          :cover-url="album.coverUrl"
-        >
-          <template #meta>
-            {{ album.trackCount || 0 }} {{ t('queue.tracks') }}
-          </template>
-          <template #suffix>
-            <IconButton variant="primary" size="sm" @click="handleAddClick(album)" :aria-label="t('search.addAlbum')">
-              <Plus class="h-4 w-4" />
-            </IconButton>
-          </template>
-        </TrackListItem>
+        <div v-for="album in albums" :key="album.id" class="flex flex-col gap-1">
+          <TrackListItem
+            :title="album.name"
+            :artist="album.artistName || t('common.unknownArtist')"
+            :cover-url="album.coverUrl"
+            @click="toggleAlbum(album.id)"
+          >
+            <template #meta>
+              {{ album.trackCount || 0 }} {{ t('queue.tracks') }}
+            </template>
+            <template #suffix>
+              <div class="flex items-center gap-2">
+                <IconButton variant="ghost" size="sm" @click.stop="toggleAlbum(album.id)">
+                  <ChevronUp v-if="expandedAlbumIds.has(album.id)" class="h-4 w-4" />
+                  <ChevronDown v-else class="h-4 w-4" />
+                </IconButton>
+                <IconButton variant="primary" size="sm" @click.stop="handleAddClick(album)" :aria-label="t('search.addAlbum')">
+                  <Plus class="h-4 w-4" />
+                </IconButton>
+              </div>
+            </template>
+          </TrackListItem>
+
+          <!-- Album Songs List (Mobile) -->
+          <div v-if="expandedAlbumIds.has(album.id)" class="ml-4 space-y-1 mb-4 mt-1 border-l-2 border-surface-glass-border pl-2">
+            <div v-if="loadingAlbumIds.has(album.id)" class="py-4 text-center text-text-muted text-[12px]">
+              {{ t('search.loading') }}
+            </div>
+            <div v-else-if="albumSongs[album.id]" class="space-y-1">
+              <!-- Album Multi-select Toolbar (Mobile) -->
+              <div class="flex items-center justify-between px-2 py-2 mb-2 bg-surface-glass-control rounded-md border border-surface-glass-border">
+                <div class="flex items-center gap-4">
+                  <button @click="selectAllAlbumSongs(album.id)" class="text-[10px] font-black uppercase tracking-widest text-text-tertiary">
+                    {{ t('search.selectAll') }}
+                  </button>
+                  <button @click="clearAlbumSongSelections(album.id)" class="text-[10px] font-black uppercase tracking-widest text-text-tertiary">
+                    {{ t('search.deselectAll') }}
+                  </button>
+                </div>
+                <button 
+                  v-if="hasSelectedSongs(album.id)"
+                  @click="addSelectedSongs(album.id)"
+                  class="px-3 py-1 bg-primary text-on-primary rounded-full text-[10px] font-black uppercase tracking-widest"
+                >
+                  {{ t('search.addSelected') }}
+                </button>
+              </div>
+
+              <div 
+                v-for="(song, idx) in albumSongs[album.id]" :key="song.id"
+                class="flex items-center gap-3 p-2 rounded-md active:bg-surface-glass-control transition-colors"
+                @click="toggleSongSelection(album.id, song.id)"
+              >
+                <div class="flex h-5 w-5 items-center justify-center rounded-full border transition-colors shrink-0" :class="isSongSelected(album.id, song.id) ? 'border-primary bg-primary text-on-primary' : 'border-surface-glass-border bg-transparent text-transparent'">
+                  <Check class="h-3 w-3" />
+                </div>
+                <div class="min-w-0 flex-1">
+                  <p class="truncate text-[13px] text-text-primary">{{ song.name }}</p>
+                  <p class="truncate text-[11px] text-text-muted">{{ formatArtists(song.artists) }}</p>
+                </div>
+                <IconButton variant="ghost" size="sm" @click.stop="player.enqueue(platform, song.id)">
+                  <Plus class="h-4 w-4" />
+                </IconButton>
+              </div>
+            </div>
+          </div>
+        </div>
       </template>
 
       <template v-else>
@@ -97,14 +147,22 @@
 </template>
 
 <script setup>
-import { computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Loader2, Plus, Search } from 'lucide-vue-next';
+import { Loader2, Plus, Search, ChevronDown, ChevronUp, Check } from 'lucide-vue-next';
 import { usePlayerStore } from '../../stores/player';
 import { useSearchLogic } from '../../composables/useSearchLogic';
 import IconButton from '../ui/IconButton.vue';
 import SegmentedControl from '../ui/SegmentedControl.vue';
 import TrackListItem from '../ui/TrackListItem.vue';
+import {
+  addAlbumSelections,
+  clearAlbumSelections,
+  hasAlbumSelections,
+  isAlbumSongSelected,
+  selectedAlbumSongs,
+  toggleAlbumSongSelection
+} from '../../utils/selection';
 
 const { t } = useI18n();
 const player = usePlayerStore();
@@ -120,8 +178,14 @@ const {
   searchType,
   isAdminMode,
   hasSubmittedSearch,
-  doSearch
+  doSearch,
+  albumSongs,
+  loadingAlbumIds,
+  expandedAlbumIds,
+  toggleAlbum
 } = useSearchLogic();
+
+const selectedSongs = ref(new Set());
 
 const hasSearched = computed(() => hasSubmittedSearch.value || songs.value.length > 0 || albums.value.length > 0);
 const resultMode = computed(() => searchType.value === 'album' && supportsAlbumSearch.value ? 'album' : 'song');
@@ -134,6 +198,41 @@ const handleAddClick = (item) => {
     return;
   }
   player.enqueue(platform.value, item.id);
+};
+
+const toggleSongSelection = (albumId, songId) => {
+  toggleAlbumSongSelection(selectedSongs.value, platform.value, albumId, songId);
+};
+
+const isSongSelected = (albumId, songId) => {
+  return isAlbumSongSelected(selectedSongs.value, platform.value, albumId, songId);
+};
+
+const selectAllAlbumSongs = (albumId) => {
+  const songs = albumSongs.value[albumId] || [];
+  addAlbumSelections(selectedSongs.value, platform.value, albumId, songs);
+};
+
+const clearAlbumSongSelections = (albumId) => {
+  const songs = albumSongs.value[albumId] || [];
+  clearAlbumSelections(selectedSongs.value, platform.value, albumId, songs);
+};
+
+const hasSelectedSongs = (albumId) => {
+  const songs = albumSongs.value[albumId] || [];
+  return hasAlbumSelections(selectedSongs.value, platform.value, albumId, songs);
+};
+
+const addSelectedSongs = (albumId) => {
+  const songs = albumSongs.value[albumId] || [];
+  const toAdd = selectedAlbumSongs(selectedSongs.value, platform.value, albumId, songs);
+  if (toAdd.length === 0) return;
+  
+  toAdd.forEach(s => {
+    player.enqueue(platform.value, s.id);
+  });
+  
+  clearAlbumSongSelections(albumId);
 };
 
 const formatArtists = (artists) => Array.isArray(artists) && artists.length ? artists.join(' / ') : t('common.unknownArtist');

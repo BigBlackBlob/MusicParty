@@ -41,6 +41,10 @@ export function useSearchLogic(emit = () => {}) {
     const searchType = ref('song'); // 'song' | 'album' | 'playlist'
     const isAdminMode = ref(false);
 
+    const albumSongs = ref({}); // albumId -> songs[]
+    const loadingAlbumIds = ref(new Set());
+    const expandedAlbumIds = ref(new Set());
+
     // 存储原始的管理员指令
     const adminCommand = ref('');
 
@@ -132,6 +136,8 @@ export function useSearchLogic(emit = () => {}) {
         listMode.value = searchType.value === 'album' && supportsAlbumSearch.value ? 'albumSearch' : 'search';
         hasSubmittedSearch.value = true;
         loading.value = true;
+        expandedAlbumIds.value = new Set();
+        loadingAlbumIds.value = new Set();
         
         try {
             if (searchType.value === 'album' && supportsAlbumSearch.value) {
@@ -190,6 +196,28 @@ export function useSearchLogic(emit = () => {}) {
         success(t('search.addingPlaylist'));
     };
 
+    const toggleAlbum = async (albumId) => {
+        if (expandedAlbumIds.value.has(albumId)) {
+            expandedAlbumIds.value.delete(albumId);
+            return;
+        }
+
+        expandedAlbumIds.value.add(albumId);
+        if (albumSongs.value[albumId]) return;
+
+        try {
+            loadingAlbumIds.value.add(albumId);
+            const data = await musicApi.getNeteaseAlbumSongs(albumId);
+            albumSongs.value[albumId] = data;
+        } catch (e) {
+            console.error('Failed to load album songs:', e);
+            error(extractErrorMessage(e, t('search.failed')));
+            expandedAlbumIds.value.delete(albumId);
+        } finally {
+            loadingAlbumIds.value.delete(albumId);
+        }
+    };
+
     return {
         platform,
         platforms,
@@ -209,10 +237,14 @@ export function useSearchLogic(emit = () => {}) {
         currentPlaylistPage,
         canGoNext,
         canGoPlaylistNext,
+        albumSongs,
+        loadingAlbumIds,
+        expandedAlbumIds,
         doSearch,
         nextPage,
         prevPage,
-        addAllPlaylistSongs
+        addAllPlaylistSongs,
+        toggleAlbum
     };
 }
 

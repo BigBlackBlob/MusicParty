@@ -377,6 +377,40 @@ public class MusicQueueManager {
         queue.addAll(list);
     }
 
+    public synchronized void reorderByQueueId(String queueId, String targetQueueId, String position) {
+        if (queueId == null || targetQueueId == null || queueId.equals(targetQueueId)) {
+            return;
+        }
+
+        List<MusicQueueItem> list = new ArrayList<>(queue);
+        int oldIndex = indexOfQueueId(list, queueId);
+        int targetIndex = indexOfQueueId(list, targetQueueId);
+        if (oldIndex < 0 || targetIndex < 0) {
+            return;
+        }
+
+        MusicQueueItem item = list.remove(oldIndex);
+        if (oldIndex < targetIndex) {
+            targetIndex--;
+        }
+
+        int insertIndex = "after".equalsIgnoreCase(position) ? targetIndex + 1 : targetIndex;
+        insertIndex = Math.max(0, Math.min(insertIndex, list.size()));
+        list.add(insertIndex, item);
+
+        queue.clear();
+        queue.addAll(list);
+    }
+
+    private int indexOfQueueId(List<MusicQueueItem> items, String queueId) {
+        for (int i = 0; i < items.size(); i++) {
+            if (queueId.equals(items.get(i).queueId())) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     public List<MusicQueueItem> getQueueSnapshot() {
         return new ArrayList<>(queue);
     }

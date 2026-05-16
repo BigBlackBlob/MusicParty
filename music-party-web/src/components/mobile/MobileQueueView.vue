@@ -214,7 +214,13 @@ const initSortable = () => {
     delay: 100, // 给长按留一点空间
     onEnd: (evt) => {
       if (evt.oldIndex !== evt.newIndex) {
-        player.reorderQueue(evt.oldIndex, evt.newIndex);
+        const moved = queue.value[evt.oldIndex];
+        const target = queue.value[evt.newIndex];
+        if (moved?.queueId && target?.queueId) {
+          player.reorderQueue(evt.oldIndex, evt.newIndex, moved.queueId, target.queueId, 'before');
+        } else {
+          player.reorderQueue(evt.oldIndex, evt.newIndex);
+        }
       }
     }
   });

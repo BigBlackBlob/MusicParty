@@ -96,18 +96,71 @@
                      {{ t('search.addAllSongs') }}
                    </button>
                 </div>
-                <div v-for="item in displayItems" :key="`${searchType}:${item.id}`" class="flex cursor-pointer items-center gap-4 rounded-lg border border-transparent p-3 transition-all hover:border-border-subtle hover:bg-[var(--surface-control-hover)]">
-                  <CoverImage v-if="item.coverUrl" :src="item.coverUrl" :alt="item.name" class="w-10 h-10 rounded object-cover" />
-                  <div v-else class="flex h-10 w-10 items-center justify-center rounded bg-[var(--surface-control)]">
-                    <span class="material-symbols-outlined text-[20px] text-text-muted">{{ resultMode === 'album' ? 'album' : 'music_note' }}</span>
+                
+                <div v-for="item in displayItems" :key="`${searchType}:${item.id}`" class="flex flex-col gap-1">
+                  <div @click="resultMode === ALBUM_SEARCH_TYPE && toggleAlbum(item.id)" class="flex cursor-pointer items-center gap-4 rounded-lg border border-transparent p-3 transition-all hover:border-border-subtle hover:bg-[var(--surface-control-hover)]">
+                    <CoverImage v-if="item.coverUrl" :src="item.coverUrl" :alt="item.name" class="w-10 h-10 rounded object-cover" />
+                    <div v-else class="flex h-10 w-10 items-center justify-center rounded bg-[var(--surface-control)]">
+                      <span class="material-symbols-outlined text-[20px] text-text-muted">{{ resultMode === 'album' ? 'album' : 'music_note' }}</span>
+                    </div>
+                    <div class="min-w-0 flex-1">
+                      <p class="truncate text-text-primary font-compact text-[13px]">{{ item.name }}</p>
+                      <p class="truncate text-text-muted text-[11px]">{{ formatArtists(item.artists || item.artistName) }}</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <button v-if="resultMode === ALBUM_SEARCH_TYPE" @click.stop="toggleAlbum(item.id)" class="text-text-muted hover:text-text-primary transition-colors" :title="t('search.expandAlbum')">
+                        <span class="material-symbols-outlined text-[20px]">{{ expandedAlbumIds.has(item.id) ? 'expand_less' : 'expand_more' }}</span>
+                      </button>
+                      <button @click.stop="handleAddClick(item)" class="text-primary hover:text-text-primary" :title="resultMode === ALBUM_SEARCH_TYPE ? t('search.addAlbum') : t('search.addSong')" :aria-label="resultMode === ALBUM_SEARCH_TYPE ? t('search.addAlbum') : t('search.addSong')">
+                        <span class="material-symbols-outlined text-[20px]">{{ resultMode === 'album' ? 'library_add' : 'add_circle' }}</span>
+                      </button>
+                    </div>
                   </div>
-                  <div class="min-w-0 flex-1">
-                    <p class="truncate text-text-primary font-compact text-[13px]">{{ item.name }}</p>
-                    <p class="truncate text-text-muted text-[11px]">{{ formatArtists(item.artists || item.artistName) }}</p>
+
+                  <!-- Album Songs List -->
+                  <div v-if="resultMode === ALBUM_SEARCH_TYPE && expandedAlbumIds.has(item.id)" class="ml-14 space-y-1 mb-4 mt-1">
+                    <div v-if="loadingAlbumIds.has(item.id)" class="py-4 text-center text-text-muted text-[12px] font-compact">
+                      {{ t('search.loading') }}
+                    </div>
+                    <div v-else-if="albumSongs[item.id]" class="space-y-1">
+                      <!-- Album Multi-select Toolbar -->
+                      <div class="flex items-center justify-between px-2 py-1 mb-2 bg-surface-raised rounded-md border border-border-default">
+                         <div class="flex items-center gap-4">
+                            <button @click="selectAllAlbumSongs(item.id)" class="text-[10px] font-black uppercase tracking-widest text-text-muted hover:text-primary transition-colors">
+                               {{ t('search.selectAll') }}
+                            </button>
+                            <button @click="clearAlbumSongSelections(item.id)" class="text-[10px] font-black uppercase tracking-widest text-text-muted hover:text-error transition-colors">
+                               {{ t('search.deselectAll') }}
+                            </button>
+                         </div>
+                         <button 
+                          v-if="hasSelectedSongs(item.id)"
+                          @click="addSelectedSongs(item.id)"
+                          class="px-3 py-1 bg-primary text-on-primary rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-[var(--accent-hover)] transition-all shadow-md"
+                         >
+                            {{ t('search.addSelected') }}
+                         </button>
+                      </div>
+
+                      <div 
+                        v-for="(song, idx) in albumSongs[item.id]" :key="song.id"
+                        class="group flex items-center gap-3 p-2 rounded-md hover:bg-surface-raised transition-colors cursor-pointer"
+                        @click="toggleSongSelection(item.id, song.id)"
+                      >
+                         <div class="flex h-5 w-5 items-center justify-center rounded-full border transition-colors shrink-0" :class="isSongSelected(item.id, song.id) ? 'border-primary bg-primary text-on-primary' : 'border-border-default bg-transparent text-transparent'">
+                            <span class="material-symbols-outlined text-[12px]">check</span>
+                         </div>
+                         <span class="text-[11px] font-mono text-text-tertiary w-4 shrink-0">{{ idx + 1 }}</span>
+                         <div class="min-w-0 flex-1">
+                            <p class="truncate text-[12px] text-text-primary font-bold">{{ song.name }}</p>
+                            <p class="truncate text-[10px] text-text-muted">{{ formatArtists(song.artists) }}</p>
+                         </div>
+                         <button @click.stop="playerStore.enqueue(platform, song.id)" class="text-text-muted hover:text-primary transition-colors opacity-0 group-hover:opacity-100">
+                            <span class="material-symbols-outlined text-[18px]">add_circle</span>
+                         </button>
+                      </div>
+                    </div>
                   </div>
-                  <button @click="handleAddClick(item)" class="text-primary hover:text-text-primary" :title="resultMode === ALBUM_SEARCH_TYPE ? t('search.addAlbum') : t('search.addSong')" :aria-label="resultMode === ALBUM_SEARCH_TYPE ? t('search.addAlbum') : t('search.addSong')">
-                    <span class="material-symbols-outlined text-[20px]">{{ resultMode === 'album' ? 'library_add' : 'add_circle' }}</span>
-                  </button>
                 </div>
 
                 <!-- Pagination Control -->
@@ -154,12 +207,20 @@
 </template>
 
 <script setup>
-import { computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { usePlayerStore } from '../stores/player';
 import { useSearchLogic } from '../composables/useSearchLogic';
 import { DialogRoot, DialogPortal, DialogOverlay, DialogContent } from 'reka-ui';
 import CoverImage from './CoverImage.vue';
+import {
+  addAlbumSelections,
+  clearAlbumSelections,
+  hasAlbumSelections,
+  isAlbumSongSelected,
+  selectedAlbumSongs,
+  toggleAlbumSongSelection
+} from '../utils/selection';
 
 defineProps(['isOpen']);
 const emit = defineEmits(['close']);
@@ -171,8 +232,11 @@ const PLAYLIST_SEARCH_TYPE = 'playlist';
 
 const { 
   platform, platforms, supportsAlbumSearch, keyword, songs, albums, playlistSongs, loading, searchType, doSearch, loadPlatforms, isAdminMode, hasSubmittedSearch, 
-  currentPage, currentPlaylistPage, canGoNext, canGoPlaylistNext, nextPage, prevPage, addAllPlaylistSongs 
+  currentPage, currentPlaylistPage, canGoNext, canGoPlaylistNext, nextPage, prevPage, addAllPlaylistSongs,
+  albumSongs, loadingAlbumIds, expandedAlbumIds, toggleAlbum
 } = useSearchLogic(emit);
+
+const selectedSongs = ref(new Set());
 
 const hasSearched = computed(() => hasSubmittedSearch.value || songs.value.length > 0 || albums.value.length > 0 || playlistSongs.value.length > 0);
 const activeCurrentPage = computed(() => searchType.value === PLAYLIST_SEARCH_TYPE ? currentPlaylistPage.value : currentPage.value);
@@ -219,6 +283,41 @@ const handleAddClick = (song) => {
     return;
   }
   playerStore.enqueue(platform.value, song.id);
+};
+
+const toggleSongSelection = (albumId, songId) => {
+  toggleAlbumSongSelection(selectedSongs.value, platform.value, albumId, songId);
+};
+
+const isSongSelected = (albumId, songId) => {
+  return isAlbumSongSelected(selectedSongs.value, platform.value, albumId, songId);
+};
+
+const selectAllAlbumSongs = (albumId) => {
+  const songs = albumSongs.value[albumId] || [];
+  addAlbumSelections(selectedSongs.value, platform.value, albumId, songs);
+};
+
+const clearAlbumSongSelections = (albumId) => {
+  const songs = albumSongs.value[albumId] || [];
+  clearAlbumSelections(selectedSongs.value, platform.value, albumId, songs);
+};
+
+const hasSelectedSongs = (albumId) => {
+  const songs = albumSongs.value[albumId] || [];
+  return hasAlbumSelections(selectedSongs.value, platform.value, albumId, songs);
+};
+
+const addSelectedSongs = (albumId) => {
+  const songs = albumSongs.value[albumId] || [];
+  const toAdd = selectedAlbumSongs(selectedSongs.value, platform.value, albumId, songs);
+  if (toAdd.length === 0) return;
+  
+  toAdd.forEach(s => {
+    playerStore.enqueue(platform.value, s.id);
+  });
+  
+  clearAlbumSongSelections(albumId);
 };
 
 onMounted(loadPlatforms);

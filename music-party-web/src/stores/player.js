@@ -11,6 +11,7 @@ import { musicApi } from '../api/music';
 import { roomApi } from '../api/rooms';
 import { WS_DEST } from '../constants/api';
 import { STORAGE_KEYS } from '../constants/keys';
+import { shouldForceSocketReconnect } from '../utils/socketHealth';
 
 export const usePlayerStore = defineStore('player', () => {
     // === 1. State ===
@@ -44,6 +45,7 @@ export const usePlayerStore = defineStore('player', () => {
     const lastServerTimestamp = ref(0);
     const forceNextSyncSeek = ref(false);
     const lastPingSentAt = ref(0);
+    const lastPongAt = ref(0);
     const lastResyncSentAt = ref(0);
     const lastRttMs = ref(null);
     const localProgress = ref(0);
@@ -107,6 +109,7 @@ export const usePlayerStore = defineStore('player', () => {
         const rtt = clientReceiveTime - pong.clientSendTime;
         if (rtt < 0 || rtt > 3000) return;
         lastRttMs.value = rtt;
+        lastPongAt.value = clientReceiveTime;
 
         const sampleOffset = (pong.serverSendTime + rtt / 2) - clientReceiveTime;
         if (hasClockSample.value && Math.abs(sampleOffset - serverClockOffset.value) > 10000) return;
@@ -256,8 +259,8 @@ export const usePlayerStore = defineStore('player', () => {
     };
 
     const tryReconnect = () => {
-        if (!connected.value) {
-            socketService.forceReconnect();
+        if (shouldForceSocketReconnect({ connected: connected.value, lastPongAt: lastPongAt.value })) {
+            socketService.reconnectNow();
         } else {
             requestSyncRefresh('reconnect-check', true);
         }
@@ -303,9 +306,9 @@ export const usePlayerStore = defineStore('player', () => {
         return true;
     };
 
-    const reorderQueue = (oldIndex, newIndex) => {
+    const reorderQueue = (oldIndex, newIndex, queueId = null, targetQueueId = null, position = 'before') => {
         if (!requireAuth()) return;
-        socketService.send(WS_DEST.QUEUE_REORDER, { oldIndex, newIndex });
+        socketService.send(WS_DEST.QUEUE_REORDER, { oldIndex, newIndex, queueId, targetQueueId, position });
     };
 
     const bindAccount = (platform, accountId) => {

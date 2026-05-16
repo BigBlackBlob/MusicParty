@@ -120,6 +120,10 @@ public class MusicSocketController {
     @MessageMapping("/queue/reorder")
     public void reorderQueue(@Payload QueueReorderRequest request, @Header("simpSessionId") String sessionId) {
         if (isGuest(sessionId)) return;
+        if (request.queueId() != null && request.targetQueueId() != null) {
+            musicPlayerService.reorderQueue(request.queueId(), request.targetQueueId(), request.position(), sessionId);
+            return;
+        }
         musicPlayerService.reorderQueue(request.oldIndex(), request.newIndex(), sessionId);
     }
 

@@ -1,6 +1,7 @@
 // src/composables/useAudio.js
 
 import { ref, onMounted, onUnmounted, watch } from 'vue';
+import { isUserGestureRequiredError } from '../utils/audioPlayback';
 
 const SMALL_DRIFT_MS = 250;
 const RATE_CORRECTION_DRIFT_MS = 2000;
@@ -13,6 +14,7 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
     const isBuffering = ref(false);
     const retryCount = ref(0);
     const isErrorState = ref(false);
+    const needsUserGesture = ref(false);
     let syncTimer = null;
     let wakeLock = null;
     let smoothSeekInFlight = false;
@@ -178,6 +180,7 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
 
         try {
             await audioRef.value.play();
+            needsUserGesture.value = false;
             isErrorState.value = false;
             updateMediaSession();
             requestWakeLock();
@@ -187,7 +190,8 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
             }
         } catch (e) {
             // NotAllowedError 是浏览器由于缺乏用户交互而拦截
-            if (e.name === 'NotAllowedError') {
+            if (isUserGestureRequiredError(e)) {
+                needsUserGesture.value = true;
                 console.warn("Autoplay blocked. User interaction required.");
             } else if (e.name !== 'AbortError') {
                 console.warn("Play failed:", e);
@@ -234,8 +238,9 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
             });
         }
 
-        retryCount.value = 0;
-        isErrorState.value = false;
+            retryCount.value = 0;
+            isErrorState.value = false;
+            needsUserGesture.value = false;
         transitionFadeInPending = supportsTransitionFade();
         setFadeGain(transitionFadeInPending ? 0 : 1);
         // 切歌会导致 src 变化，自动触发 load -> canplay -> checkAutoPlay
@@ -377,6 +382,8 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
         isBuffering,
         isErrorState,
         retryCount,
+        needsUserGesture,
+        safePlay,
         handleError,
         checkAutoPlay
     };

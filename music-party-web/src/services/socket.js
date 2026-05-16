@@ -19,6 +19,7 @@ class SocketService {
     connect(authHeaders, callbacks, subscriptions) {
         // 避免重复连接
         if (this.client && this.client.active) return;
+        this.stompConfig = { authHeaders, callbacks, subscriptions };
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const brokerURL = `${protocol}//${window.location.host}/ws`;
@@ -87,6 +88,14 @@ class SocketService {
         if (this.client && !this.client.active) {
             console.log('Force reconnecting socket...');
             this.client.activate();
+        }
+    }
+
+    reconnectNow() {
+        const config = this.stompConfig;
+        this.disconnect();
+        if (config) {
+            setTimeout(() => this.connect(config.authHeaders, config.callbacks, config.subscriptions), 100);
         }
     }
 
