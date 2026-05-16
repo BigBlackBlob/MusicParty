@@ -98,7 +98,7 @@
               </div>
 
               <div 
-                v-for="(song, idx) in albumSongs[album.id]" :key="song.id"
+                v-for="song in albumSongs[album.id]" :key="song.id"
                 class="flex items-center gap-3 p-2 rounded-md active:bg-surface-glass-control transition-colors"
                 @click="toggleSongSelection(album.id, song.id)"
               >
