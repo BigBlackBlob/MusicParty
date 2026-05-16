@@ -22,10 +22,9 @@ import org.thornex.musicparty.service.stream.LiveStreamService;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -40,8 +39,10 @@ public class MusicPlayerService {
     private final AppProperties appProperties;
     private final NavidromeAccessService navidromeAccessService;
     private final RoomService roomService;
+    private final RoomSessionCoordinator roomSessionCoordinator;
     private final RoomStatePersistenceService roomStatePersistenceService;
     private final RoomStateMutationService roomStateMutationService;
+    private final PlaybackTransitionService playbackTransitionService;
     private final Map<String, RoomPlayerSession> sessions = new ConcurrentHashMap<>();
 
     public MusicPlayerService(List<IMusicApiService> apiServices,
@@ -52,8 +53,10 @@ public class MusicPlayerService {
                               AppProperties appProperties,
                               NavidromeAccessService navidromeAccessService,
                               RoomService roomService,
+                              RoomSessionCoordinator roomSessionCoordinator,
                               RoomStatePersistenceService roomStatePersistenceService,
-                              RoomStateMutationService roomStateMutationService) {
+                              RoomStateMutationService roomStateMutationService,
+                              PlaybackTransitionService playbackTransitionService) {
         this.apiServiceMap = apiServices.stream().collect(Collectors.toMap(IMusicApiService::getPlatformName, Function.identity()));
         this.userService = userService;
         this.localCacheService = localCacheService;
@@ -62,8 +65,10 @@ public class MusicPlayerService {
         this.appProperties = appProperties;
         this.navidromeAccessService = navidromeAccessService;
         this.roomService = roomService;
+        this.roomSessionCoordinator = roomSessionCoordinator;
         this.roomStatePersistenceService = roomStatePersistenceService;
         this.roomStateMutationService = roomStateMutationService;
+        this.playbackTransitionService = playbackTransitionService;
     }
 
     @PostConstruct
@@ -127,9 +132,7 @@ public class MusicPlayerService {
         for (String roomId : coldRoomIds) {
             RoomPlayerSession removed = sessions.remove(roomId);
             if (removed != null) {
-                removed.flushPersistentState();
-                eventPublisher.publishEvent(new RoomSessionEvictedEvent(this, roomId));
-                log.info("Evicted cold room session {}", roomId);
+                roomSessionCoordinator.evictColdRoom(roomId, removed::flushPersistentState);
             }
         }
     }
@@ -261,26 +264,10 @@ public class MusicPlayerService {
     public class RoomPlayerSession {
         private final String roomId;
         private final MusicQueueManager queueManager;
-        private final AtomicReference<PlayableMusic> currentMusic = new AtomicReference<>(null);
-        private final AtomicReference<String> currentEnqueuerId = new AtomicReference<>(null);
-        private final AtomicReference<String> currentEnqueuerName = new AtomicReference<>(null);
-        private final AtomicLong positionAnchor = new AtomicLong(0);
-        private final AtomicLong timestampAnchor = new AtomicLong(0);
-        private final AtomicLong positionUpdatedAt = new AtomicLong(0);
-        private final AtomicBoolean isShuffle = new AtomicBoolean(false);
-        private final AtomicBoolean isPaused = new AtomicBoolean(false);
-        private final AtomicBoolean isPauseLocked = new AtomicBoolean(false);
-        private final AtomicBoolean isSkipLocked = new AtomicBoolean(false);
-        private final AtomicBoolean isShuffleLocked = new AtomicBoolean(false);
-        private final AtomicBoolean isLoading = new AtomicBoolean(false);
+        private final RoomPlaybackState playbackState = new RoomPlaybackState();
         private final AtomicBoolean isStreamActive = new AtomicBoolean(false);
-        private final Set<String> currentLikedUserIds = ConcurrentHashMap.newKeySet();
-        private final List<Long> currentLikeMarkers = new CopyOnWriteArrayList<>();
         private final AtomicLong lastControlTimestamp = new AtomicLong(0);
         private final AtomicLong playHeadVersion = new AtomicLong(0);
-        private final AtomicLong stateVersion = new AtomicLong(0);
-        private final AtomicLong playEpoch = new AtomicLong(0);
-        private final AtomicLong lastHotActivityAt = new AtomicLong(System.currentTimeMillis());
 
         private static final long GLOBAL_COOLDOWN_MS = 1000;
         private static final long IDLE_RESET_TIMEOUT_MS = 2 * 60 * 60 * 1000L;
@@ -299,20 +286,17 @@ public class MusicPlayerService {
         }
 
         public void playerLoop() {
-            if (isPaused.get()) return;
-            PlayableMusic music = currentMusic.get();
+            if (playbackState.isPaused()) return;
+            PlayableMusic music = playbackState.currentMusic();
             if (music != null) {
-                long currentPos = calculateCurrentPosition();
+                long currentPos = playbackState.calculateCurrentPosition();
                 if (currentPos >= music.duration() && music.duration() > 0) {
                     Music finishedMusic = new Music(music.id(), music.name(), music.artists(), music.duration(), music.platform(), music.coverUrl());
                     roomStateMutationService.runInTransaction(() -> {
-                        queueManager.addToHistory(finishedMusic);
-                        roomStatePersistenceService.appendHistoryEntry(roomId, finishedMusic, currentEnqueuerId.get());
-                        currentMusic.set(null);
-                        currentEnqueuerId.set(null);
-                        currentEnqueuerName.set(null);
+                        appendFinishedTrackToHistory(finishedMusic);
+                        playbackState.clearCurrentTrack();
                         persistPlaybackStateSnapshot();
-                        bumpPlayEpochAndStateVersion();
+                        playbackState.bumpPlayEpochAndStateVersion();
                     });
                     playNextInQueue();
                 }
@@ -323,27 +307,29 @@ public class MusicPlayerService {
         }
 
         private synchronized void playNextInQueue() {
-            if (currentMusic.get() != null || isLoading.get()) return;
-            MusicQueueItem nextItem = queueManager.pollNext(isShuffle.get(), buildStatusMap(), userService.getRecentlyActivePublicIds(roomId));
+            if (playbackState.currentMusic() != null || playbackState.isLoading()) return;
+            MusicQueueItem nextItem = queueManager.pollNext(playbackState.isShuffle(), buildStatusMap(), userService.getRecentlyActivePublicIds(roomId));
             if (nextItem == null) {
-                isLoading.set(false);
-                persistPlaybackStateSnapshot();
-                broadcastFullPlayerState();
+                playbackState.setLoading(false);
+                applyPlaybackTransition(false, false, true, null);
                 return;
             }
-            roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
             if (nextItem.status() == QueueItemStatus.FAILED) {
-                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", "加载失败: " + nextItem.music().name(), roomId));
+                applyPlaybackTransition(
+                        true,
+                        true,
+                        false,
+                        new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", "加载失败: " + nextItem.music().name(), roomId)
+                );
                 playNextInQueue();
                 return;
             }
             long version = playHeadVersion.incrementAndGet();
-            isLoading.set(true);
-            touchHotActivity();
-            persistPlaybackStateSnapshot();
-            bumpStateVersion();
-            broadcastFullPlayerState();
-            isPaused.set(false);
+            playbackState.setLoading(true);
+            playbackState.setPaused(false);
+            playbackState.touchHotActivity();
+            playbackState.bumpStateVersion();
+            applyPlaybackTransition(true, true, true, null);
             try {
                 getApiService(nextItem.music().platform()).getPlayableMusic(nextItem.music().id())
                         .timeout(Duration.ofSeconds(10))
@@ -351,64 +337,40 @@ public class MusicPlayerService {
                             if (playHeadVersion.get() == version) applyNewSong(playable, nextItem);
                         }, error -> {
                             log.error("Play failed for {} in room {}", nextItem.music().name(), roomId, error);
-                            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", nextItem.music().name(), roomId));
-                            isLoading.set(false);
-                            persistPlaybackStateSnapshot();
-                            bumpStateVersion();
-                            broadcastFullPlayerState();
+                            playbackState.setLoading(false);
+                            playbackState.bumpStateVersion();
+                            applyPlaybackTransition(
+                                    false,
+                                    false,
+                                    true,
+                                    new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", nextItem.music().name(), roomId)
+                            );
                             playNextInQueue();
                         });
             } catch (Exception e) {
-                isLoading.set(false);
-                persistPlaybackStateSnapshot();
-                bumpStateVersion();
-                broadcastFullPlayerState();
+                playbackState.setLoading(false);
+                playbackState.bumpStateVersion();
+                applyPlaybackTransition(false, false, true, null);
             }
         }
 
         private void applyNewSong(PlayableMusic music, MusicQueueItem queueItem) {
-            currentLikedUserIds.clear();
-            currentLikeMarkers.clear();
-            currentMusic.set(music);
-            currentEnqueuerId.set(queueItem.enqueuedBy().publicId());
-            currentEnqueuerName.set(queueItem.enqueuedBy().name());
-            updatePlaybackAnchor(0);
-            isPaused.set(false);
-            isLoading.set(false);
-            touchHotActivity();
-            persistPlaybackStateSnapshot();
-            bumpPlayEpochAndStateVersion();
-            broadcastFullPlayerState();
-            broadcastQueueUpdate();
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.PLAY_START, queueItem.enqueuedBy().publicId(), music.name(), roomId));
+            playbackState.startNewTrack(music, queueItem);
+            applyPlaybackTransition(
+                    false,
+                    false,
+                    true,
+                    new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.PLAY_START, queueItem.enqueuedBy().publicId(), music.name(), roomId)
+            );
         }
 
         public PlayerState getCurrentPlayerState() {
-            PlayableMusic music = currentMusic.get();
-            NowPlayingInfo info = music == null ? null : new NowPlayingInfo(
-                    music,
-                    calculateCurrentPosition(),
-                    currentEnqueuerId.get(),
-                    currentEnqueuerName.get(),
-                    currentLikedUserIds,
-                    currentLikeMarkers,
-                    playEpoch.get(),
-                    positionUpdatedAt.get()
-            );
-            return new PlayerState(
-                    info,
+            long streamListenerCount = liveStreamService == null ? 0 : liveStreamService.getStreamListenerCount();
+            return playbackState.toPlayerState(
+                    roomId,
                     getQueueWithUpdatedStatus(),
-                    isShuffle.get(),
                     userService.getOnlineUserSummaries(roomId),
-                    isPaused.get(),
-                    isPauseLocked.get(),
-                    isSkipLocked.get(),
-                    isShuffleLocked.get(),
-                    isLoading.get(),
-                    RoomService.DEFAULT_ROOM_ID.equals(roomId) ? liveStreamService.getStreamListenerCount() : 0,
-                    System.currentTimeMillis(),
-                    stateVersion.get(),
-                    playEpoch.get()
+                    streamListenerCount
             );
         }
 
@@ -429,9 +391,9 @@ public class MusicPlayerService {
                 if ("bilibili".equals(request.platform())) service.prefetchMusic(music.id());
                 MusicQueueItem item = queueManager.add(music, new UserSummary(enqueuer.getPublicId(), enqueuer.getName(), enqueuer.isGuest()), initialStatus);
                 if (item != null) {
-                    touchHotActivity();
+                    playbackState.touchHotActivity();
                     persistQueueMutation(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.ADD, enqueuer.getPublicId(), music.name(), roomId), false);
-                    if (currentMusic.get() == null) playNextInQueue();
+                    if (playbackState.currentMusic() == null) playNextInQueue();
                 }
             }, error -> eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "添加失败: " + error.getMessage(), roomId)));
         }
@@ -450,9 +412,9 @@ public class MusicPlayerService {
                     if ("bilibili".equals(request.platform())) service.prefetchMusic(music.id());
                     if (queueManager.add(music, new UserSummary(enqueuer.getPublicId(), enqueuer.getName(), enqueuer.isGuest()), initialStatus) != null) count++;
                 }
-                touchHotActivity();
+                playbackState.touchHotActivity();
                 persistQueueMutation(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.IMPORT_PLAYLIST, enqueuer.getPublicId(), String.valueOf(count), roomId), false);
-                if (currentMusic.get() == null) playNextInQueue();
+                if (playbackState.currentMusic() == null) playNextInQueue();
             });
         }
 
@@ -467,35 +429,35 @@ public class MusicPlayerService {
                 for (Music music : musics.stream().limit(appProperties.getPlayer().getMaxPlaylistImportSize()).toList()) {
                     if (queueManager.add(music, new UserSummary(enqueuer.getPublicId(), enqueuer.getName(), enqueuer.isGuest()), QueueItemStatus.READY) != null) count++;
                 }
-                touchHotActivity();
+                playbackState.touchHotActivity();
                 persistQueueMutation(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.IMPORT_PLAYLIST, enqueuer.getPublicId(), String.valueOf(count), roomId), false);
-                if (currentMusic.get() == null) playNextInQueue();
+                if (playbackState.currentMusic() == null) playNextInQueue();
             });
         }
 
         public synchronized void topSong(String queueId, String sessionId) {
-            TopResult result = queueManager.top(queueId, isShuffle.get());
+            TopResult result = queueManager.top(queueId, playbackState.isShuffle());
             if (result != TopResult.NONE) {
-                touchHotActivity();
+                playbackState.touchHotActivity();
                 SystemMessageEvent systemMessage = result == TopResult.GLOBAL
                         ? new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.TOP, getUserPublicId(sessionId), "置顶成功", roomId)
                         : null;
                 persistQueueMutation(systemMessage, false);
-                if (currentMusic.get() == null) playNextInQueue();
+                if (playbackState.currentMusic() == null) playNextInQueue();
             }
         }
 
         public synchronized void topSongs(List<String> queueIds, String sessionId) {
             List<MusicQueueItem> topped = queueManager.topManyGlobal(queueIds);
             if (!topped.isEmpty()) {
-                touchHotActivity();
+                playbackState.touchHotActivity();
                 persistQueueMutation(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.TOP, getUserPublicId(sessionId), "置顶 " + topped.size() + " 首歌曲", roomId), false);
             }
         }
 
         public void removeSongFromQueue(String queueId, String sessionId) {
             queueManager.remove(queueId).ifPresent(item -> {
-                touchHotActivity();
+                playbackState.touchHotActivity();
                 persistQueueMutation(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.REMOVE, getUserPublicId(sessionId), item.music().name(), roomId), false);
             });
         }
@@ -503,109 +465,98 @@ public class MusicPlayerService {
         public void removeSongsFromQueue(List<String> queueIds, String sessionId) {
             List<MusicQueueItem> removed = queueManager.removeMany(queueIds);
             if (!removed.isEmpty()) {
-                touchHotActivity();
+                playbackState.touchHotActivity();
                 persistQueueMutation(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.REMOVE, getUserPublicId(sessionId), "移除 " + removed.size() + " 首歌曲", roomId), true);
             }
         }
 
         public synchronized void reorderQueue(int oldIndex, int newIndex, String sessionId) {
             queueManager.reorder(oldIndex, newIndex);
-            touchHotActivity();
+            playbackState.touchHotActivity();
             persistQueueMutation(null, true);
         }
 
         public void skipToNext(String sessionId) {
             if (isRateLimited(sessionId)) return;
-            if (isSkipLocked.get() && !"SYSTEM".equals(sessionId)) return;
+            if (playbackState.isSkipLocked() && !"SYSTEM".equals(sessionId)) return;
             playHeadVersion.incrementAndGet();
-            isLoading.set(false);
-            currentMusic.set(null);
-            currentEnqueuerId.set(null);
-            currentEnqueuerName.set(null);
-            updatePlaybackAnchor(0);
-            touchHotActivity();
+            playbackState.setLoading(false);
+            playbackState.clearCurrentTrack();
+            playbackState.touchHotActivity();
             roomStateMutationService.runInTransaction(() -> {
                 persistPlaybackStateSnapshot();
-                bumpPlayEpochAndStateVersion();
+                playbackState.bumpPlayEpochAndStateVersion();
                 eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.SKIP, getUserPublicId(sessionId), null, roomId));
             });
             playNextInQueue();
         }
 
         public void togglePause(String sessionId) {
-            if (currentMusic.get() == null) {
+            if (playbackState.currentMusic() == null) {
                 if (!queueManager.getQueueSnapshot().isEmpty()) playNextInQueue();
                 return;
             }
             if (isRateLimited(sessionId)) return;
-            if (!"SYSTEM".equals(sessionId) && isPauseLocked.get() && !isPaused.get()) return;
-            long currentPos = calculateCurrentPosition();
-            boolean newState = !isPaused.get();
-            isPaused.set(newState);
-            updatePlaybackAnchor(currentPos);
-            touchHotActivity();
-            persistPlaybackStateSnapshot();
-            bumpStateVersion();
-            broadcastFullPlayerState();
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, newState ? PlayerAction.PAUSE : PlayerAction.PLAY, getUserPublicId(sessionId), null, roomId));
+            if (!"SYSTEM".equals(sessionId) && playbackState.isPauseLocked() && !playbackState.isPaused()) return;
+            long currentPos = playbackState.calculateCurrentPosition();
+            boolean newState = !playbackState.isPaused();
+            playbackState.setPaused(newState);
+            playbackState.updatePlaybackAnchor(currentPos);
+            playbackState.touchHotActivity();
+            playbackState.bumpStateVersion();
+            applyPlaybackOnlyTransition(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, newState ? PlayerAction.PAUSE : PlayerAction.PLAY, getUserPublicId(sessionId), null, roomId));
         }
 
         public synchronized Optional<String> seekTo(long positionMs, String sessionId) {
-            PlayableMusic music = currentMusic.get();
+            PlayableMusic music = playbackState.currentMusic();
             if (music == null) return Optional.of("当前没有正在播放的歌曲");
-            if (!Objects.equals(currentEnqueuerId.get(), getUserPublicId(sessionId))) return Optional.of("只有点播者可以调整这首歌的进度");
+            if (!Objects.equals(playbackState.currentEnqueuerId(), getUserPublicId(sessionId))) return Optional.of("只有点播者可以调整这首歌的进度");
             long clamped = music.duration() > 0 ? Math.max(0, Math.min(positionMs, music.duration())) : Math.max(0, positionMs);
-            updatePlaybackAnchor(clamped);
-            touchHotActivity();
-            persistPlaybackStateSnapshot();
-            bumpPlayEpochAndStateVersion();
-            broadcastFullPlayerState();
+            playbackState.updatePlaybackAnchor(clamped);
+            playbackState.touchHotActivity();
+            playbackState.bumpPlayEpochAndStateVersion();
+            applyPlaybackOnlyTransition(null);
             return Optional.empty();
         }
 
         public void toggleShuffle(String sessionId) {
-            if (isRateLimited(sessionId) || (isShuffleLocked.get() && !"SYSTEM".equals(sessionId))) return;
-            isShuffle.set(!isShuffle.get());
-            touchHotActivity();
-            persistPlaybackStateSnapshot();
-            bumpStateVersion();
-            broadcastFullPlayerState();
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, isShuffle.get() ? PlayerAction.SHUFFLE_ON : PlayerAction.SHUFFLE_OFF, getUserPublicId(sessionId), null, roomId));
+            if (isRateLimited(sessionId) || (playbackState.isShuffleLocked() && !"SYSTEM".equals(sessionId))) return;
+            playbackState.setShuffle(!playbackState.isShuffle());
+            playbackState.touchHotActivity();
+            playbackState.bumpStateVersion();
+            applyPlaybackOnlyTransition(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, playbackState.isShuffle() ? PlayerAction.SHUFFLE_ON : PlayerAction.SHUFFLE_OFF, getUserPublicId(sessionId), null, roomId));
         }
 
         public void likeSong(String sessionId) {
-            PlayableMusic music = currentMusic.get();
+            PlayableMusic music = playbackState.currentMusic();
             if (music == null) return;
             String publicId = getUserPublicId(sessionId);
-            if (!currentLikedUserIds.add(publicId)) return;
-            currentLikeMarkers.add(calculateCurrentPosition());
-            touchHotActivity();
-            bumpStateVersion();
-            eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.LIKE, publicId, music.name(), roomId));
-            broadcastFullPlayerState();
+            if (!playbackState.likedUserIds().add(publicId)) return;
+            playbackState.likeMarkers().add(playbackState.calculateCurrentPosition());
+            playbackState.touchHotActivity();
+            playbackState.bumpStateVersion();
+            applyPlaybackOnlyTransition(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.LIKE, publicId, music.name(), roomId));
         }
 
         public void setLock(String type, boolean locked) {
-            AtomicBoolean target = switch (type.toUpperCase()) {
-                case "PAUSE" -> isPauseLocked;
-                case "SKIP" -> isSkipLocked;
-                case "SHUFFLE" -> isShuffleLocked;
+            boolean changed = switch (type.toUpperCase()) {
+                case "PAUSE" -> setBooleanIfChanged(playbackState.isPauseLocked(), locked, playbackState::setPauseLocked);
+                case "SKIP" -> setBooleanIfChanged(playbackState.isSkipLocked(), locked, playbackState::setSkipLocked);
+                case "SHUFFLE" -> setBooleanIfChanged(playbackState.isShuffleLocked(), locked, playbackState::setShuffleLocked);
                 default -> throw new IllegalArgumentException("Unknown lock type");
             };
-            if (target.getAndSet(locked) != locked) {
-                persistPlaybackStateSnapshot();
-                bumpStateVersion();
-                broadcastFullPlayerState();
+            if (changed) {
+                playbackState.bumpStateVersion();
+                applyPlaybackOnlyTransition(null);
             }
         }
 
         public void setAllLocks(boolean locked) {
-            isPauseLocked.set(locked);
-            isSkipLocked.set(locked);
-            isShuffleLocked.set(locked);
-            persistPlaybackStateSnapshot();
-            bumpStateVersion();
-            broadcastFullPlayerState();
+            playbackState.setPauseLocked(locked);
+            playbackState.setSkipLocked(locked);
+            playbackState.setShuffleLocked(locked);
+            playbackState.bumpStateVersion();
+            applyPlaybackOnlyTransition(null);
         }
 
         public void resetSystem(boolean notify) {
@@ -613,21 +564,18 @@ public class MusicPlayerService {
         }
 
         public void resetSystem(boolean notify, boolean persist) {
-            currentMusic.set(null);
-            currentEnqueuerId.set(null);
-            currentEnqueuerName.set(null);
-            updatePlaybackAnchor(0);
+            playbackState.clearCurrentTrack();
             queueManager.clearAll();
-            isPaused.set(false);
-            isShuffle.set(false);
-            isLoading.set(false);
+            playbackState.setPaused(false);
+            playbackState.setShuffle(false);
+            playbackState.setLoading(false);
             roomStateMutationService.runInTransaction(() -> {
                 if (persist) {
                     roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
-                    roomStatePersistenceService.persistHistorySnapshot(roomId, queueManager.getHistorySnapshot());
+                    replacePersistentHistorySnapshot();
                     persistPlaybackStateSnapshot();
                 }
-                bumpPlayEpochAndStateVersion();
+                playbackState.bumpPlayEpochAndStateVersion();
                 broadcastFullPlayerState();
                 broadcastQueueUpdate();
                 if (notify) {
@@ -638,7 +586,7 @@ public class MusicPlayerService {
 
         public void clearQueue() {
             queueManager.clearPendingQueue();
-            touchHotActivity();
+            playbackState.touchHotActivity();
             persistQueueMutation(new SystemMessageEvent(this, SystemMessageEvent.Level.WARN, PlayerAction.REMOVE, "SYSTEM", "播放列表已由管理员清空", roomId), false);
         }
 
@@ -646,13 +594,13 @@ public class MusicPlayerService {
             boolean exists = queueManager.getQueueSnapshot().stream().anyMatch(item -> item.music().id().equals(event.getMusicId()));
             if (exists) {
                 broadcastQueueUpdate();
-                if (currentMusic.get() == null) playNextInQueue();
+                if (playbackState.currentMusic() == null) playNextInQueue();
             }
         }
 
         public void onUserCountChanged(UserCountChangeEvent event) {
             if (event.getOnlineUserCount() > 0) {
-                touchHotActivity();
+                playbackState.touchHotActivity();
             } else if (!isStreamActive.get()) {
                 enterIdleMode();
             }
@@ -662,25 +610,22 @@ public class MusicPlayerService {
         public void onStreamStatusChanged(StreamStatusEvent event) {
             isStreamActive.set(event.isHasListeners());
             if (event.isHasListeners()) {
-                touchHotActivity();
-                if (currentMusic.get() == null) playNextInQueue();
+                playbackState.touchHotActivity();
+                if (playbackState.currentMusic() == null) playNextInQueue();
             }
             else if (!event.isHasListeners() && userService.getOnlineUserSummaries(roomId).isEmpty()) enterIdleMode();
-            bumpStateVersion();
+            playbackState.bumpStateVersion();
             broadcastFullPlayerState();
         }
 
         public void cleanupIdlePlayer() {
-            if (isPaused.get() && currentMusic.get() != null) {
-                long pausedDuration = System.currentTimeMillis() - timestampAnchor.get();
+            if (playbackState.isPaused() && playbackState.currentMusic() != null) {
+                long pausedDuration = System.currentTimeMillis() - currentPlaybackStateSnapshot().timestampAnchor();
                 if (pausedDuration > IDLE_RESET_TIMEOUT_MS) {
-                    currentMusic.set(null);
-                    currentEnqueuerId.set(null);
-                    currentEnqueuerName.set(null);
-                    updatePlaybackAnchor(0);
-                    isPaused.set(false);
+                    playbackState.clearCurrentTrack();
+                    playbackState.setPaused(false);
                     persistPlaybackStateSnapshot();
-                    bumpPlayEpochAndStateVersion();
+                    playbackState.bumpPlayEpochAndStateVersion();
                     broadcastFullPlayerState();
                 }
             }
@@ -695,13 +640,12 @@ public class MusicPlayerService {
         }
 
         private void enterIdleMode() {
-            isLoading.set(false);
-            if (currentMusic.get() != null && !isPaused.get()) {
-                updatePlaybackAnchor(calculateCurrentPosition());
-                isPaused.set(true);
-                persistPlaybackStateSnapshot();
-                bumpStateVersion();
-                broadcastFullPlayerState();
+            playbackState.setLoading(false);
+            if (playbackState.currentMusic() != null && !playbackState.isPaused()) {
+                playbackState.updatePlaybackAnchor(playbackState.calculateCurrentPosition());
+                playbackState.setPaused(true);
+                playbackState.bumpStateVersion();
+                applyPlaybackOnlyTransition(null);
             }
         }
 
@@ -714,51 +658,37 @@ public class MusicPlayerService {
         }
 
         private void applyPersistedPlaybackState(PersistedPlaybackState state) {
-            currentMusic.set(state.currentMusic());
-            currentEnqueuerId.set(state.currentEnqueuerId());
-            currentEnqueuerName.set(state.currentEnqueuerName());
-            positionAnchor.set(state.positionAnchor());
-            timestampAnchor.set(state.timestampAnchor());
-            positionUpdatedAt.set(state.positionUpdatedAt());
-            isShuffle.set(state.shuffle());
-            isPaused.set(state.paused());
-            isPauseLocked.set(state.pauseLocked());
-            isSkipLocked.set(state.skipLocked());
-            isShuffleLocked.set(state.shuffleLocked());
-            isLoading.set(state.loading() && state.currentMusic() != null);
-            playEpoch.set(state.playEpoch());
-            stateVersion.set(state.stateVersion());
-            lastHotActivityAt.set(Math.max(state.lastPersistedAt(), System.currentTimeMillis()));
+            playbackState.applySnapshot(state);
         }
 
         private void persistPlaybackStateSnapshot() {
-            roomStatePersistenceService.persistPlaybackState(new PersistedPlaybackState(
-                    roomId,
-                    currentMusic.get(),
-                    currentEnqueuerId.get(),
-                    currentEnqueuerName.get(),
-                    positionAnchor.get(),
-                    timestampAnchor.get(),
-                    positionUpdatedAt.get(),
-                    isShuffle.get(),
-                    isPaused.get(),
-                    isPauseLocked.get(),
-                    isSkipLocked.get(),
-                    isShuffleLocked.get(),
-                    isLoading.get(),
-                    playEpoch.get(),
-                    stateVersion.get(),
-                    System.currentTimeMillis()
-            ));
+            roomStatePersistenceService.persistPlaybackState(currentPlaybackStateSnapshot());
+        }
+
+        private void appendFinishedTrackToHistory(Music finishedMusic) {
+            queueManager.addToHistory(finishedMusic);
+            roomStatePersistenceService.appendHistoryEntry(roomId, finishedMusic, playbackState.currentEnqueuerId());
+        }
+
+        private void replacePersistentHistorySnapshot() {
+            roomStatePersistenceService.persistHistorySnapshot(roomId, currentHistorySnapshot());
+        }
+
+        private List<Music> currentHistorySnapshot() {
+            return queueManager.getHistorySnapshot();
         }
 
         public void flushPersistentState() {
-            roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
-            roomStatePersistenceService.persistHistorySnapshot(roomId, queueManager.getHistorySnapshot());
-            persistPlaybackStateSnapshot();
+            roomStatePersistenceService.flushPlayerState(
+                    roomId,
+                    queueManager.getQueueSnapshot(),
+                    currentHistorySnapshot(),
+                    currentPlaybackStateSnapshot()
+            );
         }
 
         private void persistQueueMutation(SystemMessageEvent systemMessageEvent, boolean broadcastFullState) {
+            roomSessionCoordinator.markRoomActive(roomId);
             roomStateMutationService.runInTransaction(() -> {
                 roomStatePersistenceService.persistQueueSnapshot(roomId, queueManager.getQueueSnapshot());
                 if (broadcastFullState) {
@@ -771,37 +701,47 @@ public class MusicPlayerService {
             });
         }
 
-        private void touchHotActivity() {
-            lastHotActivityAt.set(System.currentTimeMillis());
+        private void applyPlaybackTransition(boolean persistQueue, boolean broadcastQueue, boolean broadcastPlayerState, SystemMessageEvent systemMessageEvent) {
+            roomSessionCoordinator.markRoomActive(roomId);
+            playbackTransitionService.apply(new PlaybackTransitionService.PlaybackTransition(
+                    roomId,
+                    persistQueue ? queueManager.getQueueSnapshot() : null,
+                    currentPlaybackStateSnapshot(),
+                    broadcastQueue ? new QueueUpdateEvent(this, roomId, getQueueWithUpdatedStatus()) : null,
+                    broadcastPlayerState ? new PlayerStateEvent(this, roomId, getCurrentPlayerState()) : null,
+                    systemMessageEvent
+            ));
+        }
+
+        private PersistedPlaybackState currentPlaybackStateSnapshot() {
+            return playbackState.snapshot(roomId);
+        }
+
+        private void applyPlaybackOnlyTransition(SystemMessageEvent systemMessageEvent) {
+            roomSessionCoordinator.markRoomActive(roomId);
+            playbackTransitionService.apply(new PlaybackTransitionService.PlaybackTransition(
+                    roomId,
+                    null,
+                    currentPlaybackStateSnapshot(),
+                    null,
+                    new PlayerStateEvent(this, roomId, getCurrentPlayerState()),
+                    systemMessageEvent
+            ));
         }
 
         public boolean isEvictable(long now, long idleThresholdMs) {
             return userService.getOnlineCount(roomId) == 0
                     && !isStreamActive.get()
-                    && !isLoading.get()
-                    && (now - lastHotActivityAt.get()) >= idleThresholdMs;
+                    && !playbackState.isLoading()
+                    && (now - playbackState.lastHotActivityAt()) >= idleThresholdMs;
         }
 
-        private long calculateCurrentPosition() {
-            if (currentMusic.get() == null) return 0;
-            if (isPaused.get()) return positionAnchor.get();
-            return positionAnchor.get() + (System.currentTimeMillis() - timestampAnchor.get());
-        }
-
-        private void updatePlaybackAnchor(long positionMs) {
-            long now = System.currentTimeMillis();
-            positionAnchor.set(Math.max(0, positionMs));
-            timestampAnchor.set(now);
-            positionUpdatedAt.set(now);
-        }
-
-        private void bumpStateVersion() {
-            stateVersion.incrementAndGet();
-        }
-
-        private void bumpPlayEpochAndStateVersion() {
-            playEpoch.incrementAndGet();
-            bumpStateVersion();
+        private boolean setBooleanIfChanged(boolean currentValue, boolean nextValue, Consumer<Boolean> setter) {
+            if (currentValue == nextValue) {
+                return false;
+            }
+            setter.accept(nextValue);
+            return true;
         }
 
         private List<MusicQueueItem> getQueueWithUpdatedStatus() {

@@ -3,11 +3,9 @@ package org.thornex.musicparty.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
-import jakarta.annotation.PreDestroy;
 import lombok.Data;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.ChatMessage;
@@ -15,7 +13,6 @@ import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.dto.MusicQueueItem;
 import org.thornex.musicparty.persistence.ChatRepository;
 import org.thornex.musicparty.persistence.MigrationStateRepository;
-import org.thornex.musicparty.persistence.PersistedHistoryEntry;
 import org.thornex.musicparty.persistence.QueueRepository;
 
 import java.io.File;
@@ -25,11 +22,10 @@ import java.util.List;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class QueuePersistenceService {
-    private static final String QUEUE_JSON_MIGRATION_KEY = "legacy.queue-data.json";
+    static final String QUEUE_JSON_MIGRATION_KEY = "legacy.queue-data.json";
+    private static final String DEFAULT_LEGACY_QUEUE_DATA_FILE = "data/queue-data.json";
 
-    private final MusicPlayerService musicPlayerService;
     private final ChatService chatService;
     private final AppProperties appProperties;
     private final ObjectMapper objectMapper;
@@ -37,52 +33,69 @@ public class QueuePersistenceService {
     private final ChatRepository chatRepository;
     private final RoomService roomService;
     private final MigrationStateRepository migrationStateRepository;
+    private final String legacyQueueDataFilePath;
+
+    @Autowired
+    public QueuePersistenceService(ChatService chatService,
+                                   AppProperties appProperties,
+                                   ObjectMapper objectMapper,
+                                   QueueRepository queueRepository,
+                                   ChatRepository chatRepository,
+                                   RoomService roomService,
+                                   MigrationStateRepository migrationStateRepository) {
+        this(
+                chatService,
+                appProperties,
+                objectMapper,
+                queueRepository,
+                chatRepository,
+                roomService,
+                migrationStateRepository,
+                DEFAULT_LEGACY_QUEUE_DATA_FILE
+        );
+    }
+
+    QueuePersistenceService(ChatService chatService,
+                            AppProperties appProperties,
+                            ObjectMapper objectMapper,
+                            QueueRepository queueRepository,
+                            ChatRepository chatRepository,
+                            RoomService roomService,
+                            MigrationStateRepository migrationStateRepository,
+                            String legacyQueueDataFilePath) {
+        this.chatService = chatService;
+        this.appProperties = appProperties;
+        this.objectMapper = objectMapper;
+        this.queueRepository = queueRepository;
+        this.chatRepository = chatRepository;
+        this.roomService = roomService;
+        this.migrationStateRepository = migrationStateRepository;
+        this.legacyQueueDataFilePath = legacyQueueDataFilePath;
+    }
 
     @PostConstruct
     public void init() {
         loadData();
     }
 
-    @PreDestroy
-    public void cleanup() {
-        saveData();
-    }
-
-    @Scheduled(fixedDelayString = "${app.music-api.queue.persistence-interval-ms:60000}")
-    public void scheduledSave() {
-        saveData();
-    }
-
-    private synchronized void saveData() {
-        try {
-            musicPlayerService.getLoadedRoomIds().forEach(roomId -> {
-                MusicQueueManager manager = musicPlayerService.getSession(roomId).getQueueManager();
-                queueRepository.replaceQueue(roomId, manager.getQueueSnapshot());
-                queueRepository.replaceHistory(roomId, manager.getHistorySnapshot());
-                chatRepository.replaceMessages(roomId, chatService.getHistoryFull(roomId));
-            });
-            chatRepository.replaceMessages(null, chatService.getPublicHistoryFull());
-            log.debug("Queue, music history and chat history saved to SQLite");
-        } catch (Exception e) {
-            log.error("Failed to save persistence data", e);
-        }
-    }
-
     private synchronized void loadData() {
-        if (isDatabaseInitialized()) {
-            restoreDatabaseData();
-            migrationStateRepository.markCompleted(QUEUE_JSON_MIGRATION_KEY);
-            log.info("Restored persistence data from SQLite");
-            return;
-        }
-
         if (migrationStateRepository.isCompleted(QUEUE_JSON_MIGRATION_KEY)) {
             restoreDatabaseData();
             log.info("Legacy queue migration already completed; skipped JSON import.");
             return;
         }
 
-        File file = getPersistenceFile();
+        if (hasPersistedQueueHistoryOrChatData()) {
+            restoreDatabaseData();
+            migrationStateRepository.markCompleted(QUEUE_JSON_MIGRATION_KEY);
+            log.info("Restored persistence data from SQLite");
+            return;
+        }
+
+        loadDataFromFileForTest(getPersistenceFile());
+    }
+
+    void loadDataFromFileForTest(File file) {
         if (!file.exists()) {
             restoreDatabaseData();
             log.info("No legacy persistence file found at {}, restored from SQLite if available.", file.getAbsolutePath());
@@ -92,7 +105,6 @@ public class QueuePersistenceService {
         try {
             PersistentData data = objectMapper.readValue(file, new TypeReference<PersistentData>() {});
             importLegacyData(data);
-            saveData();
             migrationStateRepository.markCompleted(QUEUE_JSON_MIGRATION_KEY);
             log.info("Imported legacy persistence data from {} into SQLite", file.getAbsolutePath());
         } catch (Exception e) {
@@ -101,25 +113,28 @@ public class QueuePersistenceService {
     }
 
     private File getPersistenceFile() {
-        String path = appProperties.getQueue().getPersistenceFile();
-        File file = new File(path);
+        File file = new File(legacyQueueDataFilePath);
         if (file.getParentFile() != null && !file.getParentFile().exists()) {
             file.getParentFile().mkdirs();
         }
         return file;
     }
 
-    private boolean restoreDatabaseData() {
+    private void restoreDatabaseData() {
         List<ChatMessage> publicHistory = restoreChronological(chatRepository.fetchMessages(null, 0, appProperties.getChat().getMaxHistorySize()));
         chatService.restorePublic(publicHistory);
-        return !publicHistory.isEmpty();
     }
 
-    private boolean isDatabaseInitialized() {
-        return !roomService.listRooms().isEmpty()
-                || !queueRepository.loadQueue(RoomService.DEFAULT_ROOM_ID).isEmpty()
-                || !queueRepository.loadHistory(RoomService.DEFAULT_ROOM_ID, 1).isEmpty()
-                || !chatRepository.fetchMessages(null, 0, 1).isEmpty();
+    private boolean hasPersistedQueueHistoryOrChatData() {
+        if (!chatRepository.fetchMessages(null, 0, 1).isEmpty()) {
+            return true;
+        }
+
+        return roomService.listRooms().stream()
+                .map(room -> room.roomId())
+                .anyMatch(roomId -> !queueRepository.loadQueue(roomId).isEmpty()
+                        || !queueRepository.loadHistory(roomId, 1).isEmpty()
+                        || !chatRepository.fetchMessages(roomId, 0, 1).isEmpty());
     }
 
     private void importLegacyData(PersistentData data) {

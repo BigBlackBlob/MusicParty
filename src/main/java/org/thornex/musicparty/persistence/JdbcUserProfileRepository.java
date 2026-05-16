@@ -5,8 +5,11 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Repository
@@ -59,6 +62,32 @@ public class JdbcUserProfileRepository implements UserProfileRepository {
                 where public_id = ?
                 """, USER_PROFILE_ROW_MAPPER, publicId);
         return rows.stream().findFirst();
+    }
+
+    @Override
+    public Map<String, String> findBindingsByPublicId(String publicId) {
+        LinkedHashMap<String, String> bindings = new LinkedHashMap<>();
+        jdbcTemplate.query("""
+                select platform, account_id
+                from user_binding
+                where public_id = ?
+                order by platform asc
+                """, (rs, rowNum) -> Map.entry(rs.getString("platform"), rs.getString("account_id")), publicId)
+                .forEach(entry -> bindings.put(entry.getKey(), entry.getValue()));
+        return bindings;
+    }
+
+    @Override
+    @Transactional
+    public void replaceBindings(String publicId, Map<String, String> bindings) {
+        jdbcTemplate.update("delete from user_binding where public_id = ?", publicId);
+        if (bindings == null || bindings.isEmpty()) {
+            return;
+        }
+        bindings.forEach((platform, accountId) -> jdbcTemplate.update("""
+                insert into user_binding(public_id, platform, account_id)
+                values (?, ?, ?)
+                """, publicId, platform, accountId));
     }
 
     @Override

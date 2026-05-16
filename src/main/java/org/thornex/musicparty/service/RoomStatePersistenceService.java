@@ -1,6 +1,7 @@
 package org.thornex.musicparty.service;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 import org.thornex.musicparty.dto.ChatMessage;
 import org.thornex.musicparty.dto.Music;
@@ -90,6 +91,16 @@ public class RoomStatePersistenceService {
 
     public void persistPlaybackState(PersistedPlaybackState state) {
         playbackStateRepository.upsert(state);
+    }
+
+    @Transactional
+    public void flushPlayerState(String roomId,
+                                List<MusicQueueItem> queueItems,
+                                List<Music> historyItems,
+                                PersistedPlaybackState playbackState) {
+        queueRepository.replaceQueue(roomId, queueItems);
+        queueRepository.replaceHistory(roomId, historyItems);
+        playbackStateRepository.upsert(playbackState);
     }
 
     public void deletePlaybackState(String roomId) {

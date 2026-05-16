@@ -344,7 +344,6 @@ public class MusicQueueManager {
     public void addToHistory(Music music) {
         if (music == null) return;
         synchronized (playHistory) {
-            playHistory.removeIf(m -> m.id().equals(music.id()) && m.platform().equals(music.platform()));
             playHistory.add(0, music); // 加到最前面
             if (playHistory.size() > appProperties.getQueue().getHistorySize()) {
                 playHistory.removeLast();

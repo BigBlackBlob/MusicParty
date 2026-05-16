@@ -6,19 +6,16 @@ import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.messaging.SessionConnectEvent;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
-import org.thornex.musicparty.service.MusicPlayerService;
-import org.thornex.musicparty.service.UserService;
+import org.thornex.musicparty.service.WebSocketSessionCoordinator;
 
 @Component
 @Slf4j
 public class WebSocketEventListener {
 
-    private final UserService userService;
-    private final MusicPlayerService musicPlayerService;
+    private final WebSocketSessionCoordinator webSocketSessionCoordinator;
 
-    public WebSocketEventListener(UserService userService, MusicPlayerService musicPlayerService) {
-        this.userService = userService;
-        this.musicPlayerService = musicPlayerService;
+    public WebSocketEventListener(WebSocketSessionCoordinator webSocketSessionCoordinator) {
+        this.webSocketSessionCoordinator = webSocketSessionCoordinator;
     }
 
     @EventListener
@@ -33,8 +30,7 @@ public class WebSocketEventListener {
         log.info("WebSocket Connect Request: Session={}, InitialName={}", sessionId, initialName);
 
         if (sessionId != null) {
-            userService.handleConnect(sessionId, sessionToken, initialName, roomId);
-            musicPlayerService.broadcastOnlineUsers();
+            webSocketSessionCoordinator.handleConnect(sessionId, sessionToken, initialName, roomId);
         }
     }
 
@@ -43,8 +39,7 @@ public class WebSocketEventListener {
         StompHeaderAccessor headerAccessor = StompHeaderAccessor.wrap(event.getMessage());
         String sessionId = headerAccessor.getSessionId();
         if (sessionId != null) {
-            userService.disconnectUser(sessionId);
-            musicPlayerService.broadcastOnlineUsers();
+            webSocketSessionCoordinator.handleDisconnect(sessionId);
         }
     }
 }

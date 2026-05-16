@@ -9,7 +9,6 @@ import org.thornex.musicparty.dto.User;
 import org.thornex.musicparty.dto.UserSummary;
 import org.thornex.musicparty.enums.PlayerAction;
 import org.thornex.musicparty.event.SystemMessageEvent;
-import org.thornex.musicparty.event.UserCountChangeEvent;
 import org.thornex.musicparty.persistence.PersistedSession;
 import org.thornex.musicparty.persistence.PersistedUserProfile;
 import org.thornex.musicparty.persistence.UserProfileRepository;
@@ -34,6 +33,7 @@ public class UserService {
 
     private final ApplicationEventPublisher eventPublisher;
     private final RoomService roomService;
+    private final RoomSessionCoordinator roomSessionCoordinator;
     private final UserProfileRepository userProfileRepository;
 
     // 延迟任务调度器，用于处理断连抖动
@@ -43,9 +43,13 @@ public class UserService {
     private static final long USER_EXPIRATION_MS = 1 * 60 * 60 * 1000L;
     private static final long LEAVE_DELAY_SEC = 10; // 10秒延迟判定真正离开
 
-    public UserService(ApplicationEventPublisher eventPublisher, RoomService roomService, UserProfileRepository userProfileRepository) {
+    public UserService(ApplicationEventPublisher eventPublisher,
+                       RoomService roomService,
+                       RoomSessionCoordinator roomSessionCoordinator,
+                       UserProfileRepository userProfileRepository) {
         this.eventPublisher = eventPublisher;
         this.roomService = roomService;
+        this.roomSessionCoordinator = roomSessionCoordinator;
         this.userProfileRepository = userProfileRepository;
         this.roomService.setOnlineCountProvider(this::getOnlineCount);
     }
@@ -97,16 +101,24 @@ public class UserService {
             user = registerNewUser(sessionId, nameFront);
         }
 
+        String previousRoomId = roomService.normalizeRoomId(user.getRoomId());
         String roomId = StringUtils.hasText(requestedRoomId)
                 ? roomService.normalizeRoomId(requestedRoomId)
-                : roomService.normalizeRoomId(user.getRoomId());
+                : previousRoomId;
         user.setRoomId(roomId);
         user.setLastActiveTime(now);
         sessionToToken.put(sessionId, user.getSessionToken());
         persistUser(user, now);
-        roomService.markRoomActive(roomId);
-        eventPublisher.publishEvent(new UserCountChangeEvent(this, roomId, getOnlineUserSummaries(roomId).size()));
-        roomService.publishRoomList();
+        if (previousRoomId.equals(roomId)) {
+            roomSessionCoordinator.onUserEnteredRoom(roomId, getOnlineUserSummaries(roomId).size());
+        } else {
+            roomSessionCoordinator.onUserMovedRooms(
+                    previousRoomId,
+                    roomId,
+                    getOnlineUserSummaries(previousRoomId).size(),
+                    getOnlineUserSummaries(roomId).size()
+            );
+        }
         return user;
     }
 
@@ -140,9 +152,7 @@ public class UserService {
                     }, LEAVE_DELAY_SEC, TimeUnit.SECONDS);
                     pendingLeaveEvents.put(sessionToken, future);
                 }
-
-                eventPublisher.publishEvent(new UserCountChangeEvent(this, roomId, getOnlineUserSummaries(roomId).size()));
-                roomService.publishRoomList();
+                roomSessionCoordinator.onUserDisconnected(roomId, getOnlineUserSummaries(roomId).size());
                 return Optional.of(user);
             } else {
                 log.debug("Ignored disconnect for stale session {} (Current: {})", sessionId, user.getSessionId());
@@ -223,7 +233,11 @@ public class UserService {
 
     public boolean bindAccount(String sessionId, String platform, String accountId) {
         return getUserBySession(sessionId).map(user -> {
-            user.getBindings().put(platform, accountId);
+            Map<String, String> updatedBindings = new HashMap<>(user.getBindings());
+            updatedBindings.put(platform, accountId);
+            userProfileRepository.replaceBindings(user.getPublicId(), updatedBindings);
+            user.getBindings().clear();
+            user.getBindings().putAll(updatedBindings);
             return true;
         }).orElse(false);
     }
@@ -278,9 +292,12 @@ public class UserService {
                 }
             }
         });
-        eventPublisher.publishEvent(new UserCountChangeEvent(this, normalized, 0));
-        eventPublisher.publishEvent(new UserCountChangeEvent(this, RoomService.DEFAULT_ROOM_ID, getOnlineUserSummaries(RoomService.DEFAULT_ROOM_ID).size()));
-        roomService.publishRoomList();
+        roomSessionCoordinator.onUsersMovedToRoom(
+                normalized,
+                RoomService.DEFAULT_ROOM_ID,
+                getOnlineUserSummaries(normalized).size(),
+                getOnlineUserSummaries(RoomService.DEFAULT_ROOM_ID).size()
+        );
         return movedSessions;
     }
 
@@ -366,6 +383,7 @@ public class UserService {
         user.setGuest(profile.guest());
         user.setRoomId(roomService.normalizeRoomId(profile.currentRoomId()));
         user.setLastActiveTime(profile.lastSeenAt());
+        user.getBindings().putAll(userProfileRepository.findBindingsByPublicId(profile.publicId()));
         usersBySessionToken.put(sessionToken, user);
         usersByPublicId.put(profile.publicId(), user);
         return user;

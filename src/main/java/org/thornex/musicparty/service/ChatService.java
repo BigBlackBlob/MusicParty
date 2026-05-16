@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
+import org.thornex.musicparty.dto.ChatRequest;
 import org.thornex.musicparty.dto.ChatMessage;
 import org.thornex.musicparty.dto.User;
 import org.thornex.musicparty.enums.MessageType;
@@ -31,6 +32,7 @@ public class ChatService {
     private final AppProperties appProperties;
     private final RoomStatePersistenceService roomStatePersistenceService;
     private final RoomStateMutationService roomStateMutationService;
+    private final RoomSessionCoordinator roomSessionCoordinator;
     private final AfterCommitExecutor afterCommitExecutor;
     
     private final Map<String, ChatCommand> commandMap;
@@ -41,6 +43,7 @@ public class ChatService {
                        AppProperties appProperties,
                        RoomStatePersistenceService roomStatePersistenceService,
                        RoomStateMutationService roomStateMutationService,
+                       RoomSessionCoordinator roomSessionCoordinator,
                        AfterCommitExecutor afterCommitExecutor,
                        List<ChatCommand> commands) {
         this.messagingTemplate = messagingTemplate;
@@ -48,6 +51,7 @@ public class ChatService {
         this.appProperties = appProperties;
         this.roomStatePersistenceService = roomStatePersistenceService;
         this.roomStateMutationService = roomStateMutationService;
+        this.roomSessionCoordinator = roomSessionCoordinator;
         this.afterCommitExecutor = afterCommitExecutor;
         this.commandMap = commands.stream().collect(Collectors.toMap(ChatCommand::getCommand, Function.identity()));
     }
@@ -97,8 +101,14 @@ public class ChatService {
 
     public void addMessage(String roomId, ChatMessage message) {
         String normalizedRoomId = roomId == null || roomId.isBlank() ? RoomService.DEFAULT_ROOM_ID : roomId;
-        appendToRoomHistory(normalizedRoomId, message);
-        roomStatePersistenceService.persistRoomMessage(normalizedRoomId, message);
+        roomSessionCoordinator.markRoomActive(normalizedRoomId);
+        roomStateMutationService.runInTransaction(() -> {
+            roomStatePersistenceService.persistRoomMessage(normalizedRoomId, message);
+            afterCommitExecutor.run(() -> {
+                appendToLoadedRoomHistory(normalizedRoomId, message);
+                broadcastChatMessage(normalizedRoomId, message);
+            });
+        });
     }
 
     public void addMessage(ChatMessage message) {
@@ -106,10 +116,53 @@ public class ChatService {
     }
 
     public void addPublicMessage(ChatMessage message) {
-        publicHistoryLoaded = true;
-        publicHistory.addLast(message);
-        trimHistory(publicHistory);
-        roomStatePersistenceService.persistPublicMessage(message);
+        roomStateMutationService.runInTransaction(() -> {
+            roomStatePersistenceService.persistPublicMessage(message);
+            afterCommitExecutor.run(() -> {
+                publicHistoryLoaded = true;
+                publicHistory.addLast(message);
+                trimHistory(publicHistory);
+                broadcastPublicChatMessage(message);
+            });
+        });
+    }
+
+    public void handleRoomChat(String sessionId, ChatRequest request) {
+        if (request == null || request.content() == null) {
+            return;
+        }
+        String normalizedContent = request.content().trim();
+        if (normalizedContent.isEmpty() || !isMessageLengthValid(normalizedContent)) {
+            return;
+        }
+        if (processIncomingMessage(sessionId, normalizedContent)) {
+            return;
+        }
+
+        userService.getUser(sessionId).ifPresent(user -> {
+            if (!canUserSendMessage(user.getPublicId())) {
+                return;
+            }
+            String roomId = userService.getRoomIdForSession(sessionId);
+            addMessage(roomId, buildChatMessage(user, normalizedContent));
+        });
+    }
+
+    public void handlePublicChat(String sessionId, ChatRequest request) {
+        if (request == null || request.content() == null) {
+            return;
+        }
+        String normalizedContent = request.content().trim();
+        if (normalizedContent.isEmpty() || !isMessageLengthValid(normalizedContent)) {
+            return;
+        }
+
+        userService.getUser(sessionId).ifPresent(user -> {
+            if (!canUserSendMessage("public:" + user.getPublicId())) {
+                return;
+            }
+            addPublicMessage(buildChatMessage(user, normalizedContent));
+        });
     }
 
     private void trimHistory(ConcurrentLinkedDeque<ChatMessage> history) {
@@ -198,6 +251,7 @@ public class ChatService {
     public void clearHistoryAndNotify(String roomId) {
         String normalizedRoomId = roomId == null || roomId.isBlank() ? RoomService.DEFAULT_ROOM_ID : roomId;
         ChatMessage sysMsg = buildSystemChatMessage(normalizedRoomId, "SYSTEM", "SYSTEM", "聊天记录已由管理员清空", MessageType.SYSTEM);
+        roomSessionCoordinator.markRoomActive(normalizedRoomId);
         roomStateMutationService.runInTransaction(() -> {
             roomStatePersistenceService.replaceRoomMessages(normalizedRoomId, List.of(sysMsg));
             afterCommitExecutor.run(() -> {
@@ -214,10 +268,11 @@ public class ChatService {
     private void broadcastSystemMessage(String roomId, String content) {
         String normalizedRoomId = roomId == null || roomId.isBlank() ? RoomService.DEFAULT_ROOM_ID : roomId;
         ChatMessage sysMsg = buildSystemChatMessage(normalizedRoomId, "SYSTEM", "SYSTEM", content, MessageType.SYSTEM);
+        roomSessionCoordinator.markRoomActive(normalizedRoomId);
         roomStateMutationService.runInTransaction(() -> {
             roomStatePersistenceService.persistRoomMessage(normalizedRoomId, sysMsg);
             afterCommitExecutor.run(() -> {
-                appendToRoomHistory(normalizedRoomId, sysMsg);
+                appendToLoadedRoomHistory(normalizedRoomId, sysMsg);
                 broadcastChatMessage(normalizedRoomId, sysMsg);
             });
         });
@@ -256,6 +311,7 @@ public class ChatService {
         String msgUserName = (event.getAction() == PlayerAction.LIKE || event.getAction() == PlayerAction.PLAY_START) ? userName : "SYSTEM";
 
         ChatMessage sysMsg = buildSystemChatMessage(roomId, msgUserId, msgUserName, content, type);
+        roomSessionCoordinator.markRoomActive(roomId);
 
         if (event.getAction() == PlayerAction.RESET) {
             roomStatePersistenceService.replaceRoomMessages(roomId, List.of(sysMsg));
@@ -268,7 +324,7 @@ public class ChatService {
 
         roomStatePersistenceService.persistRoomMessage(roomId, sysMsg);
         afterCommitExecutor.run(() -> {
-            appendToRoomHistory(roomId, sysMsg);
+            appendToLoadedRoomHistory(roomId, sysMsg);
             broadcastChatMessage(roomId, sysMsg);
         });
     }
@@ -293,6 +349,16 @@ public class ChatService {
         trimHistory(history);
     }
 
+    private void appendToLoadedRoomHistory(String roomId, ChatMessage message) {
+        String key = roomId == null || roomId.isBlank() ? RoomService.DEFAULT_ROOM_ID : roomId;
+        ConcurrentLinkedDeque<ChatMessage> history = roomHistories.get(key);
+        if (history == null) {
+            return;
+        }
+        history.addLast(message);
+        trimHistory(history);
+    }
+
     private void replaceRoomHistory(String roomId, List<ChatMessage> messages) {
         ConcurrentLinkedDeque<ChatMessage> history = roomHistory(roomId);
         history.clear();
@@ -310,11 +376,29 @@ public class ChatService {
         );
     }
 
+    private ChatMessage buildChatMessage(User user, String content) {
+        return new ChatMessage(
+                UUID.randomUUID().toString(),
+                user.getPublicId(),
+                user.getName(),
+                content,
+                System.currentTimeMillis(),
+                MessageType.CHAT
+        );
+    }
+
     private void broadcastChatMessage(String roomId, ChatMessage message) {
         if (messagingTemplate == null) {
             return;
         }
         messagingTemplate.convertAndSend("/topic/rooms/" + roomId + "/chat", message);
+    }
+
+    private void broadcastPublicChatMessage(ChatMessage message) {
+        if (messagingTemplate == null) {
+            return;
+        }
+        messagingTemplate.convertAndSend("/topic/public/chat", message);
     }
 
     @EventListener

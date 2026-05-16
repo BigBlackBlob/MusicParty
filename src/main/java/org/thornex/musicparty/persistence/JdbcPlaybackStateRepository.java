@@ -12,6 +12,7 @@ import org.thornex.musicparty.dto.PlayableMusic;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Repository
 @RequiredArgsConstructor
@@ -19,6 +20,8 @@ import java.util.Optional;
 public class JdbcPlaybackStateRepository implements PlaybackStateRepository {
 
     private static final TypeReference<PlayableMusic> PLAYABLE_MUSIC_TYPE = new TypeReference<>() {};
+    private static final TypeReference<Set<String>> STRING_SET_TYPE = new TypeReference<>() {};
+    private static final TypeReference<List<Long>> LONG_LIST_TYPE = new TypeReference<>() {};
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
 
@@ -36,6 +39,8 @@ public class JdbcPlaybackStateRepository implements PlaybackStateRepository {
             rs.getBoolean("is_skip_locked"),
             rs.getBoolean("is_shuffle_locked"),
             rs.getBoolean("is_loading"),
+            readJson(rs.getString("liked_user_ids_json"), STRING_SET_TYPE, java.util.Set.of()),
+            readJson(rs.getString("like_markers_json"), LONG_LIST_TYPE, java.util.List.of()),
             rs.getLong("play_epoch"),
             rs.getLong("state_version"),
             rs.getLong("last_persisted_at")
@@ -47,7 +52,7 @@ public class JdbcPlaybackStateRepository implements PlaybackStateRepository {
                 select room_id, current_music_json, current_enqueuer_id, current_enqueuer_name,
                        position_anchor, timestamp_anchor, position_updated_at,
                        is_shuffle, is_paused, is_pause_locked, is_skip_locked, is_shuffle_locked,
-                       is_loading, play_epoch, state_version, last_persisted_at
+                       is_loading, liked_user_ids_json, like_markers_json, play_epoch, state_version, last_persisted_at
                 from room_playback_state
                 where room_id = ?
                 """, rowMapper, roomId);
@@ -61,9 +66,9 @@ public class JdbcPlaybackStateRepository implements PlaybackStateRepository {
                     room_id, current_music_json, current_enqueuer_id, current_enqueuer_name,
                     position_anchor, timestamp_anchor, position_updated_at,
                     is_shuffle, is_paused, is_pause_locked, is_skip_locked, is_shuffle_locked,
-                    is_loading, play_epoch, state_version, last_persisted_at
+                    is_loading, liked_user_ids_json, like_markers_json, play_epoch, state_version, last_persisted_at
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict(room_id) do update set
                     current_music_json = excluded.current_music_json,
                     current_enqueuer_id = excluded.current_enqueuer_id,
@@ -77,6 +82,8 @@ public class JdbcPlaybackStateRepository implements PlaybackStateRepository {
                     is_skip_locked = excluded.is_skip_locked,
                     is_shuffle_locked = excluded.is_shuffle_locked,
                     is_loading = excluded.is_loading,
+                    liked_user_ids_json = excluded.liked_user_ids_json,
+                    like_markers_json = excluded.like_markers_json,
                     play_epoch = excluded.play_epoch,
                     state_version = excluded.state_version,
                     last_persisted_at = excluded.last_persisted_at
@@ -94,6 +101,8 @@ public class JdbcPlaybackStateRepository implements PlaybackStateRepository {
                 state.skipLocked(),
                 state.shuffleLocked(),
                 state.loading(),
+                writeJson(state.likedUserIds()),
+                writeJson(state.likeMarkers()),
                 state.playEpoch(),
                 state.stateVersion(),
                 state.lastPersistedAt());
@@ -108,10 +117,14 @@ public class JdbcPlaybackStateRepository implements PlaybackStateRepository {
         if (music == null) {
             return null;
         }
+        return writeJson(music);
+    }
+
+    private String writeJson(Object value) {
         try {
-            return objectMapper.writeValueAsString(music);
+            return objectMapper.writeValueAsString(value);
         } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Failed to serialize playable music", e);
+            throw new IllegalStateException("Failed to serialize playback state value", e);
         }
     }
 
@@ -119,10 +132,17 @@ public class JdbcPlaybackStateRepository implements PlaybackStateRepository {
         if (json == null || json.isBlank()) {
             return null;
         }
+        return readJson(json, PLAYABLE_MUSIC_TYPE, null);
+    }
+
+    private <T> T readJson(String json, TypeReference<T> typeReference, T defaultValue) {
+        if (json == null || json.isBlank()) {
+            return defaultValue;
+        }
         try {
-            return objectMapper.readValue(json, PLAYABLE_MUSIC_TYPE);
+            return objectMapper.readValue(json, typeReference);
         } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Failed to deserialize playable music", e);
+            throw new IllegalStateException("Failed to deserialize playback state value", e);
         }
     }
 }

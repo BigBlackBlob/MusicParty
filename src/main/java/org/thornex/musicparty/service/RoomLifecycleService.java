@@ -1,12 +1,10 @@
 package org.thornex.musicparty.service;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-import org.thornex.musicparty.event.RoomDeletedEvent;
 
 @Service
 @RequiredArgsConstructor
@@ -17,7 +15,7 @@ public class RoomLifecycleService {
     private final RoomStatePersistenceService roomStatePersistenceService;
     private final MusicPlayerService musicPlayerService;
     private final ChatService chatService;
-    private final ApplicationEventPublisher eventPublisher;
+    private final RoomSessionCoordinator roomSessionCoordinator;
 
     @Transactional
     public boolean deleteRoom(String roomId, String requesterPublicId, boolean admin) {
@@ -28,11 +26,12 @@ public class RoomLifecycleService {
         userService.movePersistedUsersToDefaultRoom(roomId);
         roomStatePersistenceService.deleteRoomData(roomId);
         Runnable afterCommit = () -> {
-            userService.moveUsersToDefaultRoom(roomId);
-            musicPlayerService.removeRoom(roomId, true);
-            chatService.evictRoomHistory(roomId);
-            roomService.publishRoomList();
-            eventPublisher.publishEvent(new RoomDeletedEvent(this, roomId));
+            roomSessionCoordinator.cleanupDeletedRoom(
+                    roomId,
+                    () -> userService.moveUsersToDefaultRoom(roomId),
+                    () -> musicPlayerService.removeRoom(roomId, true),
+                    () -> chatService.evictRoomHistory(roomId)
+            );
         };
 
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
