@@ -189,6 +189,10 @@ public class MusicPlayerService {
         sessionForUser(sessionId).reorderQueue(oldIndex, newIndex, sessionId);
     }
 
+    public void reorderQueue(String queueId, String targetQueueId, String position, String sessionId) {
+        sessionForUser(sessionId).reorderQueue(queueId, targetQueueId, position, sessionId);
+    }
+
     public void skipToNext(String sessionId) {
         sessionForUser(sessionId).skipToNext(sessionId);
     }
@@ -472,6 +476,12 @@ public class MusicPlayerService {
 
         public synchronized void reorderQueue(int oldIndex, int newIndex, String sessionId) {
             queueManager.reorder(oldIndex, newIndex);
+            playbackState.touchHotActivity();
+            persistQueueMutation(null, true);
+        }
+
+        public synchronized void reorderQueue(String queueId, String targetQueueId, String position, String sessionId) {
+            queueManager.reorderByQueueId(queueId, targetQueueId, position);
             playbackState.touchHotActivity();
             persistQueueMutation(null, true);
         }

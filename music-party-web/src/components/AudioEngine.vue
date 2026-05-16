@@ -18,6 +18,14 @@
         loop
     ></audio>
   </div>
+  <button
+      v-if="needsUserGesture"
+      type="button"
+      class="fixed bottom-24 left-1/2 z-[var(--z-toast)] -translate-x-1/2 rounded-full bg-primary px-5 py-3 text-sm font-black text-on-primary shadow-xl shadow-black/20"
+      @click="safePlay"
+  >
+    {{ ui.locale === 'zh' ? '点击启用声音' : 'Tap to enable sound' }}
+  </button>
 </template>
 
 <script setup>
@@ -41,6 +49,8 @@ const {
   localProgress,
   isBuffering,
   isErrorState,
+  needsUserGesture,
+  safePlay,
   handleError,
   checkAutoPlay
 } = useAudio(audioRef, player, computed(() => ui.volume));
