@@ -1,6 +1,6 @@
 <template>
   <div class="flex flex-col w-full group/progress">
-    <div class="flex items-center justify-between mb-1 px-0.5">
+    <div v-if="!hideLabels" class="flex items-center justify-between mb-1 px-0.5">
       <div class="flex items-center gap-1.5">
         <span class="text-[10px] font-mono font-bold text-[var(--text-tertiary)] tabular-nums">
           {{ formatDuration(displayProgressMs) }}
@@ -61,6 +61,7 @@ const props = defineProps({
   duration: Number,
   canSeek: Boolean,
   isError: Boolean,
+  hideLabels: Boolean,
   markers: {
     type: Array,
     default: () => []

@@ -126,7 +126,6 @@
     </Transition>
 
     <div
-        id="tutorial-chat"
         v-if="!isMobile || !chatStore.isOpen"
         @pointerdown="handlePointerDown"
         @click="handleClick"

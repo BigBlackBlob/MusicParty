@@ -10,7 +10,6 @@
     <div class="space-y-3">
       <!-- 自己 -->
       <div
-          id="tutorial-rename"
           class="flex min-w-0 items-center gap-3 rounded-2xl border border-[var(--border-default)] bg-[var(--surface-2)] px-3 py-2 transition-colors"
           :class="[
               isEnqueuerById(userStore.publicId) ? 'border-[var(--accent)]/30 bg-[var(--accent-subtle)]' :

@@ -1,36 +1,23 @@
 <template>
-  <div class="mobile-shell">
+  <div class="mobile-shell bg-bg-base overflow-hidden">
+    <!-- Ambient Background -->
     <Transition name="mobile-ambient-fade">
       <div
-        v-if="currentCover"
+        v-if="currentCover && activeTab === 'now'"
         :key="currentCover"
         class="mobile-ambient"
         :style="{ backgroundImage: `url(${currentCover})` }"
       />
     </Transition>
 
-    <header class="mobile-shell-header">
-      <div class="min-w-0">
-        <div class="flex items-center gap-2">
-          <span
-            class="h-2 w-2 rounded-full"
-            :class="player.connected ? 'bg-[var(--success)]' : 'bg-[var(--error)]'"
-          />
-          <h1>{{ t('app.lounge') }}</h1>
-        </div>
-        <p>{{ headerSubtitle }}</p>
-      </div>
-
-      <div class="flex items-center gap-1">
-        <IconButton size="sm" @click="showSettings = true" :title="t('settings.title')">
-          <Settings class="h-5 w-5 text-[var(--text-secondary)]" />
-        </IconButton>
-      </div>
-    </header>
-
     <main class="mobile-shell-main">
       <Transition name="fade-slide" mode="out-in">
-        <MobileNowPlaying v-if="activeTab === 'now'" :key="'now'" />
+        <MobileNowPlaying 
+          v-if="activeTab === 'now'" 
+          :key="'now'" 
+          @open-settings="showSettings = true"
+          @close="activeTab = 'queue'"
+        />
         <MobileQueueView v-else-if="activeTab === 'queue'" :key="'queue'" />
         <MobileSearchView v-else-if="activeTab === 'search'" :key="'search'" />
         <MobileChatView v-else-if="activeTab === 'chat'" :key="'chat'" />
@@ -39,6 +26,7 @@
 
     <MobileBottomNav v-model:active="activeTab" />
 
+    <!-- Settings Dialog (Maintained for functionality) -->
     <DialogRoot :open="showSettings" @update:open="val => showSettings = val">
       <DialogPortal>
         <DialogOverlay class="fixed inset-0 z-[var(--z-modal)] bg-black/60 backdrop-blur-sm transition-all duration-300" />
@@ -48,9 +36,12 @@
               <div>
                 <DialogTitle class="text-sm font-bold text-[var(--text-primary)]">{{ t('settings.title') }}</DialogTitle>
               </div>
-              <IconButton variant="secondary" size="sm" @click="showSettings = false" :aria-label="t('common.close')">
-                <X class="h-4 w-4" />
-              </IconButton>
+              <button 
+                @click="showSettings = false"
+                class="w-[32px] h-[32px] flex items-center justify-center rounded-full bg-surface-control text-text-primary"
+              >
+                <span class="material-symbols-outlined text-[18px]">close</span>
+              </button>
             </div>
 
             <div class="flex-1 overflow-y-auto p-4 flex flex-col gap-6">
@@ -88,21 +79,7 @@
                 </div>
               </div>
 
-              <!-- Now playing density -->
-              <div>
-                <h3 class="text-[10px] font-bold text-[var(--text-tertiary)] uppercase tracking-wider mb-3">{{ t('settings.mobileNowDensity') }}</h3>
-                <div class="flex gap-2">
-                  <button
-                    v-for="density in mobileNowDensityOptions"
-                    :key="density"
-                    class="flex-1 py-2.5 rounded-md border text-sm font-bold transition-colors"
-                    :class="ui.mobileNowDensity === density ? 'border-[var(--accent)] bg-[var(--accent-subtle)] text-[var(--text-primary)]' : 'border-[var(--border-subtle)] bg-[var(--surface-control)] text-[var(--text-secondary)]'"
-                    @click="ui.setMobileNowDensity(density)"
-                  >
-                    {{ t(`settings.${density}`) }}
-                  </button>
-                </div>
-              </div>
+              <AdminSettingsPanel />
 
               <!-- Members -->
               <div>
@@ -139,13 +116,12 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Settings, X } from 'lucide-vue-next';
 import { DialogRoot, DialogPortal, DialogOverlay, DialogContent, DialogTitle } from 'reka-ui';
+import AdminSettingsPanel from '../AdminSettingsPanel.vue';
 import { useChatStore } from '../../stores/chat';
 import { usePlayerStore } from '../../stores/player';
 import { useUiStore } from '../../stores/ui';
 import { useUserStore } from '../../stores/user';
-import IconButton from '../ui/IconButton.vue';
 import MobileBottomNav from './MobileBottomNav.vue';
 import MobileChatView from './MobileChatView.vue';
 import MobileNowPlaying from './MobileNowPlaying.vue';
@@ -155,7 +131,6 @@ import MobileSearchView from './MobileSearchView.vue';
 const { t, locale: i18nLocale } = useI18n();
 
 const showSettings = ref(false);
-const mobileNowDensityOptions = ['compact', 'standard', 'relaxed'];
 const chat = useChatStore();
 const player = usePlayerStore();
 const ui = useUiStore();
@@ -169,13 +144,6 @@ const currentCover = computed(() => player.nowPlaying?.music?.coverUrl || '');
 const displayMembers = computed(() => {
   if (user.onlineUsers.length) return user.onlineUsers;
   return [{ name: user.currentUser.name, publicId: user.publicId, isGuest: user.isGuest }];
-});
-const headerSubtitle = computed(() => {
-  if (!player.connected) return t('settings.disconnected');
-  if (activeTab.value === 'queue') return `${player.queue.length} ${t('queue.tracks')}`;
-  if (activeTab.value === 'search') return t('search.searchAndAdd');
-  if (activeTab.value === 'chat') return `${chat.messages.length} ${t('chat.messages')}`;
-  return player.nowPlaying?.music?.name || t('player.waiting');
 });
 
 const getInitials = (name = '') => {
@@ -200,56 +168,18 @@ watch(activeTab, (tab) => {
   height: 100%;
   min-height: 0;
   flex-direction: column;
-  overflow: hidden;
-  background: var(--surface-0);
-  color: var(--text-primary);
 }
 
 .mobile-ambient {
   pointer-events: none;
   position: absolute;
-  inset: -14%;
+  inset: -10%;
   z-index: 0;
   background-position: center;
   background-size: cover;
-  filter: var(--ambient-filter);
-  opacity: var(--ambient-opacity);
-  transform: scale(1.04);
-}
-
-.mobile-shell-header {
-  position: relative;
-  z-index: var(--z-header);
-  display: flex;
-  min-height: calc(var(--mobile-top-bar-height) + env(safe-area-inset-top));
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: 1px solid var(--border-default);
-  background: color-mix(in srgb, var(--surface-1) 92%, transparent);
-  padding: env(safe-area-inset-top) 20px 0;
-}
-
-.mobile-shell-header h1 {
-  color: var(--text-primary);
-  font-size: 15px;
-  font-weight: 800;
-  line-height: 1;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  text-shadow: 0 2px 4px var(--surface-glass-bg);
-}
-
-.mobile-shell-header p {
-  max-width: 58vw;
-  overflow: hidden;
-  margin-top: 4px;
-  color: var(--text-tertiary);
-  font-size: 11px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  filter: blur(60px) saturate(1.2) brightness(0.4);
+  opacity: 0.3;
+  transform: scale(1.1);
 }
 
 .mobile-shell-main {
@@ -258,7 +188,6 @@ watch(activeTab, (tab) => {
   min-height: 0;
   flex: 1;
   overflow: hidden;
-  background: color-mix(in srgb, var(--surface-0) 88%, transparent);
 }
 
 .mobile-members-sheet {
@@ -268,11 +197,11 @@ watch(activeTab, (tab) => {
   max-height: 80dvh;
   flex-direction: column;
   overflow: hidden;
-  border-top: 1px solid var(--surface-glass-border);
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  background: var(--surface-glass-panel);
+  border-top: 1px solid var(--border-default);
+  border-radius: 24px 24px 0 0;
+  background: var(--surface-panel);
   backdrop-filter: blur(24px);
-  box-shadow: 0 -18px 48px var(--surface-glass-bg);
+  box-shadow: 0 -18px 48px rgba(0,0,0,0.5);
 }
 
 .h-safe-bottom {
@@ -281,17 +210,17 @@ watch(activeTab, (tab) => {
 
 .fade-slide-enter-active,
 .fade-slide-leave-active {
-  transition: opacity 240ms cubic-bezier(0.16, 1, 0.3, 1), transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 300ms cubic-bezier(0.16, 1, 0.3, 1), transform 300ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .fade-slide-enter-from {
   opacity: 0;
-  transform: translateX(12px);
+  transform: translateX(10px);
 }
 
 .fade-slide-leave-to {
   opacity: 0;
-  transform: translateX(-12px);
+  transform: translateX(-10px);
 }
 
 .mobile-ambient-fade-enter-active,
@@ -304,4 +233,3 @@ watch(activeTab, (tab) => {
   opacity: 0;
 }
 </style>
-
