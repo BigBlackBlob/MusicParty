@@ -132,9 +132,10 @@ class RoomSessionCoordinatorTests {
                 new PlaybackTransitionService(
                         persistenceService,
                         new RoomStateMutationService(new TestTransactionManager()),
-                        event -> {},
-                        new AfterCommitExecutor()
-                )
+                        event -> {}
+                ),
+                null,
+                null
         );
         musicPlayerService.getSession(room.roomId()).setLock("PAUSE", true);
         long afterPlaybackActiveAt = findRoom(roomRepository, room.roomId()).lastActiveAt();

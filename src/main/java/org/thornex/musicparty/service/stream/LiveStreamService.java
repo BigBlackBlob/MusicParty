@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.config.LocalResourceConfig;
 import org.thornex.musicparty.dto.PlayableMusic;
@@ -29,6 +30,7 @@ public class LiveStreamService {
     private final LocalCacheService localCacheService;
     private final ApplicationEventPublisher eventPublisher;
     private final AppProperties appProperties;
+    private final InternalStreamProxyToken internalStreamProxyToken;
     
     // 开关状态 (可以通过 AdminController 修改)
     private final AtomicBoolean isEnabled = new AtomicBoolean(false);
@@ -55,11 +57,16 @@ public class LiveStreamService {
     // 统计唯一收听人数 (按 IP 地址去重)
     private final java.util.Map<String, Integer> ipConnectionCount = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.Map<OutputStream, String> streamToIp = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Map<OutputStream, CountDownLatch> streamCloseSignals = new java.util.concurrent.ConcurrentHashMap<>();
 
-    public LiveStreamService(LocalCacheService localCacheService, ApplicationEventPublisher eventPublisher, AppProperties appProperties) {
+    public LiveStreamService(LocalCacheService localCacheService,
+                             ApplicationEventPublisher eventPublisher,
+                             AppProperties appProperties,
+                             InternalStreamProxyToken internalStreamProxyToken) {
         this.localCacheService = localCacheService;
         this.eventPublisher = eventPublisher;
         this.appProperties = appProperties;
+        this.internalStreamProxyToken = internalStreamProxyToken;
     }
 
     @PostConstruct
@@ -69,6 +76,10 @@ public class LiveStreamService {
     }
 
     private void handleClientRemoved(OutputStream os) {
+        CountDownLatch closeSignal = streamCloseSignals.remove(os);
+        if (closeSignal != null) {
+            closeSignal.countDown();
+        }
         String ip = streamToIp.remove(os);
         if (ip != null) {
             ipConnectionCount.computeIfPresent(ip, (k, v) -> v > 1 ? v - 1 : null);
@@ -109,7 +120,9 @@ public class LiveStreamService {
         return ipConnectionCount.size();
     }
 
-    public void addListener(OutputStream outputStream, String remoteAddr) {
+    public CountDownLatch addListener(OutputStream outputStream, String remoteAddr) {
+        CountDownLatch closeSignal = new CountDownLatch(1);
+        streamCloseSignals.put(outputStream, closeSignal);
         hasListeners.set(true);
         broadcaster.addClient(outputStream);
         
@@ -121,6 +134,7 @@ public class LiveStreamService {
         eventPublisher.publishEvent(new StreamStatusEvent(this, true, getStreamListenerCount()));
         
         checkState();
+        return closeSignal;
     }
 
     public void removeListener(OutputStream outputStream, String remoteAddr) {
@@ -193,13 +207,16 @@ public class LiveStreamService {
                 stopTranscoding();
                 return;
             }
-            inputSource = url;
+            inputSource = resolveStreamInputUrl(url);
             log.debug("Stream: Using network URL for {}", currentMusic.name());
 
             // 针对特定平台添加必要 Header
             if ("bilibili".equals(currentMusic.platform())) {
                 httpHeaders.put("Referer", "https://www.bilibili.com/");
                 httpHeaders.put("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+            }
+            if (url.startsWith("/api/navidrome/") || url.startsWith("/api/subsonic/")) {
+                httpHeaders.put(InternalStreamProxyToken.HEADER_NAME, internalStreamProxyToken.value());
             }
         }
 
@@ -306,5 +323,16 @@ public class LiveStreamService {
         activeStreamKey = null;
         activeStreamStartPosition = 0;
         activeStreamStartTime = 0;
+    }
+
+    private String resolveStreamInputUrl(String url) {
+        if (!url.startsWith("/")) {
+            return url;
+        }
+        String baseUrl = appProperties.getBaseUrl();
+        if (!StringUtils.hasText(baseUrl)) {
+            baseUrl = "http://127.0.0.1:8080";
+        }
+        return baseUrl.replaceAll("/+$", "") + url;
     }
 }

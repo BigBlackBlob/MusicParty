@@ -182,6 +182,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
                 });
     }
 
+    @Override
     public Mono<List<Album>> searchAlbums(String keyword) {
         ensureConfigured();
         return webClient.get()
@@ -206,6 +207,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
                 });
     }
 
+    @Override
     public Mono<List<Music>> getAlbumMusics(String albumId) {
         ensureConfigured();
         return webClient.get()

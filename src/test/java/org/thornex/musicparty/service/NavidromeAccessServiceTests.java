@@ -1,6 +1,7 @@
 package org.thornex.musicparty.service;
 
 import org.junit.jupiter.api.Test;
+import org.thornex.musicparty.config.AppProperties;
 
 import java.util.Set;
 
@@ -19,5 +20,21 @@ class NavidromeAccessServiceTests {
     void parseAllowedNamesReturnsEmptySetForBlankInput() {
         assertThat(NavidromeAccessService.parseAllowedNames("  , , ")).isEmpty();
         assertThat(NavidromeAccessService.parseAllowedNames(null)).isEmpty();
+    }
+
+    @Test
+    void parseAllowedNamesKeepsWildcardForLocalDevelopment() {
+        Set<String> names = NavidromeAccessService.parseAllowedNames("*, Alice");
+
+        assertThat(names).containsExactlyInAnyOrder("*", "alice");
+    }
+
+    @Test
+    void allowsAllNamedUsersWhenWildcardIsConfigured() {
+        AppProperties properties = new AppProperties();
+        properties.getNavidrome().setAllowedUsers("*");
+        NavidromeAccessService service = new NavidromeAccessService(properties, null);
+
+        assertThat(service.allowsAllNamedUsers()).isTrue();
     }
 }

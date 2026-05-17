@@ -38,7 +38,7 @@ class NavidromeSubsonicClientTests {
                 {"subsonic-response":{"status":"failed","error":{"code":40,"message":"Wrong username or password"}}}
                 """)))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("Navidrome error 40: Wrong username or password");
+                .hasMessageContaining("Subsonic error 40: Wrong username or password");
     }
 
     @Test

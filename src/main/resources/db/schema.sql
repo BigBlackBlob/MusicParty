@@ -105,3 +105,38 @@ create table if not exists migration_state (
     migration_key text primary key,
     completed_at integer not null
 );
+
+create table if not exists subsonic_source (
+    id text primary key,
+    owner_room_id text,
+    label text not null,
+    base_url text not null,
+    username text not null,
+    password text not null,
+    client text not null,
+    api_version text not null,
+    allowed_users text,
+    enabled integer not null default 1,
+    system integer not null default 0,
+    created_at integer not null,
+    updated_at integer not null
+);
+
+create index if not exists idx_subsonic_source_enabled on subsonic_source(enabled);
+create index if not exists idx_subsonic_source_owner_room on subsonic_source(owner_room_id);
+
+create table if not exists room_subsonic_source (
+    room_id text not null,
+    source_id text not null,
+    enabled integer not null default 1,
+    display_label text,
+    allowed_users text,
+    sort_order integer not null default 0,
+    created_at integer not null,
+    updated_at integer not null,
+    primary key (room_id, source_id),
+    foreign key (room_id) references room(id),
+    foreign key (source_id) references subsonic_source(id)
+);
+
+create index if not exists idx_room_subsonic_source_source on room_subsonic_source(source_id);

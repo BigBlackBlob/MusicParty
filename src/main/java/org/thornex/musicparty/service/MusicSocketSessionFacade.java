@@ -55,6 +55,13 @@ public class MusicSocketSessionFacade {
         });
     }
 
+    public void sendControlDenied(String sessionId, String action, String message) {
+        userService.getUser(sessionId).ifPresent(user -> {
+            PlayerEvent errorEvent = new PlayerEvent("WARN", action, user.getPublicId(), message, null);
+            messagingTemplate.convertAndSendToUser(sessionId, "/queue/events", errorEvent, createSessionHeaders(sessionId));
+        });
+    }
+
     public boolean renameAndBroadcast(String sessionId, String newName) {
         if (!userService.renameUser(sessionId, newName)) {
             return false;

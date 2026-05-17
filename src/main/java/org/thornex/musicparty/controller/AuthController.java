@@ -3,11 +3,15 @@
 package org.thornex.musicparty.controller;
 
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.thornex.musicparty.config.AppProperties;
+import org.thornex.musicparty.security.ClientIpResolver;
+import org.thornex.musicparty.security.SecureCompare;
 
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
@@ -23,6 +27,7 @@ public class AuthController {
     private final AtomicReference<String> roomPassword = new AtomicReference<>("");
     private final String adminPassword;
     private final AppProperties.AuthConfig authConfig;
+    private final ClientIpResolver clientIpResolver;
 
     // IP限流记录
     private final ConcurrentHashMap<String, FailedAttempt> ipAttempts = new ConcurrentHashMap<>();
@@ -38,10 +43,11 @@ public class AuthController {
         }
     }
 
-    public AuthController(AppProperties appProperties) {
+    public AuthController(AppProperties appProperties, ClientIpResolver clientIpResolver) {
         // 从配置中获取管理员密码
         this.adminPassword = appProperties.getAdminPassword();
         this.authConfig = appProperties.getAuth();
+        this.clientIpResolver = clientIpResolver;
     }
 
     public void resetRoomPassword() {
@@ -97,7 +103,7 @@ public class AuthController {
      */
     @PostMapping("/verify")
     public ResponseEntity<?> verifyPassword(@RequestBody Map<String, String> body, HttpServletRequest request) {
-        String clientIp = getClientIp(request);
+        String clientIp = clientIpResolver.resolve(request);
 
         // 检查限流
         if (authConfig.isRateLimitEnabled() && isBlocked(clientIp)) {
@@ -118,13 +124,13 @@ public class AuthController {
         }
 
         // 3. 如果输入的是管理员密码，直接通过 (万能钥匙)
-        if (adminPassword != null && adminPassword.equals(inputPassword)) {
+        if (adminPassword != null && SecureCompare.equals(adminPassword, inputPassword)) {
             clearAttempts(clientIp);
             return ResponseEntity.ok(Map.of("valid", true));
         }
 
         // 3. 比对密码
-        if (currentPassword.equals(inputPassword)) {
+        if (SecureCompare.equals(currentPassword, inputPassword)) {
             clearAttempts(clientIp);
             return ResponseEntity.ok(Map.of("valid", true));
         } else {
@@ -136,6 +142,7 @@ public class AuthController {
     private void recordFailure(String ip) {
         if (!authConfig.isRateLimitEnabled()) return;
 
+        cleanupExpiredAttempts();
         ipAttempts.compute(ip, (k, attempt) -> {
             Instant now = Instant.now();
             if (attempt == null) {
@@ -156,6 +163,7 @@ public class AuthController {
             }
             return attempt;
         });
+        enforceAttemptCapacity();
     }
 
     private void clearAttempts(String ip) {
@@ -163,6 +171,7 @@ public class AuthController {
     }
 
     private boolean isBlocked(String ip) {
+        cleanupExpiredAttempts();
         FailedAttempt attempt = ipAttempts.get(ip);
         if (attempt == null) return false;
         
@@ -178,12 +187,34 @@ public class AuthController {
         return false;
     }
 
-    private String getClientIp(HttpServletRequest request) {
-        String xfHeader = request.getHeader("X-Forwarded-For");
-        if (xfHeader == null) {
-            return request.getRemoteAddr();
+    @Scheduled(fixedDelayString = "${app.music-api.auth.cleanup-interval-ms:60000}")
+    void cleanupExpiredAttempts() {
+        if (ipAttempts.isEmpty()) {
+            return;
         }
-        return xfHeader.split(",")[0];
+        Instant now = Instant.now();
+        long windowSeconds = authConfig.getWindowSeconds();
+        ipAttempts.entrySet().removeIf(entry -> {
+            FailedAttempt attempt = entry.getValue();
+            boolean windowExpired = now.isAfter(attempt.firstAttemptTime.plusSeconds(windowSeconds));
+            boolean blockExpired = attempt.blockedUntil == null || now.isAfter(attempt.blockedUntil);
+            return windowExpired && blockExpired;
+        });
+    }
+
+    private void enforceAttemptCapacity() {
+        int maxTrackedIps = authConfig.getMaxTrackedIps();
+        if (maxTrackedIps <= 0 || ipAttempts.size() <= maxTrackedIps) {
+            return;
+        }
+        Instant now = Instant.now();
+        int overflow = ipAttempts.size() - maxTrackedIps;
+        ipAttempts.entrySet().stream()
+                .filter(entry -> entry.getValue().blockedUntil == null || now.isAfter(entry.getValue().blockedUntil))
+                .sorted(Comparator.comparing(entry -> entry.getValue().firstAttemptTime))
+                .limit(overflow)
+                .map(Map.Entry::getKey)
+                .forEach(ipAttempts::remove);
     }
 
     public String getRawPassword() {

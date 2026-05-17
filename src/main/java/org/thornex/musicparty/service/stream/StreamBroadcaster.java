@@ -11,6 +11,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
@@ -22,7 +24,7 @@ public class StreamBroadcaster {
 
     private static final int CLIENT_QUEUE_CAPACITY = 64;
     private final Map<OutputStream, ClientSink> clients = new ConcurrentHashMap<>();
-    private final ExecutorService clientWriterExecutor = Executors.newCachedThreadPool();
+    private final ExecutorService clientWriterExecutor = Executors.newCachedThreadPool(new NamedThreadFactory());
     private Consumer<OutputStream> onClientRemoved;
 
     public void setOnClientRemoved(Consumer<OutputStream> onClientRemoved) {
@@ -117,15 +119,23 @@ public class StreamBroadcaster {
             if (writerFuture != null) {
                 writerFuture.cancel(true);
             }
-            synchronized (outputStream) {
-                outputStream.notifyAll();
-            }
             if (closeStream) {
                 try {
                     outputStream.close();
                 } catch (IOException ignored) {
                 }
             }
+        }
+    }
+
+    private static class NamedThreadFactory implements ThreadFactory {
+        private final AtomicInteger counter = new AtomicInteger();
+
+        @Override
+        public Thread newThread(Runnable runnable) {
+            Thread thread = new Thread(runnable, "stream-client-writer-" + counter.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
         }
     }
 }

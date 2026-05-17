@@ -35,15 +35,15 @@ final class RoomPlaybackState {
     private final AtomicLong stateVersion = new AtomicLong(0);
     private final AtomicLong lastHotActivityAt = new AtomicLong(System.currentTimeMillis());
 
-    PlayableMusic currentMusic() {
+    synchronized PlayableMusic currentMusic() {
         return currentMusic.get();
     }
 
-    String currentEnqueuerId() {
+    synchronized String currentEnqueuerId() {
         return currentEnqueuerId.get();
     }
 
-    String currentEnqueuerName() {
+    synchronized String currentEnqueuerName() {
         return currentEnqueuerName.get();
     }
 
@@ -127,20 +127,20 @@ final class RoomPlaybackState {
         lastHotActivityAt.set(value);
     }
 
-    void setCurrentTrack(PlayableMusic music, String enqueuerId, String enqueuerName) {
+    synchronized void setCurrentTrack(PlayableMusic music, String enqueuerId, String enqueuerName) {
         currentMusic.set(music);
         currentEnqueuerId.set(enqueuerId);
         currentEnqueuerName.set(enqueuerName);
     }
 
-    void clearCurrentTrack() {
+    synchronized void clearCurrentTrack() {
         currentMusic.set(null);
         currentEnqueuerId.set(null);
         currentEnqueuerName.set(null);
         updatePlaybackAnchor(0);
     }
 
-    void startNewTrack(PlayableMusic music, MusicQueueItem queueItem) {
+    synchronized void startNewTrack(PlayableMusic music, MusicQueueItem queueItem) {
         likedUserIds.clear();
         likeMarkers.clear();
         setCurrentTrack(music, queueItem.enqueuedBy().publicId(), queueItem.enqueuedBy().name());
@@ -151,7 +151,7 @@ final class RoomPlaybackState {
         bumpPlayEpochAndStateVersion();
     }
 
-    long calculateCurrentPosition() {
+    synchronized long calculateCurrentPosition() {
         if (currentMusic.get() == null) {
             return 0;
         }
@@ -161,7 +161,7 @@ final class RoomPlaybackState {
         return positionAnchor.get() + (System.currentTimeMillis() - timestampAnchor.get());
     }
 
-    void updatePlaybackAnchor(long positionMs) {
+    synchronized void updatePlaybackAnchor(long positionMs) {
         long now = System.currentTimeMillis();
         positionAnchor.set(Math.max(0, positionMs));
         timestampAnchor.set(now);
@@ -181,7 +181,7 @@ final class RoomPlaybackState {
         lastHotActivityAt.set(System.currentTimeMillis());
     }
 
-    PersistedPlaybackState snapshot(String roomId) {
+    synchronized PersistedPlaybackState snapshot(String roomId) {
         return new PersistedPlaybackState(
                 roomId,
                 currentMusic.get(),
@@ -204,7 +204,7 @@ final class RoomPlaybackState {
         );
     }
 
-    void applySnapshot(PersistedPlaybackState state) {
+    synchronized void applySnapshot(PersistedPlaybackState state) {
         currentMusic.set(state.currentMusic());
         currentEnqueuerId.set(state.currentEnqueuerId());
         currentEnqueuerName.set(state.currentEnqueuerName());
@@ -226,7 +226,7 @@ final class RoomPlaybackState {
         lastHotActivityAt.set(Math.max(state.lastPersistedAt(), System.currentTimeMillis()));
     }
 
-    PlayerState toPlayerState(String roomId,
+    synchronized PlayerState toPlayerState(String roomId,
                               List<MusicQueueItem> queue,
                               List<UserSummary> onlineUsers,
                               long streamListenerCount) {

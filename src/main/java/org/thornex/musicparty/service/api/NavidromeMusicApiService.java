@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.Music;
+import org.thornex.musicparty.dto.Album;
 import org.thornex.musicparty.dto.PlayableMusic;
 import org.thornex.musicparty.dto.Playlist;
 import org.thornex.musicparty.dto.LyricResponse;
@@ -100,6 +101,80 @@ public class NavidromeMusicApiService implements IMusicApiService {
                 .onErrorResume(e -> {
                     log.error("Navidrome getPlayableMusic failed for id: {}", musicId, e);
                     return Mono.error(new ApiRequestException("Failed to get Navidrome song: " + musicId));
+                });
+    }
+
+    @Override
+    public Mono<List<Album>> searchAlbums(String keyword) {
+        Map<String, String> params = new HashMap<>();
+        params.put("query", keyword);
+        params.put("songCount", "0");
+        params.put("artistCount", "0");
+        params.put("albumCount", "50");
+
+        return subsonicClient.getJson("search3.view", params)
+                .map(node -> {
+                    JsonNode albums = node.path("subsonic-response").path("searchResult3").path("album");
+                    if (albums.isMissingNode() || !albums.isArray()) return List.<Album>of();
+
+                    List<Album> result = new ArrayList<>();
+                    for (JsonNode album : albums) {
+                        String id = album.path("id").asText("");
+                        String name = album.path("name").asText("");
+                        if (!StringUtils.hasText(id) || !StringUtils.hasText(name)) {
+                            continue;
+                        }
+                        String coverArtId = album.path("coverArt").asText("");
+                        String coverUrl = StringUtils.hasText(coverArtId)
+                                ? subsonicClient.buildLocalProxyPath("/api/navidrome/cover", coverArtId) : "";
+                        result.add(new Album(
+                                id,
+                                name,
+                                album.path("artist").asText("Unknown"),
+                                coverUrl,
+                                album.path("songCount").asInt(0),
+                                PLATFORM
+                        ));
+                    }
+                    return result;
+                })
+                .onErrorResume(e -> {
+                    log.warn("Navidrome album search failed: {}", e.getMessage());
+                    return Mono.error(new ApiRequestException("Navidrome album search failed"));
+                });
+    }
+
+    @Override
+    public Mono<List<Music>> getAlbumMusics(String albumId) {
+        return subsonicClient.getJson("getAlbum.view", Map.of("id", albumId))
+                .map(node -> {
+                    JsonNode songs = node.path("subsonic-response").path("album").path("song");
+                    if (songs.isMissingNode() || !songs.isArray()) return List.<Music>of();
+
+                    List<Music> result = new ArrayList<>();
+                    for (JsonNode song : songs) {
+                        String id = song.path("id").asText("");
+                        String title = song.path("title").asText("");
+                        if (!StringUtils.hasText(id) || !StringUtils.hasText(title)) {
+                            continue;
+                        }
+                        String coverArtId = song.path("coverArt").asText("");
+                        String coverUrl = StringUtils.hasText(coverArtId)
+                                ? subsonicClient.buildLocalProxyPath("/api/navidrome/cover", coverArtId) : "";
+                        result.add(new Music(
+                                id,
+                                title,
+                                List.of(song.path("artist").asText("Unknown")),
+                                song.path("duration").asLong(0) * 1000,
+                                PLATFORM,
+                                coverUrl
+                        ));
+                    }
+                    return result;
+                })
+                .onErrorResume(e -> {
+                    log.warn("Navidrome album tracks failed for id {}: {}", albumId, e.getMessage());
+                    return Mono.error(new ApiRequestException("Navidrome album tracks failed"));
                 });
     }
 

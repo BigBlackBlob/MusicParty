@@ -76,6 +76,21 @@ class MusicPlayerServiceHistoryTests {
         assertThat(queueRepository.replacedHistorySnapshots).containsExactly(List.of(first, second));
     }
 
+    @Test
+    void playbackControlCooldownIsTrackedPerSession() throws Exception {
+        RecordingQueueRepository queueRepository = new RecordingQueueRepository();
+        TestContext context = createContext(queueRepository);
+        MusicPlayerService.RoomPlayerSession session = context.musicPlayerService().getSession(context.roomId());
+
+        boolean firstUserFirstControl = (boolean) invokeMethod(session, "isRateLimited", new Class[]{String.class}, "session-a");
+        boolean firstUserSecondControl = (boolean) invokeMethod(session, "isRateLimited", new Class[]{String.class}, "session-a");
+        boolean secondUserFirstControl = (boolean) invokeMethod(session, "isRateLimited", new Class[]{String.class}, "session-b");
+
+        assertThat(firstUserFirstControl).isFalse();
+        assertThat(firstUserSecondControl).isTrue();
+        assertThat(secondUserFirstControl).isFalse();
+    }
+
     private TestContext createContext(RecordingQueueRepository queueRepository) {
         AppProperties properties = new AppProperties();
         properties.getQueue().setHistorySize(50);
@@ -100,8 +115,7 @@ class MusicPlayerServiceHistoryTests {
         PlaybackTransitionService playbackTransitionService = new PlaybackTransitionService(
                 persistenceService,
                 mutationService,
-                event -> {},
-                new AfterCommitExecutor()
+                event -> {}
         );
         MusicPlayerService musicPlayerService = new MusicPlayerService(
                 List.of(),
@@ -115,15 +129,17 @@ class MusicPlayerServiceHistoryTests {
                 roomSessionCoordinator,
                 persistenceService,
                 mutationService,
-                playbackTransitionService
+                playbackTransitionService,
+                null,
+                null
         );
         return new TestContext(properties, roomRepository, roomId, musicPlayerService);
     }
 
-    private void invokeMethod(Object target, String methodName, Class<?>[] parameterTypes, Object... args) throws Exception {
+    private Object invokeMethod(Object target, String methodName, Class<?>[] parameterTypes, Object... args) throws Exception {
         Method method = target.getClass().getDeclaredMethod(methodName, parameterTypes);
         method.setAccessible(true);
-        method.invoke(target, args);
+        return method.invoke(target, args);
     }
 
     private record TestContext(
@@ -152,8 +168,7 @@ class MusicPlayerServiceHistoryTests {
             PlaybackTransitionService playbackTransitionService = new PlaybackTransitionService(
                     persistenceService,
                     mutationService,
-                    event -> {},
-                    new AfterCommitExecutor()
+                    event -> {}
             );
             return new TestContext(
                     properties,
@@ -171,7 +186,9 @@ class MusicPlayerServiceHistoryTests {
                             roomSessionCoordinator,
                             persistenceService,
                             mutationService,
-                            playbackTransitionService
+                            playbackTransitionService,
+                            null,
+                            null
                     )
             );
         }

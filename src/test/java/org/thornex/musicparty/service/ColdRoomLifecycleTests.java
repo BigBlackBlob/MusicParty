@@ -55,8 +55,7 @@ class ColdRoomLifecycleTests {
         PlaybackTransitionService playbackTransitionService = new PlaybackTransitionService(
                 persistenceService,
                 mutationService,
-                event -> {},
-                new AfterCommitExecutor()
+                event -> {}
         );
         InMemoryUserProfileRepository userProfiles = new InMemoryUserProfileRepository();
         ChatService[] chatServiceHolder = new ChatService[1];
@@ -89,7 +88,9 @@ class ColdRoomLifecycleTests {
                 roomSessionCoordinator,
                 persistenceService,
                 mutationService,
-                playbackTransitionService
+                playbackTransitionService,
+                null,
+                null
         );
 
         User owner = userService.handleConnect("session-1", null, "Alice");

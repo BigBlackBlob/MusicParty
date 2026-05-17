@@ -1,6 +1,11 @@
 server:
   port: 8080
 
+spring:
+  mvc:
+    async:
+      request-timeout: 6h
+
 # Logging configuration
 logging:
   level:
@@ -34,6 +39,16 @@ app:
       client: ${NAVIDROME_CLIENT:musicparty}
       api-version: ${NAVIDROME_API_VERSION:1.16.1}
       allowed-users: ${NAVIDROME_ALLOWED_USERS:}
+    squidify:
+      enabled: ${SQUIDIFY_ENABLED:true}
+      id: ${SQUIDIFY_ID:squidify}
+      label: ${SQUIDIFY_LABEL:Squidify}
+      base-url: ${SQUIDIFY_BASE_URL:}
+      username: ${SQUIDIFY_USERNAME:}
+      password: ${SQUIDIFY_PASSWORD:}
+      client: ${SQUIDIFY_CLIENT:musicparty}
+      api-version: ${SQUIDIFY_API_VERSION:1.16.1}
+      allowed-users: ${SQUIDIFY_ALLOWED_USERS:*}
     queue:
       max-size: ${QUEUE_MAX_SIZE:1000}
       history-size: ${QUEUE_HISTORY_SIZE:50}
@@ -52,10 +67,11 @@ app:
       path: ${DB_PATH:data/musicparty.db}
       init-schema: ${DB_INIT_SCHEMA:true}
     auth:
-      rate-limit:
-        enabled: ${AUTH_RATE_LIMIT_ENABLED:true}
-        max-attempts: ${AUTH_MAX_ATTEMPTS:5}
-        window-seconds: ${AUTH_WINDOW_SECONDS:60}
-        block-duration-seconds: ${AUTH_BLOCK_DURATION:300}
+      rate-limit-enabled: ${AUTH_RATE_LIMIT_ENABLED:true}
+      max-attempts: ${AUTH_MAX_ATTEMPTS:5}
+      window-seconds: ${AUTH_WINDOW_SECONDS:60}
+      block-duration-seconds: ${AUTH_BLOCK_DURATION:300}
+      max-tracked-ips: ${AUTH_MAX_TRACKED_IPS:10000}
+      trusted-proxy-cidrs: ${TRUSTED_PROXY_CIDRS:}
       room-access-token-ttl-ms: ${ROOM_ACCESS_TOKEN_TTL_MS:300000}
       room-access-token-secret: ${ROOM_ACCESS_TOKEN_SECRET:}

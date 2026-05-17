@@ -2,6 +2,7 @@ package org.thornex.musicparty.service;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -49,6 +50,17 @@ public class CoverColorService {
         return webClient.get()
                 .uri(resolvedUrl)
                 .exchangeToMono(response -> {
+                    HttpStatusCode status = response.statusCode();
+                    if (status.is3xxRedirection()) {
+                        String location = response.headers().header("Location").stream().findFirst().orElse("");
+                        String redirectUrl = resolveRedirectUrl(resolvedUrl, location);
+                        if (!isSafeCoverUrl(redirectUrl)) {
+                            log.warn("Rejected unsafe cover redirect: from={}, to={}", resolvedUrl, redirectUrl);
+                        } else {
+                            log.warn("Rejected cover redirect for color extraction: from={}, to={}", resolvedUrl, redirectUrl);
+                        }
+                        return Mono.empty();
+                    }
                     if (response.statusCode().isError()) {
                         return response.createException().flatMap(Mono::error);
                     }
@@ -135,7 +147,19 @@ public class CoverColorService {
         }
         String trimmed = coverUrl.trim();
         return trimmed.startsWith("/api/navidrome/cover/")
+                || (trimmed.startsWith("/api/subsonic/") && trimmed.contains("/cover/"))
                 || trimmed.startsWith("/media/");
+    }
+
+    private String resolveRedirectUrl(String originalUrl, String location) {
+        if (!StringUtils.hasText(location)) {
+            return "";
+        }
+        try {
+            return URI.create(originalUrl).resolve(location).toString();
+        } catch (IllegalArgumentException e) {
+            return "";
+        }
     }
 
     private boolean isPublicAddress(InetAddress address) {
