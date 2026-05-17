@@ -31,11 +31,16 @@ FRONTEND_PORT=5173
 NETEASE_API_PORT=3000
 NETEASE_API_URL="${NETEASE_API_URL:-}"
 SKIP_BROWSER=false
-NAVIDROME_ENABLED="${NAVIDROME_ENABLED:-false}"
+NAVIDROME_ENABLED="${NAVIDROME_ENABLED:-true}"
 NAVIDROME_BASE_URL="${NAVIDROME_BASE_URL:-}"
 NAVIDROME_USERNAME="${NAVIDROME_USERNAME:-}"
 NAVIDROME_PASSWORD="${NAVIDROME_PASSWORD:-}"
 NAVIDROME_ALLOWED_USERS="${NAVIDROME_ALLOWED_USERS:-}"
+SQUIDIFY_ENABLED="${SQUIDIFY_ENABLED:-true}"
+SQUIDIFY_BASE_URL="${SQUIDIFY_BASE_URL:-}"
+SQUIDIFY_USERNAME="${SQUIDIFY_USERNAME:-}"
+SQUIDIFY_PASSWORD="${SQUIDIFY_PASSWORD:-}"
+SQUIDIFY_ALLOWED_USERS="${SQUIDIFY_ALLOWED_USERS:-}"
 STARTED_PIDS=()
 
 info() {
@@ -64,6 +69,7 @@ Options:
   --netease-api-url <url>       Use an existing Netease API URL instead of http://127.0.0.1:<api-port>.
   --env-file <path>             Load local environment file. Default: ./.env.local if present.
   --navidrome-local             Enable Navidrome at http://127.0.0.1:4533; credentials come from env file or env vars.
+  --no-navidrome                Disable Navidrome for this local run.
   --navidrome-base-url <url>    Enable Navidrome and use this base URL.
   --navidrome-username <name>   Navidrome username.
   --navidrome-password <pass>   Navidrome password.
@@ -76,7 +82,19 @@ Cookie:
   The script reads ./cookies.json if present:
   {
     "neteaseCookie": "MUSIC_U=xxxx...; __csrf=xxxx...",
-    "bilibiliSessdata": ""
+    "bilibiliSessdata": "",
+    "navidrome": {
+      "baseUrl": "http://127.0.0.1:4533",
+      "username": "admin",
+      "password": "secret",
+      "allowedUsers": "*"
+    },
+    "squidify": {
+      "baseUrl": "https://example.com",
+      "username": "guest",
+      "password": "guest",
+      "allowedUsers": "*"
+    }
   }
 EOF
 }
@@ -115,6 +133,10 @@ while [[ $# -gt 0 ]]; do
     --navidrome-local)
       NAVIDROME_ENABLED=true
       NAVIDROME_BASE_URL="${NAVIDROME_BASE_URL:-http://127.0.0.1:4533}"
+      shift
+      ;;
+    --no-navidrome)
+      NAVIDROME_ENABLED=false
       shift
       ;;
     --navidrome-base-url)
@@ -227,8 +249,15 @@ const file = process.argv[1];
 const field = process.argv[2];
 try {
   const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-  const value = data[field] || '';
-  process.stdout.write(String(value));
+  const value = field.split('.').reduce((current, key) => {
+    if (current && Object.prototype.hasOwnProperty.call(current, key)) {
+      return current[key];
+    }
+    return undefined;
+  }, data);
+  if (value !== undefined && value !== null) {
+    process.stdout.write(String(value));
+  }
 } catch (error) {
   process.stderr.write('Failed to read ' + file + ': ' + error.message + '\n');
   process.exit(2);
@@ -311,6 +340,48 @@ cleanup() {
 
 NETEASE_COOKIE="${NETEASE_COOKIE:-$(read_json_field "$COOKIE_FILE" neteaseCookie)}"
 BILIBILI_SESSDATA="${BILIBILI_SESSDATA:-$(read_json_field "$COOKIE_FILE" bilibiliSessdata)}"
+COOKIE_NAVIDROME_BASE_URL="$(read_json_field "$COOKIE_FILE" navidromeBaseUrl)"
+if [[ -z "$COOKIE_NAVIDROME_BASE_URL" ]]; then
+  COOKIE_NAVIDROME_BASE_URL="$(read_json_field "$COOKIE_FILE" navidrome.baseUrl)"
+fi
+COOKIE_NAVIDROME_USERNAME="$(read_json_field "$COOKIE_FILE" navidromeUsername)"
+if [[ -z "$COOKIE_NAVIDROME_USERNAME" ]]; then
+  COOKIE_NAVIDROME_USERNAME="$(read_json_field "$COOKIE_FILE" navidrome.username)"
+fi
+COOKIE_NAVIDROME_PASSWORD="$(read_json_field "$COOKIE_FILE" navidromePassword)"
+if [[ -z "$COOKIE_NAVIDROME_PASSWORD" ]]; then
+  COOKIE_NAVIDROME_PASSWORD="$(read_json_field "$COOKIE_FILE" navidrome.password)"
+fi
+COOKIE_NAVIDROME_ALLOWED_USERS="$(read_json_field "$COOKIE_FILE" navidromeAllowedUsers)"
+if [[ -z "$COOKIE_NAVIDROME_ALLOWED_USERS" ]]; then
+  COOKIE_NAVIDROME_ALLOWED_USERS="$(read_json_field "$COOKIE_FILE" navidrome.allowedUsers)"
+fi
+
+NAVIDROME_BASE_URL="${NAVIDROME_BASE_URL:-${COOKIE_NAVIDROME_BASE_URL:-http://127.0.0.1:4533}}"
+NAVIDROME_USERNAME="${NAVIDROME_USERNAME:-$COOKIE_NAVIDROME_USERNAME}"
+NAVIDROME_PASSWORD="${NAVIDROME_PASSWORD:-$COOKIE_NAVIDROME_PASSWORD}"
+NAVIDROME_ALLOWED_USERS="${NAVIDROME_ALLOWED_USERS:-${COOKIE_NAVIDROME_ALLOWED_USERS:-*}}"
+COOKIE_SQUIDIFY_BASE_URL="$(read_json_field "$COOKIE_FILE" squidifyBaseUrl)"
+if [[ -z "$COOKIE_SQUIDIFY_BASE_URL" ]]; then
+  COOKIE_SQUIDIFY_BASE_URL="$(read_json_field "$COOKIE_FILE" squidify.baseUrl)"
+fi
+COOKIE_SQUIDIFY_USERNAME="$(read_json_field "$COOKIE_FILE" squidifyUsername)"
+if [[ -z "$COOKIE_SQUIDIFY_USERNAME" ]]; then
+  COOKIE_SQUIDIFY_USERNAME="$(read_json_field "$COOKIE_FILE" squidify.username)"
+fi
+COOKIE_SQUIDIFY_PASSWORD="$(read_json_field "$COOKIE_FILE" squidifyPassword)"
+if [[ -z "$COOKIE_SQUIDIFY_PASSWORD" ]]; then
+  COOKIE_SQUIDIFY_PASSWORD="$(read_json_field "$COOKIE_FILE" squidify.password)"
+fi
+COOKIE_SQUIDIFY_ALLOWED_USERS="$(read_json_field "$COOKIE_FILE" squidifyAllowedUsers)"
+if [[ -z "$COOKIE_SQUIDIFY_ALLOWED_USERS" ]]; then
+  COOKIE_SQUIDIFY_ALLOWED_USERS="$(read_json_field "$COOKIE_FILE" squidify.allowedUsers)"
+fi
+
+SQUIDIFY_BASE_URL="${SQUIDIFY_BASE_URL:-$COOKIE_SQUIDIFY_BASE_URL}"
+SQUIDIFY_USERNAME="${SQUIDIFY_USERNAME:-$COOKIE_SQUIDIFY_USERNAME}"
+SQUIDIFY_PASSWORD="${SQUIDIFY_PASSWORD:-$COOKIE_SQUIDIFY_PASSWORD}"
+SQUIDIFY_ALLOWED_USERS="${SQUIDIFY_ALLOWED_USERS:-${COOKIE_SQUIDIFY_ALLOWED_USERS:-*}}"
 
 if [[ -z "$NETEASE_API_URL" ]]; then
   NETEASE_API_URL="http://127.0.0.1:$NETEASE_API_PORT"
@@ -333,6 +404,8 @@ NETEASE_LOG="$LOG_DIR/netease-api.log"
   echo "navidrome-enabled: $NAVIDROME_ENABLED"
   echo "navidrome-base-url: $NAVIDROME_BASE_URL"
   echo "navidrome-allowed-users: $NAVIDROME_ALLOWED_USERS"
+  echo "squidify-enabled: $SQUIDIFY_ENABLED"
+  echo "squidify-base-url: $SQUIDIFY_BASE_URL"
 } >> "$BACKEND_LOG"
 
 info "root: $ROOT_DIR"
@@ -347,6 +420,10 @@ info "navidrome enabled: $NAVIDROME_ENABLED"
 if [[ "$NAVIDROME_ENABLED" == true ]]; then
   info "navidrome base url: $NAVIDROME_BASE_URL"
   info "navidrome allowed users: $NAVIDROME_ALLOWED_USERS"
+fi
+info "squidify enabled: $SQUIDIFY_ENABLED"
+if [[ "$SQUIDIFY_ENABLED" == true ]]; then
+  info "squidify base url: $SQUIDIFY_BASE_URL"
 fi
 
 trap cleanup EXIT INT TERM
@@ -404,6 +481,11 @@ info "starting backend in background"
     NAVIDROME_CLIENT="${NAVIDROME_CLIENT:-musicparty}" \
     NAVIDROME_API_VERSION="${NAVIDROME_API_VERSION:-1.16.1}" \
     NAVIDROME_ALLOWED_USERS="$NAVIDROME_ALLOWED_USERS" \
+    SQUIDIFY_ENABLED="$SQUIDIFY_ENABLED" \
+    SQUIDIFY_BASE_URL="$SQUIDIFY_BASE_URL" \
+    SQUIDIFY_USERNAME="$SQUIDIFY_USERNAME" \
+    SQUIDIFY_PASSWORD="$SQUIDIFY_PASSWORD" \
+    SQUIDIFY_ALLOWED_USERS="$SQUIDIFY_ALLOWED_USERS" \
     "${MVN_CMD[@]}" spring-boot:run 2>&1 | tee -a "$BACKEND_LOG"
 ) &
 STARTED_PIDS+=("$!")
