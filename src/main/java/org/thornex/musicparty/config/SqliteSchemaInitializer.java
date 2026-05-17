@@ -64,6 +64,51 @@ public class SqliteSchemaInitializer {
                                     foreign key (public_id) references user_profile(public_id)
                                 )
                                 """)
+                ),
+                new SchemaMigration(
+                        "schema.subsonic_source.table",
+                        jdbc -> !hasTable(jdbc, "subsonic_source"),
+                        jdbc -> jdbc.execute("""
+                                create table subsonic_source (
+                                    id text primary key,
+                                    owner_room_id text,
+                                    label text not null,
+                                    base_url text not null,
+                                    username text not null,
+                                    password text not null,
+                                    client text not null,
+                                    api_version text not null,
+                                    allowed_users text,
+                                    enabled integer not null default 1,
+                                    system integer not null default 0,
+                                    created_at integer not null,
+                                    updated_at integer not null
+                                )
+                                """)
+                ),
+                new SchemaMigration(
+                        "schema.subsonic_source.owner_room_id",
+                        jdbc -> hasTable(jdbc, "subsonic_source") && !hasColumn(jdbc, "subsonic_source", "owner_room_id"),
+                        jdbc -> jdbc.execute("alter table subsonic_source add column owner_room_id text")
+                ),
+                new SchemaMigration(
+                        "schema.room_subsonic_source.table",
+                        jdbc -> !hasTable(jdbc, "room_subsonic_source"),
+                        jdbc -> jdbc.execute("""
+                                create table room_subsonic_source (
+                                    room_id text not null,
+                                    source_id text not null,
+                                    enabled integer not null default 1,
+                                    display_label text,
+                                    allowed_users text,
+                                    sort_order integer not null default 0,
+                                    created_at integer not null,
+                                    updated_at integer not null,
+                                    primary key (room_id, source_id),
+                                    foreign key (room_id) references room(id),
+                                    foreign key (source_id) references subsonic_source(id)
+                                )
+                                """)
                 )
         );
     }

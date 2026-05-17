@@ -16,13 +16,14 @@ import org.thornex.musicparty.event.*;
 import org.thornex.musicparty.exception.ApiRequestException;
 import org.thornex.musicparty.persistence.PersistedPlaybackState;
 import org.thornex.musicparty.service.api.IMusicApiService;
-import org.thornex.musicparty.service.api.NeteaseMusicApiService;
+import org.thornex.musicparty.service.api.SubsonicMusicApiService;
 import org.thornex.musicparty.service.stream.LiveStreamService;
 
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -31,6 +32,13 @@ import java.util.stream.Collectors;
 @Service
 @Slf4j
 public class MusicPlayerService {
+    public enum ControlResult {
+        OK,
+        COOLDOWN,
+        LOCKED,
+        EMPTY_QUEUE
+    }
+
     private final Map<String, IMusicApiService> apiServiceMap;
     private final UserService userService;
     private final LocalCacheService localCacheService;
@@ -43,6 +51,8 @@ public class MusicPlayerService {
     private final RoomStatePersistenceService roomStatePersistenceService;
     private final RoomStateMutationService roomStateMutationService;
     private final PlaybackTransitionService playbackTransitionService;
+    private final SubsonicMusicApiService subsonicMusicApiService;
+    private final SubsonicSourceRegistry subsonicSourceRegistry;
     private final Map<String, RoomPlayerSession> sessions = new ConcurrentHashMap<>();
 
     public MusicPlayerService(List<IMusicApiService> apiServices,
@@ -56,7 +66,9 @@ public class MusicPlayerService {
                               RoomSessionCoordinator roomSessionCoordinator,
                               RoomStatePersistenceService roomStatePersistenceService,
                               RoomStateMutationService roomStateMutationService,
-                              PlaybackTransitionService playbackTransitionService) {
+                              PlaybackTransitionService playbackTransitionService,
+                              SubsonicMusicApiService subsonicMusicApiService,
+                              SubsonicSourceRegistry subsonicSourceRegistry) {
         this.apiServiceMap = apiServices.stream().collect(Collectors.toMap(IMusicApiService::getPlatformName, Function.identity()));
         this.userService = userService;
         this.localCacheService = localCacheService;
@@ -69,6 +81,8 @@ public class MusicPlayerService {
         this.roomStatePersistenceService = roomStatePersistenceService;
         this.roomStateMutationService = roomStateMutationService;
         this.playbackTransitionService = playbackTransitionService;
+        this.subsonicMusicApiService = subsonicMusicApiService;
+        this.subsonicSourceRegistry = subsonicSourceRegistry;
     }
 
     @PostConstruct
@@ -193,20 +207,20 @@ public class MusicPlayerService {
         sessionForUser(sessionId).reorderQueue(queueId, targetQueueId, position, sessionId);
     }
 
-    public void skipToNext(String sessionId) {
-        sessionForUser(sessionId).skipToNext(sessionId);
+    public ControlResult skipToNext(String sessionId) {
+        return sessionForUser(sessionId).skipToNext(sessionId);
     }
 
-    public void togglePause(String sessionId) {
-        sessionForUser(sessionId).togglePause(sessionId);
+    public ControlResult togglePause(String sessionId) {
+        return sessionForUser(sessionId).togglePause(sessionId);
     }
 
     public Optional<String> seekTo(long positionMs, String sessionId) {
         return sessionForUser(sessionId).seekTo(positionMs, sessionId);
     }
 
-    public void toggleShuffle(String sessionId) {
-        sessionForUser(sessionId).toggleShuffle(sessionId);
+    public ControlResult toggleShuffle(String sessionId) {
+        return sessionForUser(sessionId).toggleShuffle(sessionId);
     }
 
     public void likeSong(String sessionId) {
@@ -270,7 +284,9 @@ public class MusicPlayerService {
         private final MusicQueueManager queueManager;
         private final RoomPlaybackState playbackState = new RoomPlaybackState();
         private final AtomicBoolean isStreamActive = new AtomicBoolean(false);
-        private final AtomicLong lastControlTimestamp = new AtomicLong(0);
+        private final AtomicBoolean idlePaused = new AtomicBoolean(false);
+        private final AtomicInteger onlineUserCount = new AtomicInteger(0);
+        private final Map<String, AtomicLong> lastControlTimestamps = new ConcurrentHashMap<>();
         private final AtomicLong playHeadVersion = new AtomicLong(0);
 
         private static final long GLOBAL_COOLDOWN_MS = 1000;
@@ -331,6 +347,7 @@ public class MusicPlayerService {
             long version = playHeadVersion.incrementAndGet();
             playbackState.setLoading(true);
             playbackState.setPaused(false);
+            idlePaused.set(false);
             playbackState.touchHotActivity();
             playbackState.bumpStateVersion();
             applyPlaybackTransition(true, true, true, null);
@@ -359,6 +376,7 @@ public class MusicPlayerService {
         }
 
         private void applyNewSong(PlayableMusic music, MusicQueueItem queueItem) {
+            idlePaused.set(false);
             playbackState.startNewTrack(music, queueItem);
             applyPlaybackTransition(
                     false,
@@ -384,6 +402,10 @@ public class MusicPlayerService {
             User enqueuer = userOpt.get();
             if ("navidrome".equals(request.platform()) && !navidromeAccessService.canUseBySession(sessionId)) {
                 eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "添加失败: 无权使用 Navidrome", roomId));
+                return;
+            }
+            if (isSubsonicPlatform(request.platform()) && !canUseSubsonicInRoom(request.platform(), sessionId)) {
+                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "添加失败: 无权使用 Subsonic", roomId));
                 return;
             }
             long count = queueManager.getQueueSnapshot().stream().filter(i -> i.enqueuedBy().publicId().equals(enqueuer.getPublicId())).count();
@@ -424,11 +446,18 @@ public class MusicPlayerService {
 
         public void enqueueAlbum(EnqueueAlbumRequest request, String sessionId) {
             Optional<User> userOpt = userService.getUser(sessionId);
-            if (userOpt.isEmpty() || !"netease".equals(request.platform())) return;
+            if (userOpt.isEmpty()) return;
             User enqueuer = userOpt.get();
+            if ("navidrome".equals(request.platform()) && !navidromeAccessService.canUseBySession(sessionId)) {
+                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "添加失败: 无权使用 Navidrome", roomId));
+                return;
+            }
+            if (isSubsonicPlatform(request.platform()) && !canUseSubsonicInRoom(request.platform(), sessionId)) {
+                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "添加失败: 无权使用 Subsonic", roomId));
+                return;
+            }
             IMusicApiService service = getApiService(request.platform());
-            if (!(service instanceof NeteaseMusicApiService neteaseService)) return;
-            neteaseService.getAlbumMusics(request.albumId()).subscribe(musics -> {
+            service.getAlbumMusics(request.albumId()).subscribe(musics -> {
                 int count = 0;
                 for (Music music : musics.stream().limit(appProperties.getPlayer().getMaxPlaylistImportSize()).toList()) {
                     if (queueManager.add(music, new UserSummary(enqueuer.getPublicId(), enqueuer.getName(), enqueuer.isGuest()), QueueItemStatus.READY) != null) count++;
@@ -486,9 +515,9 @@ public class MusicPlayerService {
             persistQueueMutation(null, true);
         }
 
-        public void skipToNext(String sessionId) {
-            if (isRateLimited(sessionId)) return;
-            if (playbackState.isSkipLocked() && !"SYSTEM".equals(sessionId)) return;
+        public ControlResult skipToNext(String sessionId) {
+            if (isRateLimited(sessionId)) return ControlResult.COOLDOWN;
+            if (playbackState.isSkipLocked() && !"SYSTEM".equals(sessionId)) return ControlResult.LOCKED;
             playHeadVersion.incrementAndGet();
             playbackState.setLoading(false);
             playbackState.clearCurrentTrack();
@@ -499,22 +528,28 @@ public class MusicPlayerService {
                 eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.SKIP, getUserPublicId(sessionId), null, roomId));
             });
             playNextInQueue();
+            return ControlResult.OK;
         }
 
-        public void togglePause(String sessionId) {
+        public ControlResult togglePause(String sessionId) {
             if (playbackState.currentMusic() == null) {
-                if (!queueManager.getQueueSnapshot().isEmpty()) playNextInQueue();
-                return;
+                if (!queueManager.getQueueSnapshot().isEmpty()) {
+                    playNextInQueue();
+                    return ControlResult.OK;
+                }
+                return ControlResult.EMPTY_QUEUE;
             }
-            if (isRateLimited(sessionId)) return;
-            if (!"SYSTEM".equals(sessionId) && playbackState.isPauseLocked() && !playbackState.isPaused()) return;
+            if (isRateLimited(sessionId)) return ControlResult.COOLDOWN;
+            if (!"SYSTEM".equals(sessionId) && playbackState.isPauseLocked() && !playbackState.isPaused()) return ControlResult.LOCKED;
             long currentPos = playbackState.calculateCurrentPosition();
             boolean newState = !playbackState.isPaused();
+            idlePaused.set(false);
             playbackState.setPaused(newState);
             playbackState.updatePlaybackAnchor(currentPos);
             playbackState.touchHotActivity();
             playbackState.bumpStateVersion();
             applyPlaybackOnlyTransition(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, newState ? PlayerAction.PAUSE : PlayerAction.PLAY, getUserPublicId(sessionId), null, roomId));
+            return ControlResult.OK;
         }
 
         public synchronized Optional<String> seekTo(long positionMs, String sessionId) {
@@ -529,12 +564,14 @@ public class MusicPlayerService {
             return Optional.empty();
         }
 
-        public void toggleShuffle(String sessionId) {
-            if (isRateLimited(sessionId) || (playbackState.isShuffleLocked() && !"SYSTEM".equals(sessionId))) return;
+        public ControlResult toggleShuffle(String sessionId) {
+            if (isRateLimited(sessionId)) return ControlResult.COOLDOWN;
+            if (playbackState.isShuffleLocked() && !"SYSTEM".equals(sessionId)) return ControlResult.LOCKED;
             playbackState.setShuffle(!playbackState.isShuffle());
             playbackState.touchHotActivity();
             playbackState.bumpStateVersion();
             applyPlaybackOnlyTransition(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, playbackState.isShuffle() ? PlayerAction.SHUFFLE_ON : PlayerAction.SHUFFLE_OFF, getUserPublicId(sessionId), null, roomId));
+            return ControlResult.OK;
         }
 
         public void likeSong(String sessionId) {
@@ -577,6 +614,7 @@ public class MusicPlayerService {
             playbackState.clearCurrentTrack();
             queueManager.clearAll();
             playbackState.setPaused(false);
+            idlePaused.set(false);
             playbackState.setShuffle(false);
             playbackState.setLoading(false);
             roomStateMutationService.runInTransaction(() -> {
@@ -609,8 +647,10 @@ public class MusicPlayerService {
         }
 
         public void onUserCountChanged(UserCountChangeEvent event) {
+            int previousOnlineCount = onlineUserCount.getAndSet(event.getOnlineUserCount());
             if (event.getOnlineUserCount() > 0) {
                 playbackState.touchHotActivity();
+                resumeFromIdlePauseIfNeeded(previousOnlineCount == 0);
             } else if (!isStreamActive.get()) {
                 enterIdleMode();
             }
@@ -621,6 +661,7 @@ public class MusicPlayerService {
             isStreamActive.set(event.isHasListeners());
             if (event.isHasListeners()) {
                 playbackState.touchHotActivity();
+                resumeFromIdlePauseIfNeeded(false);
                 if (playbackState.currentMusic() == null) playNextInQueue();
             }
             else if (!event.isHasListeners() && userService.getOnlineUserSummaries(roomId).isEmpty()) enterIdleMode();
@@ -651,12 +692,25 @@ public class MusicPlayerService {
 
         private void enterIdleMode() {
             playbackState.setLoading(false);
-            if (playbackState.currentMusic() != null && !playbackState.isPaused()) {
-                playbackState.updatePlaybackAnchor(playbackState.calculateCurrentPosition());
-                playbackState.setPaused(true);
-                playbackState.bumpStateVersion();
-                applyPlaybackOnlyTransition(null);
+            if (playbackState.currentMusic() != null) {
+                idlePaused.set(true);
+                if (!playbackState.isPaused()) {
+                    playbackState.updatePlaybackAnchor(playbackState.calculateCurrentPosition());
+                    playbackState.setPaused(true);
+                    playbackState.bumpStateVersion();
+                    applyPlaybackOnlyTransition(null);
+                }
             }
+        }
+
+        private void resumeFromIdlePauseIfNeeded(boolean resumeStaleEmptyRoomPause) {
+            boolean shouldResume = idlePaused.compareAndSet(true, false) || resumeStaleEmptyRoomPause;
+            if (!shouldResume) return;
+            if (playbackState.currentMusic() == null || !playbackState.isPaused()) return;
+            playbackState.updatePlaybackAnchor(playbackState.calculateCurrentPosition());
+            playbackState.setPaused(false);
+            playbackState.bumpStateVersion();
+            applyPlaybackOnlyTransition(null);
         }
 
         private void restorePersistentState() {
@@ -669,6 +723,52 @@ public class MusicPlayerService {
 
         private void applyPersistedPlaybackState(PersistedPlaybackState state) {
             playbackState.applySnapshot(state);
+            idlePaused.set(state.currentMusic() != null
+                    && state.paused()
+                    && userService.getOnlineUserSummaries(roomId).isEmpty()
+                    && !isStreamActive.get());
+            refreshRestoredPlayableUrl(state.currentMusic());
+        }
+
+        private void refreshRestoredPlayableUrl(PlayableMusic restoredMusic) {
+            if (restoredMusic == null) {
+                return;
+            }
+            long version = playHeadVersion.incrementAndGet();
+            try {
+                getApiService(restoredMusic.platform()).getPlayableMusic(restoredMusic.id())
+                        .timeout(Duration.ofSeconds(10))
+                        .subscribe(refreshed -> {
+                            PlayableMusic current = playbackState.currentMusic();
+                            if (playHeadVersion.get() != version
+                                    || current == null
+                                    || !Objects.equals(current.id(), restoredMusic.id())
+                                    || !Objects.equals(current.platform(), restoredMusic.platform())) {
+                                return;
+                            }
+                            playbackState.setCurrentTrack(
+                                    refreshed,
+                                    playbackState.currentEnqueuerId(),
+                                    playbackState.currentEnqueuerName()
+                            );
+                            playbackState.bumpStateVersion();
+                            applyPlaybackOnlyTransition(null);
+                        }, error -> log.warn(
+                                "Failed to refresh restored playable URL for {}:{} in room {}",
+                                restoredMusic.platform(),
+                                restoredMusic.id(),
+                                roomId,
+                                error
+                        ));
+            } catch (Exception e) {
+                log.warn(
+                        "Failed to start restored playable URL refresh for {}:{} in room {}",
+                        restoredMusic.platform(),
+                        restoredMusic.id(),
+                        roomId,
+                        e
+                );
+            }
         }
 
         private void persistPlaybackStateSnapshot() {
@@ -789,13 +889,93 @@ public class MusicPlayerService {
 
         private boolean isRateLimited(String userId) {
             long now = System.currentTimeMillis();
+            AtomicLong lastControlTimestamp = lastControlTimestamps.computeIfAbsent(userId, key -> new AtomicLong(0));
             if (now - lastControlTimestamp.get() < GLOBAL_COOLDOWN_MS) return true;
             lastControlTimestamp.set(now);
             return false;
         }
     }
 
+    private boolean isSubsonicPlatform(String platform) {
+        return subsonicMusicApiService != null && subsonicMusicApiService.supports(platform);
+    }
+
+    private boolean canUseSubsonicInRoom(String platform, String sessionId) {
+        if (subsonicSourceRegistry == null) return false;
+        String roomId = roomIdFromPlatform(platform);
+        Optional<RoomSubsonicSource> source = subsonicSourceRegistry.findRoomSourceByPlatformId(roomId, platform);
+        if (source.isEmpty() || !source.get().active()) return false;
+        String allowedUsers = source.get().allowedUsers();
+        if (allowedUsers != null && allowedUsers.contains("*")) {
+            return userService.getUser(sessionId).filter(user -> !user.isGuest()).isPresent();
+        }
+        return navidromeAccessService.canUseBySession(sessionId, allowedUsers);
+    }
+
+    private String roomIdFromPlatform(String platform) {
+        int marker = platform == null ? -1 : platform.indexOf('@');
+        return marker >= 0 ? platform.substring(marker + 1) : RoomService.DEFAULT_ROOM_ID;
+    }
+
     private IMusicApiService getApiService(String platform) {
+        if (subsonicMusicApiService != null && subsonicMusicApiService.supports(platform)) {
+            return new IMusicApiService() {
+                @Override
+                public String getPlatformName() {
+                    return platform;
+                }
+
+                @Override
+                public reactor.core.publisher.Mono<List<Music>> searchMusic(String keyword) {
+                    return subsonicMusicApiService.searchMusic(roomIdFromPlatform(platform), platform, keyword, 0, 20);
+                }
+
+                @Override
+                public reactor.core.publisher.Mono<List<Music>> searchMusic(String keyword, int offset, int limit) {
+                    return subsonicMusicApiService.searchMusic(roomIdFromPlatform(platform), platform, keyword, offset, limit);
+                }
+
+                @Override
+                public reactor.core.publisher.Mono<PlayableMusic> getPlayableMusic(String musicId) {
+                    return subsonicMusicApiService.getPlayableMusic(platform, musicId);
+                }
+
+                @Override
+                public reactor.core.publisher.Mono<List<Playlist>> getUserPlaylists(String userId) {
+                    return reactor.core.publisher.Mono.just(List.of());
+                }
+
+                @Override
+                public reactor.core.publisher.Mono<List<Music>> getPlaylistMusics(String playlistId, int offset, int limit) {
+                    return reactor.core.publisher.Mono.just(List.of());
+                }
+
+                @Override
+                public reactor.core.publisher.Mono<List<UserSearchResult>> searchUsers(String keyword) {
+                    return reactor.core.publisher.Mono.just(List.of());
+                }
+
+                @Override
+                public reactor.core.publisher.Mono<String> getLyric(String musicId) {
+                    return reactor.core.publisher.Mono.just("");
+                }
+
+                @Override
+                public reactor.core.publisher.Mono<LyricResponse> getLyricDetail(String musicId) {
+                    return reactor.core.publisher.Mono.just(new LyricResponse("", "", ""));
+                }
+
+                @Override
+                public reactor.core.publisher.Mono<List<Album>> searchAlbums(String keyword) {
+                    return subsonicMusicApiService.searchAlbums(roomIdFromPlatform(platform), platform, keyword);
+                }
+
+                @Override
+                public reactor.core.publisher.Mono<List<Music>> getAlbumMusics(String albumId) {
+                    return subsonicMusicApiService.getAlbumMusics(roomIdFromPlatform(platform), platform, albumId);
+                }
+            };
+        }
         IMusicApiService service = apiServiceMap.get(platform);
         if (service == null) throw new ApiRequestException("Unsupported platform: " + platform);
         return service;

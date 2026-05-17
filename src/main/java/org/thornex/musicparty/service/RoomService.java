@@ -13,6 +13,7 @@ import org.thornex.musicparty.event.RoomListUpdateEvent;
 import org.thornex.musicparty.persistence.MigrationStateRepository;
 import org.thornex.musicparty.persistence.PersistedRoom;
 import org.thornex.musicparty.persistence.RoomRepository;
+import org.thornex.musicparty.security.SecureCompare;
 
 import java.io.File;
 import java.util.Comparator;
@@ -40,6 +41,7 @@ public class RoomService {
     private final RoomRepository roomRepository;
     private final MigrationStateRepository migrationStateRepository;
     private final Map<String, StoredRoom> rooms = new ConcurrentHashMap<>();
+    private final Object roomMutationLock = new Object();
     private volatile ToIntFunction<String> onlineCountProvider = roomId -> 0;
 
     @PostConstruct
@@ -90,25 +92,27 @@ public class RoomService {
         if (privateRoom && (rawPassword == null || rawPassword.isBlank())) {
             throw new IllegalArgumentException("Private room password cannot be empty");
         }
-        boolean exists = rooms.values().stream().anyMatch(room -> room.name().equalsIgnoreCase(name));
-        if (exists) {
-            throw new IllegalArgumentException("Room name already exists");
+        synchronized (roomMutationLock) {
+            boolean exists = rooms.values().stream().anyMatch(room -> room.name().equalsIgnoreCase(name));
+            if (exists) {
+                throw new IllegalArgumentException("Room name already exists");
+            }
+
+            String roomId;
+            do {
+                roomId = "room-" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
+            } while (rooms.containsKey(roomId));
+
+            long now = System.currentTimeMillis();
+            String visibility = privateRoom ? VISIBILITY_PRIVATE : VISIBILITY_PUBLIC;
+            String passwordHash = privateRoom ? RoomPasswordHasher.hash(rawPassword) : null;
+            int passwordVersion = privateRoom ? 1 : 0;
+            StoredRoom room = new StoredRoom(roomId, name, creatorPublicId, now, now, false, visibility, passwordHash, passwordVersion);
+            rooms.put(roomId, room);
+            roomRepository.upsert(toPersistedRoom(room, null));
+            publishRoomList();
+            return toInfo(room);
         }
-
-        String roomId;
-        do {
-            roomId = "room-" + UUID.randomUUID().toString().replace("-", "").substring(0, 10);
-        } while (rooms.containsKey(roomId));
-
-        long now = System.currentTimeMillis();
-        String visibility = privateRoom ? VISIBILITY_PRIVATE : VISIBILITY_PUBLIC;
-        String passwordHash = privateRoom ? RoomPasswordHasher.hash(rawPassword) : null;
-        int passwordVersion = privateRoom ? 1 : 0;
-        StoredRoom room = new StoredRoom(roomId, name, creatorPublicId, now, now, false, visibility, passwordHash, passwordVersion);
-        rooms.put(roomId, room);
-        roomRepository.upsert(toPersistedRoom(room, null));
-        publishRoomList();
-        return toInfo(room);
     }
 
     public boolean canDelete(String roomId, String requesterPublicId, boolean admin) {
@@ -218,7 +222,7 @@ public class RoomService {
 
     public boolean isAdminPassword(String value) {
         String adminPassword = appProperties.getAdminPassword();
-        return adminPassword != null && !adminPassword.isBlank() && adminPassword.equals(value);
+        return adminPassword != null && !adminPassword.isBlank() && SecureCompare.equals(adminPassword, value);
     }
 
     public void publishRoomList() {

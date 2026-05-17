@@ -53,8 +53,7 @@ class PlaybackTransitionServiceTests {
         PlaybackTransitionService transitionService = new PlaybackTransitionService(
                 persistenceService,
                 new RoomStateMutationService(new TestTransactionManager()),
-                publishedEvents::add,
-                new AfterCommitExecutor()
+                publishedEvents::add
         );
 
         MusicQueueItem item = new MusicQueueItem(
@@ -123,7 +122,7 @@ class PlaybackTransitionServiceTests {
     }
 
     @Test
-    void applyDoesNotPublishEventsWhenTransactionFails() {
+    void applyRethrowsCommitFailureAfterSynchronousEventPublication() {
         InMemoryQueueRepository queueRepository = new InMemoryQueueRepository();
         InMemoryPlaybackStateRepository playbackStateRepository = new InMemoryPlaybackStateRepository();
         RoomStatePersistenceService persistenceService = new RoomStatePersistenceService(
@@ -135,8 +134,7 @@ class PlaybackTransitionServiceTests {
         PlaybackTransitionService transitionService = new PlaybackTransitionService(
                 persistenceService,
                 new RoomStateMutationService(new FailingCommitTransactionManager()),
-                publishedEvents::add,
-                new AfterCommitExecutor()
+                publishedEvents::add
         );
 
         MusicQueueItem item = new MusicQueueItem(
@@ -203,7 +201,7 @@ class PlaybackTransitionServiceTests {
             assertThat(ex).hasMessage("commit failed");
         }
 
-        assertThat(publishedEvents).isEmpty();
+        assertThat(publishedEvents).containsExactly(queueEvent, playerStateEvent, systemMessageEvent);
     }
 
     @Test
@@ -283,8 +281,7 @@ class PlaybackTransitionServiceTests {
                 new PlaybackTransitionService(
                         persistenceService,
                         new RoomStateMutationService(new DataSourceTransactionManager(dataSource)),
-                        publishedEvents::add,
-                        new AfterCommitExecutor()
+                        publishedEvents::add
                 ),
                 queueRepository,
                 playbackStateRepository,

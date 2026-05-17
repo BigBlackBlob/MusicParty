@@ -15,8 +15,10 @@ import org.thornex.musicparty.dto.UserSearchResult;
 import org.thornex.musicparty.exception.ApiRequestException;
 import org.thornex.musicparty.service.CoverColorService;
 import org.thornex.musicparty.service.NavidromeAccessService;
+import org.thornex.musicparty.service.RoomSubsonicSource;
+import org.thornex.musicparty.service.SubsonicSourceRegistry;
 import org.thornex.musicparty.service.api.IMusicApiService;
-import org.thornex.musicparty.service.api.NeteaseMusicApiService;
+import org.thornex.musicparty.service.api.SubsonicMusicApiService;
 import reactor.core.publisher.Mono;
 
 import java.util.ArrayList;
@@ -34,13 +36,22 @@ public class ApiController {
     private final AppProperties appProperties;
     private final CoverColorService coverColorService;
     private final NavidromeAccessService navidromeAccessService;
+    private final SubsonicSourceRegistry subsonicSourceRegistry;
+    private final SubsonicMusicApiService subsonicMusicApiService;
 
-    public ApiController(List<IMusicApiService> apiServices, AppProperties appProperties, CoverColorService coverColorService, NavidromeAccessService navidromeAccessService) {
+    public ApiController(List<IMusicApiService> apiServices,
+                         AppProperties appProperties,
+                         CoverColorService coverColorService,
+                         NavidromeAccessService navidromeAccessService,
+                         SubsonicSourceRegistry subsonicSourceRegistry,
+                         SubsonicMusicApiService subsonicMusicApiService) {
         this.apiServiceMap = apiServices.stream()
                 .collect(Collectors.toMap(IMusicApiService::getPlatformName, Function.identity()));
         this.appProperties = appProperties;
         this.coverColorService = coverColorService;
         this.navidromeAccessService = navidromeAccessService;
+        this.subsonicSourceRegistry = subsonicSourceRegistry;
+        this.subsonicMusicApiService = subsonicMusicApiService;
     }
 
     @GetMapping("/config")
@@ -52,15 +63,25 @@ public class ApiController {
     }
 
     @GetMapping("/platforms")
-    public List<MusicPlatform> getPlatforms(@RequestParam(required = false) String token) {
+    public List<MusicPlatform> getPlatforms(@RequestParam(required = false) String token,
+                                            @RequestParam(required = false) String roomId) {
+        String normalizedRoom = SubsonicSourceRegistry.normalizeRoomId(roomId);
         List<MusicPlatform> platforms = new ArrayList<>();
         platforms.add(new MusicPlatform("netease", "netease", true));
         platforms.add(new MusicPlatform("bilibili", "bilibili", false));
 
-        if (navidromeAccessService.isEnabled() && navidromeAccessService.isConfigured()
-                && token != null && navidromeAccessService.canUseBySessionToken(token)) {
-            platforms.add(new MusicPlatform("navidrome", "navidrome", false));
+        boolean canShowNavidrome = navidromeAccessService.isEnabled()
+                && navidromeAccessService.isConfigured()
+                && (navidromeAccessService.allowsAllNamedUsers()
+                || (token != null && navidromeAccessService.canUseBySessionToken(token)));
+        if (canShowNavidrome) {
+            platforms.add(new MusicPlatform("navidrome", "navidrome", true));
         }
+        subsonicSourceRegistry.listEnabledConfigured(normalizedRoom).stream()
+                .filter(source -> !"navidrome".equals(source.id()))
+                .filter(source -> canUseSubsonicSource(source, token))
+                .map(source -> new MusicPlatform(source.platformId(), source.label(), true, true))
+                .forEach(platforms::add);
 
         return platforms;
     }
@@ -73,9 +94,19 @@ public class ApiController {
         return service;
     }
 
+    private boolean isSubsonicPlatform(String platform) {
+        return subsonicMusicApiService.supports(platform);
+    }
+
+    private boolean canUseSubsonicSource(RoomSubsonicSource source, String token) {
+        if (source.allowedUsers() != null && source.allowedUsers().contains("*")) return true;
+        return token != null && navidromeAccessService.canUseBySessionToken(token, source.allowedUsers());
+    }
+
     @GetMapping("/search/{platform}/{keyword}")
     public Mono<List<Music>> searchMusic(@PathVariable String platform, @PathVariable String keyword,
                                           @RequestParam(required = false) String token,
+                                          @RequestParam(required = false) String roomId,
                                           @RequestParam(defaultValue = "0") int offset,
                                           @RequestParam(defaultValue = "20") int limit) {
         if ("navidrome".equals(platform)) {
@@ -83,9 +114,18 @@ public class ApiController {
                 return Mono.error(new ResponseStatusException(HttpStatus.FORBIDDEN));
             }
         }
+        String normalizedRoom = SubsonicSourceRegistry.normalizeRoomId(roomId);
+        if (isSubsonicPlatform(platform) && !canUseSubsonicSource(subsonicSourceRegistry.findRoomSourceByPlatformId(normalizedRoom, platform).orElseThrow(), token)) {
+            return Mono.error(new ResponseStatusException(HttpStatus.FORBIDDEN));
+        }
 
         log.info("API search request: platform={}, keywordLength={}, offset={}, limit={}", 
                 platform, keyword == null ? 0 : keyword.length(), offset, limit);
+        if (isSubsonicPlatform(platform)) {
+            return subsonicMusicApiService.searchMusic(normalizedRoom, platform, keyword, offset, limit)
+                    .doOnSuccess(result -> log.info("API search success: platform={}, resultCount={}", platform, result == null ? 0 : result.size()))
+                    .doOnError(error -> log.error("API search failed: platform={}, keyword={}", platform, keyword, error));
+        }
         return getService(platform).searchMusic(keyword, offset, limit)
                 .doOnSuccess(result -> log.info("API search success: platform={}, resultCount={}", platform, result == null ? 0 : result.size()))
                 .doOnError(error -> log.error("API search failed: platform={}, keyword={}", platform, keyword, error));
@@ -110,28 +150,50 @@ public class ApiController {
                 .doOnError(error -> log.error("API playlist songs failed: platform={}, playlistId={}, offset={}, limit={}", platform, playlistId, offset, limit, error));
     }
 
-    @GetMapping("/album/search/netease")
-    public Mono<List<Album>> searchNeteaseAlbums(@RequestParam String keyword) {
-        log.info("API album search request: platform=netease, keywordLength={}", keyword == null ? 0 : keyword.length());
-        IMusicApiService service = getService("netease");
-        if (!(service instanceof NeteaseMusicApiService neteaseService)) {
-            throw new ApiRequestException("Netease album search is unavailable");
+    @GetMapping("/album/search/{platform}")
+    public Mono<List<Album>> searchAlbums(@PathVariable String platform,
+                                          @RequestParam String keyword,
+                                          @RequestParam(required = false) String token,
+                                          @RequestParam(required = false) String roomId) {
+        if ("navidrome".equals(platform) && (token == null || !navidromeAccessService.canUseBySessionToken(token))) {
+            return Mono.error(new ResponseStatusException(HttpStatus.FORBIDDEN));
         }
-        return neteaseService.searchAlbums(keyword)
-                .doOnSuccess(result -> log.info("API album search success: platform=netease, resultCount={}", result == null ? 0 : result.size()))
-                .doOnError(error -> log.error("API album search failed: platform=netease, keyword={}", keyword, error));
+        String normalizedRoom = SubsonicSourceRegistry.normalizeRoomId(roomId);
+        if (isSubsonicPlatform(platform) && !canUseSubsonicSource(subsonicSourceRegistry.findRoomSourceByPlatformId(normalizedRoom, platform).orElseThrow(), token)) {
+            return Mono.error(new ResponseStatusException(HttpStatus.FORBIDDEN));
+        }
+        log.info("API album search request: platform={}, keywordLength={}", platform, keyword == null ? 0 : keyword.length());
+        if (isSubsonicPlatform(platform)) {
+            return subsonicMusicApiService.searchAlbums(normalizedRoom, platform, keyword)
+                    .doOnSuccess(result -> log.info("API album search success: platform={}, resultCount={}", platform, result == null ? 0 : result.size()))
+                    .doOnError(error -> log.error("API album search failed: platform={}, keyword={}", platform, keyword, error));
+        }
+        return getService(platform).searchAlbums(keyword)
+                .doOnSuccess(result -> log.info("API album search success: platform={}, resultCount={}", platform, result == null ? 0 : result.size()))
+                .doOnError(error -> log.error("API album search failed: platform={}, keyword={}", platform, keyword, error));
     }
 
-    @GetMapping("/album/songs/netease/{albumId}")
-    public Mono<List<Music>> getNeteaseAlbumSongs(@PathVariable String albumId) {
-        log.info("API album songs request: platform=netease, albumId={}", albumId);
-        IMusicApiService service = getService("netease");
-        if (!(service instanceof NeteaseMusicApiService neteaseService)) {
-            throw new ApiRequestException("Netease album songs are unavailable");
+    @GetMapping("/album/songs/{platform}/{albumId}")
+    public Mono<List<Music>> getAlbumSongs(@PathVariable String platform,
+                                           @PathVariable String albumId,
+                                           @RequestParam(required = false) String token,
+                                           @RequestParam(required = false) String roomId) {
+        if ("navidrome".equals(platform) && (token == null || !navidromeAccessService.canUseBySessionToken(token))) {
+            return Mono.error(new ResponseStatusException(HttpStatus.FORBIDDEN));
         }
-        return neteaseService.getAlbumMusics(albumId)
-                .doOnSuccess(result -> log.info("API album songs success: platform=netease, albumId={}, resultCount={}", albumId, result == null ? 0 : result.size()))
-                .doOnError(error -> log.error("API album songs failed: platform=netease, albumId={}", albumId, error));
+        String normalizedRoom = SubsonicSourceRegistry.normalizeRoomId(roomId);
+        if (isSubsonicPlatform(platform) && !canUseSubsonicSource(subsonicSourceRegistry.findRoomSourceByPlatformId(normalizedRoom, platform).orElseThrow(), token)) {
+            return Mono.error(new ResponseStatusException(HttpStatus.FORBIDDEN));
+        }
+        log.info("API album songs request: platform={}, albumId={}", platform, albumId);
+        if (isSubsonicPlatform(platform)) {
+            return subsonicMusicApiService.getAlbumMusics(normalizedRoom, platform, albumId)
+                    .doOnSuccess(result -> log.info("API album songs success: platform={}, albumId={}, resultCount={}", platform, albumId, result == null ? 0 : result.size()))
+                    .doOnError(error -> log.error("API album songs failed: platform={}, albumId={}", platform, albumId, error));
+        }
+        return getService(platform).getAlbumMusics(albumId)
+                .doOnSuccess(result -> log.info("API album songs success: platform={}, albumId={}, resultCount={}", platform, albumId, result == null ? 0 : result.size()))
+                .doOnError(error -> log.error("API album songs failed: platform={}, albumId={}", platform, albumId, error));
     }
 
     @GetMapping("/user/search/{platform}/{keyword}")
@@ -145,6 +207,9 @@ public class ApiController {
     @GetMapping("/music/lyric/{platform}/{musicId}")
     public Mono<String> getLyric(@PathVariable String platform, @PathVariable String musicId) {
         log.info("API lyric request: platform={}, musicId={}", platform, musicId);
+        if (isSubsonicPlatform(platform)) {
+            return Mono.just("");
+        }
         return getService(platform).getLyric(musicId)
                 .doOnSuccess(result -> log.info("API lyric success: platform={}, musicId={}, length={}", platform, musicId, result == null ? 0 : result.length()))
                 .doOnError(error -> log.error("API lyric failed: platform={}, musicId={}", platform, musicId, error));
@@ -153,6 +218,9 @@ public class ApiController {
     @GetMapping("/music/lyric-detail/{platform}/{musicId}")
     public Mono<LyricResponse> getLyricDetail(@PathVariable String platform, @PathVariable String musicId) {
         log.info("API lyric detail request: platform={}, musicId={}", platform, musicId);
+        if (isSubsonicPlatform(platform)) {
+            return Mono.just(new LyricResponse("", "", ""));
+        }
         return getService(platform).getLyricDetail(musicId)
                 .doOnSuccess(result -> log.info(
                         "API lyric detail success: platform={}, musicId={}, lyricLength={}, translatedLength={}",

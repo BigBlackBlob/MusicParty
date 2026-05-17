@@ -135,7 +135,7 @@ class MusicSocketSessionFacadeTests {
         private boolean broadcastOnlineUsersCalled;
 
         private RecordingMusicPlayerService() {
-            super(List.of(), null, null, null, event -> {}, new AppProperties(), null, null, null, null, null, null);
+            super(List.of(), null, null, null, event -> {}, new AppProperties(), null, null, null, null, null, null, null, null);
         }
 
         @Override

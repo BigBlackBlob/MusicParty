@@ -10,6 +10,7 @@ public class AppProperties {
     private NeteaseApiConfig  netease;
     private BilibiliApiConfig bilibili;
     private NavidromeApiConfig navidrome = new NavidromeApiConfig();
+    private SquidifyConfig squidify = new SquidifyConfig();
     private String adminPassword;
     private String baseUrl;
     private String allowedOrigins;
@@ -63,6 +64,8 @@ public class AppProperties {
         private int maxAttempts = 5;
         private int windowSeconds = 60;
         private int blockDurationSeconds = 300;
+        private int maxTrackedIps = 10000;
+        private String trustedProxyCidrs = "";
         private long roomAccessTokenTtlMs = 5 * 60 * 1000L;
         private String roomAccessTokenSecret = "";
     }
@@ -94,5 +97,18 @@ public class AppProperties {
         private String client = "musicparty";
         private String apiVersion = "1.16.1";
         private String allowedUsers = "";
+    }
+
+    @EqualsAndHashCode(callSuper = true)
+    @Data
+    public static class SquidifyConfig extends ApiConfig {
+        private boolean enabled = true;
+        private String id = "squidify";
+        private String label = "Squidify";
+        private String username = "";
+        private String password = "";
+        private String client = "musicparty";
+        private String apiVersion = "1.16.1";
+        private String allowedUsers = "*";
     }
 }

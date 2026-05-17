@@ -18,7 +18,6 @@ public class PlaybackTransitionService {
     private final RoomStatePersistenceService roomStatePersistenceService;
     private final RoomStateMutationService roomStateMutationService;
     private final ApplicationEventPublisher eventPublisher;
-    private final AfterCommitExecutor afterCommitExecutor;
 
     public void apply(PlaybackTransition transition) {
         roomStateMutationService.runInTransaction(() -> {
@@ -28,7 +27,7 @@ public class PlaybackTransitionService {
             if (transition.persistedPlaybackState() != null) {
                 roomStatePersistenceService.persistPlaybackState(transition.persistedPlaybackState());
             }
-            afterCommitExecutor.run(() -> publishEvents(transition));
+            publishEvents(transition);
         });
     }
 
