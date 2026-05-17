@@ -1,6 +1,6 @@
 export const withPlaybackToken = (music, sessionToken) => {
   const url = music?.url || '';
-  if (!url || music?.platform !== 'navidrome') return url;
+  if (!url || !requiresResourceToken(music?.platform, url)) return url;
   if (!sessionToken) return '';
   const sep = url.includes('?') ? '&' : '?';
   return `${url}${sep}token=${encodeURIComponent(sessionToken)}`;
@@ -8,8 +8,16 @@ export const withPlaybackToken = (music, sessionToken) => {
 
 export const withNavidromeResourceToken = (url, sessionToken) => {
   if (!url || typeof url !== 'string') return '';
-  if (!url.startsWith('/api/navidrome/')) return url;
+  if (!url.startsWith('/api/navidrome/') && !url.startsWith('/api/subsonic/')) return url;
   if (!sessionToken) return '';
   const sep = url.includes('?') ? '&' : '?';
   return `${url}${sep}token=${encodeURIComponent(sessionToken)}`;
 };
+
+export const isSubsonicPlatform = (platform) => platform === 'navidrome' || String(platform || '').startsWith('subsonic-');
+
+const requiresResourceToken = (platform, url) => (
+  isSubsonicPlatform(platform)
+  || String(url || '').startsWith('/api/navidrome/')
+  || String(url || '').startsWith('/api/subsonic/')
+);

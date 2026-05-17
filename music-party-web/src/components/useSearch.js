@@ -3,10 +3,12 @@ import { useI18n } from 'vue-i18n';
 import { useToast } from './useToast';
 import { musicApi } from '../api/music';
 import { authApi } from '../api/auth';
+import { useRoomStore } from '../stores/room';
 
 export function useSearchLogic(emit) {
     const { success, error } = useToast();
     const { t } = useI18n();
+    const roomStore = useRoomStore();
 
     const platform = ref('netease');
     const keyword = ref('');
@@ -77,7 +79,7 @@ export function useSearchLogic(emit) {
         loading.value = true;
         songs.value = [];
         try {
-            const data = await musicApi.search(platform.value, val);
+            const data = await musicApi.search(platform.value, val, undefined, 0, 20, roomStore.currentRoomId);
             songs.value = data;
         } catch (e) {
             console.error(e);

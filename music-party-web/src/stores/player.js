@@ -12,6 +12,7 @@ import { roomApi } from '../api/rooms';
 import { WS_DEST } from '../constants/api';
 import { STORAGE_KEYS } from '../constants/keys';
 import { shouldForceSocketReconnect } from '../utils/socketHealth';
+import { useToast } from '../composables/useToast';
 
 export const usePlayerStore = defineStore('player', () => {
     // === 1. State ===
@@ -57,6 +58,7 @@ export const usePlayerStore = defineStore('player', () => {
     const userStore = useUserStore();
     const roomStore = useRoomStore();
     const LOCAL_COOLDOWN = 500; // 稍微调低一点冷却时间提升手感
+    let lastAuthPromptAt = 0;
 
     try {
         const savedLikedSongs = JSON.parse(localStorage.getItem(STORAGE_KEYS.LIKED_SONGS) || '[]');
@@ -123,18 +125,62 @@ export const usePlayerStore = defineStore('player', () => {
     const requireAuth = () => {
         if (userStore.isGuest) {
             userStore.showNameModal = true;
+            const now = Date.now();
+            if (now - lastAuthPromptAt > 1200) {
+                lastAuthPromptAt = now;
+                useToast().show({
+                    title: '操作未生效',
+                    message: '请先设置昵称再控制播放',
+                    type: 'warning',
+                    duration: 2200
+                });
+            }
             return false;
         }
         return true;
     };
 
+    const notifyControlFailure = (message, type = 'warning') => {
+        useToast().show({
+            title: '操作未生效',
+            message,
+            type,
+            duration: 2200
+        });
+    };
+
     const checkCooldown = () => {
         const now = Date.now();
         if (now - lastControlTime.value < LOCAL_COOLDOWN) {
-            // 这里可以不再弹 Toast 报错，而是静默失败，避免刷屏
+            notifyControlFailure('操作太快了，稍等一下再试');
             return false;
         }
         lastControlTime.value = now;
+        return true;
+    };
+
+    const resetSyncGate = () => {
+        lastStateVersion.value = 0;
+        lastPlayEpoch.value = 0;
+        lastServerTimestamp.value = 0;
+        forceNextSyncSeek.value = true;
+        hasClockSample.value = false;
+    };
+
+    const sendControl = (destination, body = {}, { cooldown = true } = {}) => {
+        if (!requireAuth()) return false;
+        if (!connected.value || !socketService.connected) {
+            notifyControlFailure('播放服务尚未连接，请稍后重试', 'error');
+            requestSyncRefresh('control-disconnected', true);
+            return false;
+        }
+        if (cooldown && !checkCooldown()) return false;
+        const sent = socketService.send(destination, body);
+        if (!sent) {
+            notifyControlFailure('指令没有发出，请等待连接恢复后再试', 'error');
+            requestSyncRefresh('control-send-failed', true);
+            return false;
+        }
         return true;
     };
 
@@ -190,6 +236,7 @@ export const usePlayerStore = defineStore('player', () => {
     };
 
     const connect = () => {
+        resetSyncGate();
         const authHeaders = {
             'user-name': localStorage.getItem(STORAGE_KEYS.USERNAME) || '游客',
             'session-token': userStore.sessionToken,
@@ -230,9 +277,7 @@ export const usePlayerStore = defineStore('player', () => {
         streamListenerCount.value = 0;
         remotePosition.value = 0;
         lastSyncTime.value = 0;
-        lastStateVersion.value = 0;
-        lastPlayEpoch.value = 0;
-        lastServerTimestamp.value = 0;
+        resetSyncGate();
         setPlaybackPosition(0);
         useChatStore().resetRoomMessages();
         userStore.setOnlineUsers([]);
@@ -267,10 +312,10 @@ export const usePlayerStore = defineStore('player', () => {
     };
 
     // --- 指令发送 ---
-    const playNext = () => requireAuth() && checkCooldown() && socketService.send(WS_DEST.PLAYER_NEXT);
-    const togglePause = () => requireAuth() && checkCooldown() && socketService.send(WS_DEST.PLAYER_PAUSE);
-    const toggleShuffle = () => requireAuth() && checkCooldown() && socketService.send(WS_DEST.PLAYER_SHUFFLE);
-    const seek = (positionMs) => requireAuth() && socketService.send(WS_DEST.PLAYER_SEEK, { positionMs });
+    const playNext = () => sendControl(WS_DEST.PLAYER_NEXT);
+    const togglePause = () => sendControl(WS_DEST.PLAYER_PAUSE);
+    const toggleShuffle = () => sendControl(WS_DEST.PLAYER_SHUFFLE);
+    const seek = (positionMs) => sendControl(WS_DEST.PLAYER_SEEK, { positionMs }, { cooldown: false });
     const setSeekingPreview = (val) => {
         isSeekingPreview.value = val;
     };
@@ -458,7 +503,7 @@ export const usePlayerStore = defineStore('player', () => {
         localProgress, playbackPositionMs, isBuffering, isErrorState, streamListenerCount, lastSyncTime, lastRttMs,
         isSeekingPreview, forceNextSyncSeek, setSeekingPreview,
         setPlaybackPosition,
-        connect, tryReconnect, reconnectToCurrentRoom, switchRoom, resetRoomState, getCurrentProgress, syncState, handleSyncPong, requestPing, requestResync, requestSyncRefresh,
+        connect, tryReconnect, reconnectToCurrentRoom, switchRoom, resetRoomState, resetSyncGate, getCurrentProgress, syncState, handleSyncPong, requestPing, requestResync, requestSyncRefresh,
         playNext, togglePause, toggleShuffle,
         seek,
         enqueue, enqueuePlaylist, enqueueAlbum, topSong, removeSong, topSongs, removeSongs, topSongsCompat, removeSongsCompat,

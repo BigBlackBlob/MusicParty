@@ -260,6 +260,16 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
         if (audioRef.value && audioRef.value.error && audioRef.value.error.code === 20) return;
 
         isBuffering.value = false;
+        if (audioRef.value) {
+            console.warn('[Audio] media error', {
+                code: audioRef.value.error?.code,
+                message: audioRef.value.error?.message,
+                networkState: audioRef.value.networkState,
+                readyState: audioRef.value.readyState,
+                currentSrc: audioRef.value.currentSrc,
+                platform: playerStore.nowPlaying?.music?.platform
+            });
+        }
         if (retryCount.value >= 3) {
             isErrorState.value = true;
             return;

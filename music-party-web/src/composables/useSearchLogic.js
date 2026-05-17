@@ -2,10 +2,10 @@ import { ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useToast } from './useToast';
 import { musicApi } from '../api/music.js';
-import { authApi } from '../api/auth.js';
 import { extractErrorMessage } from '../utils/errors.js';
 import { useUserStore } from '../stores/user.js';
 import { usePlayerStore } from '../stores/player.js';
+import { useRoomStore } from '../stores/room.js';
 import { usePlatforms } from './usePlatforms.js';
 
 export function useSearchLogic(emit = () => {}) {
@@ -13,6 +13,7 @@ export function useSearchLogic(emit = () => {}) {
     const { t } = useI18n();
     const userStore = useUserStore();
     const playerStore = usePlayerStore();
+    const roomStore = useRoomStore();
 
     const SONGS_CACHE_KEY = 'mp_search_songs';
     const ALBUMS_CACHE_KEY = 'mp_search_albums';
@@ -39,29 +40,11 @@ export function useSearchLogic(emit = () => {}) {
 
     const listMode = ref('search'); // 'search' | 'playlist' | 'albumSearch' | 'album'
     const searchType = ref('song'); // 'song' | 'album' | 'playlist'
-    const isAdminMode = ref(false);
 
     const albumSongs = ref({}); // albumId -> songs[]
     const loadingAlbumIds = ref(new Set());
     const expandedAlbumIds = ref(new Set());
-
-    // 存储原始的管理员指令
-    const adminCommand = ref('');
-
-    const handleAdminCommand = async (pwd) => {
-        try {
-            await authApi.adminCommand(pwd, adminCommand.value);
-            success(t('search.adminExecuted'));
-            emit('close');
-        } catch (e) {
-            console.error('Admin command failed:', e);
-            error(extractErrorMessage(e, t('search.adminFailed')));
-        } finally {
-            isAdminMode.value = false;
-            keyword.value = '';
-            adminCommand.value = '';
-        }
-    };
+    let searchRequestSeq = 0;
 
     const parseNeteasePlaylistId = (val) => {
         const patterns = [
@@ -78,24 +61,11 @@ export function useSearchLogic(emit = () => {}) {
     };
 
     const doSearch = async (page = 1) => {
+        const requestSeq = ++searchRequestSeq;
         const val = keyword.value.trim();
         if (!val && searchType.value !== 'playlist') return;
 
-        // 1. 管理员密码输入模式
-        if (isAdminMode.value) {
-            hasSubmittedSearch.value = true;
-            await handleAdminCommand(val);
-            return;
-        }
-
-        if (val && val.startsWith('//')) {
-            isAdminMode.value = true;
-            adminCommand.value = val; // 保存完整指令
-            keyword.value = ''; // 清空输入框，准备输入密码
-            return;
-        }
-
-        // 2. 歌单解析逻辑
+        // 1. 歌单解析逻辑
         if (searchType.value === 'playlist') {
             const id = parseNeteasePlaylistId(val) || playlistId.value;
             if (!id) {
@@ -110,6 +80,7 @@ export function useSearchLogic(emit = () => {}) {
             try {
                 loading.value = true;
                 const data = await musicApi.getPlaylistSongs('netease', id, offset, PLAYLIST_LIMIT);
+                if (requestSeq !== searchRequestSeq) return;
                 playlistSongs.value = data;
                 playlistId.value = id;
                 localStorage.setItem(PLAYLIST_CACHE_KEY, JSON.stringify(data));
@@ -123,13 +94,13 @@ export function useSearchLogic(emit = () => {}) {
             } catch (e) {
                 error(extractErrorMessage(e, t('search.playlistFailed')));
             } finally {
-                loading.value = false;
+                if (requestSeq === searchRequestSeq) loading.value = false;
             }
             return;
         }
 
 
-        // 3. 普通搜索
+        // 2. 普通搜索
         currentPage.value = page;
         const offset = (page - 1) * SEARCH_LIMIT;
 
@@ -141,12 +112,14 @@ export function useSearchLogic(emit = () => {}) {
         
         try {
             if (searchType.value === 'album' && supportsAlbumSearch.value) {
-                const data = await musicApi.searchNeteaseAlbums(val);
+                const data = await musicApi.searchAlbums(platform.value, val, userStore.sessionToken, roomStore.currentRoomId);
+                if (requestSeq !== searchRequestSeq) return;
                 albums.value = data;
                 localStorage.setItem(ALBUMS_CACHE_KEY, JSON.stringify(data));
                 canGoNext.value = false;
             } else {
-                const data = await musicApi.search(platform.value, val, userStore.sessionToken, offset, SEARCH_LIMIT);
+                const data = await musicApi.search(platform.value, val, userStore.sessionToken, offset, SEARCH_LIMIT, roomStore.currentRoomId);
+                if (requestSeq !== searchRequestSeq) return;
                 songs.value = data;
                 localStorage.setItem(SONGS_CACHE_KEY, JSON.stringify(data));
                 
@@ -161,11 +134,35 @@ export function useSearchLogic(emit = () => {}) {
                 }
             }
         } catch (e) {
+            if (requestSeq !== searchRequestSeq) return;
             console.error('Search failed:', e);
             error(extractErrorMessage(e, t('search.failed')));
         } finally {
-            loading.value = false;
+            if (requestSeq === searchRequestSeq) loading.value = false;
         }
+    };
+
+    const clearSearchState = () => {
+        songs.value = [];
+        albums.value = [];
+        playlistSongs.value = [];
+        playlistId.value = '';
+        albumSongs.value = {};
+        loadingAlbumIds.value = new Set();
+        expandedAlbumIds.value = new Set();
+        hasSubmittedSearch.value = false;
+        currentPage.value = 1;
+        currentPlaylistPage.value = 1;
+        localStorage.removeItem(SONGS_CACHE_KEY);
+        localStorage.removeItem(ALBUMS_CACHE_KEY);
+        localStorage.removeItem(PLAYLIST_CACHE_KEY);
+        localStorage.removeItem(PLAYLIST_ID_CACHE_KEY);
+        localStorage.removeItem(PLAYLIST_PAGE_CACHE_KEY);
+    };
+
+    const refreshPlatformsAndClear = async () => {
+        await loadPlatforms(true);
+        clearSearchState();
     };
 
     const nextPage = () => {
@@ -207,7 +204,7 @@ export function useSearchLogic(emit = () => {}) {
 
         try {
             loadingAlbumIds.value.add(albumId);
-            const data = await musicApi.getNeteaseAlbumSongs(albumId);
+            const data = await musicApi.getAlbumSongs(platform.value, albumId, userStore.sessionToken, roomStore.currentRoomId);
             albumSongs.value[albumId] = data;
         } catch (e) {
             console.error('Failed to load album songs:', e);
@@ -231,7 +228,6 @@ export function useSearchLogic(emit = () => {}) {
         loading,
         listMode,
         searchType,
-        isAdminMode,
         hasSubmittedSearch,
         currentPage,
         currentPlaylistPage,
@@ -241,6 +237,7 @@ export function useSearchLogic(emit = () => {}) {
         loadingAlbumIds,
         expandedAlbumIds,
         doSearch,
+        refreshPlatformsAndClear,
         nextPage,
         prevPage,
         addAllPlaylistSongs,

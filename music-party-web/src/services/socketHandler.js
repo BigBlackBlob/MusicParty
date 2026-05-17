@@ -50,6 +50,10 @@ function handleGameEvent(event) {
         return;
     }
 
+    if (event.action === 'CONTROL_DENIED' && event.message && event.message.includes('设置昵称')) {
+        userStore.showNameModal = true;
+    }
+
     // 过滤掉用户进入/离开、以及歌曲开始播放的系统内部通知，避免弹窗干扰
     // 这些事件已经在 Chat Log 中展示，Toast 只展示关键交互
     if (event.action === 'USER_JOIN' || event.action === 'USER_LEAVE' || event.action === 'PLAY_START') {
@@ -67,6 +71,7 @@ function handleGameEvent(event) {
     const titleMap = {
         ERROR_LOAD: '播放错误',
         SYSTEM_MESSAGE: '系统消息',
+        CONTROL_DENIED: '操作未生效',
         SEEK_DENIED: '无法调整进度',
         RESET: '房间已重置',
         REMOVE: '队列已更新',
@@ -145,6 +150,7 @@ export const createSocketCallbacks = () => {
         // 连接成功
         onConnect: () => {
             playerStore.connected = true;
+            playerStore.resetSyncGate();
             playerStore.requestPing('connect', true);
             // 发起同步
             setTimeout(() => {

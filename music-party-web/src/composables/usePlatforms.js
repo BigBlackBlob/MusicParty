@@ -8,8 +8,8 @@ export function usePlatforms(selectedPlatform) {
   const currentPlatform = computed(() => platforms.value.find(item => item.id === selectedPlatform.value));
   const supportsAlbumSearch = computed(() => !!currentPlatform.value?.supportsAlbumSearch);
 
-  const loadPlatforms = async () => {
-    await musicStore.loadPlatforms();
+  const loadPlatforms = async (force = false) => {
+    await musicStore.loadPlatforms(force);
 
     if (!platforms.value.some(item => item.id === selectedPlatform.value)) {
       selectedPlatform.value = platforms.value[0]?.id || 'netease';
