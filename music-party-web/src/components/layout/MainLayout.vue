@@ -210,6 +210,8 @@
                 </div>
               </div>
 
+              <AdminSettingsPanel />
+
               <div class="mt-1 border-t border-border-subtle px-2 pt-3 text-xs text-text-muted">
                 {{ t('settings.connection') }}: <span :class="playerStore.connected ? 'text-success' : 'text-error'">{{ playerStore.connected ? t('settings.connected') : t('settings.disconnected') }}</span>
               </div>
@@ -243,6 +245,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import AdminSettingsPanel from '../AdminSettingsPanel.vue';
 import LiteModeView from './LiteModeView.vue';
 import UserList from '../UserList.vue';
 import { useUserStore } from '../../stores/user';

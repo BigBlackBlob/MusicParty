@@ -1,151 +1,168 @@
 <template>
-  <section class="mobile-work-page">
-    <header class="mobile-work-header">
-      <div class="mobile-work-header__top">
-        <div class="min-w-0">
-          <h2>{{ activeView === 'queue' ? t('queue.title') : t('queue.liked') }}</h2>
-          <p>{{ activeCount }} {{ t('queue.tracks') }}</p>
-        </div>
-        <div class="flex items-center gap-2">
-          <IconButton
+  <section class="flex flex-col h-full bg-bg-base relative overflow-hidden">
+    <!-- Header / Tab View -->
+    <header class="fixed top-0 w-full z-40 bg-surface-panel border-b border-border-default pt-md px-md safe-area-top">
+      <div class="flex justify-between items-center mb-md">
+        <h1 class="font-title text-title text-primary">{{ roomStore.currentRoom?.name || 'Lounge' }}</h1>
+        <div class="flex items-center">
+          <button 
             v-if="activeView === 'queue' && player.queue.length > 0"
-            :variant="selectionMode ? 'secondary' : 'ghost'"
-            size="sm"
             @click="toggleSelectionMode"
-            :aria-label="t('queue.selectTracks')"
+            class="w-[44px] h-[44px] flex items-center justify-center rounded-full hover:bg-surface-raised transition-colors"
           >
-            <X v-if="selectionMode" class="h-4 w-4" />
-            <CheckSquare v-else class="h-4 w-4" />
-          </IconButton>
-          <IconButton
+            <span class="material-symbols-outlined text-text-secondary">{{ selectionMode ? 'close' : 'checklist' }}</span>
+          </button>
+          <button 
             v-if="activeView === 'liked'"
-            variant="ghost"
-            size="sm"
             @click="exportLikedSongs"
             :disabled="player.likedSongs.length === 0"
-            :aria-label="t('queue.exportLiked')"
+            class="w-[44px] h-[44px] flex items-center justify-center rounded-full hover:bg-surface-raised transition-colors disabled:opacity-30"
           >
-            <Download class="h-4 w-4" />
-          </IconButton>
+            <span class="material-symbols-outlined text-text-secondary">download</span>
+          </button>
+          <button class="w-[44px] h-[44px] flex items-center justify-center rounded-full hover:bg-surface-raised transition-colors">
+            <span class="material-symbols-outlined text-text-secondary">search</span>
+          </button>
         </div>
       </div>
-
-      <SegmentedControl
-        v-model="activeView"
-        :options="[
-          { label: t('nav.queue'), value: 'queue' },
-          { label: t('queue.liked'), value: 'liked' }
-        ]"
-      />
+      <!-- Segmented Control -->
+      <div class="flex p-xs bg-bg-base rounded-lg mb-md">
+        <button 
+          @click="activeView = 'queue'"
+          class="flex-1 py-sm text-center rounded-md font-section-label text-section-label transition-all"
+          :class="activeView === 'queue' ? 'bg-surface-raised text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'"
+        >
+          {{ t('nav.queue').toUpperCase() }}
+        </button>
+        <button 
+          @click="activeView = 'liked'"
+          class="flex-1 py-sm text-center rounded-md font-section-label text-section-label transition-all"
+          :class="activeView === 'liked' ? 'bg-surface-raised text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'"
+        >
+          {{ t('queue.liked').toUpperCase() }}
+        </button>
+      </div>
     </header>
 
-    <div class="mobile-work-list" :class="{ 'mobile-work-list--with-action-bar': selectionMode }">
+    <!-- Main Content Area -->
+    <main class="flex-1 overflow-y-auto pt-[140px] px-md pb-[92px] safe-area-bottom" :class="{ 'pb-[160px]': selectionMode }">
       <template v-if="activeView === 'queue'">
-        <div v-if="player.queue.length === 0" class="mobile-empty">
-          <strong>{{ t('queue.empty') }}</strong>
-          <span>{{ t('queue.emptyDesc') }}</span>
+        <div v-if="player.queue.length === 0" class="flex flex-col items-center justify-center py-20 text-center opacity-40">
+          <span class="material-symbols-outlined text-[48px] mb-2">queue_music</span>
+          <p class="font-compact text-compact uppercase tracking-widest">{{ t('queue.empty') }}</p>
         </div>
 
-        <div v-else ref="queueListRef" class="flex flex-col gap-[6px]">
-          <TrackListItem
+        <div v-else ref="queueListRef" class="flex flex-col gap-xs">
+          <div
             v-for="(item, index) in player.queue"
             :key="item.queueId || `${item.music?.platform}:${item.music?.id}:${index}`"
-            :title="item.music?.name"
-            :artist="formatArtists(item.music?.artists)"
-            :cover-url="item.music?.coverUrl"
-            :active="isSelected(item.queueId)"
-            clickable
+            class="flex items-center p-sm rounded-xl transition-colors group cursor-pointer"
+            :class="[
+              isSelected(item.queueId) ? 'bg-accent-subtle' : 'hover:bg-surface-raised',
+              player.nowPlaying?.music?.id === item.music?.id ? 'border border-primary/20' : ''
+            ]"
             @click="handleQueueItemClick(item.queueId)"
-            @activate="handleQueueItemClick(item.queueId)"
             @pointerdown="startLongPress(item.queueId)"
             @pointerup="clearLongPress"
             @pointerleave="clearLongPress"
             @pointercancel="clearLongPress"
           >
-            <template #prefix>
-              <div class="mobile-list-prefix">
-                <div v-if="!selectionMode && !user.isGuest" class="mobile-drag-handle mr-2 text-text-muted">
-                  <GripVertical class="h-4 w-4" />
+            <div class="relative w-[44px] h-[44px] rounded-md overflow-hidden flex-shrink-0 mr-sm">
+              <CoverImage :src="item.music?.coverUrl" class="w-full h-full object-cover" />
+              <div v-if="selectionMode" class="absolute inset-0 bg-black/40 flex items-center justify-center">
+                <div class="w-5 h-5 rounded-full border border-white flex items-center justify-center" :class="{ 'bg-primary border-primary': isSelected(item.queueId) }">
+                  <span v-if="isSelected(item.queueId)" class="material-symbols-outlined text-on-primary text-[14px]">check</span>
                 </div>
-                <span v-if="!selectionMode">{{ index + 1 }}</span>
-                <span
-                  v-else
-                  class="mobile-check"
-                  :class="{ 'mobile-check--selected': isSelected(item.queueId) }"
-                >
-                  <Check v-if="isSelected(item.queueId)" class="h-3 w-3" />
-                </span>
               </div>
-            </template>
-            <template #meta>
-              {{ item.status || '' }}
-            </template>
-            <template #suffix>
-              <div v-if="!selectionMode && !user.isGuest" class="flex items-center gap-1">
-                <IconButton size="sm" variant="ghost" @click.stop="player.topSong(item.queueId)" :aria-label="t('queue.top')">
-                  <ArrowUpToLine class="h-3.5 w-3.5" />
-                </IconButton>
-                <IconButton size="sm" variant="ghost" @click.stop="player.removeSong(item.queueId)" :aria-label="t('queue.remove')">
-                  <Trash2 class="h-3.5 w-3.5 text-[var(--error)]" />
-                </IconButton>
+              <div v-else-if="!user.isGuest" class="mobile-drag-handle absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                <span class="material-symbols-outlined text-white">drag_indicator</span>
               </div>
-            </template>
-          </TrackListItem>
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="font-compact text-compact truncate font-semibold" :class="isSelected(item.queueId) ? 'text-primary' : 'text-text-primary'">
+                {{ item.music?.name }}
+              </p>
+              <p class="font-caption text-caption truncate" :class="isSelected(item.queueId) ? 'text-primary opacity-80' : 'text-text-secondary'">
+                {{ formatArtists(item.music?.artists) }}
+              </p>
+            </div>
+            <div class="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+              <button 
+                v-if="!selectionMode && !user.isGuest"
+                @click.stop="player.topSong(item.queueId)"
+                class="w-[44px] h-[44px] flex items-center justify-center rounded-full hover:bg-surface-raised transition-colors text-text-secondary hover:text-primary"
+              >
+                <span class="material-symbols-outlined text-[20px]">arrow_upward</span>
+              </button>
+              <button 
+                v-if="!selectionMode && !user.isGuest"
+                @click.stop="player.removeSong(item.queueId)"
+                class="w-[44px] h-[44px] flex items-center justify-center rounded-full hover:bg-surface-raised transition-colors text-text-secondary hover:text-error"
+              >
+                <span class="material-symbols-outlined text-[20px]">delete</span>
+              </button>
+            </div>
+          </div>
         </div>
       </template>
 
       <template v-else>
-        <div v-if="player.likedSongs.length === 0" class="mobile-empty">
-          <strong>{{ t('queue.noLiked') }}</strong>
-          <span>{{ t('queue.likedDesc') }}</span>
+        <div v-if="player.likedSongs.length === 0" class="flex flex-col items-center justify-center py-20 text-center opacity-40">
+          <span class="material-symbols-outlined text-[48px] mb-2">favorite</span>
+          <p class="font-compact text-compact uppercase tracking-widest">{{ t('queue.noLiked') }}</p>
         </div>
 
-        <TrackListItem
-          v-for="song in player.likedSongs"
-          v-else
-          :key="song.key"
-          :title="song.name"
-          :artist="formatArtists(song.artists)"
-          :cover-url="song.coverUrl"
-        >
-          <template #meta>
-            {{ song.platform }}
-          </template>
-          <template #suffix>
-            <IconButton size="sm" variant="ghost" @click="player.removeLikedSong(song.key)" :aria-label="t('queue.remove')">
-              <Trash2 class="h-3.5 w-3.5 text-[var(--error)]" />
-            </IconButton>
-          </template>
-        </TrackListItem>
+        <div v-else class="flex flex-col gap-xs">
+          <div
+            v-for="song in player.likedSongs"
+            :key="song.key"
+            class="flex items-center p-sm rounded-xl hover:bg-surface-raised transition-colors group cursor-pointer"
+          >
+            <div class="relative w-[44px] h-[44px] rounded-md overflow-hidden flex-shrink-0 mr-sm">
+              <CoverImage :src="song.coverUrl" class="w-full h-full object-cover" />
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="font-compact text-compact text-text-primary truncate font-semibold">{{ song.name }}</p>
+              <p class="font-caption text-caption text-text-secondary truncate">{{ formatArtists(song.artists) }}</p>
+            </div>
+            <button 
+              @click="player.removeLikedSong(song.key)"
+              class="w-[44px] h-[44px] flex items-center justify-center rounded-full hover:bg-surface-raised transition-colors text-text-secondary hover:text-error opacity-0 group-hover:opacity-100"
+            >
+              <span class="material-symbols-outlined text-[20px]">delete</span>
+            </button>
+          </div>
+        </div>
       </template>
-    </div>
+    </main>
 
+    <!-- Action Bar for Selection Mode -->
     <Transition name="action-bar">
-      <div v-if="selectionMode" class="mobile-action-bar">
-        <div v-if="pendingDelete" class="mobile-delete-confirm">
-          <span>{{ t('queue.deleteConfirm', { count: selectedCount }) }}</span>
+      <div v-if="selectionMode" class="fixed bottom-[84px] inset-x-md z-40 bg-surface-panel border border-border-default rounded-2xl p-md shadow-2xl backdrop-blur-xl">
+        <div v-if="pendingDelete" class="flex flex-col gap-3">
+          <p class="text-sm font-bold text-error text-center">{{ t('queue.deleteConfirm', { count: selectedCount }) }}</p>
           <div class="grid grid-cols-2 gap-2">
-            <button type="button" class="mobile-danger-action" @click="confirmDeleteSelected">{{ t('queue.remove') }}</button>
-            <button type="button" class="mobile-secondary-action" @click="pendingDelete = false">{{ t('queue.cancel') }}</button>
+            <button @click="confirmDeleteSelected" class="py-sm rounded-lg bg-error text-white font-bold text-sm">{{ t('queue.remove') }}</button>
+            <button @click="pendingDelete = false" class="py-sm rounded-lg bg-surface-raised text-text-primary font-bold text-sm">{{ t('queue.cancel') }}</button>
           </div>
         </div>
-        <template v-else>
-          <div class="min-w-0">
-            <strong>{{ t('queue.selected') }} {{ selectedCount }}</strong>
-            <button type="button" @click="selectAll">{{ t('queue.all') }}</button>
+        <div v-else class="flex items-center justify-between">
+          <div class="flex flex-col">
+            <span class="text-xs font-bold text-primary">{{ selectedCount }} {{ t('queue.selected') }}</span>
+            <button @click="selectAll" class="text-[10px] text-text-secondary uppercase tracking-widest text-left">{{ t('queue.all') }}</button>
           </div>
-          <div class="flex items-center gap-2">
-            <IconButton variant="secondary" @click="topSelected" :disabled="!hasSelection" :aria-label="t('queue.top')">
-              <ArrowUpToLine class="h-5 w-5" />
-            </IconButton>
-            <IconButton variant="secondary" @click="requestDeleteSelected" :disabled="!hasSelection" :aria-label="t('queue.removeAll')">
-              <Trash2 class="h-5 w-5 text-[var(--error)]" />
-            </IconButton>
-            <IconButton variant="primary" @click="cancelSelection" :aria-label="t('queue.cancel')">
-              <X class="h-5 w-5" />
-            </IconButton>
+          <div class="flex items-center gap-1">
+            <button @click="topSelected" :disabled="!hasSelection" class="w-[40px] h-[40px] flex items-center justify-center rounded-full bg-surface-raised text-primary disabled:opacity-30">
+              <span class="material-symbols-outlined">arrow_upward</span>
+            </button>
+            <button @click="requestDeleteSelected" :disabled="!hasSelection" class="w-[40px] h-[40px] flex items-center justify-center rounded-full bg-surface-raised text-error disabled:opacity-30">
+              <span class="material-symbols-outlined">delete</span>
+            </button>
+            <button @click="cancelSelection" class="w-[40px] h-[40px] flex items-center justify-center rounded-full bg-primary text-on-primary">
+              <span class="material-symbols-outlined">close</span>
+            </button>
           </div>
-        </template>
+        </div>
       </div>
     </Transition>
   </section>
@@ -154,19 +171,18 @@
 <script setup>
 import { computed, ref, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { ArrowUpToLine, Check, CheckSquare, Download, Trash2, X, GripVertical } from 'lucide-vue-next';
 import Sortable from 'sortablejs';
 import { usePlayerStore } from '../../stores/player';
 import { useUserStore } from '../../stores/user';
+import { useRoomStore } from '../../stores/room';
 import { createLikedSongsFilename, createLikedSongsText } from '../../utils/likedSongs';
 import { useQueueSelection } from '../../composables/useQueueSelection';
-import IconButton from '../ui/IconButton.vue';
-import SegmentedControl from '../ui/SegmentedControl.vue';
-import TrackListItem from '../ui/TrackListItem.vue';
+import CoverImage from '../CoverImage.vue';
 
 const { t } = useI18n();
 const player = usePlayerStore();
 const user = useUserStore();
+const roomStore = useRoomStore();
 const activeView = ref('queue');
 const queue = computed(() => player.queue);
 const pendingDelete = ref(false);
@@ -211,7 +227,7 @@ const initSortable = () => {
     animation: 150,
     handle: '.mobile-drag-handle',
     ghostClass: 'opacity-40',
-    delay: 100, // 给长按留一点空间
+    delay: 100,
     onEnd: (evt) => {
       if (evt.oldIndex !== evt.newIndex) {
         const moved = queue.value[evt.oldIndex];
@@ -225,8 +241,6 @@ const initSortable = () => {
     }
   });
 };
-
-const activeCount = computed(() => activeView.value === 'queue' ? player.queue.length : player.likedSongs.length);
 
 const formatArtists = (artists) => Array.isArray(artists) && artists.length ? artists.join(' / ') : t('common.unknownArtist');
 
@@ -298,176 +312,19 @@ watch(activeView, () => {
 </script>
 
 <style scoped>
-.mobile-work-page {
-  position: relative;
-  display: grid;
-  height: 100%;
-  min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr);
-  overflow: hidden;
-  background: transparent;
+.safe-area-top {
+  padding-top: calc(env(safe-area-inset-top) + 16px);
 }
-
-.mobile-work-header {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  border-bottom: 1px solid var(--surface-glass-border);
-  background: var(--surface-glass-bg);
-  backdrop-filter: blur(20px);
-  padding: 14px 16px;
+.safe-area-bottom {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 92px);
 }
-
-.mobile-work-header__top {
-  display: flex;
-  min-height: 36px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.mobile-work-header h2 {
-  color: var(--text-primary);
-  font-size: 20px;
-  font-weight: 800;
-  line-height: 1.15;
-}
-
-.mobile-work-header p {
-  margin-top: 2px;
-  color: var(--text-tertiary);
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.mobile-work-list {
-  display: flex;
-  min-height: 0;
-  flex-direction: column;
-  gap: 6px;
-  overflow-y: auto;
-  padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
-}
-
-.mobile-work-list--with-action-bar {
-  padding-bottom: calc(112px + env(safe-area-inset-bottom));
-}
-
-.mobile-list-prefix {
-  display: flex;
-  width: 30px;
-  justify-content: center;
-  color: var(--text-tertiary);
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.mobile-check {
-  display: inline-flex;
-  width: 20px;
-  height: 20px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  color: var(--text-inverse);
-}
-
-.mobile-check--selected {
-  border-color: var(--accent);
-  background: var(--accent);
-}
-
-.mobile-empty {
-  display: flex;
-  min-height: 220px;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  color: var(--text-tertiary);
-  text-align: center;
-}
-
-.mobile-empty strong {
-  color: var(--text-primary);
-  font-size: 14px;
-}
-
-.mobile-empty span {
-  max-width: 220px;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.mobile-action-bar {
-  position: absolute;
-  inset-inline: 0;
-  bottom: 0;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-top: 1px solid var(--surface-glass-border);
-  background: var(--surface-glass-panel);
-  backdrop-filter: blur(24px);
-  padding: 12px 16px;
-}
-
-.mobile-action-bar strong {
-  display: block;
-  color: var(--text-primary);
-  font-size: 14px;
-}
-
-.mobile-action-bar button {
-  color: var(--accent);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.mobile-delete-confirm {
-  display: grid;
-  width: 100%;
-  gap: 10px;
-}
-
-.mobile-delete-confirm span {
-  color: var(--error-soft-text);
-  font-size: 13px;
-  font-weight: 700;
-  text-align: center;
-}
-
-.mobile-danger-action,
-.mobile-secondary-action {
-  min-height: 40px;
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  font-weight: 800;
-}
-
-.mobile-danger-action {
-  background: var(--error);
-  color: var(--text-inverse) !important;
-}
-
-.mobile-secondary-action {
-  background: var(--surface-3);
-  color: var(--text-primary) !important;
-}
-
 .action-bar-enter-active,
 .action-bar-leave-active {
-  transition: transform 180ms var(--motion-ease-out), opacity 140ms var(--motion-ease-out);
+  transition: transform 300ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease;
 }
-
 .action-bar-enter-from,
 .action-bar-leave-to {
   opacity: 0;
-  transform: translateY(100%);
+  transform: translateY(20px) scale(0.95);
 }
 </style>

@@ -1,72 +1,104 @@
 <template>
-  <section class="mobile-chat-page">
-    <header class="mobile-chat-header">
-      <div>
-        <h2>{{ t('chat.title') }}</h2>
-        <p>{{ filteredMessages.length }} {{ t('chat.messages') }}</p>
+  <section class="flex flex-col h-full bg-bg-base relative overflow-hidden">
+    <!-- Header Section -->
+    <header class="sticky top-0 z-20 bg-surface-panel border-b border-border-default pt-md px-md pb-3 flex flex-col gap-4 safe-area-top">
+      <div class="flex justify-between items-center">
+        <h1 class="font-title text-title text-primary">{{ t('chat.title') }}</h1>
+        <div class="flex items-center gap-2">
+          <span v-if="filteredMessages.length > 0" class="px-2 py-0.5 rounded-full bg-accent-subtle border border-primary/20 text-[10px] font-bold text-primary uppercase tracking-widest">
+            {{ filteredMessages.length }} {{ t('chat.messages') }}
+          </span>
+        </div>
       </div>
-      <div class="mobile-chat-tabs" role="tablist" :aria-label="t('chat.tabAria')">
-        <button
+
+      <!-- Segmented Tabs -->
+      <div class="bg-bg-base p-[4px] rounded-xl flex items-center justify-between shadow-inner">
+        <button 
           v-for="tab in ['CHAT', 'SYSTEM']"
           :key="tab"
           type="button"
-          role="tab"
-          :aria-selected="activeTab === tab"
-          :class="{ 'mobile-chat-tabs__item--active': activeTab === tab }"
           @click="activeTab = tab"
+          class="flex-1 py-1.5 rounded-lg font-section-label text-section-label transition-all"
+          :class="activeTab === tab ? 'bg-surface-raised text-primary shadow-sm border border-border-strong' : 'text-text-secondary hover:text-primary'"
         >
-          {{ tab === 'CHAT' ? t('chat.tabChat') : t('chat.tabSystem') }}
+          {{ tab === 'CHAT' ? t('chat.tabChat').toUpperCase() : t('chat.tabSystem').toUpperCase() }}
         </button>
       </div>
     </header>
 
-    <div ref="listRef" class="mobile-chat-list" @scroll="handleScroll">
-      <div v-if="chat.isLoadingMore" class="mobile-chat-loading">
-        <Loader2 class="h-4 w-4 animate-spin" />
+    <!-- Chat List Area -->
+    <div ref="listRef" class="flex-1 overflow-y-auto px-md py-4 flex flex-col gap-4" @scroll="handleScroll">
+      <div v-if="chat.isLoadingMore" class="flex justify-center py-2 text-primary">
+        <span class="material-symbols-outlined animate-spin">refresh</span>
       </div>
 
-      <div v-if="processedMessages.length === 0" class="mobile-chat-empty">
-        {{ t('chat.empty') }}
+      <div v-if="processedMessages.length === 0" class="flex flex-col items-center justify-center py-20 text-center opacity-40">
+        <span class="material-symbols-outlined text-[48px] mb-2">chat_bubble</span>
+        <p class="font-compact text-compact uppercase tracking-widest">{{ t('chat.empty') }}</p>
       </div>
 
       <div
         v-for="item in processedMessages"
         :key="item.msg.id"
-        class="mobile-message"
+        class="flex flex-col"
         :class="[
-          isSelf(item.msg) ? 'mobile-message--self' : 'mobile-message--other',
-          item.msg.type !== 'CHAT' ? 'mobile-message--system' : ''
+          isSelf(item.msg) ? 'items-end' : 'items-start',
+          item.msg.type !== 'CHAT' ? 'items-center' : ''
         ]"
       >
-        <div v-if="item.showTime" class="mobile-message__time">{{ formatTime(item.msg.timestamp) }}</div>
+        <div v-if="item.showTime" class="self-center my-4 px-3 py-1 rounded-full bg-surface-raised border border-border-default text-micro font-micro text-text-muted">
+          {{ formatTime(item.msg.timestamp) }}
+        </div>
 
         <template v-if="item.msg.type === 'CHAT'">
-          <div v-if="!isSelf(item.msg)" class="mobile-message__name">{{ user.resolveName(item.msg.userId, item.msg.userName) }}</div>
-          <div class="mobile-message__bubble">{{ item.msg.content }}</div>
+          <div v-if="!isSelf(item.msg)" class="mb-1 ml-2 text-micro font-micro text-text-muted uppercase tracking-wider">
+            {{ user.resolveName(item.msg.userId, item.msg.userName) }}
+          </div>
+          <div 
+            class="max-w-[85%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed break-words shadow-sm"
+            :class="isSelf(item.msg) ? 'bg-primary text-on-primary rounded-tr-none' : 'bg-surface-panel text-text-primary border border-border-default rounded-tl-none'"
+          >
+            {{ item.msg.content }}
+          </div>
         </template>
-        <div v-else class="mobile-message__system">{{ item.msg.content }}</div>
+        
+        <div v-else class="max-w-[90%] px-4 py-1.5 rounded-full bg-surface-raised border border-border-default text-[11px] text-text-secondary text-center">
+          {{ item.msg.content }}
+        </div>
       </div>
     </div>
 
-    <form v-if="activeTab === 'CHAT'" class="mobile-chat-input" @submit.prevent="send">
-      <input
-        v-model="input"
-        :placeholder="t('chat.placeholder')"
-        enterkeyhint="send"
-        autocomplete="off"
-      />
-      <button type="submit" :aria-label="t('chat.send')">
-        <Send class="h-5 w-5" />
-      </button>
-    </form>
-    <div v-else class="mobile-chat-readonly">{{ t('chat.readOnly') }}</div>
+    <!-- Input Section -->
+    <footer class="p-md pb-[calc(16px+env(safe-area-inset-bottom))] bg-bg-base/95 backdrop-blur-md border-t border-border-default">
+      <form v-if="activeTab === 'CHAT'" class="flex items-center gap-3" @submit.prevent="send">
+        <div class="flex-1 flex items-center bg-surface-panel h-[48px] rounded-2xl px-4 border border-border-default focus-within:border-primary/50 transition-colors group">
+          <input 
+            v-model="input"
+            class="flex-1 bg-transparent border-none outline-none text-body font-body text-primary placeholder-text-muted w-full" 
+            :placeholder="t('chat.placeholder')" 
+            type="text"
+            autocomplete="off"
+            enterkeyhint="send"
+          />
+        </div>
+        <button 
+          type="submit"
+          :disabled="!input.trim()"
+          class="w-[48px] h-[48px] flex items-center justify-center rounded-2xl bg-primary text-on-primary shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:scale-100"
+        >
+          <span class="material-symbols-outlined">send</span>
+        </button>
+      </form>
+      <div v-else class="h-[48px] flex items-center justify-center text-micro font-micro text-text-muted uppercase tracking-widest">
+        {{ t('chat.readOnly') }}
+      </div>
+    </footer>
   </section>
 </template>
 
 <script setup>
 import { nextTick, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Loader2, Send } from 'lucide-vue-next';
 import { useChatViewModel } from '../../composables/useChatViewModel';
 
 const { t } = useI18n();
@@ -112,204 +144,7 @@ watch([() => processedMessages.value.length, activeTab], () => {
 </script>
 
 <style scoped>
-.mobile-chat-page {
-  display: grid;
-  height: 100%;
-  min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  overflow: hidden;
-  background: transparent;
-}
-
-.mobile-chat-header {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  border-bottom: 1px solid var(--surface-glass-border);
-  background: var(--surface-glass-bg);
-  backdrop-filter: blur(20px);
-  padding: 14px 16px;
-}
-
-.mobile-chat-header h2 {
-  color: var(--text-primary);
-  font-size: 20px;
-  font-weight: 800;
-  line-height: 1.15;
-}
-
-.mobile-chat-header p {
-  margin-top: 2px;
-  color: var(--text-tertiary);
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.mobile-chat-tabs {
-  display: inline-flex;
-  border: 1px solid var(--surface-glass-border);
-  border-radius: var(--radius-sm);
-  background: var(--surface-glass-bg);
-  padding: 2px;
-}
-
-.mobile-chat-tabs button {
-  min-height: 32px;
-  border-radius: var(--radius-xs);
-  color: var(--text-tertiary);
-  font-size: 12px;
-  font-weight: 700;
-  padding: 0 10px;
-}
-
-.mobile-chat-tabs__item--active {
-  background: var(--surface-glass-control);
-  color: var(--text-primary) !important;
-}
-
-.mobile-chat-list {
-  min-height: 0;
-  overflow-y: auto;
-  padding: 14px 14px 18px;
-  overscroll-behavior: contain;
-}
-
-.mobile-chat-empty {
-  display: flex;
-  height: 100%;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-tertiary);
-  font-size: 13px;
-}
-
-.mobile-chat-loading {
-  display: flex;
-  justify-content: center;
-  padding: 8px 0 12px;
-  color: var(--accent);
-}
-
-.mobile-message {
-  display: flex;
-  flex-direction: column;
-  margin-bottom: 10px;
-}
-
-.mobile-message--self {
-  align-items: flex-end;
-}
-
-.mobile-message--other {
-  align-items: flex-start;
-}
-
-.mobile-message__name {
-  margin: 0 6px 4px;
-  color: var(--text-tertiary);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.mobile-message__time {
-  align-self: center;
-  margin: 4px 0 10px;
-  border: 1px solid var(--surface-glass-border);
-  border-radius: var(--radius-full);
-  background: var(--surface-glass-bg);
-  color: var(--text-tertiary);
-  padding: 3px 8px;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 10px;
-}
-
-.mobile-message__bubble {
-  max-width: min(82%, 340px);
-  border-radius: 18px;
-  padding: 9px 12px;
-  font-size: 14px;
-  line-height: 1.5;
-  word-break: break-word;
-}
-
-.mobile-message--self .mobile-message__bubble {
-  border-bottom-right-radius: var(--radius-sm);
-  background: var(--accent);
-  color: var(--text-inverse);
-}
-
-.mobile-message--other .mobile-message__bubble {
-  border-bottom-left-radius: var(--radius-sm);
-  background: var(--surface-glass-control);
-  color: var(--text-primary);
-  backdrop-filter: blur(8px);
-}
-
-.mobile-message--system {
-  align-items: center;
-}
-
-.mobile-message__system {
-  max-width: 92%;
-  border: 1px solid var(--surface-glass-border);
-  border-radius: var(--radius-full);
-  background: var(--surface-glass-bg);
-  color: var(--text-secondary);
-  padding: 5px 10px;
-  text-align: center;
-  font-size: 11px;
-  line-height: 1.4;
-}
-
-.mobile-chat-input {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 48px;
-  gap: 10px;
-  border-top: 1px solid var(--surface-glass-border);
-  background: var(--surface-glass-panel);
-  backdrop-filter: blur(24px);
-  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
-}
-
-.mobile-chat-input input {
-  min-width: 0;
-  min-height: 48px;
-  border: 1px solid var(--surface-glass-border);
-  border-radius: var(--radius-md);
-  background: var(--surface-glass-bg);
-  color: var(--text-primary);
-  font-size: 16px;
-  outline: none;
-  padding: 0 14px;
-}
-
-.mobile-chat-input input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(211, 194, 243, 0.2);
-}
-
-.mobile-chat-input button {
-  display: inline-flex;
-  min-height: 48px;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-md);
-  background: var(--accent);
-  color: var(--text-inverse);
-}
-
-.mobile-chat-readonly {
-  display: flex;
-  min-height: calc(44px + env(safe-area-inset-bottom));
-  align-items: center;
-  justify-content: center;
-  border-top: 1px solid var(--surface-glass-border);
-  background: var(--surface-glass-panel);
-  backdrop-filter: blur(24px);
-  color: var(--text-tertiary);
-  font-size: 12px;
-  padding-bottom: env(safe-area-inset-bottom);
+.safe-area-top {
+  padding-top: calc(env(safe-area-inset-top) + 16px);
 }
 </style>

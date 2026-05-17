@@ -80,7 +80,6 @@
     <SearchModal v-if="!isMobileLayout" :isOpen="showSearch" @close="showSearch = false" />
     <NamePromptModal />
     <ChatOverlay v-if="hasStarted && !uiStore.isLiteMode && !isMobileLayout" ref="chatOverlayRef" />
-    <TutorialOverlay v-if="hasStarted && !uiStore.isLiteMode && !isMobileLayout" />
   </div>
 </template>
 
@@ -104,7 +103,6 @@ import SearchModal from './components/SearchModal.vue';
 import NamePromptModal from './components/NamePromptModal.vue';
 import ChatOverlay from './components/ChatOverlay.vue';
 import ToastNotification from './components/ToastNotification.vue';
-import TutorialOverlay from './components/TutorialOverlay.vue';
 import MobileLayout from './components/mobile/MobileLayout.vue';
 import MobilePreviewShell from './components/mobile/MobilePreviewShell.vue';
 
