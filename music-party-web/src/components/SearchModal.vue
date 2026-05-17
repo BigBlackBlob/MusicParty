@@ -12,9 +12,14 @@
                 <span class="material-symbols-outlined text-primary text-[16px]">search</span>
                 <h2 class="text-[10px] font-black uppercase tracking-[0.2em] text-text-tertiary">{{ t('search.discoverMusic') }}</h2>
               </div>
-              <button class="text-text-muted transition-colors hover:text-text-primary" @click="emit('close')" :aria-label="t('common.close')" :title="t('common.close')">
-                <span class="material-symbols-outlined">close</span>
-              </button>
+              <div class="flex items-center gap-3">
+                <button class="text-text-muted transition-colors hover:text-text-primary" @click="refreshSearchSources" :aria-label="t('search.refreshSources')" :title="t('search.refreshSources')">
+                  <span class="material-symbols-outlined text-[20px]">sync</span>
+                </button>
+                <button class="text-text-muted transition-colors hover:text-text-primary" @click="emit('close')" :aria-label="t('common.close')" :title="t('common.close')">
+                  <span class="material-symbols-outlined">close</span>
+                </button>
+              </div>
             </div>
 
             <div class="flex gap-4">
@@ -72,6 +77,9 @@
                   {{ p.label }}
                 </button>
               </div>
+              <div class="mt-4">
+                <SubsonicSourceManager />
+              </div>
             </aside>
 
             <!-- Results -->
@@ -108,8 +116,15 @@
                       <p class="truncate text-text-muted text-[11px]">{{ formatArtists(item.artists || item.artistName) }}</p>
                     </div>
                     <div class="flex items-center gap-2">
-                      <button v-if="resultMode === ALBUM_SEARCH_TYPE" @click.stop="toggleAlbum(item.id)" class="text-text-muted hover:text-text-primary transition-colors" :title="t('search.expandAlbum')">
-                        <span class="material-symbols-outlined text-[20px]">{{ expandedAlbumIds.has(item.id) ? 'expand_less' : 'expand_more' }}</span>
+                      <button
+                        v-if="resultMode === ALBUM_SEARCH_TYPE"
+                        @click.stop="toggleAlbum(item.id)"
+                        class="inline-flex items-center gap-1 rounded-full border border-border-default bg-surface-raised px-3 py-1 text-[10px] font-black uppercase tracking-widest text-text-muted transition-colors hover:border-primary hover:text-primary"
+                        :title="expandedAlbumIds.has(item.id) ? t('search.collapseAlbumSongs') : t('search.viewAlbumSongs')"
+                        :aria-label="expandedAlbumIds.has(item.id) ? t('search.collapseAlbumSongs') : t('search.viewAlbumSongs')"
+                      >
+                        <span>{{ expandedAlbumIds.has(item.id) ? t('search.collapseAlbumSongs') : t('search.viewAlbumSongs') }}</span>
+                        <span class="material-symbols-outlined text-[16px]">{{ expandedAlbumIds.has(item.id) ? 'expand_less' : 'expand_more' }}</span>
                       </button>
                       <button @click.stop="handleAddClick(item)" class="text-primary hover:text-text-primary" :title="resultMode === ALBUM_SEARCH_TYPE ? t('search.addAlbum') : t('search.addSong')" :aria-label="resultMode === ALBUM_SEARCH_TYPE ? t('search.addAlbum') : t('search.addSong')">
                         <span class="material-symbols-outlined text-[20px]">{{ resultMode === 'album' ? 'library_add' : 'add_circle' }}</span>
@@ -155,7 +170,7 @@
                             <p class="truncate text-[12px] text-text-primary font-bold">{{ song.name }}</p>
                             <p class="truncate text-[10px] text-text-muted">{{ formatArtists(song.artists) }}</p>
                          </div>
-                         <button @click.stop="playerStore.enqueue(platform, song.id)" class="text-text-muted hover:text-primary transition-colors opacity-0 group-hover:opacity-100">
+                         <button @click.stop="playerStore.enqueue(song.platform || platform, song.id)" class="text-text-muted hover:text-primary transition-colors opacity-0 group-hover:opacity-100">
                             <span class="material-symbols-outlined text-[18px]">add_circle</span>
                          </button>
                       </div>
@@ -213,6 +228,7 @@ import { usePlayerStore } from '../stores/player';
 import { useSearchLogic } from '../composables/useSearchLogic';
 import { DialogRoot, DialogPortal, DialogOverlay, DialogContent } from 'reka-ui';
 import CoverImage from './CoverImage.vue';
+import SubsonicSourceManager from './SubsonicSourceManager.vue';
 import {
   addAlbumSelections,
   clearAlbumSelections,
@@ -231,7 +247,7 @@ const ALBUM_SEARCH_TYPE = 'album';
 const PLAYLIST_SEARCH_TYPE = 'playlist';
 
 const { 
-  platform, platforms, supportsAlbumSearch, keyword, songs, albums, playlistSongs, loading, searchType, doSearch, loadPlatforms, isAdminMode, hasSubmittedSearch, 
+  platform, platforms, supportsAlbumSearch, keyword, songs, albums, playlistSongs, loading, searchType, doSearch, loadPlatforms, refreshPlatformsAndClear, hasSubmittedSearch, 
   currentPage, currentPlaylistPage, canGoNext, canGoPlaylistNext, nextPage, prevPage, addAllPlaylistSongs,
   albumSongs, loadingAlbumIds, expandedAlbumIds, toggleAlbum
 } = useSearchLogic(emit);
@@ -264,7 +280,6 @@ const emptyMessage = computed(() => {
 });
 
 const searchPlaceholder = computed(() => {
-  if (isAdminMode.value) return t('search.adminPlaceholder');
   if (searchType.value === PLAYLIST_SEARCH_TYPE) return t('search.playlistPlaceholder');
   return t('search.placeholder');
 });
@@ -277,12 +292,16 @@ watch(supportsAlbumSearch, (supported) => {
 
 const handleSearchAction = () => doSearch();
 
+const refreshSearchSources = async () => {
+  await refreshPlatformsAndClear();
+};
+
 const handleAddClick = (song) => {
   if (resultMode.value === ALBUM_SEARCH_TYPE) {
     playerStore.enqueueAlbum(platform.value, song.id);
     return;
   }
-  playerStore.enqueue(platform.value, song.id);
+  playerStore.enqueue(song.platform || platform.value, song.id);
 };
 
 const toggleSongSelection = (albumId, songId) => {
@@ -314,7 +333,7 @@ const addSelectedSongs = (albumId) => {
   if (toAdd.length === 0) return;
   
   toAdd.forEach(s => {
-    playerStore.enqueue(platform.value, s.id);
+    playerStore.enqueue(s.platform || platform.value, s.id);
   });
   
   clearAlbumSongSelections(albumId);

@@ -67,7 +67,58 @@ export default {
     chinese: 'Chinese',
     toggleTheme: 'Toggle theme',
     queueAutoHidden: 'queue is hidden at this zoom',
-    moreActiveUsers: '{count} more active users'
+    moreActiveUsers: '{count} more active users',
+    admin: {
+      title: 'Admin',
+      passwordPlaceholder: 'Admin password',
+      userPlaceholder: 'Target name (current user by default)',
+      grantNavidrome: 'Enable Navidrome',
+      revokeNavidrome: 'Disable Navidrome',
+      streamOn: 'Stream on',
+      streamOff: 'Stream off',
+      clearQueue: 'Clear queue',
+      clearChat: 'Clear chat',
+      commandPlaceholder: 'Advanced command, e.g. //LOCK ALL ON',
+      runCommand: 'Run command',
+      running: 'Running...',
+      passwordRequired: 'Enter the admin password',
+      commandExecuted: 'Admin command executed',
+      commandFailed: 'Access denied or command failed',
+      navidromeGranted: 'Navidrome enabled for this user',
+      navidromeRevoked: 'Navidrome disabled for this user',
+      streamEnabled: 'Stream enabled',
+      streamDisabled: 'Stream disabled',
+      queueCleared: 'Queue cleared',
+      chatCleared: 'Chat cleared'
+      ,
+      customNavidrome: 'Custom Navidrome server',
+      sourceManager: 'Subsonic source manager',
+      unlockSourceManager: 'Unlock source manager',
+      sourceIdPlaceholder: 'Source ID, e.g. home',
+      sourceLabelPlaceholder: 'Display name',
+      navidromeUrlPlaceholder: 'Server URL, e.g. https://music.example.com',
+      navidromeHostPlaceholder: 'Server host or IP, e.g. squidify.org',
+      navidromePortPlaceholder: 'Port',
+      navidromeUsernamePlaceholder: 'Username',
+      navidromePasswordPlaceholder: 'Password',
+      allowedUsersPlaceholder: 'Allowed names, comma-separated, * for everyone',
+      saveSource: 'Save server',
+      testSource: 'Test connection',
+      newSource: 'New server',
+      removeSource: 'Remove server',
+      sourceSaved: 'Navidrome server saved',
+      sourceRemoved: 'Navidrome server removed',
+      sourceTested: 'Navidrome connection is healthy',
+      sourceOrderSaved: 'Source order updated',
+      sourceList: 'Added servers',
+      loadingSources: 'Loading...',
+      noSources: 'No custom Navidrome servers yet',
+      sourcesLoadFailed: 'Could not load servers',
+      sourceActive: 'Active',
+      sourceInactive: 'Off',
+      moveUp: 'Move up',
+      moveDown: 'Move down'
+    }
   },
   nav: {
     nowPlaying: 'Now',
@@ -140,7 +191,7 @@ export default {
     importPlaylist: 'Import Playlist',
     noPlaylist: 'No playlist tracks found',
     tryDifferent: 'Try a different keyword.',
-    albumHint: 'Netease supports adding by album.',
+    albumHint: 'Platforms with album support can add music by album.',
     playlistHint: 'Enter Netease playlist URL or ID (Max 50 songs).',
     searchSongs: 'Search Songs',
     startHint: 'Select a platform and enter a keyword.',
@@ -148,6 +199,8 @@ export default {
     addSong: 'Add song',
     addAllSongs: 'Add all (Max 50)',
     expandAlbum: 'Expand album songs',
+    viewAlbumSongs: 'Songs',
+    collapseAlbumSongs: 'Collapse',
     selectAll: 'Select all',
     deselectAll: 'Deselect all',
     addSelected: 'Add selected',
@@ -165,7 +218,8 @@ export default {
     page: 'Page',
     prevPage: 'Prev',
     nextPage: 'Next',
-    playlistFailed: 'Failed to parse playlist'
+    playlistFailed: 'Failed to parse playlist',
+    refreshSources: 'Refresh music sources'
   },
   playlist: {
     fetchPlaylistsFailed: 'Fetch playlists failed',
@@ -202,29 +256,6 @@ export default {
     loginToChat: 'Login to chat',
     readOnly: 'System messages are read-only',
     tabAria: 'Message type'
-  },
-  tutorial: {
-    header: 'Tutorial // {current}/{total}',
-    skip: 'Skip',
-    next: 'Next >',
-    finish: 'Finish',
-    steps: {
-      rename: {
-        desktop: 'Click here to rename yourself. Press Enter to confirm.',
-        mobile: 'Open the member list here to rename yourself.'
-      },
-      search: 'Use search to find songs. You can also search usernames to inspect platform playlists.',
-      like: 'Click the center cover art to like the current song.',
-      queue: {
-        desktop: 'This is the queue. Hover a song to move it up or remove it.',
-        mobile: 'Open the play queue here.'
-      },
-      pause: 'Pause and resume affect every listener globally. Use it carefully.',
-      download: 'Like what you hear? Download the current audio file here.',
-      random: 'Shuffle uses a fair-random algorithm so everyone gets an equal chance to be played.',
-      chat: 'Open chat here to talk with others or review history. The button can be dragged.',
-      source: 'Click the small cover at the bottom to open the song source page.'
-    }
   },
   liteMode: {
     status: 'Lite Mode',

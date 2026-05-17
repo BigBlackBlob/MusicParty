@@ -1,26 +1,40 @@
 import client from './client';
 
+const needsToken = (platform) => platform === 'navidrome' || String(platform || '').startsWith('subsonic-');
+
 export const musicApi = {
     // 获取当前用户可用平台
-    getPlatforms: (sessionToken) => client.get('/api/platforms', { params: { token: sessionToken } }),
+    getPlatforms: (sessionToken, roomId) => client.get('/api/platforms', { params: { token: sessionToken, roomId } }),
 
     // 搜索歌曲
-    search: (platform, keyword, sessionToken, offset = 0, limit = 20) => client.get(
+    search: (platform, keyword, sessionToken, offset = 0, limit = 20, roomId) => client.get(
         `/api/search/${platform}/${keyword}`,
         {
             params: {
                 offset,
                 limit,
-                ...(platform === 'navidrome' ? { token: sessionToken } : {})
+                roomId,
+                ...(needsToken(platform) ? { token: sessionToken } : {})
             }
         }
     ),
 
-    // 搜索网易云专辑
-    searchNeteaseAlbums: (keyword) => client.get('/api/album/search/netease', { params: { keyword } }),
+    // 搜索平台专辑
+    searchAlbums: (platform, keyword, sessionToken, roomId) => client.get(`/api/album/search/${platform}`, {
+        params: {
+            keyword,
+            roomId,
+            ...(needsToken(platform) ? { token: sessionToken } : {})
+        }
+    }),
 
-    // 获取网易云专辑歌曲
-    getNeteaseAlbumSongs: (albumId) => client.get(`/api/album/songs/netease/${albumId}`),
+    // 获取平台专辑歌曲
+    getAlbumSongs: (platform, albumId, sessionToken, roomId) => client.get(`/api/album/songs/${platform}/${albumId}`, {
+        params: {
+            roomId,
+            ...(needsToken(platform) ? { token: sessionToken } : {})
+        }
+    }),
 
     // 获取歌词
     getLyric: (platform, songId) => client.get(`/api/music/lyric/${platform}/${songId}`),

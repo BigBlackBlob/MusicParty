@@ -5,6 +5,7 @@ class SocketService {
         this.client = null;
         this.connected = false;
         this.stompConfig = null;
+        this.subscriptionIds = [];
     }
 
     /**
@@ -17,9 +18,13 @@ class SocketService {
      * @param {Object} subscriptions - 订阅配置 { topic: callbackFn }
      */
     connect(authHeaders, callbacks, subscriptions) {
-        // 避免重复连接
-        if (this.client && this.client.active) return;
-        this.stompConfig = { authHeaders, callbacks, subscriptions };
+        const nextConfig = { authHeaders, callbacks, subscriptions };
+        if (this.client && this.client.active) {
+            if (!this.shouldReconnectForConfig(nextConfig)) return;
+            console.info('Socket context changed, reconnecting with fresh subscriptions.');
+            this.disconnect();
+        }
+        this.stompConfig = nextConfig;
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const brokerURL = `${protocol}//${window.location.host}/ws`;
@@ -35,11 +40,13 @@ class SocketService {
                 this.connected = true;
 
                 // 1. 注册所有订阅
+                this.subscriptionIds = [];
                 Object.entries(subscriptions).forEach(([topic, handler]) => {
-                    this.client.subscribe(topic, (message) => {
+                    const subscription = this.client.subscribe(topic, (message) => {
                         const body = JSON.parse(message.body);
                         handler(body);
                     });
+                    this.subscriptionIds.push(subscription.id);
                 });
 
                 // 2. 触发连接成功回调
@@ -76,9 +83,14 @@ class SocketService {
     send(destination, body = {}) {
         if (this.client && this.connected) {
             this.client.publish({ destination, body: JSON.stringify(body) });
-        } else {
-            console.warn('Socket not connected, cannot send:', destination);
+            return true;
         }
+        console.warn('Socket not connected, cannot send:', {
+            destination,
+            connected: this.connected,
+            active: Boolean(this.client?.active)
+        });
+        return false;
     }
 
     /**
@@ -107,7 +119,28 @@ class SocketService {
             this.client.deactivate();
             this.client = null;
             this.connected = false;
+            this.subscriptionIds = [];
         }
+    }
+
+    shouldReconnectForConfig(nextConfig) {
+        if (!this.stompConfig) return true;
+        return !this.sameHeaders(this.stompConfig.authHeaders, nextConfig.authHeaders)
+            || !this.sameSubscriptionTopics(this.stompConfig.subscriptions, nextConfig.subscriptions);
+    }
+
+    sameHeaders(current = {}, next = {}) {
+        const currentKeys = Object.keys(current).sort();
+        const nextKeys = Object.keys(next).sort();
+        if (currentKeys.length !== nextKeys.length) return false;
+        return currentKeys.every((key, index) => key === nextKeys[index] && current[key] === next[key]);
+    }
+
+    sameSubscriptionTopics(current = {}, next = {}) {
+        const currentTopics = Object.keys(current).sort();
+        const nextTopics = Object.keys(next).sort();
+        if (currentTopics.length !== nextTopics.length) return false;
+        return currentTopics.every((topic, index) => topic === nextTopics[index]);
     }
 }
 

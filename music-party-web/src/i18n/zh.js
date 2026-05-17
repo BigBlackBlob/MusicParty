@@ -67,7 +67,58 @@ export default {
     chinese: '中文',
     toggleTheme: '切换主题',
     queueAutoHidden: '当前缩放下队列已自动隐藏',
-    moreActiveUsers: '还有 {count} 位活跃用户'
+    moreActiveUsers: '还有 {count} 位活跃用户',
+    admin: {
+      title: '管理员',
+      passwordPlaceholder: '管理员密码',
+      userPlaceholder: '目标昵称（默认当前用户）',
+      grantNavidrome: '开启 Navidrome',
+      revokeNavidrome: '关闭 Navidrome',
+      streamOn: '直播开启',
+      streamOff: '直播关闭',
+      clearQueue: '清空队列',
+      clearChat: '清空聊天',
+      commandPlaceholder: '高级指令，例如 //LOCK ALL ON',
+      runCommand: '执行指令',
+      running: '执行中...',
+      passwordRequired: '请输入管理员密码',
+      commandExecuted: '管理员指令已执行',
+      commandFailed: '权限不足或指令执行失败',
+      navidromeGranted: '已为该用户开启 Navidrome',
+      navidromeRevoked: '已为该用户关闭 Navidrome',
+      streamEnabled: '直播已开启',
+      streamDisabled: '直播已关闭',
+      queueCleared: '队列已清空',
+      chatCleared: '聊天已清空'
+      ,
+      customNavidrome: '自定义 Navidrome 服务器',
+      sourceManager: 'Subsonic 源管理',
+      unlockSourceManager: '解锁源管理',
+      sourceIdPlaceholder: '来源 ID，例如 home',
+      sourceLabelPlaceholder: '显示名称',
+      navidromeUrlPlaceholder: '服务器地址，例如 https://music.example.com',
+      navidromeHostPlaceholder: '服务器域名或 IP，例如 squidify.org',
+      navidromePortPlaceholder: '端口',
+      navidromeUsernamePlaceholder: '用户名',
+      navidromePasswordPlaceholder: '密码',
+      allowedUsersPlaceholder: '允许昵称，逗号分隔，* 表示全部',
+      saveSource: '保存服务器',
+      testSource: '测试连接',
+      newSource: '新建服务器',
+      removeSource: '移除服务器',
+      sourceSaved: 'Navidrome 服务器已保存',
+      sourceRemoved: 'Navidrome 服务器已移除',
+      sourceTested: 'Navidrome 连接正常',
+      sourceOrderSaved: '源排序已更新',
+      sourceList: '已添加服务器',
+      loadingSources: '加载中...',
+      noSources: '暂无自定义 Navidrome 服务器',
+      sourcesLoadFailed: '服务器列表加载失败',
+      sourceActive: '可用',
+      sourceInactive: '停用',
+      moveUp: '上移',
+      moveDown: '下移'
+    }
   },
   nav: {
     nowPlaying: '播放',
@@ -140,7 +191,7 @@ export default {
     importPlaylist: '导入歌单',
     noPlaylist: '没有找到歌单歌曲',
     tryDifferent: '换个关键词再试。',
-    albumHint: '网易云平台支持按专辑添加。',
+    albumHint: '支持专辑的平台可以按专辑添加。',
     playlistHint: '输入网易云歌单链接或 ID（单次最高导入 50 首）。',
     searchSongs: '搜索歌曲',
     startHint: '选择平台后输入关键词。',
@@ -148,6 +199,8 @@ export default {
     addSong: '添加歌曲',
     addAllSongs: '全部添加 (限50首)',
     expandAlbum: '展开专辑歌曲',
+    viewAlbumSongs: '歌曲列表',
+    collapseAlbumSongs: '收起列表',
     selectAll: '全选',
     deselectAll: '取消全选',
     addSelected: '添加已选',
@@ -164,7 +217,8 @@ export default {
     page: '页码',
     prevPage: '上一页',
     nextPage: '下一页',
-    playlistFailed: '歌单解析失败'
+    playlistFailed: '歌单解析失败',
+    refreshSources: '刷新音乐源'
   },
   playlist: {
     fetchPlaylistsFailed: '获取歌单失败',
@@ -201,29 +255,6 @@ export default {
     loginToChat: '登录后即可发言',
     readOnly: '系统消息只读',
     tabAria: '消息类型'
-  },
-  tutorial: {
-    header: '新手引导 // {current}/{total}',
-    skip: '跳过',
-    next: '下一步 >',
-    finish: '完成',
-    steps: {
-      rename: {
-        desktop: '点击这里可以修改你的昵称，输入后按回车确认。',
-        mobile: '点击这里打开用户列表，可以修改你的昵称。'
-      },
-      search: '点击搜索按钮寻找歌曲，也可以通过搜索用户名查看平台账号歌单。',
-      like: '点击中间的封面可以为当前歌曲点赞。',
-      queue: {
-        desktop: '这里是播放队列。悬停在歌曲上可以进行置顶或删除操作。',
-        mobile: '点击这里查看播放队列。'
-      },
-      pause: '暂停和播放会全局生效，会影响所有在线听众，请谨慎操作。',
-      download: '听到喜欢的歌？点击这里可以直接下载当前播放的音频文件。',
-      random: '随机播放模式采用公平随机算法，确保每个人点的歌都有均等的播放机会。',
-      chat: '点击浮动按钮打开聊天窗口，可以和其他人聊天或查看记录。按钮可以拖动。',
-      source: '点击底部的小封面，可以跳转到歌曲的源网页。'
-    }
   },
   liteMode: {
     status: '精简模式',
