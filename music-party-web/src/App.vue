@@ -57,29 +57,18 @@
 
     <MainLayout
       v-else-if="hasStarted"
-      :is-queue-visible="effectiveQueueVisible"
       @search="handleSearchClick"
       @toggle-mobile-chat="handleMobileChat"
     >
       <template #default>
-        <!-- Center Stage & Lyrics -->
-        <CenterConsole
-          :is-queue-visible="effectiveQueueVisible"
-          :is-queue-auto-suppressed="autoQueueSuppressed"
-          @toggle-queue="handleQueueToggle"
-        />
-
-        <!-- Right Panel: Queue -->
-        <div v-show="effectiveQueueVisible" class="flex h-full min-h-0 min-w-0 flex-col overflow-hidden" id="right-queue-panel">
-          <QueueList />
-        </div>
+        <LayoutRenderer />
       </template>
     </MainLayout>
 
     <!-- 4. 全局弹窗 -->
     <SearchModal v-if="!isMobileLayout" :isOpen="showSearch" @close="showSearch = false" />
     <NamePromptModal />
-    <ChatOverlay v-if="hasStarted && !uiStore.isLiteMode && !isMobileLayout" ref="chatOverlayRef" />
+    <ChatOverlay v-if="showChatOverlay" ref="chatOverlayRef" />
   </div>
 </template>
 
@@ -90,13 +79,13 @@ import { usePlayerStore } from './stores/player';
 import { useUserStore } from './stores/user';
 import { useUiStore } from './stores/ui';
 import { useRoomStore } from './stores/room';
+import { useLayoutStore } from './stores/layout';
 import { useToast } from './composables/useToast';
 import { useShortcuts } from './composables/useShortcuts';
 
 // Components
 import MainLayout from './components/layout/MainLayout.vue';
-import CenterConsole from './components/CenterConsole.vue';
-import QueueList from './components/QueueList.vue';
+import LayoutRenderer from './layouts/LayoutRenderer.vue';
 import AudioEngine from './components/AudioEngine.vue';
 import AuthOverlay from './components/AuthOverlay.vue';
 import SearchModal from './components/SearchModal.vue';
@@ -110,9 +99,9 @@ const player = usePlayerStore();
 const userStore = useUserStore();
 const uiStore = useUiStore();
 const roomStore = useRoomStore();
+const layoutStore = useLayoutStore();
 const hasStarted = ref(false);
 const showSearch = ref(false);
-const userQueueVisible = ref(true);
 const newRoomName = ref('');
 const toastInstance = ref(null);
 const chatOverlayRef = ref(null);
@@ -128,40 +117,14 @@ useShortcuts({
 const { width } = useWindowSize();
 const isMobileLayout = computed(() => uiStore.forceMobileLayout || width.value < 768);
 const usePreviewShell = computed(() => uiStore.forceMobileLayout && width.value >= 768);
-const MIN_READABLE_LYRICS_WIDTH = 360;
-const DESKTOP_STAGE_HORIZONTAL_PADDING = 40;
-const DESKTOP_STAGE_MAX_WIDTH = 1520;
-const DESKTOP_PANEL_WIDE_WIDTH = 420;
-const DESKTOP_PANEL_NARROW_WIDTH = 360;
-const DESKTOP_STAGE_WIDE_GAP = 24;
-const DESKTOP_STAGE_NARROW_GAP = 18;
 
-const desktopPanelWidth = computed(() => (
-  width.value <= 1180 ? DESKTOP_PANEL_NARROW_WIDTH : DESKTOP_PANEL_WIDE_WIDTH
-));
+const showChatOverlay = computed(() =>
+  hasStarted.value &&
+  !uiStore.isLiteMode &&
+  !isMobileLayout.value &&
+  !layoutStore.placedModuleIds.includes('chat')
+);
 
-const desktopStageGap = computed(() => (
-  width.value <= 1180 ? DESKTOP_STAGE_NARROW_GAP : DESKTOP_STAGE_WIDE_GAP
-));
-
-const desktopStageWidth = computed(() => {
-  const zoom = Math.max(1, Number(uiStore.globalZoomLevel) || 1);
-  const viewportWidth = Math.max(0, width.value / zoom - DESKTOP_STAGE_HORIZONTAL_PADDING);
-  const scaledMaxWidth = DESKTOP_STAGE_MAX_WIDTH * uiStore.mainStageScale;
-  return Math.max(0, Math.min(scaledMaxWidth, viewportWidth));
-});
-
-const autoQueueSuppressed = computed(() => {
-  if (isMobileLayout.value || !userQueueVisible.value) return false;
-
-  const lyricsWidthWithQueue = desktopStageWidth.value
-    - (desktopPanelWidth.value * 2)
-    - (desktopStageGap.value * 2);
-
-  return lyricsWidthWithQueue < MIN_READABLE_LYRICS_WIDTH;
-});
-
-const effectiveQueueVisible = computed(() => userQueueVisible.value && !autoQueueSuppressed.value);
 let autoLiteTimer = null;
 let autoLiteSuppressedUntil = 0;
 const AUTO_LITE_DELAY_MS = 180000;
@@ -254,11 +217,8 @@ const handleMobileChat = () => {
   chatOverlayRef.value?.toggleChat?.();
 };
 
-const handleQueueToggle = () => {
-  userQueueVisible.value = !userQueueVisible.value;
-};
-
 onMounted(() => {
+
   roomStore.fetchRooms();
   setAppViewportHeight();
   window.addEventListener('resize', setAppViewportHeight);

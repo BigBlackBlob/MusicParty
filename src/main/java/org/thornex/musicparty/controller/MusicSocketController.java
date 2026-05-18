@@ -12,6 +12,7 @@ import org.thornex.musicparty.service.MusicPlayerService;
 import org.thornex.musicparty.service.MusicPlayerService.ControlResult;
 import org.thornex.musicparty.service.MusicSocketSessionFacade;
 import org.thornex.musicparty.service.RoomLifecycleService;
+import org.thornex.musicparty.service.RoomPlaylistService;
 import org.thornex.musicparty.service.RoomService;
 import org.thornex.musicparty.service.SocketRateLimiter;
 import org.thornex.musicparty.service.UserService;
@@ -30,6 +31,7 @@ public class MusicSocketController {
     private final RoomLifecycleService roomLifecycleService;
     private final MusicSocketSessionFacade musicSocketSessionFacade;
     private final SocketRateLimiter socketRateLimiter;
+    private final RoomPlaylistService roomPlaylistService;
 
     public MusicSocketController(MusicPlayerService musicPlayerService,
                                  UserService userService,
@@ -37,7 +39,8 @@ public class MusicSocketController {
                                  RoomService roomService,
                                  RoomLifecycleService roomLifecycleService,
                                  MusicSocketSessionFacade musicSocketSessionFacade,
-                                 SocketRateLimiter socketRateLimiter) {
+                                 SocketRateLimiter socketRateLimiter,
+                                 RoomPlaylistService roomPlaylistService) {
         this.musicPlayerService = musicPlayerService;
         this.userService = userService;
         this.chatService = chatService;
@@ -45,6 +48,7 @@ public class MusicSocketController {
         this.roomLifecycleService = roomLifecycleService;
         this.musicSocketSessionFacade = musicSocketSessionFacade;
         this.socketRateLimiter = socketRateLimiter;
+        this.roomPlaylistService = roomPlaylistService;
     }
 
     @MessageMapping("/player/resync")
@@ -69,6 +73,15 @@ public class MusicSocketController {
         if (denyRateLimited(sessionId, "enqueue")) return;
         if (denyGuest(sessionId, "CONTROL_DENIED", "请先设置昵称再添加歌单")) return;
         musicPlayerService.enqueuePlaylist(request, sessionId);
+    }
+
+    @MessageMapping("/enqueue/room-playlist")
+    public void enqueueRoomPlaylist(org.thornex.musicparty.dto.RoomPlaylistRequests.EnqueueRoomPlaylistRequest request,
+                                    @Header("simpSessionId") String sessionId) {
+        if (denyRateLimited(sessionId, "enqueue")) return;
+        if (denyGuest(sessionId, "CONTROL_DENIED", "请先设置昵称再添加歌单")) return;
+        String roomId = userService.getRoomIdForSession(sessionId);
+        musicPlayerService.enqueueSavedPlaylist(roomPlaylistService.getPlaylistMusics(roomId, request.playlistId()), sessionId);
     }
 
     @MessageMapping("/enqueue/album")

@@ -250,7 +250,7 @@ const {
   platform, platforms, supportsAlbumSearch, keyword, songs, albums, playlistSongs, loading, searchType, doSearch, loadPlatforms, refreshPlatformsAndClear, hasSubmittedSearch, 
   currentPage, currentPlaylistPage, canGoNext, canGoPlaylistNext, nextPage, prevPage, addAllPlaylistSongs,
   albumSongs, loadingAlbumIds, expandedAlbumIds, toggleAlbum
-} = useSearchLogic(emit);
+} = useSearchLogic();
 
 const selectedSongs = ref(new Set());
 

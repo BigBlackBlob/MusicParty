@@ -11,10 +11,30 @@ export default {
     by: '点歌人',
     cancel: '取消',
     confirm: '确认',
+    reset: '重置',
     back: '< 返回',
     or: '或',
-    error: '错误'
+    error: '错误',
+    done: '完成'
   },
+
+  layout: {
+    editLayout: '编辑布局',
+    columns: '列数',
+    reset: '恢复默认',
+    addModule: '添加模块',
+    noAvailableModules: '没有更多可用模块',
+    modules: {
+      userlist: '用户列表',
+      nowplaying: '正在播放',
+      lyrics: '歌词',
+      queue: '播放队列',
+      chat: '聊天',
+      playlists: '歌单',
+      audiofx: '音效'
+    }
+  },
+
   auth: {
     initializeTitle: '初始化系统',
     initializeDesc: '请先配置房间访问方式。',
@@ -51,6 +71,7 @@ export default {
     guest: '访客',
     member: '成员',
     mainSize: '主舞台缩放',
+    stageDensity: '主舞台密度',
     compact: '紧凑',
     standard: '标准',
     relaxed: '宽松',
@@ -224,6 +245,41 @@ export default {
     fetchPlaylistsFailed: '获取歌单失败',
     userSearchFailed: '搜索用户失败',
     fetchSongsFailed: '获取歌曲失败'
+  },
+  roomPlaylists: {
+    kicker: '房间共享',
+    title: '歌单',
+    playAll: '播放全部',
+    newPlaceholder: '新歌单名称',
+    externalPlaceholder: '外部歌单 ID',
+    empty: '暂无房间歌单。',
+    emptyTracks: '这个歌单还没有歌曲。',
+    rename: '重命名',
+    delete: '删除',
+    namePrompt: '歌单名称'
+  },
+  audioFx: {
+    kicker: '本地音频',
+    title: '音效 / EQ',
+    enabled: '已启用',
+    bypass: '旁路',
+    unavailable: '为保证原生播放稳定，音效暂未启用。',
+    experimentalGraph: '实验性 Web Audio 链路',
+    enableGraph: '启用链路',
+    disableGraph: '禁用并刷新回退',
+    diagnostics: '音频诊断：',
+    eq: '均衡器',
+    compressor: '压缩器',
+    threshold: '阈值',
+    ratio: '比例',
+    attack: '启动',
+    release: '释放',
+    presets: {
+      flat: '平直',
+      bass: '低频增强',
+      vocal: '人声清晰',
+      night: '夜间压缩'
+    }
   },
   userList: {
     me: '我',

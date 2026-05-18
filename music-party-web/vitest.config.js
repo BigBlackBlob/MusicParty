@@ -13,6 +13,11 @@ process.env.TMP = testTempDir;
 
 export default defineConfig({
   cacheDir: './.vite-test',
+  resolve: {
+    alias: {
+      '@': resolve(rootDir, 'src')
+    }
+  },
   test: {
     environment: 'happy-dom',
     globals: false

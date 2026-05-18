@@ -15,6 +15,8 @@ import org.thornex.musicparty.persistence.MigrationStateRepository;
 import org.thornex.musicparty.persistence.PlaybackStateRepository;
 import org.thornex.musicparty.persistence.QueueRepository;
 import org.thornex.musicparty.persistence.RoomRepository;
+import org.thornex.musicparty.persistence.RoomPlaylistRepository;
+import org.thornex.musicparty.persistence.InMemoryRoomPlaylistRepository;
 import org.thornex.musicparty.persistence.SubsonicSourceRepository;
 import org.thornex.musicparty.persistence.UserProfileRepository;
 
@@ -55,5 +57,10 @@ public class InMemoryPersistenceConfig {
     @Bean
     public SubsonicSourceRepository subsonicSourceRepository() {
         return new InMemorySubsonicSourceRepository();
+    }
+
+    @Bean
+    public RoomPlaylistRepository roomPlaylistRepository() {
+        return new InMemoryRoomPlaylistRepository();
     }
 }

@@ -183,6 +183,10 @@ public class MusicPlayerService {
         sessionForUser(sessionId).enqueueAlbum(request, sessionId);
     }
 
+    public void enqueueSavedPlaylist(List<Music> musics, String sessionId) {
+        sessionForUser(sessionId).enqueueSavedPlaylist(musics, sessionId);
+    }
+
     public void topSong(String queueId, String sessionId) {
         sessionForUser(sessionId).topSong(queueId, sessionId);
     }
@@ -466,6 +470,29 @@ public class MusicPlayerService {
                 persistQueueMutation(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.IMPORT_PLAYLIST, enqueuer.getPublicId(), String.valueOf(count), roomId), false);
                 if (playbackState.currentMusic() == null) playNextInQueue();
             });
+        }
+
+        public void enqueueSavedPlaylist(List<Music> musics, String sessionId) {
+            Optional<User> userOpt = userService.getUser(sessionId);
+            if (userOpt.isEmpty() || musics == null || musics.isEmpty()) return;
+            User enqueuer = userOpt.get();
+            long existingUserCount = queueManager.getQueueSnapshot().stream()
+                    .filter(i -> i.enqueuedBy().publicId().equals(enqueuer.getPublicId()))
+                    .count();
+            int remaining = Math.max(0, appProperties.getQueue().getMaxUserSongs() - (int) existingUserCount);
+            int limit = Math.min(remaining, appProperties.getPlayer().getMaxPlaylistImportSize());
+            if (limit <= 0) return;
+
+            int count = 0;
+            UserSummary summary = new UserSummary(enqueuer.getPublicId(), enqueuer.getName(), enqueuer.isGuest());
+            for (Music music : musics.stream().limit(limit).toList()) {
+                QueueItemStatus status = "bilibili".equals(music.platform()) ? QueueItemStatus.PENDING : QueueItemStatus.READY;
+                if (queueManager.add(music, summary, status) != null) count++;
+            }
+            if (count == 0) return;
+            playbackState.touchHotActivity();
+            persistQueueMutation(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.IMPORT_PLAYLIST, enqueuer.getPublicId(), String.valueOf(count), roomId), false);
+            if (playbackState.currentMusic() == null) playNextInQueue();
         }
 
         public synchronized void topSong(String queueId, String sessionId) {

@@ -1,6 +1,7 @@
 package org.thornex.musicparty.config;
 
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
@@ -24,5 +25,16 @@ public class LocalResourceConfig implements WebMvcConfigurer {
         // file:cached_media/
         registry.addResourceHandler("/media/**")
                 .addResourceLocations(dir.toURI().toString());
+    }
+
+    @Override
+    public void addCorsMappings(CorsRegistry registry) {
+        // 让 <audio crossorigin="anonymous"> 能拿到 ACAO 响应头，
+        // 否则 createMediaElementSource 会产生静音采样。
+        registry.addMapping("/media/**")
+                .allowedOriginPatterns("*")
+                .allowedMethods("GET", "HEAD")
+                .exposedHeaders("Content-Length", "Content-Range", "Accept-Ranges")
+                .allowCredentials(false);
     }
 }

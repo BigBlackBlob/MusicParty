@@ -1,8 +1,8 @@
 package org.thornex.musicparty.service;
 
-import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.thornex.musicparty.dto.ChatMessage;
 import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.dto.MusicQueueItem;
@@ -11,18 +11,37 @@ import org.thornex.musicparty.persistence.PersistedPlaybackState;
 import org.thornex.musicparty.persistence.PersistedHistoryEntry;
 import org.thornex.musicparty.persistence.PlaybackStateRepository;
 import org.thornex.musicparty.persistence.QueueRepository;
+import org.thornex.musicparty.persistence.RoomPlaylistRepository;
+import org.thornex.musicparty.persistence.InMemoryRoomPlaylistRepository;
 
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 @Service
-@RequiredArgsConstructor
 public class RoomStatePersistenceService {
 
     private final QueueRepository queueRepository;
     private final ChatRepository chatRepository;
     private final PlaybackStateRepository playbackStateRepository;
+    private final RoomPlaylistRepository roomPlaylistRepository;
+
+    public RoomStatePersistenceService(QueueRepository queueRepository,
+                                       ChatRepository chatRepository,
+                                       PlaybackStateRepository playbackStateRepository) {
+        this(queueRepository, chatRepository, playbackStateRepository, new InMemoryRoomPlaylistRepository());
+    }
+
+    @Autowired
+    public RoomStatePersistenceService(QueueRepository queueRepository,
+                                       ChatRepository chatRepository,
+                                       PlaybackStateRepository playbackStateRepository,
+                                       RoomPlaylistRepository roomPlaylistRepository) {
+        this.queueRepository = queueRepository;
+        this.chatRepository = chatRepository;
+        this.playbackStateRepository = playbackStateRepository;
+        this.roomPlaylistRepository = roomPlaylistRepository;
+    }
 
     public void persistQueueSnapshot(String roomId, List<MusicQueueItem> queueItems) {
         queueRepository.replaceQueue(roomId, queueItems);
@@ -73,6 +92,7 @@ public class RoomStatePersistenceService {
         queueRepository.deleteRoomData(roomId);
         chatRepository.deleteRoomHistory(roomId);
         playbackStateRepository.delete(roomId);
+        roomPlaylistRepository.deleteRoomData(roomId);
     }
 
     public List<MusicQueueItem> loadQueue(String roomId) {

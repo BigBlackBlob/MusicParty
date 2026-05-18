@@ -2,6 +2,7 @@ import { usePlayerStore } from '../stores/player';
 import { useUserStore } from '../stores/user';
 import { useChatStore } from '../stores/chat';
 import { useRoomStore } from '../stores/room';
+import { useRoomPlaylistsStore } from '../stores/roomPlaylists';
 import { useToast } from '../composables/useToast';
 import {WS_DEST, roomTopic} from "../constants/api.js";
 
@@ -47,6 +48,11 @@ function handleGameEvent(event) {
     if (event.action === 'RENAME_FAILED' || (event.type === 'ERROR' && event.message && (event.message.includes('taken') || event.message.includes('占用')))) {
         error(event.message || '该名称已被占用，请更换。');
         userStore.showNameModal = true;
+        return;
+    }
+
+    if (event.payload === 'room-playlists:update') {
+        useRoomPlaylistsStore().loadPlaylists();
         return;
     }
 
