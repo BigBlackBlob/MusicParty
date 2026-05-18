@@ -59,7 +59,7 @@
             {{ song.platform }}
           </template>
           <template #suffix>
-            <button @click="player.removeLikedSong(song.key)" class="text-error hover:text-red-400" :title="t('queue.remove')">
+            <button @click="player.removeLikedSongAndSync(song.key)" class="text-error hover:text-red-400" :title="t('queue.remove')">
               <span class="material-symbols-outlined text-[18px]">delete</span>
             </button>
           </template>

@@ -34,9 +34,29 @@ public class InMemoryUserPlaylistRepository implements UserPlaylistRepository {
     }
 
     @Override
+    public synchronized Optional<UserPlaylist> findSystemPlaylist(String ownerPublicId, String systemKey) {
+        return playlists.values().stream()
+                .filter(playlist -> playlist.ownerPublicId.equals(ownerPublicId))
+                .filter(playlist -> java.util.Objects.equals(playlist.systemKey, systemKey))
+                .findFirst()
+                .map(this::toDto);
+    }
+
+    @Override
     public synchronized UserPlaylist createPlaylist(String ownerPublicId, String name) {
         long now = System.currentTimeMillis();
-        MutablePlaylist playlist = new MutablePlaylist(UUID.randomUUID().toString(), ownerPublicId, name, now, now);
+        MutablePlaylist playlist = new MutablePlaylist(UUID.randomUUID().toString(), ownerPublicId, name, null, now, now);
+        playlists.put(playlist.id, playlist);
+        tracks.put(playlist.id, new ArrayList<>());
+        return toDto(playlist);
+    }
+
+    @Override
+    public synchronized UserPlaylist createSystemPlaylist(String ownerPublicId, String name, String systemKey) {
+        Optional<UserPlaylist> existing = findSystemPlaylist(ownerPublicId, systemKey);
+        if (existing.isPresent()) return existing.get();
+        long now = System.currentTimeMillis();
+        MutablePlaylist playlist = new MutablePlaylist(UUID.randomUUID().toString(), ownerPublicId, name, systemKey, now, now);
         playlists.put(playlist.id, playlist);
         tracks.put(playlist.id, new ArrayList<>());
         return toDto(playlist);
@@ -97,6 +117,17 @@ public class InMemoryUserPlaylistRepository implements UserPlaylistRepository {
     }
 
     @Override
+    public synchronized boolean deleteTrackByMusicKey(String ownerPublicId, String playlistId, String musicKey) {
+        if (findPlaylist(ownerPublicId, playlistId).isEmpty()) return false;
+        List<UserPlaylistTrack> list = new ArrayList<>(tracks.getOrDefault(playlistId, List.of()));
+        boolean removed = list.removeIf(track -> musicKey(track.music()).equals(musicKey));
+        if (!removed) return false;
+        tracks.put(playlistId, rewriteOrder(list));
+        touch(playlistId);
+        return true;
+    }
+
+    @Override
     public synchronized void reorderTracks(String ownerPublicId, String playlistId, List<String> orderedTrackIds) {
         if (findPlaylist(ownerPublicId, playlistId).isEmpty() || orderedTrackIds == null) return;
         Map<String, UserPlaylistTrack> byId = new LinkedHashMap<>();
@@ -121,7 +152,7 @@ public class InMemoryUserPlaylistRepository implements UserPlaylistRepository {
     }
 
     private UserPlaylist toDto(MutablePlaylist playlist) {
-        return new UserPlaylist(playlist.id, playlist.ownerPublicId, playlist.name,
+        return new UserPlaylist(playlist.id, playlist.ownerPublicId, playlist.name, playlist.systemKey,
                 tracks.getOrDefault(playlist.id, List.of()).size(), playlist.createdAt, playlist.updatedAt);
     }
 
@@ -137,14 +168,16 @@ public class InMemoryUserPlaylistRepository implements UserPlaylistRepository {
     private static class MutablePlaylist {
         private final String id;
         private final String ownerPublicId;
+        private final String systemKey;
         private String name;
         private final long createdAt;
         private long updatedAt;
 
-        private MutablePlaylist(String id, String ownerPublicId, String name, long createdAt, long updatedAt) {
+        private MutablePlaylist(String id, String ownerPublicId, String name, String systemKey, long createdAt, long updatedAt) {
             this.id = id;
             this.ownerPublicId = ownerPublicId;
             this.name = name;
+            this.systemKey = systemKey;
             this.createdAt = createdAt;
             this.updatedAt = updatedAt;
         }

@@ -55,13 +55,4 @@ export const MODULE_MANIFEST = {
     maxInstances: 1,
     removable: true,
   },
-  audiofx: {
-    id: 'audiofx',
-    label: { en: 'Audio FX', zh: '音效' },
-    icon: 'equalizer',
-    component: defineAsyncComponent(() => import('@/components/modules/AudioFxModule.vue')),
-    minWidthPx: 300,
-    maxInstances: 1,
-    removable: true,
-  },
 }

@@ -10,11 +10,14 @@ import java.util.Optional;
 public interface UserPlaylistRepository {
     List<UserPlaylist> listPlaylists(String ownerPublicId);
     Optional<UserPlaylist> findPlaylist(String ownerPublicId, String playlistId);
+    Optional<UserPlaylist> findSystemPlaylist(String ownerPublicId, String systemKey);
     UserPlaylist createPlaylist(String ownerPublicId, String name);
+    UserPlaylist createSystemPlaylist(String ownerPublicId, String name, String systemKey);
     Optional<UserPlaylist> renamePlaylist(String ownerPublicId, String playlistId, String name);
     boolean deletePlaylist(String ownerPublicId, String playlistId);
     List<UserPlaylistTrack> listTracks(String ownerPublicId, String playlistId, int offset, int limit);
     Optional<UserPlaylistTrack> addTrackIfAbsent(String ownerPublicId, String playlistId, Music music);
     boolean deleteTrack(String ownerPublicId, String playlistId, String trackId);
+    boolean deleteTrackByMusicKey(String ownerPublicId, String playlistId, String musicKey);
     void reorderTracks(String ownerPublicId, String playlistId, List<String> orderedTrackIds);
 }

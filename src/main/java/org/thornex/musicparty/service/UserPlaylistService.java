@@ -25,11 +25,14 @@ import java.util.stream.Collectors;
 
 @Service
 public class UserPlaylistService {
+    public static final String LIKED_SONGS_SYSTEM_KEY = "liked-songs";
+    private static final String LIKED_SONGS_NAME = "喜欢的歌曲";
     private final UserPlaylistRepository repository;
     private final UserProfileRepository userProfileRepository;
     private final UserService userService;
     private final MusicPlayerService musicPlayerService;
     private final AppProperties appProperties;
+    private final PlaylistExportService playlistExportService;
     private final Map<String, IMusicApiService> apiServiceMap;
 
     public UserPlaylistService(UserPlaylistRepository repository,
@@ -37,17 +40,21 @@ public class UserPlaylistService {
                                UserService userService,
                                MusicPlayerService musicPlayerService,
                                AppProperties appProperties,
+                               PlaylistExportService playlistExportService,
                                List<IMusicApiService> apiServices) {
         this.repository = repository;
         this.userProfileRepository = userProfileRepository;
         this.userService = userService;
         this.musicPlayerService = musicPlayerService;
         this.appProperties = appProperties;
+        this.playlistExportService = playlistExportService;
         this.apiServiceMap = apiServices.stream().collect(Collectors.toMap(IMusicApiService::getPlatformName, Function.identity()));
     }
 
     public List<UserPlaylist> listPlaylists(String sessionToken) {
-        return repository.listPlaylists(requireNamedPublicId(sessionToken));
+        String owner = requireNamedPublicId(sessionToken);
+        ensureLikedPlaylist(owner);
+        return repository.listPlaylists(owner);
     }
 
     @Transactional
@@ -58,6 +65,7 @@ public class UserPlaylistService {
     @Transactional
     public UserPlaylist renamePlaylist(String sessionToken, String playlistId, String name) {
         String owner = requireNamedPublicId(sessionToken);
+        assertMutablePlaylist(owner, playlistId);
         return repository.renamePlaylist(owner, playlistId, sanitizeName(name))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
     }
@@ -65,6 +73,7 @@ public class UserPlaylistService {
     @Transactional
     public void deletePlaylist(String sessionToken, String playlistId) {
         String owner = requireNamedPublicId(sessionToken);
+        assertMutablePlaylist(owner, playlistId);
         if (!repository.deletePlaylist(owner, playlistId)) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
     }
 
@@ -89,6 +98,30 @@ public class UserPlaylistService {
     }
 
     @Transactional
+    public List<UserPlaylistTrack> listLikedSongs(String sessionToken) {
+        String owner = requireNamedPublicId(sessionToken);
+        UserPlaylist playlist = ensureLikedPlaylist(owner);
+        return repository.listTracks(owner, playlist.id(), 0, 500);
+    }
+
+    @Transactional
+    public PlaylistWriteResult addLikedSong(String sessionToken, String platform, String musicId, Music music) {
+        String owner = requireNamedPublicId(sessionToken);
+        Music normalized = normalizeLikedMusic(platform, musicId, music);
+        UserPlaylist playlist = ensureLikedPlaylist(owner);
+        return repository.addTrackIfAbsent(owner, playlist.id(), normalized)
+                .map(track -> new PlaylistWriteResult(1, 0, List.of(track)))
+                .orElseGet(() -> new PlaylistWriteResult(0, 1, List.of()));
+    }
+
+    @Transactional
+    public void deleteLikedSong(String sessionToken, String platform, String musicId) {
+        String owner = requireNamedPublicId(sessionToken);
+        UserPlaylist playlist = ensureLikedPlaylist(owner);
+        repository.deleteTrackByMusicKey(owner, playlist.id(), musicKey(platform, musicId));
+    }
+
+    @Transactional
     public void deleteTrack(String sessionToken, String playlistId, String trackId) {
         String owner = requireNamedPublicId(sessionToken);
         if (!repository.deleteTrack(owner, playlistId, trackId)) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
@@ -101,15 +134,27 @@ public class UserPlaylistService {
         repository.reorderTracks(owner, playlistId, trackIds == null ? List.of() : trackIds);
     }
 
-    public Mono<PlaylistWriteResult> importNetease(String sessionToken, String playlistId, String externalPlaylistId) {
+    public Mono<PlaylistWriteResult> importPlaylist(String sessionToken, String playlistId, String platform, String externalPlaylistId) {
         String owner = requireNamedPublicId(sessionToken);
         if (repository.findPlaylist(owner, playlistId).isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         if (!StringUtils.hasText(externalPlaylistId)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Playlist id is required");
-        IMusicApiService service = apiServiceMap.get("netease");
+        if (!StringUtils.hasText(platform)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Platform is required");
+        IMusicApiService service = apiServiceMap.get(platform);
         if (service == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Platform not supported");
         int limit = Math.max(1, appProperties.getPlayer().getMaxPlaylistImportSize());
         return service.getPlaylistMusics(externalPlaylistId, 0, limit)
                 .map(musics -> addTracks(sessionToken, playlistId, musics.stream().limit(limit).toList()));
+    }
+
+    public Mono<PlaylistWriteResult> importNetease(String sessionToken, String playlistId, String externalPlaylistId) {
+        return importPlaylist(sessionToken, playlistId, "netease", externalPlaylistId);
+    }
+
+    public String exportPlaylist(String sessionToken, String playlistId, String format) {
+        String owner = requireNamedPublicId(sessionToken);
+        if (repository.findPlaylist(owner, playlistId).isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        List<Music> musics = repository.listTracks(owner, playlistId, 0, 500).stream().map(UserPlaylistTrack::music).toList();
+        return playlistExportService.format(musics, format);
     }
 
     public void enqueue(String sessionToken, String playlistId) {
@@ -141,6 +186,32 @@ public class UserPlaylistService {
         if (value.isEmpty()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Playlist name is required");
         return value.length() > 80 ? value.substring(0, 80) : value;
     }
+
+    private UserPlaylist ensureLikedPlaylist(String owner) {
+        return repository.findSystemPlaylist(owner, LIKED_SONGS_SYSTEM_KEY)
+                .orElseGet(() -> repository.createSystemPlaylist(owner, LIKED_SONGS_NAME, LIKED_SONGS_SYSTEM_KEY));
+    }
+
+    private void assertMutablePlaylist(String owner, String playlistId) {
+        UserPlaylist playlist = repository.findPlaylist(owner, playlistId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        if (StringUtils.hasText(playlist.systemKey())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "System playlist cannot be modified");
+        }
+    }
+
+    private Music normalizeLikedMusic(String platform, String musicId, Music music) {
+        if (!StringUtils.hasText(platform) || !StringUtils.hasText(musicId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Music key is required");
+        }
+        if (music == null) return new Music(musicId, musicId, List.of(), 0, platform, "");
+        return new Music(musicId, music.name(), music.artists(), music.duration(), platform, music.coverUrl());
+    }
+
+    private String musicKey(String platform, String musicId) {
+        return String.valueOf(platform) + ":" + String.valueOf(musicId);
+    }
+
 
     private String hashSessionToken(String sessionToken) {
         try {

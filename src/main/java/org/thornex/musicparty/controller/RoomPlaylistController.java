@@ -1,6 +1,7 @@
 package org.thornex.musicparty.controller;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.thornex.musicparty.dto.RoomPlaylist;
 import org.thornex.musicparty.dto.RoomPlaylistRequests.AddTrackRequest;
@@ -69,5 +70,12 @@ public class RoomPlaylistController {
                                                         @RequestBody ImportPlaylistRequest request,
                                                         @RequestParam(required = false) String token) {
         return roomPlaylistService.importPlaylist(roomId, playlistId, request.platform(), request.playlistId(), token);
+    }
+
+    @GetMapping(value = "/{playlistId}/export", produces = MediaType.TEXT_PLAIN_VALUE)
+    public String export(@PathVariable String roomId,
+                         @PathVariable String playlistId,
+                         @RequestParam(defaultValue = "txt") String format) {
+        return roomPlaylistService.exportPlaylist(roomId, playlistId, format);
     }
 }

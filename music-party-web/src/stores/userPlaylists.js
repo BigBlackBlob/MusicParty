@@ -13,6 +13,7 @@ export const useUserPlaylistsStore = defineStore('userPlaylists', () => {
   const userStore = useUserStore();
   const selectedPlaylist = computed(() => playlists.value.find(item => item.id === selectedPlaylistId.value) || null);
   const selectedTracks = computed(() => tracksByPlaylist.value[selectedPlaylistId.value] || []);
+  const likedPlaylist = computed(() => playlists.value.find(item => item.systemKey === 'liked-songs') || null);
 
   const requireNamedUser = () => {
     if (userStore.isGuest) {
@@ -87,10 +88,26 @@ export const useUserPlaylistsStore = defineStore('userPlaylists', () => {
   };
 
   const importNetease = async (playlistId, externalPlaylistId) => {
-    const result = await personalPlaylistsApi.importNetease(userStore.sessionToken, playlistId, externalPlaylistId);
+    const result = await importPlaylist(playlistId, 'netease', externalPlaylistId);
+    return result;
+  };
+
+  const importPlaylist = async (playlistId, platform, externalPlaylistId) => {
+    const result = await personalPlaylistsApi.importPlaylist(userStore.sessionToken, playlistId, platform, externalPlaylistId);
     await loadPlaylists();
     await loadTracks(playlistId);
     return result;
+  };
+
+  const removeTrack = async (playlistId, trackId) => {
+    await personalPlaylistsApi.removeTrack(userStore.sessionToken, playlistId, trackId);
+    await loadPlaylists();
+    await loadTracks(playlistId);
+  };
+
+  const exportPlaylist = async (playlistId, format = 'txt') => {
+    if (!playlistId || !requireNamedUser()) return '';
+    return personalPlaylistsApi.exportPlaylist(userStore.sessionToken, playlistId, format);
   };
 
   const enqueue = async (playlistId = selectedPlaylistId.value) => {
@@ -105,6 +122,7 @@ export const useUserPlaylistsStore = defineStore('userPlaylists', () => {
     selectedPlaylistId,
     selectedPlaylist,
     selectedTracks,
+    likedPlaylist,
     loading,
     error,
     requireNamedUser,
@@ -117,6 +135,9 @@ export const useUserPlaylistsStore = defineStore('userPlaylists', () => {
     addTracks,
     addTracksToSelected,
     importNetease,
+    importPlaylist,
+    removeTrack,
+    exportPlaylist,
     enqueue
   };
 });

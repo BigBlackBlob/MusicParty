@@ -78,6 +78,11 @@ export const useRoomPlaylistsStore = defineStore('roomPlaylists', () => {
     return socketService.send(WS_DEST.ENQUEUE_ROOM_PLAYLIST, { playlistId });
   };
 
+  const exportPlaylist = async (format = 'txt', playlistId = selectedPlaylistId.value) => {
+    if (!playlistId) return '';
+    return playlistsApi.exportPlaylist(roomId.value, playlistId, format);
+  };
+
   return {
     playlists,
     tracksByPlaylist,
@@ -94,6 +99,7 @@ export const useRoomPlaylistsStore = defineStore('roomPlaylists', () => {
     deleteTrack,
     reorderTracks,
     importExternal,
-    playPlaylist
+    playPlaylist,
+    exportPlaylist
   };
 });

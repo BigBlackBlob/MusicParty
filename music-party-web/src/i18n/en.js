@@ -30,8 +30,7 @@ export default {
       lyrics: 'Lyrics',
       queue: 'Queue',
       chat: 'Chat',
-      playlists: 'Playlists',
-      audiofx: 'Audio FX'
+      playlists: 'Playlists'
     }
   },
 
@@ -197,6 +196,7 @@ export default {
     exportLiked: 'Export liked songs'
   },
   personalPlaylists: {
+    kicker: 'Personal',
     defaultName: 'My Playlist',
     newPlaylist: 'New playlist',
     saveAll: 'Save to personal playlist',
@@ -257,6 +257,8 @@ export default {
   roomPlaylists: {
     kicker: 'Room shared',
     title: 'Playlists',
+    roomScope: 'Room',
+    personalScope: 'Personal',
     playAll: 'Play all',
     newPlaceholder: 'New playlist name',
     externalPlaceholder: 'External playlist ID',
@@ -265,29 +267,6 @@ export default {
     rename: 'Rename',
     delete: 'Delete',
     namePrompt: 'Playlist name'
-  },
-  audioFx: {
-    kicker: 'Local audio',
-    title: 'FX / EQ',
-    enabled: 'Enabled',
-    bypass: 'Bypass',
-    unavailable: 'Audio FX is paused to keep native playback stable.',
-    experimentalGraph: 'Experimental Web Audio graph',
-    enableGraph: 'Enable graph',
-    disableGraph: 'Disable and reload fallback',
-    diagnostics: 'Audio diagnostics:',
-    eq: 'EQ',
-    compressor: 'Compressor',
-    threshold: 'Threshold',
-    ratio: 'Ratio',
-    attack: 'Attack',
-    release: 'Release',
-    presets: {
-      flat: 'Flat',
-      bass: 'Bass Lift',
-      vocal: 'Vocal Clear',
-      night: 'Night Compress'
-    }
   },
   userList: {
     me: 'Me',
