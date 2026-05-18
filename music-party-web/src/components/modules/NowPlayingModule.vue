@@ -1,9 +1,8 @@
 <template>
-  <!-- Floating Album Art & Now Playing Controls -->
-  <section class="flex h-full min-h-0 min-w-0 flex-col items-center justify-center overflow-hidden gap-5">
-    <div class="relative flex min-h-0 w-full flex-1 items-center justify-center group">
+  <div class="flex h-full min-h-0 min-w-0 flex-col items-center justify-center overflow-hidden gap-5">
+    <div class="now-playing-cover-stage relative flex min-h-0 w-full flex-1 items-center justify-center group">
       <div
-        class="relative aspect-square h-full max-w-full shrink-0 overflow-hidden rounded-xl bg-surface-raised album-shadow transition-transform duration-700 hover:scale-[1.02]"
+        class="now-playing-cover relative aspect-square shrink overflow-hidden rounded-xl bg-surface-raised album-shadow transition-transform duration-700 hover:scale-[1.02]"
         :class="player.isPaused ? 'saturate-[0.86]' : 'saturate-100'"
         @click="handleCoverClick"
       >
@@ -127,9 +126,9 @@
             </div>
             <button
               class="flex items-center justify-center text-primary transition-colors hover:text-text-primary"
-              :title="queueToggleTitle"
-              :aria-label="queueToggleTitle"
-              @click="emit('toggle-queue')"
+              :class="{ 'opacity-50': !isQueuePlaced }"
+              :title="t('nav.queue')"
+              @click="toggleQueueModule"
             >
               <span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">queue_music</span>
             </button>
@@ -137,51 +136,23 @@
         </div>
       </div>
     </div>
-  </section>
-
-  <!-- Scrolling Lyrics Column -->
-  <section class="flex h-full min-h-0 min-w-0 flex-col justify-center overflow-hidden">
-    <AppleLyricsPanel
-      class="h-full w-full"
-      :class="isQueueVisible ? 'pr-4' : 'pr-8'"
-      :lyrics="player.lyricDetail.lyric || player.lyricText"
-      :translated-lyrics="player.lyricDetail.translatedLyric"
-      :show-translation="uiStore.showLyricTranslation"
-      :current-time-ms="progressMs"
-      :is-playing="!player.isPaused"
-      :is-dark-mode="uiStore.isDarkMode"
-      :bg-color="ambientAccent"
-      :lyrics-loaded="!!currentMusic"
-      @toggle-translation="uiStore.toggleLyricTranslation"
-    />
-  </section>
+  </div>
 </template>
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import CoverImage from './CoverImage.vue';
-import AppleLyricsPanel from './AppleLyricsPanel.vue';
-import { useNowPlayingViewModel } from '../composables/useNowPlayingViewModel';
-import { formatDuration } from '../utils/format';
+import CoverImage from '../CoverImage.vue';
+import { useNowPlayingViewModel } from '../../composables/useNowPlayingViewModel';
+import { useLayoutStore } from '../../stores/layout';
+import { formatDuration } from '../../utils/format';
 
-const props = defineProps({
-  isQueueVisible: {
-    type: Boolean,
-    default: true
-  },
-  isQueueAutoSuppressed: {
-    type: Boolean,
-    default: false
-  }
-});
-const emit = defineEmits(['toggle-queue']);
 const { t } = useI18n();
+const layoutStore = useLayoutStore();
 
 const {
   player,
   ui: uiStore,
-  music: currentMusic,
   coverUrl: currentCover,
   trackTitle,
   artistLine,
@@ -193,18 +164,28 @@ const {
   canSeek,
   isLiked,
   activeUserCount,
-  ambientAccent,
   seekToRatio,
   toggleLike
 } = useNowPlayingViewModel({ artistSeparator: ' • ' });
+
 const titleViewportRef = ref(null);
 const titleTrackRef = ref(null);
 const shouldScrollTitle = ref(false);
-const queueToggleTitle = computed(() => (
-  props.isQueueAutoSuppressed
-    ? `${t('nav.queue')} (${t('settings.queueAutoHidden')})`
-    : t('nav.queue')
-));
+
+const isQueuePlaced = computed(() => layoutStore.placedModuleIds.includes('queue'));
+
+const toggleQueueModule = () => {
+  if (isQueuePlaced.value) {
+    // Remove queue from wherever it is
+    layoutStore.layout.columns.forEach(col => {
+      layoutStore.removeModule('queue', col.id);
+    });
+  } else {
+    // Add to the last column by default
+    const lastCol = layoutStore.sortedColumns[layoutStore.sortedColumns.length - 1];
+    layoutStore.addModule('queue', lastCol.id);
+  }
+};
 
 const handleSeek = (event) => {
   if (!canSeek.value) return;
@@ -255,12 +236,18 @@ watch(trackTitle, async () => {
   accent-color: #ede1ff;
 }
 
-section {
-  --player-panel-height: 256px;
-}
-
 .player-console {
   min-height: 256px;
+}
+
+.now-playing-cover {
+  width: min(100cqw, 100cqh);
+  max-height: 100%;
+  min-width: 0;
+}
+
+.now-playing-cover-stage {
+  container-type: size;
 }
 
 .track-title-marquee {

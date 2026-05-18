@@ -8,7 +8,7 @@ import { usePlayerStore } from '../stores/player.js';
 import { useRoomStore } from '../stores/room.js';
 import { usePlatforms } from './usePlatforms.js';
 
-export function useSearchLogic(emit = () => {}) {
+export function useSearchLogic() {
     const { success, error } = useToast();
     const { t } = useI18n();
     const userStore = useUserStore();

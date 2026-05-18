@@ -9,6 +9,7 @@ import org.thornex.musicparty.event.PlayerStateEvent;
 import org.thornex.musicparty.event.QueueUpdateEvent;
 import org.thornex.musicparty.event.RoomDeletedEvent;
 import org.thornex.musicparty.event.RoomListUpdateEvent;
+import org.thornex.musicparty.event.RoomPlaylistUpdateEvent;
 import org.thornex.musicparty.event.SystemMessageEvent;
 import org.thornex.musicparty.service.AfterCommitExecutor;
 import org.thornex.musicparty.service.UserService;
@@ -84,6 +85,13 @@ public class WebSocketBroadcaster {
     @EventListener
     public void onRoomDeleted(RoomDeletedEvent event) {
         PlayerEvent playerEvent = new PlayerEvent("WARN", "ROOM_DELETED", "SYSTEM", "房间已被删除，已返回 Lounge", event.getRoomId());
+        afterCommitExecutor.run(() ->
+                messagingTemplate.convertAndSend("/topic/rooms/" + event.getRoomId() + "/player/events", playerEvent));
+    }
+
+    @EventListener
+    public void onRoomPlaylistsChanged(RoomPlaylistUpdateEvent event) {
+        PlayerEvent playerEvent = new PlayerEvent("INFO", "ROOM_PLAYLISTS_UPDATE", "SYSTEM", "", "room-playlists:update");
         afterCommitExecutor.run(() ->
                 messagingTemplate.convertAndSend("/topic/rooms/" + event.getRoomId() + "/player/events", playerEvent));
     }

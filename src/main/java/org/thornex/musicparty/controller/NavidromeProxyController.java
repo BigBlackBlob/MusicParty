@@ -95,6 +95,8 @@ public class NavidromeProxyController {
             if (!headers.containsKey(HttpHeaders.CONTENT_TYPE)) {
                 headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
             }
+            headers.set(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+            headers.set(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, "Content-Length, Content-Range, Accept-Ranges");
             log.debug("Navidrome stream proxy response: songId={}, status={}, contentType={}, contentLength={}",
                     songId,
                     statusCode,

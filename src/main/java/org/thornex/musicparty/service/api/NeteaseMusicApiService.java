@@ -229,25 +229,30 @@ public class NeteaseMusicApiService implements IMusicApiService {
     @Override
     public Mono<PlayableMusic> getPlayableMusic(String musicId) {
         ensureConfigured();
-        Mono<Music> musicDetailsMono = getMusicDetails(musicId);
-        Mono<String> musicUrlMono = webClient.get()
+        return getMusicDetails(musicId)
+                .map(music -> new PlayableMusic(
+                        music.id(),
+                        music.name(),
+                        music.artists(),
+                        music.duration(),
+                        music.platform(),
+                        "/api/netease/stream/" + music.id(),
+                        music.coverUrl(),
+                        false
+                ));
+    }
+
+    /**
+     * 解析网易云 CDN 直链。每次播放时由代理控制器实时调用，避免缓存过期。
+     */
+    public Mono<String> resolveCdnUrl(String musicId) {
+        ensureConfigured();
+        return webClient.get()
                 .uri(baseUrl + "/song/url/v1?id={musicId}&level={quality}&cookie={cookie}", musicId, quality, getCookie())
                 .retrieve()
                 .onStatus(HttpStatusCode::isError, response -> handleApiError("get song URL", response))
                 .bodyToMono(JsonNode.class)
-                .map(jsonNode -> jsonNode.path("data").get(0).path("url").asText());
-
-        return Mono.zip(musicDetailsMono, musicUrlMono)
-                .map(tuple -> new PlayableMusic(
-                        tuple.getT1().id(),
-                        tuple.getT1().name(),
-                        tuple.getT1().artists(),
-                        tuple.getT1().duration(),
-                        tuple.getT1().platform(),
-                        upgradeToHttps(tuple.getT2()),
-                        tuple.getT1().coverUrl(),
-                        false
-                ));
+                .map(jsonNode -> upgradeToHttps(jsonNode.path("data").get(0).path("url").asText()));
     }
 
     private Mono<Music> getMusicDetails(String musicId) {

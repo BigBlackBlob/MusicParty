@@ -133,10 +133,20 @@
             <span class="material-symbols-outlined">{{ uiStore.isDarkMode ? 'light_mode' : 'dark_mode' }}</span>
           </button>
 
+          <button
+            @click="layoutStore.enterEditMode"
+            class="flex h-10 w-10 items-center justify-center rounded-md transition-all hover:bg-[var(--surface-control-hover)] active:scale-95"
+            :class="layoutStore.isEditMode ? 'text-primary bg-primary/10' : 'text-text-secondary hover:text-text-primary'"
+            :title="t('layout.editLayout')"
+          >
+            <span class="material-symbols-outlined">grid_view</span>
+          </button>
+
           <div class="relative">
             <button @click="toggleSettings" class="flex h-10 w-10 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-[var(--surface-control-hover)] hover:text-text-primary" :title="t('settings.title')">
               <span class="material-symbols-outlined">settings</span>
             </button>
+
             <div
               v-if="isSettingsOpen"
               class="absolute right-0 top-12 w-[280px] rounded-lg border border-border-default bg-surface-overlay/95 p-3 text-sm shadow-lg backdrop-blur-xl"
@@ -165,13 +175,13 @@
               <!-- Scale Controls -->
               <div class="mt-2 border-t border-border-subtle pt-3">
                 <div class="mb-2 flex items-center justify-between px-2">
-                  <span class="text-text-secondary">{{ t('settings.mainSize') }}</span>
+                  <span class="text-text-secondary">{{ t('settings.stageDensity') }}</span>
                   <span class="text-xs text-text-primary">{{ Math.round(uiStore.mainStageScale * 100) }}%</span>
                 </div>
                 <div class="flex items-center gap-1 px-2 pb-2">
                   <button class="flex-1 rounded py-1 text-xs transition-colors" :class="isScaleActive(0.92) ? 'bg-primary text-on-primary' : 'bg-[var(--surface-control)] text-text-secondary hover:text-text-primary hover:bg-[var(--surface-control-hover)]'" @click="uiStore.setMainStageScale(0.92)">{{ t('settings.compact') }}</button>
                   <button class="flex-1 rounded py-1 text-xs transition-colors" :class="isScaleActive(1.00) ? 'bg-primary text-on-primary' : 'bg-[var(--surface-control)] text-text-secondary hover:text-text-primary hover:bg-[var(--surface-control-hover)]'" @click="uiStore.setMainStageScale(1.00)">{{ t('settings.standard') }}</button>
-                  <button class="flex-1 rounded py-1 text-xs transition-colors" :class="isScaleActive(1.12) ? 'bg-primary text-on-primary' : 'bg-[var(--surface-control)] text-text-secondary hover:text-text-primary hover:bg-[var(--surface-control-hover)]'" @click="uiStore.setMainStageScale(1.12)">{{ t('settings.large') }}</button>
+                  <button class="flex-1 rounded py-1 text-xs transition-colors" :class="isScaleActive(1.12) ? 'bg-primary text-on-primary' : 'bg-[var(--surface-control)] text-text-secondary hover:text-text-primary hover:bg-[var(--surface-control-hover)]'" @click="uiStore.setMainStageScale(1.12)">{{ t('settings.relaxed') }}</button>
                 </div>
                 <div class="px-2 pb-2">
                   <input
@@ -222,25 +232,25 @@
 
       <!-- Main Immersive Canvas -->
       <main class="relative z-20 flex w-full items-center justify-center px-5 pt-[var(--top-bar-height)]" style="height: var(--app-height);">
-        <!-- Center Stage: The Heart of the UI -->
         <div
-          class="grid w-full min-h-0 items-stretch gap-6 overflow-hidden transition-all duration-300"
-          :class="isQueueVisible ? 'desktop-stage-grid--queue' : 'desktop-stage-grid--lyrics'"
+          class="flex w-full min-h-0 items-stretch overflow-hidden transition-all duration-300"
           :style="{
             '--stage-scale': uiStore.mainStageScale,
             '--stage-height': 'calc(var(--app-height) / var(--global-zoom) - var(--top-bar-height) / var(--global-zoom) - 40px)',
             maxWidth: `min(calc(1520px * ${uiStore.mainStageScale}), calc(100vw / var(--global-zoom) - 40px))`,
             zoom: uiStore.globalZoomLevel,
-            '--global-zoom': uiStore.globalZoomLevel
+            '--global-zoom': uiStore.globalZoomLevel,
+            height: 'min(var(--stage-height), 708px)'
           }"
           id="main-content-grid"
         >
-          <slot :is-queue-visible="isQueueVisible" />
+          <slot />
         </div>
       </main>
     </template>
   </div>
 </template>
+
 
 <script setup>
 import { computed, onMounted, ref } from 'vue';
@@ -252,19 +262,16 @@ import { useUserStore } from '../../stores/user';
 import { useUiStore } from '../../stores/ui';
 import { usePlayerStore } from '../../stores/player';
 import { useRoomStore } from '../../stores/room';
+import { useLayoutStore } from '../../stores/layout';
 
-defineProps({
-  isQueueVisible: {
-    type: Boolean,
-    default: true
-  }
-});
 const emit = defineEmits(['search', 'toggle-mobile-chat']);
 const { t } = useI18n();
 const userStore = useUserStore();
 const uiStore = useUiStore();
 const playerStore = usePlayerStore();
 const roomStore = useRoomStore();
+const layoutStore = useLayoutStore();
+
 
 const isSettingsOpen = ref(false);
 const isUserListOpen = ref(false);
@@ -388,29 +395,6 @@ const getInitials = (name = '') => {
 .desktop-cover-fade-leave-to {
   opacity: 0;
   transform: scale(1.02);
-}
-
-.desktop-stage-grid--queue,
-.desktop-stage-grid--lyrics {
-  --panel-width: 420px;
-  --left-panel-height: calc(var(--panel-width) + 32px + 256px);
-  height: min(var(--stage-height), var(--left-panel-height));
-}
-
-.desktop-stage-grid--queue {
-  grid-template-columns: minmax(0, var(--panel-width)) minmax(min(100%, 360px), 1fr) minmax(0, var(--panel-width));
-}
-
-.desktop-stage-grid--lyrics {
-  grid-template-columns: minmax(0, var(--panel-width)) minmax(min(100%, 360px), 1fr);
-}
-
-@media (max-width: 1180px) {
-  .desktop-stage-grid--queue,
-  .desktop-stage-grid--lyrics {
-    --panel-width: 360px;
-    gap: 18px;
-  }
 }
 </style>
 

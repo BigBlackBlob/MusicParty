@@ -11,10 +11,30 @@ export default {
     by: 'by',
     cancel: 'Cancel',
     confirm: 'Confirm',
+    reset: 'Reset',
     back: '< Back',
     or: 'OR',
-    error: 'Error'
+    error: 'Error',
+    done: 'Done'
   },
+
+  layout: {
+    editLayout: 'Edit Layout',
+    columns: 'Columns',
+    reset: 'Reset to Default',
+    addModule: 'Add Module',
+    noAvailableModules: 'No more available modules',
+    modules: {
+      userlist: 'Users',
+      nowplaying: 'Now Playing',
+      lyrics: 'Lyrics',
+      queue: 'Queue',
+      chat: 'Chat',
+      playlists: 'Playlists',
+      audiofx: 'Audio FX'
+    }
+  },
+
   auth: {
     initializeTitle: 'Initialize System',
     initializeDesc: 'Please configure room access.',
@@ -51,6 +71,7 @@ export default {
     guest: 'Guest',
     member: 'Member',
     mainSize: 'Main Size',
+    stageDensity: 'Stage Density',
     compact: 'Compact',
     standard: 'Standard',
     relaxed: 'Relaxed',
@@ -225,6 +246,41 @@ export default {
     fetchPlaylistsFailed: 'Fetch playlists failed',
     userSearchFailed: 'User search failed',
     fetchSongsFailed: 'Fetch songs failed'
+  },
+  roomPlaylists: {
+    kicker: 'Room shared',
+    title: 'Playlists',
+    playAll: 'Play all',
+    newPlaceholder: 'New playlist name',
+    externalPlaceholder: 'External playlist ID',
+    empty: 'No room playlists yet.',
+    emptyTracks: 'This playlist has no tracks.',
+    rename: 'Rename',
+    delete: 'Delete',
+    namePrompt: 'Playlist name'
+  },
+  audioFx: {
+    kicker: 'Local audio',
+    title: 'FX / EQ',
+    enabled: 'Enabled',
+    bypass: 'Bypass',
+    unavailable: 'Audio FX is paused to keep native playback stable.',
+    experimentalGraph: 'Experimental Web Audio graph',
+    enableGraph: 'Enable graph',
+    disableGraph: 'Disable and reload fallback',
+    diagnostics: 'Audio diagnostics:',
+    eq: 'EQ',
+    compressor: 'Compressor',
+    threshold: 'Threshold',
+    ratio: 'Ratio',
+    attack: 'Attack',
+    release: 'Release',
+    presets: {
+      flat: 'Flat',
+      bass: 'Bass Lift',
+      vocal: 'Vocal Clear',
+      night: 'Night Compress'
+    }
   },
   userList: {
     me: 'Me',

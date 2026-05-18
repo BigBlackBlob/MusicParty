@@ -12,6 +12,7 @@ export const WS_DEST = {
     PLAYER_LIKE: '/app/control/like',
     ENQUEUE: '/app/enqueue',
     ENQUEUE_PLAYLIST: '/app/enqueue/playlist',
+    ENQUEUE_ROOM_PLAYLIST: '/app/enqueue/room-playlist',
     ENQUEUE_ALBUM: '/app/enqueue/album',
     QUEUE_TOP: '/app/queue/top',
     QUEUE_REMOVE: '/app/queue/remove',
