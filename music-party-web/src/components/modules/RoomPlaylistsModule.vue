@@ -1,78 +1,63 @@
 <template>
-  <div class="room-playlists-module flex flex-col h-full overflow-hidden bg-surface-panel/30">
-    <!-- Header -->
-    <header class="flex items-center justify-between px-4 py-3 border-b border-border-subtle bg-surface-panel/50 shrink-0">
-      <div v-if="viewMode === 'index'" class="flex flex-col">
-        <span class="text-[10px] font-black uppercase tracking-[0.2em] text-text-muted leading-none mb-1">{{ scope === 'room' ? t('roomPlaylists.kicker') : t('personalPlaylists.kicker') }}</span>
-        <h2 class="text-sm font-bold uppercase tracking-widest text-text-primary">{{ t('roomPlaylists.title') }}</h2>
+  <div class="glass-panel flex h-full min-h-0 w-full flex-col overflow-hidden rounded-lg p-4">
+    <div class="mb-3 flex flex-shrink-0 items-center justify-between gap-3 px-1">
+      <div v-if="viewMode === 'index'" class="flex items-center rounded-md border border-border-subtle bg-[var(--surface-control)] p-1">
+        <button type="button" class="rounded px-3 py-1 font-section-label text-section-label uppercase tracking-widest transition-colors" :class="scope === 'room' ? 'bg-[var(--surface-control-active)] text-primary' : 'text-text-muted hover:text-text-primary'" @click="switchScope('room')">
+          {{ t('roomPlaylists.roomScope') }}
+        </button>
+        <button type="button" class="rounded px-3 py-1 font-section-label text-section-label uppercase tracking-widest transition-colors" :class="scope === 'personal' ? 'bg-[var(--surface-control-active)] text-primary' : 'text-text-muted hover:text-text-primary'" @click="switchScope('personal')">
+          {{ t('roomPlaylists.personalScope') }}
+        </button>
       </div>
-      
-      <div v-else class="flex items-center gap-3 overflow-hidden">
-        <button 
+
+      <div v-else class="flex min-w-0 items-center gap-2">
+        <button
           @click="goBack"
-          class="flex items-center justify-center w-8 h-8 rounded-full bg-surface-raised border border-border-default text-text-muted hover:text-text-primary hover:border-border-strong transition-all shrink-0"
+          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-[var(--surface-control-hover)] hover:text-text-primary"
+          :title="t('common.back')"
         >
           <span class="material-symbols-outlined text-[18px]">arrow_back</span>
         </button>
-        <div class="flex flex-col min-w-0">
-          <span class="text-[9px] font-black uppercase tracking-[0.15em] text-primary truncate leading-none mb-1">{{ t('roomPlaylists.title') }}</span>
-          <h2 class="text-sm font-bold text-text-primary truncate">{{ store.selectedPlaylist?.name || 'Loading...' }}</h2>
+        <div class="min-w-0">
+          <h2 class="truncate text-sm font-semibold text-text-primary">{{ store.selectedPlaylist?.name || 'Loading...' }}</h2>
+          <p class="font-micro text-micro text-text-muted uppercase">{{ store.selectedTracks.length }} {{ t('queue.tracks') }}</p>
         </div>
       </div>
 
-      <div class="flex items-center gap-2 shrink-0">
-        <button 
+      <div class="flex min-w-0 items-center gap-2">
+        <span v-if="viewMode === 'index'" class="font-micro text-micro text-text-muted uppercase">{{ store.playlists.length }} {{ t('roomPlaylists.title') }}</span>
+        <button
           v-if="viewMode === 'detail' && store.selectedTracks.length > 0"
           @click="playSelected"
-          class="flex items-center justify-center w-8 h-8 rounded-full bg-primary text-text-inverse shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all"
+          class="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-on-primary transition-colors hover:bg-[var(--accent-hover)]"
           :title="t('roomPlaylists.playAll')"
         >
-          <span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
+          <span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
         </button>
       </div>
-    </header>
+    </div>
 
-    <!-- Main Content Area -->
-    <div class="flex-1 overflow-hidden flex flex-col relative">
-      <Transition
-        enter-active-class="transition duration-200 ease-out"
-        enter-from-class="opacity-0 translate-x-4"
-        enter-to-class="opacity-100 translate-x-0"
-        leave-active-class="transition duration-150 ease-in"
-        leave-from-class="opacity-100 translate-x-0"
-        leave-to-class="opacity-0 -translate-x-4"
-      >
-        <!-- State 1: Playlist Index -->
-        <div v-if="viewMode === 'index'" class="absolute inset-0 flex flex-col p-4 space-y-4 overflow-y-auto scrollbar-none">
-          <div class="flex rounded-lg border border-border-subtle bg-surface-raised/40 p-1">
-            <button type="button" class="flex-1 rounded-md py-1.5 text-[10px] font-bold uppercase tracking-widest" :class="scope === 'room' ? 'bg-primary text-text-inverse' : 'text-text-muted'" @click="switchScope('room')">
-              {{ t('roomPlaylists.roomScope') }}
-            </button>
-            <button type="button" class="flex-1 rounded-md py-1.5 text-[10px] font-bold uppercase tracking-widest" :class="scope === 'personal' ? 'bg-primary text-text-inverse' : 'text-text-muted'" @click="switchScope('personal')">
-              {{ t('roomPlaylists.personalScope') }}
-            </button>
-          </div>
-          <!-- Create Playlist Form -->
-          <form v-if="scope === 'room' || !userPlaylistsStore.loading" @submit.prevent="create" class="flex gap-2">
-            <div class="relative flex-1 group">
-              <span class="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-[18px] text-text-disabled group-focus-within:text-primary transition-colors">playlist_add</span>
-              <input 
-                v-model.trim="newName" 
-                :placeholder="t('roomPlaylists.newPlaceholder')"
-                class="w-full pl-10 pr-4 py-2 bg-surface-raised/50 border border-border-default rounded-xl text-xs text-text-primary placeholder:text-text-disabled outline-none focus:border-primary/50 focus:bg-surface-raised transition-all"
-              >
-            </div>
-            <button 
-              type="submit" 
-              :disabled="!newName"
-              class="px-4 bg-primary text-text-inverse text-[10px] font-bold uppercase tracking-widest rounded-xl disabled:opacity-30 disabled:grayscale transition-all"
+    <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div v-if="viewMode === 'index'" class="flex min-h-0 flex-1 flex-col gap-3">
+        <form v-if="scope === 'room' || !userPlaylistsStore.loading" @submit.prevent="create" class="flex flex-shrink-0 gap-2">
+          <div class="relative flex-1">
+            <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-text-muted">playlist_add</span>
+            <input
+              v-model.trim="newName"
+              :placeholder="t('roomPlaylists.newPlaceholder')"
+              class="h-9 w-full rounded-md border border-border-subtle bg-[var(--surface-control)] pl-10 pr-3 text-xs text-text-primary outline-none placeholder:text-text-muted transition-colors focus:border-border-strong focus:bg-[var(--surface-control-active)]"
             >
-              {{ t('rooms.create') }}
-            </button>
-          </form>
+          </div>
+          <button
+            type="submit"
+            :disabled="!newName"
+            class="h-9 rounded-md bg-primary px-3 text-xs font-semibold text-on-primary transition-colors hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {{ t('rooms.create') }}
+          </button>
+        </form>
 
-          <!-- Playlist List -->
-          <div class="space-y-1">
+        <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
             <TrackListItem
               v-for="playlist in store.playlists"
               :key="playlist.id"
@@ -86,64 +71,36 @@
               </template>
             </TrackListItem>
 
-            <div v-if="!store.loading && store.playlists.length === 0" class="flex flex-col items-center justify-center py-12 text-center space-y-3 opacity-40">
-              <span class="material-symbols-outlined text-[48px]">playlist_add</span>
-              <p class="text-xs text-text-muted">{{ t('roomPlaylists.empty') }}</p>
+            <div v-if="!store.loading && store.playlists.length === 0" class="py-16 text-center">
+              <div class="text-sm font-bold text-text-primary">{{ t('roomPlaylists.empty') }}</div>
             </div>
-          </div>
         </div>
+      </div>
 
-        <!-- State 2: Playlist Detail -->
-        <div v-else class="absolute inset-0 flex flex-col overflow-hidden">
-          <!-- Import Section (Collapsible or compact) -->
-          <div class="px-4 py-3 border-b border-border-subtle bg-surface-panel/20">
-            <form @submit.prevent="importExternal" class="flex flex-col gap-3">
-              <div class="flex gap-2">
-                <select 
-                  v-model="importPlatform"
-                  class="bg-surface-raised border border-border-default rounded-lg px-2 text-[10px] font-bold uppercase tracking-wider text-text-secondary outline-none focus:border-primary/50 transition-all"
-                >
-                  <option value="netease">NetEase</option>
-                  <option value="bilibili">Bilibili</option>
-                </select>
-                <div class="relative flex-1 group">
-                  <input 
-                    v-model.trim="externalPlaylistId" 
-                    :placeholder="t('roomPlaylists.externalPlaceholder')"
-                    class="w-full px-3 py-1.5 bg-surface-raised/50 border border-border-default rounded-lg text-xs text-text-primary placeholder:text-text-disabled outline-none focus:border-primary/50 focus:bg-surface-raised transition-all"
-                  >
-                </div>
-                <button 
-                  type="submit"
-                  :disabled="!externalPlaylistId"
-                  class="px-3 py-1.5 bg-surface-raised border border-border-default rounded-lg text-[10px] font-bold uppercase tracking-wider text-text-primary hover:bg-primary hover:text-text-inverse hover:border-primary disabled:opacity-30 transition-all"
-                >
-                  {{ t('search.importPlaylist') }}
-                </button>
-              </div>
-            </form>
-            <div class="mt-2 flex justify-end">
-              <div class="inline-flex overflow-hidden rounded-md border border-border-default bg-surface-raised">
-                <select
-                  v-model="exportFormat"
-                  class="bg-transparent px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-text-secondary outline-none"
-                  :aria-label="t('common.export')"
-                >
-                  <option v-for="format in exportFormats" :key="format" :value="format">{{ format }}</option>
-                </select>
-                <button
-                  type="button"
-                  @click="exportSelected"
-                  class="border-l border-border-default px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-text-secondary transition-colors hover:bg-primary hover:text-text-inverse"
-                >
-                  {{ t('common.export') }}
-                </button>
-              </div>
-            </div>
-          </div>
+      <div v-else class="flex min-h-0 flex-1 flex-col gap-3">
+        <form @submit.prevent="importExternal" class="flex flex-shrink-0 gap-2 rounded-md border border-border-subtle bg-[var(--surface-control)] p-2">
+          <select
+            v-model="importPlatform"
+            class="h-8 rounded-md border border-border-subtle bg-[var(--surface-control)] px-2 font-micro text-micro uppercase text-text-secondary outline-none focus:border-border-strong"
+          >
+            <option value="netease">NetEase</option>
+            <option value="bilibili">Bilibili</option>
+          </select>
+          <input
+            v-model.trim="externalPlaylistId"
+            :placeholder="t('roomPlaylists.externalPlaceholder')"
+            class="h-8 min-w-0 flex-1 rounded-md border border-border-subtle bg-transparent px-2 text-xs text-text-primary outline-none placeholder:text-text-muted focus:border-border-strong"
+          >
+          <button
+            type="submit"
+            :disabled="!externalPlaylistId"
+            class="h-8 rounded-md px-2 text-xs font-semibold text-text-secondary transition-colors hover:bg-[var(--surface-control-hover)] hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {{ t('search.importPlaylist') }}
+          </button>
+        </form>
 
-          <!-- Track List -->
-          <div class="flex-1 overflow-y-auto p-4 space-y-1 scrollbar-none">
+        <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
             <TrackListItem
               v-for="track in store.selectedTracks"
               :key="track.id"
@@ -162,31 +119,44 @@
               </template>
             </TrackListItem>
 
-            <div v-if="store.selectedTracks.length === 0" class="flex flex-col items-center justify-center py-12 text-center space-y-3 opacity-40">
-              <span class="material-symbols-outlined text-[48px]">music_off</span>
-              <p class="text-xs text-text-muted">{{ t('roomPlaylists.emptyTracks') }}</p>
+            <div v-if="store.selectedTracks.length === 0" class="py-16 text-center">
+              <div class="text-sm font-bold text-text-primary">{{ t('roomPlaylists.emptyTracks') }}</div>
             </div>
-          </div>
+        </div>
 
-          <!-- Detail Footer Actions -->
-          <footer class="p-3 border-t border-border-subtle bg-surface-panel/50 flex justify-between gap-3 shrink-0">
-            <button 
-              v-if="!store.selectedPlaylist?.systemKey"
+        <footer class="flex flex-shrink-0 items-center justify-between gap-2 rounded-md border border-border-subtle bg-[var(--surface-control)] p-2">
+          <div class="inline-flex overflow-hidden rounded-md border border-border-subtle">
+            <select
+              v-model="exportFormat"
+              class="h-8 bg-transparent px-2 font-micro text-micro uppercase text-text-secondary outline-none"
+              :aria-label="t('common.export')"
+            >
+              <option v-for="format in exportFormats" :key="format" :value="format">{{ format }}</option>
+            </select>
+            <button
+              type="button"
+              @click="exportSelected"
+              class="h-8 border-l border-border-subtle px-2 text-xs font-semibold text-text-secondary transition-colors hover:bg-[var(--surface-control-hover)] hover:text-text-primary"
+            >
+              {{ t('common.export') }}
+            </button>
+          </div>
+          <div v-if="!store.selectedPlaylist?.systemKey" class="flex items-center gap-2">
+            <button
               @click="rename"
-              class="flex-1 py-2 rounded-lg bg-surface-raised border border-border-default text-[10px] font-bold uppercase tracking-widest text-text-secondary hover:text-text-primary hover:border-border-strong transition-all"
+              class="h-8 rounded-md px-2 text-xs font-semibold text-text-secondary transition-colors hover:bg-[var(--surface-control-hover)] hover:text-text-primary"
             >
               {{ t('roomPlaylists.rename') }}
             </button>
-            <button 
-              v-if="!store.selectedPlaylist?.systemKey"
+            <button
               @click="confirmDelete"
-              class="flex-1 py-2 rounded-lg bg-error/5 border border-error/20 text-[10px] font-bold uppercase tracking-widest text-error hover:bg-error/10 transition-all"
+              class="h-8 rounded-md px-2 text-xs font-semibold text-error transition-colors hover:bg-[var(--error-soft-bg)]"
             >
               {{ t('roomPlaylists.delete') }}
             </button>
-          </footer>
-        </div>
-      </Transition>
+          </div>
+        </footer>
+      </div>
     </div>
   </div>
 </template>
@@ -283,17 +253,3 @@ const switchScope = async (nextScope) => {
 
 onMounted(() => store.value.loadPlaylists());
 </script>
-
-<style scoped>
-.scrollbar-none::-webkit-scrollbar {
-  display: none;
-}
-.scrollbar-none {
-  scrollbar-width: none;
-}
-
-/* Fix for transition positioning */
-.room-playlists-module > div {
-  perspective: 1000px;
-}
-</style>
