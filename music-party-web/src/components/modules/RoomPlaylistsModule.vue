@@ -122,10 +122,23 @@
                 </button>
               </div>
             </form>
-            <div class="mt-2 flex gap-2">
-              <button v-for="format in exportFormats" :key="format" type="button" @click="exportSelected(format)" class="rounded-md border border-border-default bg-surface-raised px-2 py-1 text-[10px] font-bold uppercase text-text-secondary hover:text-primary">
-                {{ format }}
-              </button>
+            <div class="mt-2 flex justify-end">
+              <div class="inline-flex overflow-hidden rounded-md border border-border-default bg-surface-raised">
+                <select
+                  v-model="exportFormat"
+                  class="bg-transparent px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-text-secondary outline-none"
+                  :aria-label="t('common.export')"
+                >
+                  <option v-for="format in exportFormats" :key="format" :value="format">{{ format }}</option>
+                </select>
+                <button
+                  type="button"
+                  @click="exportSelected"
+                  class="border-l border-border-default px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-text-secondary transition-colors hover:bg-primary hover:text-text-inverse"
+                >
+                  {{ t('common.export') }}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -194,6 +207,7 @@ const externalPlaylistId = ref('');
 const viewMode = ref('index'); // 'index' or 'detail'
 const scope = ref('room');
 const exportFormats = ['txt', 'csv', 'json'];
+const exportFormat = ref('txt');
 const store = computed(() => scope.value === 'room' ? roomPlaylistsStore : userPlaylistsStore);
 
 const create = async () => {
@@ -243,7 +257,8 @@ const deleteTrack = async (trackId) => {
   await store.value.deleteTrack(store.value.selectedPlaylistId, trackId);
 };
 
-const exportSelected = async (format) => {
+const exportSelected = async () => {
+  const format = exportFormat.value;
   const playlistId = store.value.selectedPlaylistId;
   if (!playlistId) return;
   const content = scope.value === 'room'
