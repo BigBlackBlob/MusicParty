@@ -92,17 +92,35 @@
 
               <div v-else class="space-y-2">
                 <!-- Bulk Add for Playlist -->
-                <div v-if="searchType === PLAYLIST_SEARCH_TYPE && playlistSongs.length > 0" class="mb-4 flex items-center justify-between p-3 rounded-lg bg-primary/5 border border-primary/20">
+                <div v-if="searchType === PLAYLIST_SEARCH_TYPE && playlistSongs.length > 0" class="mb-4 flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg bg-primary/5 border border-primary/20">
                    <div class="flex items-center gap-3">
                       <span class="material-symbols-outlined text-primary">playlist_add_check</span>
                       <span class="text-[12px] font-bold text-primary">{{ t('search.playlistLoaded', { count: playlistSongs.length }) }}</span>
                    </div>
-                   <button 
-                    @click="addAllPlaylistSongs"
-                    class="px-4 py-1.5 bg-primary text-on-primary rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-[var(--accent-hover)] transition-all shadow-lg shadow-primary/20"
-                   >
-                     {{ t('search.addAllSongs') }}
-                   </button>
+                   <div class="flex flex-wrap items-center gap-2">
+                     <select
+                       v-model="userPlaylistsStore.selectedPlaylistId"
+                       class="h-8 rounded-full border border-border-default bg-surface-raised px-3 text-[11px] font-bold text-text-primary outline-none"
+                       @focus="userPlaylistsStore.loadPlaylists"
+                     >
+                       <option value="">{{ t('personalPlaylists.newPlaylist') }}</option>
+                       <option v-for="playlist in userPlaylistsStore.playlists" :key="playlist.id" :value="playlist.id">
+                         {{ playlist.name }}
+                       </option>
+                     </select>
+                     <button
+                      @click="saveLoadedPlaylist"
+                      class="px-4 py-1.5 bg-surface-raised text-primary border border-primary/30 rounded-full text-[10px] font-black uppercase tracking-widest hover:border-primary transition-all"
+                     >
+                       {{ t('personalPlaylists.saveAll') }}
+                     </button>
+                     <button 
+                      @click="addAllPlaylistSongs"
+                      class="px-4 py-1.5 bg-primary text-on-primary rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-[var(--accent-hover)] transition-all shadow-lg shadow-primary/20"
+                     >
+                       {{ t('search.addAllSongs') }}
+                     </button>
+                   </div>
                 </div>
                 
                 <div v-for="item in displayItems" :key="`${searchType}:${item.id}`" class="flex flex-col gap-1">
@@ -128,6 +146,9 @@
                       </button>
                       <button @click.stop="handleAddClick(item)" class="text-primary hover:text-text-primary" :title="resultMode === ALBUM_SEARCH_TYPE ? t('search.addAlbum') : t('search.addSong')" :aria-label="resultMode === ALBUM_SEARCH_TYPE ? t('search.addAlbum') : t('search.addSong')">
                         <span class="material-symbols-outlined text-[20px]">{{ resultMode === 'album' ? 'library_add' : 'add_circle' }}</span>
+                      </button>
+                      <button v-if="resultMode !== ALBUM_SEARCH_TYPE" @click.stop="saveSingleSong(item)" class="text-text-muted hover:text-primary" :title="t('personalPlaylists.saveSong')" :aria-label="t('personalPlaylists.saveSong')">
+                        <span class="material-symbols-outlined text-[20px]">playlist_add</span>
                       </button>
                     </div>
                   </div>
@@ -225,7 +246,9 @@
 import { ref, computed, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { usePlayerStore } from '../stores/player';
+import { useUserPlaylistsStore } from '../stores/userPlaylists';
 import { useSearchLogic } from '../composables/useSearchLogic';
+import { useToast } from '../composables/useToast';
 import { DialogRoot, DialogPortal, DialogOverlay, DialogContent } from 'reka-ui';
 import CoverImage from './CoverImage.vue';
 import SubsonicSourceManager from './SubsonicSourceManager.vue';
@@ -241,6 +264,7 @@ import {
 defineProps(['isOpen']);
 const emit = defineEmits(['close']);
 const playerStore = usePlayerStore();
+const userPlaylistsStore = useUserPlaylistsStore();
 const { t } = useI18n();
 const SONG_SEARCH_TYPE = 'song';
 const ALBUM_SEARCH_TYPE = 'album';
@@ -340,7 +364,6 @@ const addSelectedSongs = (albumId) => {
 };
 
 onMounted(loadPlatforms);
-
 const jumpToPage = (rawValue) => {
   const page = Math.max(1, Number.parseInt(rawValue, 10) || 1);
   doSearch(page);
@@ -349,5 +372,17 @@ const jumpToPage = (rawValue) => {
 const formatArtists = (artists) => {
   if (Array.isArray(artists)) return artists.join(' / ');
   return artists || t('common.unknownArtist');
+};
+
+const saveLoadedPlaylist = async () => {
+  const result = await userPlaylistsStore.addTracksToSelected(playlistSongs.value, t('personalPlaylists.defaultName'));
+  if (!result) return;
+  useToast().success(t('personalPlaylists.savedResult', { added: result.addedCount, skipped: result.skippedCount }));
+};
+
+const saveSingleSong = async (song) => {
+  const result = await userPlaylistsStore.addTracksToSelected([song], t('personalPlaylists.defaultName'));
+  if (!result) return;
+  useToast().success(t('personalPlaylists.savedResult', { added: result.addedCount, skipped: result.skippedCount }));
 };
 </script>

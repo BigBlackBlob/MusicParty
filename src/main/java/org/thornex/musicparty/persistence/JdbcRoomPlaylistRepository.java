@@ -3,7 +3,7 @@ package org.thornex.musicparty.persistence;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.thornex.musicparty.dto.Music;
@@ -16,7 +16,7 @@ import java.util.UUID;
 
 @Repository
 @RequiredArgsConstructor
-@ConditionalOnBean(JdbcTemplate.class)
+@ConditionalOnProperty(prefix = "app.music-api.database", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class JdbcRoomPlaylistRepository implements RoomPlaylistRepository {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
