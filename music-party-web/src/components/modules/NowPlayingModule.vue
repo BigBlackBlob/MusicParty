@@ -27,7 +27,7 @@
       </div>
     </div>
 
-    <div class="glass-panel player-console w-full shrink-0 max-w-[480px] h-[256px] flex flex-col rounded-xl px-6 py-5">
+    <div class="glass-panel player-console w-full shrink-0 h-[256px] flex flex-col rounded-xl px-6 py-5">
       <div class="text-center">
         <div class="mb-2 flex min-w-0 items-center justify-center gap-2">
           <span class="rounded bg-[var(--surface-control)] px-2 py-1 font-micro text-micro uppercase text-text-muted">{{ platformLabel }}</span>

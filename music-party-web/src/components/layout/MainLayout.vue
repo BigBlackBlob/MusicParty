@@ -240,7 +240,7 @@
             maxWidth: `min(calc(1520px * ${uiStore.mainStageScale}), calc(100vw / var(--global-zoom) - 40px))`,
             zoom: uiStore.globalZoomLevel,
             '--global-zoom': uiStore.globalZoomLevel,
-            height: 'min(var(--stage-height), 708px)'
+            height: `min(var(--stage-height), calc(708px * ${uiStore.mainStageScale}))`
           }"
           id="main-content-grid"
         >
