@@ -99,6 +99,13 @@
           >
             <span class="material-symbols-outlined text-[20px]" :style="isLiked ? `font-variation-settings: 'FILL' 1;` : ''">favorite</span>
           </button>
+          <button
+            class="flex h-10 w-10 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-[var(--surface-control-hover)] hover:text-primary"
+            @click="saveCurrentToPersonalPlaylist"
+            :title="t('personalPlaylists.saveSong')"
+          >
+            <span class="material-symbols-outlined text-[20px]">playlist_add</span>
+          </button>
         </div>
 
         <div class="flex w-full items-center justify-between border-t border-border-subtle pt-2.5">
@@ -145,10 +152,13 @@ import { useI18n } from 'vue-i18n';
 import CoverImage from '../CoverImage.vue';
 import { useNowPlayingViewModel } from '../../composables/useNowPlayingViewModel';
 import { useLayoutStore } from '../../stores/layout';
+import { useUserPlaylistsStore } from '../../stores/userPlaylists';
+import { useToast } from '../../composables/useToast';
 import { formatDuration } from '../../utils/format';
 
 const { t } = useI18n();
 const layoutStore = useLayoutStore();
+const userPlaylistsStore = useUserPlaylistsStore();
 
 const {
   player,
@@ -196,6 +206,14 @@ const handleSeek = (event) => {
 
 const handleCoverClick = () => {
   toggleLike();
+};
+
+const saveCurrentToPersonalPlaylist = async () => {
+  const music = player.value?.nowPlaying?.music || player.nowPlaying?.music;
+  if (!music) return;
+  const result = await userPlaylistsStore.addTracksToSelected([music], t('personalPlaylists.defaultName'));
+  if (!result) return;
+  useToast().success(t('personalPlaylists.savedResult', { added: result.addedCount, skipped: result.skippedCount }));
 };
 
 const toggleMute = () => {

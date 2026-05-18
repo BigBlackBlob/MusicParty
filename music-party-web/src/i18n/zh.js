@@ -196,6 +196,13 @@ export default {
     selectTracks: '选择歌曲',
     exportLiked: '导出喜欢的歌'
   },
+  personalPlaylists: {
+    defaultName: '我的歌单',
+    newPlaylist: '新建歌单',
+    saveAll: '保存到个人歌单',
+    saveSong: '加入个人歌单',
+    savedResult: '已添加 {added} 首，跳过重复 {skipped} 首'
+  },
   search: {
     title: '搜索',
     discoverMusic: '发现音乐',

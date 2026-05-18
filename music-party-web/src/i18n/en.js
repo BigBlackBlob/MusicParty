@@ -196,6 +196,13 @@ export default {
     selectTracks: 'Select tracks',
     exportLiked: 'Export liked songs'
   },
+  personalPlaylists: {
+    defaultName: 'My Playlist',
+    newPlaylist: 'New playlist',
+    saveAll: 'Save to personal playlist',
+    saveSong: 'Add to personal playlist',
+    savedResult: 'Added {added}, skipped {skipped} duplicates'
+  },
   search: {
     title: 'Search',
     discoverMusic: 'Discover Music',

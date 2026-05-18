@@ -7,6 +7,7 @@ import { useUserStore } from '../stores/user.js';
 import { usePlayerStore } from '../stores/player.js';
 import { useRoomStore } from '../stores/room.js';
 import { usePlatforms } from './usePlatforms.js';
+import { useExternalPlaylist, parseNeteasePlaylistId } from './useExternalPlaylist.js';
 
 export function useSearchLogic() {
     const { success, error } = useToast();
@@ -17,26 +18,26 @@ export function useSearchLogic() {
 
     const SONGS_CACHE_KEY = 'mp_search_songs';
     const ALBUMS_CACHE_KEY = 'mp_search_albums';
-    const PLAYLIST_CACHE_KEY = 'mp_search_playlist_songs';
-    const PLAYLIST_ID_CACHE_KEY = 'mp_search_playlist_id';
-    const PLAYLIST_PAGE_CACHE_KEY = 'mp_search_playlist_page';
 
     const platform = ref('netease');
     const { platforms, supportsAlbumSearch, loadPlatforms } = usePlatforms(platform);
     const keyword = ref('');
     const songs = ref(JSON.parse(localStorage.getItem(SONGS_CACHE_KEY) || '[]'));
     const albums = ref(JSON.parse(localStorage.getItem(ALBUMS_CACHE_KEY) || '[]'));
-    const playlistSongs = ref(JSON.parse(localStorage.getItem(PLAYLIST_CACHE_KEY) || '[]'));
-    const playlistId = ref(localStorage.getItem(PLAYLIST_ID_CACHE_KEY) || '');
+    const {
+        playlistSongs,
+        playlistId,
+        currentPlaylistPage,
+        canGoPlaylistNext,
+        loadNeteasePlaylistPage,
+        clearExternalPlaylist
+    } = useExternalPlaylist();
 
     const loading = ref(false);
     const hasSubmittedSearch = ref(false);
     const currentPage = ref(1);
-    const currentPlaylistPage = ref(parseInt(localStorage.getItem(PLAYLIST_PAGE_CACHE_KEY) || '1'));
     const canGoNext = ref(true);
-    const canGoPlaylistNext = ref(true);
     const SEARCH_LIMIT = 20;
-    const PLAYLIST_LIMIT = 50;
 
     const listMode = ref('search'); // 'search' | 'playlist' | 'albumSearch' | 'album'
     const searchType = ref('song'); // 'song' | 'album' | 'playlist'
@@ -45,20 +46,6 @@ export function useSearchLogic() {
     const loadingAlbumIds = ref(new Set());
     const expandedAlbumIds = ref(new Set());
     let searchRequestSeq = 0;
-
-    const parseNeteasePlaylistId = (val) => {
-        const patterns = [
-            /playlist\?id=(\d+)/,
-            /playlist\/(\d+)/,
-            /music\.163\.com\/.*id=(\d+)/,
-            /^\d+$/
-        ];
-        for (const pattern of patterns) {
-            const match = String(val).match(pattern);
-            if (match) return match[1];
-        }
-        return null;
-    };
 
     const doSearch = async (page = 1) => {
         const requestSeq = ++searchRequestSeq;
@@ -74,22 +61,13 @@ export function useSearchLogic() {
             }
 
             platform.value = 'netease';
-            currentPlaylistPage.value = page;
-            const offset = (page - 1) * PLAYLIST_LIMIT;
 
             try {
                 loading.value = true;
-                const data = await musicApi.getPlaylistSongs('netease', id, offset, PLAYLIST_LIMIT);
+                await loadNeteasePlaylistPage(id, page);
                 if (requestSeq !== searchRequestSeq) return;
-                playlistSongs.value = data;
-                playlistId.value = id;
-                localStorage.setItem(PLAYLIST_CACHE_KEY, JSON.stringify(data));
-                localStorage.setItem(PLAYLIST_ID_CACHE_KEY, id);
-                localStorage.setItem(PLAYLIST_PAGE_CACHE_KEY, String(page));
-                
                 listMode.value = 'playlist';
                 hasSubmittedSearch.value = true;
-                canGoPlaylistNext.value = data.length === PLAYLIST_LIMIT;
                 return;
             } catch (e) {
                 error(extractErrorMessage(e, t('search.playlistFailed')));
@@ -145,19 +123,14 @@ export function useSearchLogic() {
     const clearSearchState = () => {
         songs.value = [];
         albums.value = [];
-        playlistSongs.value = [];
-        playlistId.value = '';
+        clearExternalPlaylist();
         albumSongs.value = {};
         loadingAlbumIds.value = new Set();
         expandedAlbumIds.value = new Set();
         hasSubmittedSearch.value = false;
         currentPage.value = 1;
-        currentPlaylistPage.value = 1;
         localStorage.removeItem(SONGS_CACHE_KEY);
         localStorage.removeItem(ALBUMS_CACHE_KEY);
-        localStorage.removeItem(PLAYLIST_CACHE_KEY);
-        localStorage.removeItem(PLAYLIST_ID_CACHE_KEY);
-        localStorage.removeItem(PLAYLIST_PAGE_CACHE_KEY);
     };
 
     const refreshPlatformsAndClear = async () => {

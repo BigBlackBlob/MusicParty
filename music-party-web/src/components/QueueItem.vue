@@ -27,6 +27,9 @@
       <button v-if="!userStore.isGuest && !selectionMode" @click.stop="player.topSong(item.queueId)" class="hover:text-primary transition-colors" :title="t('queue.playNext')" :aria-label="t('queue.playNext')">
         <span class="material-symbols-outlined text-[20px]">keyboard_double_arrow_up</span>
       </button>
+      <button v-if="!selectionMode" @click.stop="saveToPersonalPlaylist" class="hover:text-primary transition-colors" :title="t('personalPlaylists.saveSong')" :aria-label="t('personalPlaylists.saveSong')">
+        <span class="material-symbols-outlined text-[20px]">playlist_add</span>
+      </button>
       <button v-if="!userStore.isGuest && !selectionMode" @click.stop="player.removeSong(item.queueId)" class="text-error hover:text-red-400 transition-colors" :title="t('queue.remove')" :aria-label="t('queue.remove')">
         <span class="material-symbols-outlined text-[20px]">delete</span>
       </button>
@@ -39,6 +42,8 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { usePlayerStore } from '../stores/player';
 import { useUserStore } from '../stores/user';
+import { useUserPlaylistsStore } from '../stores/userPlaylists';
+import { useToast } from '../composables/useToast';
 import TrackListItem from './ui/TrackListItem.vue';
 
 const props = defineProps({
@@ -65,6 +70,7 @@ const emit = defineEmits(['toggle-select']);
 const { t } = useI18n();
 const player = usePlayerStore();
 const userStore = useUserStore();
+const userPlaylistsStore = useUserPlaylistsStore();
 const artistLine = computed(() => Array.isArray(props.item.music?.artists) && props.item.music.artists.length
   ? props.item.music.artists.join(' / ')
   : t('common.unknownArtist'));
@@ -73,5 +79,11 @@ const handleRowClick = () => {
   if (props.selectionMode) {
     emit('toggle-select');
   }
+};
+
+const saveToPersonalPlaylist = async () => {
+  const result = await userPlaylistsStore.addTracksToSelected([props.item.music], t('personalPlaylists.defaultName'));
+  if (!result) return;
+  useToast().success(t('personalPlaylists.savedResult', { added: result.addedCount, skipped: result.skippedCount }));
 };
 </script>

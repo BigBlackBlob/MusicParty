@@ -77,6 +77,30 @@ create table if not exists room_playlist_track (
 
 create index if not exists idx_room_playlist_track_sort on room_playlist_track(playlist_id, sort_order);
 
+create table if not exists user_playlist (
+    id text primary key,
+    owner_public_id text not null,
+    name text not null,
+    created_at integer not null,
+    updated_at integer not null,
+    foreign key (owner_public_id) references user_profile(public_id)
+);
+
+create index if not exists idx_user_playlist_owner on user_playlist(owner_public_id, created_at);
+
+create table if not exists user_playlist_track (
+    id text primary key,
+    playlist_id text not null,
+    music_json text not null,
+    music_key text not null,
+    sort_order integer not null,
+    created_at integer not null,
+    foreign key (playlist_id) references user_playlist(id),
+    unique (playlist_id, music_key)
+);
+
+create index if not exists idx_user_playlist_track_sort on user_playlist_track(playlist_id, sort_order);
+
 create table if not exists room_history (
     id text primary key,
     room_id text not null,

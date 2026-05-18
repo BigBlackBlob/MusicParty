@@ -109,6 +109,36 @@ public class SqliteSchemaInitializer {
                                     foreign key (source_id) references subsonic_source(id)
                                 )
                                 """)
+                ),
+                new SchemaMigration(
+                        "schema.user_playlist.table",
+                        jdbc -> !hasTable(jdbc, "user_playlist"),
+                        jdbc -> jdbc.execute("""
+                                create table user_playlist (
+                                    id text primary key,
+                                    owner_public_id text not null,
+                                    name text not null,
+                                    created_at integer not null,
+                                    updated_at integer not null,
+                                    foreign key (owner_public_id) references user_profile(public_id)
+                                )
+                                """)
+                ),
+                new SchemaMigration(
+                        "schema.user_playlist_track.table",
+                        jdbc -> !hasTable(jdbc, "user_playlist_track"),
+                        jdbc -> jdbc.execute("""
+                                create table user_playlist_track (
+                                    id text primary key,
+                                    playlist_id text not null,
+                                    music_json text not null,
+                                    music_key text not null,
+                                    sort_order integer not null,
+                                    created_at integer not null,
+                                    foreign key (playlist_id) references user_playlist(id),
+                                    unique (playlist_id, music_key)
+                                )
+                                """)
                 )
         );
     }
