@@ -81,11 +81,6 @@
               clickable
               @click="select(playlist.id)"
             >
-              <template #prefix>
-                <div class="w-10 h-10 flex items-center justify-center rounded bg-surface-raised border border-border-subtle text-text-muted group-hover:text-primary transition-colors">
-                  <span class="material-symbols-outlined text-[20px]">{{ playlist.systemKey === 'liked-songs' ? 'favorite' : 'queue_music' }}</span>
-                </div>
-              </template>
               <template #suffix>
                 <span class="material-symbols-outlined text-text-disabled group-hover:text-primary transition-all">chevron_right</span>
               </template>
@@ -141,7 +136,7 @@
               :key="track.id"
               :title="track.music.name"
               :artist="(track.music.artists || []).join(' / ') || track.music.platform"
-              :cover-url="track.music.cover"
+              :cover-url="track.music.coverUrl"
             >
               <template #suffix>
                 <button 
