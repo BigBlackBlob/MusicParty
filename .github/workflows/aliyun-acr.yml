@@ -1,0 +1,59 @@
+name: Build and Push to Aliyun ACR
+
+on:
+  push:
+    branches: [ "main", "master", "NRT-Base" ]
+    tags: [ "v*.*.*" ]
+  pull_request:
+    branches: [ "main", "master", "NRT-Base" ]
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: nrt-music-party
+  NAMESPACE: nrt-base
+  REGISTRY: crpi-533x5q1t88ew0x21.cn-hangzhou.personal.cr.aliyuncs.com
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Aliyun ACR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.ALIYUN_ACR_USERNAME || secrets.ALIYUN_ACCESS_KEY_ID }}
+          password: ${{ secrets.ALIYUN_ACR_PASSWORD || secrets.ALIYUN_ACCESS_KEY_SECRET }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=nrt-base,enable=${{ github.ref == 'refs/heads/NRT-Base' }}
+            type=sha,prefix=sha-,format=short
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
