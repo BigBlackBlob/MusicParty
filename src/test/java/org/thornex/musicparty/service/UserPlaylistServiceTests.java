@@ -60,6 +60,43 @@ class UserPlaylistServiceTests {
                 .isEqualTo(HttpStatus.NOT_FOUND);
     }
 
+    @Test
+    void likedSongsUseProtectedSystemPlaylist() {
+        TestContext context = new TestContext();
+        context.persistUser("token-a", "u_a", "Alice", false);
+
+        context.service.addLikedSong("token-a", "netease", "1", song("1", "First"));
+        context.service.addLikedSong("token-a", "netease", "1", song("1", "Duplicate"));
+
+        var liked = context.service.listLikedSongs("token-a");
+        assertThat(liked).hasSize(1);
+        var playlist = context.service.listPlaylists("token-a").stream()
+                .filter(item -> UserPlaylistService.LIKED_SONGS_SYSTEM_KEY.equals(item.systemKey()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(playlist.trackCount()).isEqualTo(1);
+        assertThatThrownBy(() -> context.service.renamePlaylist("token-a", playlist.id(), "Nope"))
+                .isInstanceOf(ResponseStatusException.class)
+                .extracting(error -> ((ResponseStatusException) error).getStatusCode())
+                .isEqualTo(HttpStatus.FORBIDDEN);
+
+        context.service.deleteLikedSong("token-a", "netease", "1");
+        assertThat(context.service.listLikedSongs("token-a")).isEmpty();
+    }
+
+    @Test
+    void exportsPlaylistAsCsvWithStableColumns() {
+        TestContext context = new TestContext();
+        context.persistUser("token-a", "u_a", "Alice", false);
+        var playlist = context.service.createPlaylist("token-a", "Mine");
+        context.service.addTracks("token-a", playlist.id(), List.of(song("1", "First")));
+
+        String csv = context.service.exportPlaylist("token-a", playlist.id(), "csv");
+
+        assertThat(csv).startsWith("platform,id,name,artists,duration,coverUrl,externalUrl");
+        assertThat(csv).contains("\"netease\",\"1\",\"First\",\"Artist\",\"1000\",\"\",\"https://music.163.com/#/song?id=1\"");
+    }
+
     private static Music song(String id, String name) {
         return new Music(id, name, List.of("Artist"), 1000, "netease", "");
     }
@@ -72,6 +109,7 @@ class UserPlaylistServiceTests {
                 mock(UserService.class),
                 mock(MusicPlayerService.class),
                 new org.thornex.musicparty.config.AppProperties(),
+                new PlaylistExportService(),
                 List.of()
         );
 

@@ -24,47 +24,56 @@ public class JdbcUserPlaylistRepository implements UserPlaylistRepository {
     @Override
     public List<UserPlaylist> listPlaylists(String ownerPublicId) {
         return jdbcTemplate.query("""
-                select p.id, p.owner_public_id, p.name, p.created_at, p.updated_at, count(t.id) as track_count
+                select p.id, p.owner_public_id, p.name, p.system_key, p.created_at, p.updated_at, count(t.id) as track_count
                 from user_playlist p
                 left join user_playlist_track t on t.playlist_id = p.id
                 where p.owner_public_id = ?
-                group by p.id, p.owner_public_id, p.name, p.created_at, p.updated_at
-                order by p.created_at
-                """, (rs, rowNum) -> new UserPlaylist(
-                rs.getString("id"),
-                rs.getString("owner_public_id"),
-                rs.getString("name"),
-                rs.getInt("track_count"),
-                rs.getLong("created_at"),
-                rs.getLong("updated_at")
-        ), ownerPublicId);
+                group by p.id, p.owner_public_id, p.name, p.system_key, p.created_at, p.updated_at
+                order by case when p.system_key is null then 1 else 0 end, p.created_at
+                """, (rs, rowNum) -> toPlaylist(rs), ownerPublicId);
     }
 
     @Override
     public Optional<UserPlaylist> findPlaylist(String ownerPublicId, String playlistId) {
         return jdbcTemplate.query("""
-                select p.id, p.owner_public_id, p.name, p.created_at, p.updated_at, count(t.id) as track_count
+                select p.id, p.owner_public_id, p.name, p.system_key, p.created_at, p.updated_at, count(t.id) as track_count
                 from user_playlist p
                 left join user_playlist_track t on t.playlist_id = p.id
                 where p.owner_public_id = ? and p.id = ?
-                group by p.id, p.owner_public_id, p.name, p.created_at, p.updated_at
-                """, (rs, rowNum) -> new UserPlaylist(
-                rs.getString("id"),
-                rs.getString("owner_public_id"),
-                rs.getString("name"),
-                rs.getInt("track_count"),
-                rs.getLong("created_at"),
-                rs.getLong("updated_at")
-        ), ownerPublicId, playlistId).stream().findFirst();
+                group by p.id, p.owner_public_id, p.name, p.system_key, p.created_at, p.updated_at
+                """, (rs, rowNum) -> toPlaylist(rs), ownerPublicId, playlistId).stream().findFirst();
+    }
+
+    @Override
+    public Optional<UserPlaylist> findSystemPlaylist(String ownerPublicId, String systemKey) {
+        return jdbcTemplate.query("""
+                select p.id, p.owner_public_id, p.name, p.system_key, p.created_at, p.updated_at, count(t.id) as track_count
+                from user_playlist p
+                left join user_playlist_track t on t.playlist_id = p.id
+                where p.owner_public_id = ? and p.system_key = ?
+                group by p.id, p.owner_public_id, p.name, p.system_key, p.created_at, p.updated_at
+                """, (rs, rowNum) -> toPlaylist(rs), ownerPublicId, systemKey).stream().findFirst();
     }
 
     @Override
     public UserPlaylist createPlaylist(String ownerPublicId, String name) {
         long now = System.currentTimeMillis();
         String id = UUID.randomUUID().toString();
-        jdbcTemplate.update("insert into user_playlist(id, owner_public_id, name, created_at, updated_at) values (?, ?, ?, ?, ?)",
+        jdbcTemplate.update("insert into user_playlist(id, owner_public_id, name, system_key, created_at, updated_at) values (?, ?, ?, null, ?, ?)",
                 id, ownerPublicId, name, now, now);
-        return new UserPlaylist(id, ownerPublicId, name, 0, now, now);
+        return new UserPlaylist(id, ownerPublicId, name, null, 0, now, now);
+    }
+
+    @Override
+    public UserPlaylist createSystemPlaylist(String ownerPublicId, String name, String systemKey) {
+        long now = System.currentTimeMillis();
+        String id = UUID.randomUUID().toString();
+        jdbcTemplate.update("""
+                insert into user_playlist(id, owner_public_id, name, system_key, created_at, updated_at)
+                values (?, ?, ?, ?, ?, ?)
+                on conflict(owner_public_id, system_key) do update set name = excluded.name
+                """, id, ownerPublicId, name, systemKey, now, now);
+        return findSystemPlaylist(ownerPublicId, systemKey).orElseGet(() -> new UserPlaylist(id, ownerPublicId, name, systemKey, 0, now, now));
     }
 
     @Override
@@ -142,6 +151,17 @@ public class JdbcUserPlaylistRepository implements UserPlaylistRepository {
     }
 
     @Override
+    public boolean deleteTrackByMusicKey(String ownerPublicId, String playlistId, String musicKey) {
+        if (findPlaylist(ownerPublicId, playlistId).isEmpty()) return false;
+        boolean deleted = jdbcTemplate.update("delete from user_playlist_track where playlist_id = ? and music_key = ?", playlistId, musicKey) > 0;
+        if (deleted) {
+            rewriteOrder(ownerPublicId, playlistId);
+            touch(playlistId);
+        }
+        return deleted;
+    }
+
+    @Override
     public void reorderTracks(String ownerPublicId, String playlistId, List<String> orderedTrackIds) {
         if (findPlaylist(ownerPublicId, playlistId).isEmpty() || orderedTrackIds == null) return;
         int index = 0;
@@ -167,6 +187,18 @@ public class JdbcUserPlaylistRepository implements UserPlaylistRepository {
 
     private void touch(String playlistId) {
         jdbcTemplate.update("update user_playlist set updated_at = ? where id = ?", System.currentTimeMillis(), playlistId);
+    }
+
+    private UserPlaylist toPlaylist(java.sql.ResultSet rs) throws java.sql.SQLException {
+        return new UserPlaylist(
+                rs.getString("id"),
+                rs.getString("owner_public_id"),
+                rs.getString("name"),
+                rs.getString("system_key"),
+                rs.getInt("track_count"),
+                rs.getLong("created_at"),
+                rs.getLong("updated_at")
+        );
     }
 
     private String musicKey(Music music) {

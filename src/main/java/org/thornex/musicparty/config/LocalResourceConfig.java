@@ -30,7 +30,7 @@ public class LocalResourceConfig implements WebMvcConfigurer {
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         // 让 <audio crossorigin="anonymous"> 能拿到 ACAO 响应头，
-        // 否则 createMediaElementSource 会产生静音采样。
+        // Keep local media responses playable from the Vite/frontend origin.
         registry.addMapping("/media/**")
                 .allowedOriginPatterns("*")
                 .allowedMethods("GET", "HEAD")

@@ -118,11 +118,21 @@ public class SqliteSchemaInitializer {
                                     id text primary key,
                                     owner_public_id text not null,
                                     name text not null,
+                                    system_key text,
                                     created_at integer not null,
                                     updated_at integer not null,
+                                    unique (owner_public_id, system_key),
                                     foreign key (owner_public_id) references user_profile(public_id)
                                 )
                                 """)
+                ),
+                new SchemaMigration(
+                        "schema.user_playlist.system_key",
+                        jdbc -> hasTable(jdbc, "user_playlist") && !hasColumn(jdbc, "user_playlist", "system_key"),
+                        jdbc -> {
+                            jdbc.execute("alter table user_playlist add column system_key text");
+                            jdbc.execute("create unique index if not exists idx_user_playlist_owner_system_key on user_playlist(owner_public_id, system_key)");
+                        }
                 ),
                 new SchemaMigration(
                         "schema.user_playlist_track.table",

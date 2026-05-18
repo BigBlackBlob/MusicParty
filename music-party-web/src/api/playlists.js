@@ -29,5 +29,8 @@ export const playlistsApi = {
   },
   importExternal(roomId, playlistId, platform, externalPlaylistId, token) {
     return client.post(`${base(roomId)}/${encodeURIComponent(playlistId)}/import`, { platform, playlistId: externalPlaylistId }, { params: { token } });
+  },
+  exportPlaylist(roomId, playlistId, format = 'txt') {
+    return client.get(`${base(roomId)}/${encodeURIComponent(playlistId)}/export`, { params: { format } });
   }
 };

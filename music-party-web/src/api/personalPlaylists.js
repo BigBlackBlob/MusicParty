@@ -1,6 +1,7 @@
 import client from './client';
 
 const base = '/api/me/playlists';
+const likedBase = '/api/me/liked-songs';
 const withToken = (sessionToken, params = {}) => ({ params: { sessionToken, ...params } });
 
 export const personalPlaylistsApi = {
@@ -31,7 +32,22 @@ export const personalPlaylistsApi = {
   importNetease(sessionToken, playlistId, externalPlaylistId) {
     return client.post(`${base}/${encodeURIComponent(playlistId)}/import/netease`, { playlistId: externalPlaylistId }, withToken(sessionToken));
   },
+  importPlaylist(sessionToken, playlistId, platform, externalPlaylistId) {
+    return client.post(`${base}/${encodeURIComponent(playlistId)}/import`, { platform, playlistId: externalPlaylistId }, withToken(sessionToken));
+  },
+  exportPlaylist(sessionToken, playlistId, format = 'txt') {
+    return client.get(`${base}/${encodeURIComponent(playlistId)}/export`, withToken(sessionToken, { format }));
+  },
   enqueue(sessionToken, playlistId) {
     return client.post(`${base}/${encodeURIComponent(playlistId)}/enqueue`, {}, withToken(sessionToken));
+  },
+  likedSongs(sessionToken) {
+    return client.get(likedBase, withToken(sessionToken));
+  },
+  likeSong(sessionToken, music) {
+    return client.put(`${likedBase}/${encodeURIComponent(music.platform)}/${encodeURIComponent(music.id)}`, music, withToken(sessionToken));
+  },
+  unlikeSong(sessionToken, platform, musicId) {
+    return client.delete(`${likedBase}/${encodeURIComponent(platform)}/${encodeURIComponent(musicId)}`, withToken(sessionToken));
   }
 };

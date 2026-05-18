@@ -81,8 +81,10 @@ create table if not exists user_playlist (
     id text primary key,
     owner_public_id text not null,
     name text not null,
+    system_key text,
     created_at integer not null,
     updated_at integer not null,
+    unique (owner_public_id, system_key),
     foreign key (owner_public_id) references user_profile(public_id)
 );
 

@@ -2,7 +2,6 @@
 
 import { ref, onMounted, onUnmounted, watch } from 'vue';
 import { isUserGestureRequiredError } from '../utils/audioPlayback';
-import { useAudioGraphStore } from '../stores/audioGraph';
 
 const SMALL_DRIFT_MS = 250;
 const RATE_CORRECTION_DRIFT_MS = 2000;
@@ -180,7 +179,6 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
         if (!audioRef.value || !playerStore.nowPlaying) return;
 
         try {
-            await useAudioGraphStore().resume();
             await audioRef.value.play();
             needsUserGesture.value = false;
             isErrorState.value = false;

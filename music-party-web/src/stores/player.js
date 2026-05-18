@@ -9,6 +9,7 @@ import { socketService } from '../services/socket';
 import { createSocketSubscriptions, createSocketCallbacks } from '../services/socketHandler'; // 引入新文件
 import { musicApi } from '../api/music';
 import { roomApi } from '../api/rooms';
+import { personalPlaylistsApi } from '../api/personalPlaylists';
 import { WS_DEST } from '../constants/api';
 import { STORAGE_KEYS } from '../constants/keys';
 import { shouldForceSocketReconnect } from '../utils/socketHealth';
@@ -251,10 +252,12 @@ export const usePlayerStore = defineStore('player', () => {
         subscriptions[WS_DEST.USER_ME] = (me) => {
             // me: { sessionToken, publicId, name, isGuest }
             userStore.initUser(me.sessionToken, me.publicId, me.name, me.isGuest);
+            syncLikedSongsFromServer().catch(error => console.warn('Failed to sync liked songs', error));
         };
 
         subscriptions[WS_DEST.USER_ME_UPDATE] = (me) => {
             userStore.initUser(me.sessionToken, me.publicId, me.name, me.isGuest);
+            syncLikedSongsFromServer().catch(error => console.warn('Failed to sync liked songs', error));
         };
 
         const callbacks = createSocketCallbacks();
@@ -372,19 +375,54 @@ export const usePlayerStore = defineStore('player', () => {
         localStorage.setItem(STORAGE_KEYS.LIKED_SONGS, JSON.stringify(likedSongs.value));
     };
 
-    const addLikedSong = (music = nowPlaying.value?.music) => {
-        if (!music) return;
-        const key = getSongKey(music);
-        const nextSong = {
-            key,
+    const toLikedSong = (music, likedAt = Date.now()) => {
+        if (!music) return null;
+        return {
+            key: getSongKey(music),
             id: music.id,
             platform: music.platform,
             name: music.name,
             artists: music.artists || [],
             duration: music.duration || 0,
             coverUrl: music.coverUrl || '',
-            likedAt: Date.now()
+            likedAt
         };
+    };
+
+    const syncLikedSongsFromServer = async () => {
+        if (userStore.isGuest || !userStore.sessionToken) return;
+        const localSongs = [...likedSongs.value];
+        const tracks = await personalPlaylistsApi.likedSongs(userStore.sessionToken);
+        likedSongs.value = (Array.isArray(tracks) ? tracks : [])
+            .map(track => toLikedSong(track.music, track.createdAt))
+            .filter(Boolean);
+        saveLikedSongs();
+
+        const serverKeys = new Set(likedSongs.value.map(song => song.key));
+        const missingLocalSongs = localSongs.filter(song => song?.platform && song?.id && !serverKeys.has(song.key));
+        for (const song of missingLocalSongs) {
+            await personalPlaylistsApi.likeSong(userStore.sessionToken, {
+                id: song.id,
+                platform: song.platform,
+                name: song.name,
+                artists: song.artists || [],
+                duration: song.duration || 0,
+                coverUrl: song.coverUrl || ''
+            });
+        }
+        if (missingLocalSongs.length) {
+            const refreshed = await personalPlaylistsApi.likedSongs(userStore.sessionToken);
+            likedSongs.value = (Array.isArray(refreshed) ? refreshed : [])
+                .map(track => toLikedSong(track.music, track.createdAt))
+                .filter(Boolean);
+            saveLikedSongs();
+        }
+    };
+
+    const addLikedSong = (music = nowPlaying.value?.music) => {
+        if (!music) return;
+        const key = getSongKey(music);
+        const nextSong = toLikedSong(music);
         likedSongs.value = [nextSong, ...likedSongs.value.filter(song => song.key !== key)].slice(0, 500);
         saveLikedSongs();
     };
@@ -394,20 +432,44 @@ export const usePlayerStore = defineStore('player', () => {
         saveLikedSongs();
     };
 
+    const removeLikedSongAndSync = async (key) => {
+        const song = likedSongs.value.find(item => item.key === key);
+        removeLikedSong(key);
+        if (!song || userStore.isGuest || !userStore.sessionToken) return;
+        try {
+            await personalPlaylistsApi.unlikeSong(userStore.sessionToken, song.platform, song.id);
+        } catch (error) {
+            addLikedSong(song);
+            throw error;
+        }
+    };
+
     const isSongLiked = (music = nowPlaying.value?.music) => {
         const key = getSongKey(music);
         return !!key && likedSongs.value.some(song => song.key === key);
     };
 
-    const sendLike = () => {
+    const sendLike = async () => {
         if (requireAuth()) {
             const music = nowPlaying.value?.music;
             const key = getSongKey(music);
             if (key && isSongLiked(music)) {
                 removeLikedSong(key);
+                try {
+                    await personalPlaylistsApi.unlikeSong(userStore.sessionToken, music.platform, music.id);
+                } catch (error) {
+                    addLikedSong(music);
+                    throw error;
+                }
                 return;
             }
             addLikedSong(music);
+            try {
+                await personalPlaylistsApi.likeSong(userStore.sessionToken, music);
+            } catch (error) {
+                removeLikedSong(key);
+                throw error;
+            }
             socketService.send(WS_DEST.PLAYER_LIKE);
         }
     };
@@ -508,6 +570,6 @@ export const usePlayerStore = defineStore('player', () => {
         seek,
         enqueue, enqueuePlaylist, enqueueAlbum, topSong, removeSong, topSongs, removeSongs, topSongsCompat, removeSongsCompat,
         reorderQueue,
-        bindAccount, renameUser, sendChatMessage, sendPublicChatMessage, requestChatHistory, requestPublicChatHistory, sendLike, addLikedSong, removeLikedSong, isSongLiked
+        bindAccount, renameUser, sendChatMessage, sendPublicChatMessage, requestChatHistory, requestPublicChatHistory, sendLike, addLikedSong, removeLikedSong, removeLikedSongAndSync, isSongLiked, syncLikedSongsFromServer
     };
 });

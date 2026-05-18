@@ -3,7 +3,7 @@
     <!-- Header -->
     <header class="flex items-center justify-between px-4 py-3 border-b border-border-subtle bg-surface-panel/50 shrink-0">
       <div v-if="viewMode === 'index'" class="flex flex-col">
-        <span class="text-[10px] font-black uppercase tracking-[0.2em] text-text-muted leading-none mb-1">{{ t('roomPlaylists.kicker') }}</span>
+        <span class="text-[10px] font-black uppercase tracking-[0.2em] text-text-muted leading-none mb-1">{{ scope === 'room' ? t('roomPlaylists.kicker') : t('personalPlaylists.kicker') }}</span>
         <h2 class="text-sm font-bold uppercase tracking-widest text-text-primary">{{ t('roomPlaylists.title') }}</h2>
       </div>
       
@@ -23,7 +23,7 @@
       <div class="flex items-center gap-2 shrink-0">
         <button 
           v-if="viewMode === 'detail' && store.selectedTracks.length > 0"
-          @click="store.playPlaylist()"
+          @click="playSelected"
           class="flex items-center justify-center w-8 h-8 rounded-full bg-primary text-text-inverse shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all"
           :title="t('roomPlaylists.playAll')"
         >
@@ -44,8 +44,16 @@
       >
         <!-- State 1: Playlist Index -->
         <div v-if="viewMode === 'index'" class="absolute inset-0 flex flex-col p-4 space-y-4 overflow-y-auto scrollbar-none">
+          <div class="flex rounded-lg border border-border-subtle bg-surface-raised/40 p-1">
+            <button type="button" class="flex-1 rounded-md py-1.5 text-[10px] font-bold uppercase tracking-widest" :class="scope === 'room' ? 'bg-primary text-text-inverse' : 'text-text-muted'" @click="switchScope('room')">
+              {{ t('roomPlaylists.roomScope') }}
+            </button>
+            <button type="button" class="flex-1 rounded-md py-1.5 text-[10px] font-bold uppercase tracking-widest" :class="scope === 'personal' ? 'bg-primary text-text-inverse' : 'text-text-muted'" @click="switchScope('personal')">
+              {{ t('roomPlaylists.personalScope') }}
+            </button>
+          </div>
           <!-- Create Playlist Form -->
-          <form @submit.prevent="create" class="flex gap-2">
+          <form v-if="scope === 'room' || !userPlaylistsStore.loading" @submit.prevent="create" class="flex gap-2">
             <div class="relative flex-1 group">
               <span class="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-[18px] text-text-disabled group-focus-within:text-primary transition-colors">playlist_add</span>
               <input 
@@ -75,7 +83,7 @@
             >
               <template #prefix>
                 <div class="w-10 h-10 flex items-center justify-center rounded bg-surface-raised border border-border-subtle text-text-muted group-hover:text-primary transition-colors">
-                  <span class="material-symbols-outlined text-[20px]">queue_music</span>
+                  <span class="material-symbols-outlined text-[20px]">{{ playlist.systemKey === 'liked-songs' ? 'favorite' : 'queue_music' }}</span>
                 </div>
               </template>
               <template #suffix>
@@ -102,7 +110,6 @@
                 >
                   <option value="netease">NetEase</option>
                   <option value="bilibili">Bilibili</option>
-                  <option value="navidrome">Navidrome</option>
                 </select>
                 <div class="relative flex-1 group">
                   <input 
@@ -120,6 +127,11 @@
                 </button>
               </div>
             </form>
+            <div class="mt-2 flex gap-2">
+              <button v-for="format in exportFormats" :key="format" type="button" @click="exportSelected(format)" class="rounded-md border border-border-default bg-surface-raised px-2 py-1 text-[10px] font-bold uppercase text-text-secondary hover:text-primary">
+                {{ format }}
+              </button>
+            </div>
           </div>
 
           <!-- Track List -->
@@ -133,7 +145,7 @@
             >
               <template #suffix>
                 <button 
-                  @click.stop="store.deleteTrack(store.selectedPlaylistId, track.id)"
+                  @click.stop="deleteTrack(track.id)"
                   class="w-8 h-8 flex items-center justify-center rounded-lg text-text-disabled hover:text-error hover:bg-error/10 transition-all shrink-0"
                   :title="t('queue.remove')"
                 >
@@ -151,12 +163,14 @@
           <!-- Detail Footer Actions -->
           <footer class="p-3 border-t border-border-subtle bg-surface-panel/50 flex justify-between gap-3 shrink-0">
             <button 
+              v-if="!store.selectedPlaylist?.systemKey"
               @click="rename"
               class="flex-1 py-2 rounded-lg bg-surface-raised border border-border-default text-[10px] font-bold uppercase tracking-widest text-text-secondary hover:text-text-primary hover:border-border-strong transition-all"
             >
               {{ t('roomPlaylists.rename') }}
             </button>
             <button 
+              v-if="!store.selectedPlaylist?.systemKey"
               @click="confirmDelete"
               class="flex-1 py-2 rounded-lg bg-error/5 border border-error/20 text-[10px] font-bold uppercase tracking-widest text-error hover:bg-error/10 transition-all"
             >
@@ -170,28 +184,33 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoomPlaylistsStore } from '../../stores/roomPlaylists';
+import { useUserPlaylistsStore } from '../../stores/userPlaylists';
 import TrackListItem from '../ui/TrackListItem.vue';
 
-const store = useRoomPlaylistsStore();
+const roomPlaylistsStore = useRoomPlaylistsStore();
+const userPlaylistsStore = useUserPlaylistsStore();
 const { t } = useI18n();
 const newName = ref('');
 const importPlatform = ref('netease');
 const externalPlaylistId = ref('');
 const viewMode = ref('index'); // 'index' or 'detail'
+const scope = ref('room');
+const exportFormats = ['txt', 'csv', 'json'];
+const store = computed(() => scope.value === 'room' ? roomPlaylistsStore : userPlaylistsStore);
 
 const create = async () => {
   if (!newName.value) return;
-  await store.createPlaylist(newName.value);
+  await store.value.createPlaylist(newName.value);
   newName.value = '';
 };
 
 const select = async (playlistId) => {
-  store.selectedPlaylistId = playlistId;
+  store.value.selectedPlaylistId = playlistId;
   viewMode.value = 'detail';
-  await store.loadTracks(playlistId);
+  await store.value.loadTracks(playlistId);
 };
 
 const goBack = () => {
@@ -199,24 +218,60 @@ const goBack = () => {
 };
 
 const rename = async () => {
-  const nextName = window.prompt(t('roomPlaylists.namePrompt'), store.selectedPlaylist?.name || '');
-  if (nextName) await store.renamePlaylist(store.selectedPlaylistId, nextName);
+  const nextName = window.prompt(t('roomPlaylists.namePrompt'), store.value.selectedPlaylist?.name || '');
+  if (nextName) await store.value.renamePlaylist(store.value.selectedPlaylistId, nextName);
 };
 
 const confirmDelete = async () => {
   if (window.confirm(t('roomPlaylists.deleteConfirm') || 'Delete this playlist?')) {
-    await store.deletePlaylist(store.selectedPlaylistId);
+    await store.value.deletePlaylist(store.value.selectedPlaylistId);
     viewMode.value = 'index';
   }
 };
 
 const importExternal = async () => {
   if (!externalPlaylistId.value) return;
-  await store.importExternal(importPlatform.value, externalPlaylistId.value);
+  if (scope.value === 'room') {
+    await roomPlaylistsStore.importExternal(importPlatform.value, externalPlaylistId.value);
+  } else {
+    await userPlaylistsStore.importPlaylist(userPlaylistsStore.selectedPlaylistId, importPlatform.value, externalPlaylistId.value);
+  }
   externalPlaylistId.value = '';
 };
 
-onMounted(() => store.loadPlaylists());
+const playSelected = () => {
+  if (scope.value === 'room') return roomPlaylistsStore.playPlaylist();
+  return userPlaylistsStore.enqueue();
+};
+
+const deleteTrack = async (trackId) => {
+  await store.value.deleteTrack(store.value.selectedPlaylistId, trackId);
+};
+
+const exportSelected = async (format) => {
+  const playlistId = store.value.selectedPlaylistId;
+  if (!playlistId) return;
+  const content = scope.value === 'room'
+    ? await roomPlaylistsStore.exportPlaylist(format)
+    : await userPlaylistsStore.exportPlaylist(playlistId, format);
+  const blob = new Blob([content], { type: format === 'json' ? 'application/json;charset=utf-8' : 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `musicparty-${scope.value}-playlist-${playlistId}.${format}`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+};
+
+const switchScope = async (nextScope) => {
+  scope.value = nextScope;
+  viewMode.value = 'index';
+  await store.value.loadPlaylists();
+};
+
+onMounted(() => store.value.loadPlaylists());
 </script>
 
 <style scoped>

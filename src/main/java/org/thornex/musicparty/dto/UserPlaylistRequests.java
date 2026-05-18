@@ -18,6 +18,9 @@ public final class UserPlaylistRequests {
     public record ReorderTracksRequest(List<String> trackIds) {
     }
 
+    public record ImportPlaylistRequest(String platform, String playlistId) {
+    }
+
     public record ImportNeteasePlaylistRequest(String playlistId) {
     }
 }

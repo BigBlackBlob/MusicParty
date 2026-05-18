@@ -35,7 +35,6 @@ import { usePlayerStore } from '../stores/player';
 import { useUiStore } from '../stores/ui';
 import { useUserStore } from '../stores/user';
 import { useAudio } from '../composables/useAudio';
-import { useAudioGraphStore } from '../stores/audioGraph';
 import { withPlaybackToken } from '../utils/audioUrl';
 
 const player = usePlayerStore();
@@ -43,7 +42,6 @@ const ui = useUiStore();
 const user = useUserStore();
 const audioRef = ref(null);
 const silentAudioRef = ref(null);
-const audioGraph = useAudioGraphStore();
 
 // 极简 1秒 静默 WAV
 const SILENT_WAV = 'data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
@@ -86,7 +84,6 @@ const onCanPlay = () => {
 };
 
 onMounted(() => {
-  audioGraph.registerAudioElement(audioRef.value);
   // 初始尝试播放静默音轨
   if (!player.isPaused) {
     silentAudioRef.value?.play().catch(() => {});

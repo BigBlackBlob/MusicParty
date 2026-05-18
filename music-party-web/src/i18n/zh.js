@@ -30,8 +30,7 @@ export default {
       lyrics: '歌词',
       queue: '播放队列',
       chat: '聊天',
-      playlists: '歌单',
-      audiofx: '音效'
+      playlists: '歌单'
     }
   },
 
@@ -197,6 +196,7 @@ export default {
     exportLiked: '导出喜欢的歌'
   },
   personalPlaylists: {
+    kicker: '个人歌单',
     defaultName: '我的歌单',
     newPlaylist: '新建歌单',
     saveAll: '保存到个人歌单',
@@ -256,6 +256,8 @@ export default {
   roomPlaylists: {
     kicker: '房间共享',
     title: '歌单',
+    roomScope: '房间',
+    personalScope: '个人',
     playAll: '播放全部',
     newPlaceholder: '新歌单名称',
     externalPlaceholder: '外部歌单 ID',
@@ -264,29 +266,6 @@ export default {
     rename: '重命名',
     delete: '删除',
     namePrompt: '歌单名称'
-  },
-  audioFx: {
-    kicker: '本地音频',
-    title: '音效 / EQ',
-    enabled: '已启用',
-    bypass: '旁路',
-    unavailable: '为保证原生播放稳定，音效暂未启用。',
-    experimentalGraph: '实验性 Web Audio 链路',
-    enableGraph: '启用链路',
-    disableGraph: '禁用并刷新回退',
-    diagnostics: '音频诊断：',
-    eq: '均衡器',
-    compressor: '压缩器',
-    threshold: '阈值',
-    ratio: '比例',
-    attack: '启动',
-    release: '释放',
-    presets: {
-      flat: '平直',
-      bass: '低频增强',
-      vocal: '人声清晰',
-      night: '夜间压缩'
-    }
   },
   userList: {
     me: '我',

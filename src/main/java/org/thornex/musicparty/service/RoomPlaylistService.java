@@ -29,6 +29,7 @@ public class RoomPlaylistService {
     private final SubsonicMusicApiService subsonicMusicApiService;
     private final SubsonicSourceRegistry subsonicSourceRegistry;
     private final ApplicationEventPublisher eventPublisher;
+    private final PlaylistExportService playlistExportService;
     private final Map<String, IMusicApiService> apiServiceMap;
 
     public RoomPlaylistService(RoomPlaylistRepository repository,
@@ -37,6 +38,7 @@ public class RoomPlaylistService {
                                SubsonicMusicApiService subsonicMusicApiService,
                                SubsonicSourceRegistry subsonicSourceRegistry,
                                ApplicationEventPublisher eventPublisher,
+                               PlaylistExportService playlistExportService,
                                List<IMusicApiService> apiServices) {
         this.repository = repository;
         this.appProperties = appProperties;
@@ -44,6 +46,7 @@ public class RoomPlaylistService {
         this.subsonicMusicApiService = subsonicMusicApiService;
         this.subsonicSourceRegistry = subsonicSourceRegistry;
         this.eventPublisher = eventPublisher;
+        this.playlistExportService = playlistExportService;
         this.apiServiceMap = apiServices.stream().collect(Collectors.toMap(IMusicApiService::getPlatformName, Function.identity()));
     }
 
@@ -126,6 +129,10 @@ public class RoomPlaylistService {
                 .stream()
                 .map(RoomPlaylistTrack::music)
                 .toList();
+    }
+
+    public String exportPlaylist(String roomId, String playlistId, String format) {
+        return playlistExportService.format(getPlaylistMusics(roomId, playlistId), format);
     }
 
     private void assertImportAllowed(String roomId, String platform, String token) {
