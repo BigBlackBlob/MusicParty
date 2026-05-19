@@ -42,6 +42,11 @@
 			<artifactId>sqlite-jdbc</artifactId>
 			<version>3.53.0.0</version>
 		</dependency>
+		<dependency>
+			<groupId>net.jthink</groupId>
+			<artifactId>jaudiotagger</artifactId>
+			<version>3.0.1</version>
+		</dependency>
 
 		<dependency>
 			<groupId>org.projectlombok</groupId>

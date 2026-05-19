@@ -5,6 +5,10 @@ spring:
   mvc:
     async:
       request-timeout: 6h
+  servlet:
+    multipart:
+      max-file-size: ${MULTIPART_MAX_FILE_SIZE:200MB}
+      max-request-size: ${MULTIPART_MAX_REQUEST_SIZE:220MB}
 
 # Logging configuration
 logging:
@@ -62,6 +66,11 @@ app:
       max-message-length: ${CHAT_MAX_LENGTH:200}
     cache:
       max-size: ${CACHE_MAX_SIZE:1GB}
+    local-library:
+      enabled: ${LOCAL_LIBRARY_ENABLED:true}
+      path: ${LOCAL_LIBRARY_PATH:data/local-library}
+      allowed-users: ${LOCAL_LIBRARY_ALLOWED_USERS:}
+      max-upload-bytes: ${LOCAL_LIBRARY_MAX_UPLOAD_BYTES:209715200}
     database:
       enabled: ${DB_ENABLED:true}
       path: ${DB_PATH:data/musicparty.db}

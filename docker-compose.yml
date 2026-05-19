@@ -50,6 +50,13 @@ services:
       - PLAYLIST_IMPORT_LIMIT=100    # 导入歌单时的最大歌曲数限制
       - CHAT_HISTORY_LIMIT=1000      # 聊天历史记录保留数量
       - CACHE_MAX_SIZE=1GB           # 本地音乐缓存上限 (例如 512MB, 1GB, 2GB)
+      # [本地上传曲库]
+      - LOCAL_LIBRARY_ENABLED=true
+      - LOCAL_LIBRARY_PATH=data/local-library
+      - LOCAL_LIBRARY_ALLOWED_USERS= # 管理员始终可上传；非管理员白名单可在设置页维护
+      - LOCAL_LIBRARY_MAX_UPLOAD_BYTES=209715200
+      - MULTIPART_MAX_FILE_SIZE=200MB
+      - MULTIPART_MAX_REQUEST_SIZE=220MB
 
       # [防滥用配置]
       - QUEUE_MAX_USER_SONGS=100     # 单用户最大点歌数
@@ -68,6 +75,7 @@ services:
       # 挂载音频缓存目录，防止重启后 B 站歌曲重新下载
       - ./music_party/cached_media:/app/cached_media
       # 挂载数据目录，用于持久化播放列表和历史记录
+      # 本地上传曲库默认也保存在 ./music_party/data/local-library
       - ./music_party/data:/app/data
 
 networks:

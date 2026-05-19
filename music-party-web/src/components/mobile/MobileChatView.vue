@@ -1,7 +1,7 @@
 <template>
   <section class="flex flex-col h-full bg-bg-base relative overflow-hidden">
     <!-- Header Section -->
-    <header class="sticky top-0 z-20 bg-surface-panel border-b border-border-default pt-md px-md pb-3 flex flex-col gap-4 safe-area-top">
+    <header class="z-20 bg-surface-panel border-b border-border-default pt-md px-md pb-3 flex flex-col gap-4 flex-shrink-0 safe-area-top">
       <div class="flex justify-between items-center">
         <h1 class="font-title text-title text-primary">{{ t('chat.title') }}</h1>
         <div class="flex items-center gap-2">
@@ -69,7 +69,7 @@
     </div>
 
     <!-- Input Section -->
-    <footer class="p-md pb-[calc(16px+env(safe-area-inset-bottom))] bg-bg-base/95 backdrop-blur-md border-t border-border-default">
+    <footer class="p-md bg-bg-base/95 backdrop-blur-md border-t border-border-default">
       <form v-if="activeTab === 'CHAT'" class="flex items-center gap-3" @submit.prevent="send">
         <div class="flex-1 flex items-center bg-surface-panel h-[48px] rounded-2xl px-4 border border-border-default focus-within:border-primary/50 transition-colors group">
           <input 

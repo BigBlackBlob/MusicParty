@@ -69,6 +69,9 @@ public class ApiController {
         List<MusicPlatform> platforms = new ArrayList<>();
         platforms.add(new MusicPlatform("netease", "netease", true));
         platforms.add(new MusicPlatform("bilibili", "bilibili", false));
+        if (apiServiceMap.containsKey("local")) {
+            platforms.add(new MusicPlatform("local", "local", false));
+        }
 
         boolean canShowNavidrome = navidromeAccessService.isEnabled()
                 && navidromeAccessService.isConfigured()

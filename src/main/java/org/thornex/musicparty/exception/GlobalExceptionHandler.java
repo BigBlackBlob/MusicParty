@@ -3,6 +3,7 @@ package org.thornex.musicparty.exception;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 
@@ -21,6 +22,17 @@ public class GlobalExceptionHandler {
                 "status", HttpStatus.BAD_GATEWAY.value()
         );
         return new ResponseEntity<>(body, HttpStatus.BAD_GATEWAY);
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<Object> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException ex) {
+        log.warn("Upload request rejected because it exceeded multipart limits: {}", ex.getMessage());
+        Map<String, Object> body = Map.of(
+                "message", "Upload is too large. Increase MULTIPART_MAX_FILE_SIZE / MULTIPART_MAX_REQUEST_SIZE or choose a smaller file.",
+                "error", ex.getClass().getSimpleName(),
+                "status", HttpStatus.PAYLOAD_TOO_LARGE.value()
+        );
+        return new ResponseEntity<>(body, HttpStatus.PAYLOAD_TOO_LARGE);
     }
 
     @ExceptionHandler(Exception.class)

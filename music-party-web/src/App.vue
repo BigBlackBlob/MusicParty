@@ -131,7 +131,8 @@ const AUTO_LITE_DELAY_MS = 180000;
 const AUTO_LITE_SUPPRESS_MS = 600000;
 
 const setAppViewportHeight = () => {
-  document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`);
+  const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  document.documentElement.style.setProperty('--app-height', `${vh}px`);
 };
 
 const startGame = () => {
@@ -222,6 +223,7 @@ onMounted(() => {
   roomStore.fetchRooms();
   setAppViewportHeight();
   window.addEventListener('resize', setAppViewportHeight);
+  window.addEventListener('orientationchange', setAppViewportHeight);
   window.visualViewport?.addEventListener('resize', setAppViewportHeight);
 
   const params = new URLSearchParams(window.location.search);

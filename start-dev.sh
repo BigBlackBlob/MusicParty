@@ -41,6 +41,12 @@ SQUIDIFY_BASE_URL="${SQUIDIFY_BASE_URL:-}"
 SQUIDIFY_USERNAME="${SQUIDIFY_USERNAME:-}"
 SQUIDIFY_PASSWORD="${SQUIDIFY_PASSWORD:-}"
 SQUIDIFY_ALLOWED_USERS="${SQUIDIFY_ALLOWED_USERS:-}"
+LOCAL_LIBRARY_ENABLED="${LOCAL_LIBRARY_ENABLED:-true}"
+LOCAL_LIBRARY_PATH="${LOCAL_LIBRARY_PATH:-data/local-library}"
+LOCAL_LIBRARY_ALLOWED_USERS="${LOCAL_LIBRARY_ALLOWED_USERS:-}"
+LOCAL_LIBRARY_MAX_UPLOAD_BYTES="${LOCAL_LIBRARY_MAX_UPLOAD_BYTES:-209715200}"
+MULTIPART_MAX_FILE_SIZE="${MULTIPART_MAX_FILE_SIZE:-200MB}"
+MULTIPART_MAX_REQUEST_SIZE="${MULTIPART_MAX_REQUEST_SIZE:-220MB}"
 STARTED_PIDS=()
 
 info() {
@@ -75,6 +81,16 @@ Options:
   --navidrome-password <pass>   Navidrome password.
   --navidrome-allowed-users <names>
                                 MusicParty usernames allowed to use Navidrome, comma-separated.
+  --no-local-library            Disable local upload/transcode library for this local run.
+  --local-library-path <path>   Local library storage path. Default: data/local-library.
+  --local-library-allowed-users <names>
+                                MusicParty usernames allowed to upload, comma-separated. Admin can always upload.
+  --local-library-max-upload-bytes <bytes>
+                                Max upload size. Default: 209715200 (200 MiB).
+  --multipart-max-file-size <size>
+                                Spring multipart file limit. Default: 200MB.
+  --multipart-max-request-size <size>
+                                Spring multipart request limit. Default: 220MB.
   --skip-browser                Do not open frontend URL after startup.
   -h, --help                    Show this help.
 
@@ -160,6 +176,35 @@ while [[ $# -gt 0 ]]; do
       [[ -n "$NAVIDROME_ALLOWED_USERS" ]] || die "--navidrome-allowed-users requires a value"
       shift 2
       ;;
+    --no-local-library)
+      LOCAL_LIBRARY_ENABLED=false
+      shift
+      ;;
+    --local-library-path)
+      LOCAL_LIBRARY_PATH="${2:-}"
+      [[ -n "$LOCAL_LIBRARY_PATH" ]] || die "--local-library-path requires a value"
+      shift 2
+      ;;
+    --local-library-allowed-users)
+      LOCAL_LIBRARY_ALLOWED_USERS="${2:-}"
+      [[ -n "$LOCAL_LIBRARY_ALLOWED_USERS" ]] || die "--local-library-allowed-users requires a value"
+      shift 2
+      ;;
+    --local-library-max-upload-bytes)
+      LOCAL_LIBRARY_MAX_UPLOAD_BYTES="${2:-}"
+      [[ -n "$LOCAL_LIBRARY_MAX_UPLOAD_BYTES" ]] || die "--local-library-max-upload-bytes requires a value"
+      shift 2
+      ;;
+    --multipart-max-file-size)
+      MULTIPART_MAX_FILE_SIZE="${2:-}"
+      [[ -n "$MULTIPART_MAX_FILE_SIZE" ]] || die "--multipart-max-file-size requires a value"
+      shift 2
+      ;;
+    --multipart-max-request-size)
+      MULTIPART_MAX_REQUEST_SIZE="${2:-}"
+      [[ -n "$MULTIPART_MAX_REQUEST_SIZE" ]] || die "--multipart-max-request-size requires a value"
+      shift 2
+      ;;
     --skip-browser)
       SKIP_BROWSER=true
       shift
@@ -177,6 +222,9 @@ done
 command -v node >/dev/null 2>&1 || die "node is required"
 command -v npm >/dev/null 2>&1 || die "npm is required"
 command -v npx >/dev/null 2>&1 || die "npx is required"
+if [[ "$LOCAL_LIBRARY_ENABLED" == true ]] && ! command -v ffmpeg >/dev/null 2>&1; then
+  warn "ffmpeg is not on PATH; local uploads can be accepted but transcoding will fail until ffmpeg is installed"
+fi
 
 ensure_java_home() {
   local candidate=""
@@ -406,6 +454,12 @@ NETEASE_LOG="$LOG_DIR/netease-api.log"
   echo "navidrome-allowed-users: $NAVIDROME_ALLOWED_USERS"
   echo "squidify-enabled: $SQUIDIFY_ENABLED"
   echo "squidify-base-url: $SQUIDIFY_BASE_URL"
+  echo "local-library-enabled: $LOCAL_LIBRARY_ENABLED"
+  echo "local-library-path: $LOCAL_LIBRARY_PATH"
+  echo "local-library-allowed-users: $LOCAL_LIBRARY_ALLOWED_USERS"
+  echo "local-library-max-upload-bytes: $LOCAL_LIBRARY_MAX_UPLOAD_BYTES"
+  echo "multipart-max-file-size: $MULTIPART_MAX_FILE_SIZE"
+  echo "multipart-max-request-size: $MULTIPART_MAX_REQUEST_SIZE"
 } >> "$BACKEND_LOG"
 
 info "root: $ROOT_DIR"
@@ -424,6 +478,12 @@ fi
 info "squidify enabled: $SQUIDIFY_ENABLED"
 if [[ "$SQUIDIFY_ENABLED" == true ]]; then
   info "squidify base url: $SQUIDIFY_BASE_URL"
+fi
+info "local library enabled: $LOCAL_LIBRARY_ENABLED"
+if [[ "$LOCAL_LIBRARY_ENABLED" == true ]]; then
+  info "local library path: $LOCAL_LIBRARY_PATH"
+  info "local library upload allowlist: ${LOCAL_LIBRARY_ALLOWED_USERS:-admin-only until changed in Settings}"
+  info "multipart upload limits: file=$MULTIPART_MAX_FILE_SIZE request=$MULTIPART_MAX_REQUEST_SIZE"
 fi
 
 trap cleanup EXIT INT TERM
@@ -486,6 +546,12 @@ info "starting backend in background"
     SQUIDIFY_USERNAME="$SQUIDIFY_USERNAME" \
     SQUIDIFY_PASSWORD="$SQUIDIFY_PASSWORD" \
     SQUIDIFY_ALLOWED_USERS="$SQUIDIFY_ALLOWED_USERS" \
+    LOCAL_LIBRARY_ENABLED="$LOCAL_LIBRARY_ENABLED" \
+    LOCAL_LIBRARY_PATH="$LOCAL_LIBRARY_PATH" \
+    LOCAL_LIBRARY_ALLOWED_USERS="$LOCAL_LIBRARY_ALLOWED_USERS" \
+    LOCAL_LIBRARY_MAX_UPLOAD_BYTES="$LOCAL_LIBRARY_MAX_UPLOAD_BYTES" \
+    MULTIPART_MAX_FILE_SIZE="$MULTIPART_MAX_FILE_SIZE" \
+    MULTIPART_MAX_REQUEST_SIZE="$MULTIPART_MAX_REQUEST_SIZE" \
     "${MVN_CMD[@]}" spring-boot:run 2>&1 | tee -a "$BACKEND_LOG"
 ) &
 STARTED_PIDS+=("$!")

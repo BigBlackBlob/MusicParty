@@ -1,5 +1,5 @@
 <template>
-  <nav class="fixed bottom-0 w-full bg-surface-overlay/80 backdrop-blur-lg border-t border-border-default h-[72px] flex items-center justify-around px-md z-30 pb-[env(safe-area-inset-bottom)] box-content">
+  <nav class="relative w-full bg-surface-overlay/80 backdrop-blur-lg border-t border-border-default min-h-[72px] flex-shrink-0 flex items-stretch z-30 pb-[env(safe-area-inset-bottom)]">
     <button
       v-for="item in items"
       :key="item.key"
@@ -7,7 +7,7 @@
       role="tab"
       :aria-selected="active === item.key"
       :aria-label="item.ariaLabel"
-      class="relative flex flex-col items-center gap-1 transition-all duration-300 active:scale-95"
+      class="relative flex-1 flex flex-col items-center justify-center gap-1 transition-all duration-300 active:scale-95"
       :class="active === item.key ? 'text-primary' : 'text-text-muted hover:text-primary'"
       @click="$emit('update:active', item.key)"
     >
@@ -16,7 +16,7 @@
       </span>
       <span class="text-micro font-micro uppercase tracking-wider">{{ item.label }}</span>
 
-      <span v-if="item.badge" class="absolute -top-1 -right-2 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-on-primary shadow-lg">
+      <span v-if="item.badge" class="absolute top-2 right-[25%] flex h-4 min-w-[16px] items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-on-primary shadow-lg z-10">
         {{ item.badge }}
       </span>
     </button>
