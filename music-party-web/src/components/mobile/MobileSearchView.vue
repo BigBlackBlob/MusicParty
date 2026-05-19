@@ -1,7 +1,7 @@
 <template>
   <section class="flex flex-col h-full bg-bg-base relative overflow-hidden">
     <!-- Header Section (Fixed Top) -->
-    <header class="sticky top-0 z-20 bg-bg-base/95 backdrop-blur-md border-b border-border-default pt-4 pb-3 px-panelPadding flex flex-col gap-4 safe-area-top">
+    <header class="w-full z-20 bg-bg-base/95 backdrop-blur-md border-b border-border-default pt-4 pb-3 px-panelPadding flex flex-col gap-4 flex-shrink-0 safe-area-top">
       <!-- Search Bar & Cancel -->
       <form class="flex items-center gap-3" @submit.prevent="handleSearchAction">
         <div class="flex-1 flex items-center bg-surface-panel h-[40px] rounded-full px-3 border border-border-default focus-within:border-primary/50 transition-colors group">
@@ -75,11 +75,10 @@
         </button>
       </div>
 
-      <SubsonicSourceManager />
     </header>
 
     <!-- Scrollable Results Area -->
-    <main class="flex-1 overflow-y-auto px-panelPadding py-2 flex flex-col pb-24 safe-area-bottom">
+    <main class="flex-1 overflow-y-auto px-panelPadding py-2 flex flex-col">
       <div v-if="loading" class="flex flex-col items-center justify-center py-20 text-center opacity-40">
         <span class="material-symbols-outlined text-[48px] animate-spin mb-2">refresh</span>
         <p class="font-compact text-compact uppercase tracking-widest">{{ t('search.loading') }}</p>
@@ -213,7 +212,6 @@ import { useI18n } from 'vue-i18n';
 import { usePlayerStore } from '../../stores/player';
 import { useSearchLogic } from '../../composables/useSearchLogic';
 import CoverImage from '../CoverImage.vue';
-import SubsonicSourceManager from '../SubsonicSourceManager.vue';
 import {
   addAlbumSelections,
   clearAlbumSelections,
@@ -311,8 +309,5 @@ onMounted(loadPlatforms);
 <style scoped>
 .safe-area-top {
   padding-top: calc(env(safe-area-inset-top) + 16px);
-}
-.safe-area-bottom {
-  padding-bottom: calc(env(safe-area-inset-bottom) + 92px);
 }
 </style>

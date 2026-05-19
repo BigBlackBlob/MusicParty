@@ -1,4 +1,4 @@
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useToast } from './useToast';
 import { musicApi } from '../api/music.js';
@@ -47,10 +47,20 @@ export function useSearchLogic() {
     const expandedAlbumIds = ref(new Set());
     let searchRequestSeq = 0;
 
-    const doSearch = async (page = 1) => {
+    watch(platform, (newPlatform) => {
+        if (newPlatform === 'local') {
+            keyword.value = '';
+            doSearch(1);
+        }
+    });
+
+const doSearch = async (page = 1) => {
         const requestSeq = ++searchRequestSeq;
         const val = keyword.value.trim();
-        if (!val && searchType.value !== 'playlist') return;
+        const isLocal = platform.value === 'local';
+        if (!val && searchType.value !== 'playlist' && !isLocal) return;
+
+        const effectiveKeyword = (!val && isLocal) ? ' ' : val;
 
         // 1. 歌单解析逻辑
         if (searchType.value === 'playlist') {
@@ -96,7 +106,7 @@ export function useSearchLogic() {
                 localStorage.setItem(ALBUMS_CACHE_KEY, JSON.stringify(data));
                 canGoNext.value = false;
             } else {
-                const data = await musicApi.search(platform.value, val, userStore.sessionToken, offset, SEARCH_LIMIT, roomStore.currentRoomId);
+                const data = await musicApi.search(platform.value, effectiveKeyword, userStore.sessionToken, offset, SEARCH_LIMIT, roomStore.currentRoomId);
                 if (requestSeq !== searchRequestSeq) return;
                 songs.value = data;
                 localStorage.setItem(SONGS_CACHE_KEY, JSON.stringify(data));

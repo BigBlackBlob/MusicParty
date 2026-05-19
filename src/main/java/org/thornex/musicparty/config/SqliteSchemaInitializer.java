@@ -149,6 +149,70 @@ public class SqliteSchemaInitializer {
                                     unique (playlist_id, music_key)
                                 )
                                 """)
+                ),
+                new SchemaMigration(
+                        "schema.local_track.table",
+                        jdbc -> !hasTable(jdbc, "local_track"),
+                        jdbc -> jdbc.execute("""
+                                create table local_track (
+                                    id text primary key,
+                                    original_hash text,
+                                    original_file_name text,
+                                    source_path text,
+                                    source_mime_type text,
+                                    source_size_bytes integer not null default 0,
+                                    title text not null,
+                                    artists text not null,
+                                    album text,
+                                    duration_ms integer not null default 0,
+                                    cover_path text,
+                                    cover_mime_type text,
+                                    ogg_path text,
+                                    status text not null,
+                                    error_message text,
+                                    status_message text,
+                                    progress_percent integer,
+                                    uploaded_by text,
+                                    created_at integer not null,
+                                    updated_at integer not null,
+                                    started_at integer,
+                                    completed_at integer
+                                )
+                                """)
+                ),
+                new SchemaMigration(
+                        "schema.local_track.product_fields",
+                        jdbc -> hasTable(jdbc, "local_track") && !hasColumn(jdbc, "local_track", "original_hash"),
+                        jdbc -> {
+                            jdbc.execute("alter table local_track add column original_hash text");
+                            jdbc.execute("alter table local_track add column original_file_name text");
+                            jdbc.execute("alter table local_track add column source_path text");
+                            jdbc.execute("alter table local_track add column source_mime_type text");
+                            jdbc.execute("alter table local_track add column source_size_bytes integer not null default 0");
+                            jdbc.execute("alter table local_track add column cover_mime_type text");
+                            jdbc.execute("alter table local_track add column status_message text");
+                            jdbc.execute("alter table local_track add column progress_percent integer");
+                            jdbc.execute("alter table local_track add column started_at integer");
+                            jdbc.execute("alter table local_track add column completed_at integer");
+                            jdbc.execute("update local_track set status = 'QUEUED' where status = 'PENDING'");
+                            jdbc.execute("update local_track set status = 'PROCESSING' where status = 'TRANSCODING'");
+                        }
+                ),
+                new SchemaMigration(
+                        "schema.local_track.original_hash_unique",
+                        jdbc -> hasTable(jdbc, "local_track"),
+                        jdbc -> jdbc.execute("create unique index if not exists idx_local_track_original_hash_active on local_track(original_hash) where status <> 'DELETED' and original_hash is not null")
+                ),
+                new SchemaMigration(
+                        "schema.local_upload_access.table",
+                        jdbc -> !hasTable(jdbc, "local_upload_access"),
+                        jdbc -> jdbc.execute("""
+                                create table local_upload_access (
+                                    user_name text primary key,
+                                    created_at integer not null,
+                                    updated_at integer not null
+                                )
+                                """)
                 )
         );
     }

@@ -232,8 +232,13 @@ html {
 }
 
 .app-viewport {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
   height: var(--app-height, 100dvh);
   min-height: var(--app-height, 100dvh);
+  overflow: hidden;
 }
 
 :lang(zh-CN) {

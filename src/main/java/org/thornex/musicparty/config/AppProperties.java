@@ -25,6 +25,7 @@ public class AppProperties {
     private CacheConfig cache = new CacheConfig();
     private AuthConfig auth = new AuthConfig();
     private DatabaseConfig database = new DatabaseConfig();
+    private LocalLibraryConfig localLibrary = new LocalLibraryConfig();
 
     @Data
     public static class QueueConfig {
@@ -56,6 +57,14 @@ public class AppProperties {
         private boolean enabled = true;
         private String path = "data/musicparty.db";
         private boolean initSchema = true;
+    }
+
+    @Data
+    public static class LocalLibraryConfig {
+        private boolean enabled = true;
+        private String path = "data/local-library";
+        private String allowedUsers = "";
+        private long maxUploadBytes = 200L * 1024L * 1024L;
     }
 
     @Data

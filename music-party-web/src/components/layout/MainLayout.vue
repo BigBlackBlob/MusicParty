@@ -147,88 +147,10 @@
               <span class="material-symbols-outlined">settings</span>
             </button>
 
-            <div
-              v-if="isSettingsOpen"
-              class="absolute right-0 top-12 w-[280px] rounded-lg border border-border-default bg-surface-overlay/95 p-3 text-sm shadow-lg backdrop-blur-xl"
-            >
-              <div class="mb-3 flex items-center justify-between border-b border-border-subtle pb-3">
-                <span class="font-compact text-text-primary">{{ t('settings.title') }}</span>
-                <span class="text-xs text-text-muted">{{ userStore.isGuest ? t('settings.guest') : userStore.currentUser.name }}</span>
-              </div>
-              <button class="flex w-full items-center justify-between rounded-md px-2 py-2 text-left hover:bg-[var(--surface-control-hover)]" @click="uiStore.toggleDarkMode">
-                <span class="text-text-secondary">{{ t('settings.theme') }}</span>
-                <span class="text-text-primary">{{ uiStore.isDarkMode ? t('settings.dark') : t('settings.light') }}</span>
-              </button>
-              <button class="flex w-full items-center justify-between rounded-md px-2 py-2 text-left hover:bg-[var(--surface-control-hover)]" @click="uiStore.setLocale(uiStore.locale === 'en' ? 'zh' : 'en')">
-                <span class="text-text-secondary">{{ t('settings.language') }}</span>
-                <span class="text-text-primary">{{ localeLabel }}</span>
-              </button>
-              <button class="flex w-full items-center justify-between rounded-md px-2 py-2 text-left hover:bg-[var(--surface-control-hover)]" @click="uiStore.toggleLiteMode">
-                <span class="text-text-secondary">{{ t('settings.liteMode') }}</span>
-                <span class="text-text-primary">{{ uiStore.isLiteMode ? t('settings.on') : t('settings.off') }}</span>
-              </button>
-              <label class="flex w-full cursor-pointer items-center justify-between rounded-md px-2 py-2 hover:bg-[var(--surface-control-hover)]">
-                <span class="text-text-secondary">{{ t('settings.autoLiteMode') }}</span>
-                <input v-model="uiStore.autoLiteMode" class="h-4 w-4 accent-[var(--accent)]" type="checkbox" />
-              </label>
-
-              <!-- Scale Controls -->
-              <div class="mt-2 border-t border-border-subtle pt-3">
-                <div class="mb-2 flex items-center justify-between px-2">
-                  <span class="text-text-secondary">{{ t('settings.stageDensity') }}</span>
-                  <span class="text-xs text-text-primary">{{ Math.round(uiStore.mainStageScale * 100) }}%</span>
-                </div>
-                <div class="flex items-center gap-1 px-2 pb-2">
-                  <button class="flex-1 rounded py-1 text-xs transition-colors" :class="isScaleActive(0.92) ? 'bg-primary text-on-primary' : 'bg-[var(--surface-control)] text-text-secondary hover:text-text-primary hover:bg-[var(--surface-control-hover)]'" @click="uiStore.setMainStageScale(0.92)">{{ t('settings.compact') }}</button>
-                  <button class="flex-1 rounded py-1 text-xs transition-colors" :class="isScaleActive(1.00) ? 'bg-primary text-on-primary' : 'bg-[var(--surface-control)] text-text-secondary hover:text-text-primary hover:bg-[var(--surface-control-hover)]'" @click="uiStore.setMainStageScale(1.00)">{{ t('settings.standard') }}</button>
-                  <button class="flex-1 rounded py-1 text-xs transition-colors" :class="isScaleActive(1.12) ? 'bg-primary text-on-primary' : 'bg-[var(--surface-control)] text-text-secondary hover:text-text-primary hover:bg-[var(--surface-control-hover)]'" @click="uiStore.setMainStageScale(1.12)">{{ t('settings.relaxed') }}</button>
-                </div>
-                <div class="px-2 pb-2">
-                  <input
-                    :value="uiStore.mainStageScale"
-                    @input="e => uiStore.setMainStageScale(e.target.value)"
-                    type="range"
-                    min="0.90"
-                    max="1.20"
-                    step="0.02"
-                    class="w-full accent-[var(--accent)] cursor-pointer"
-                  />
-                </div>
-              </div>
-
-              <!-- Zoom Controls -->
-              <div class="mt-2 border-t border-border-subtle pt-3">
-                <div class="mb-2 flex items-center justify-between px-2">
-                  <span class="text-text-secondary">{{ t('settings.globalZoom') }}</span>
-                  <span class="text-xs text-text-primary">{{ Math.round(uiStore.globalZoomLevel * 100) }}%</span>
-                </div>
-                <div class="flex items-center gap-1 px-2 pb-2">
-                  <button class="flex-1 rounded py-1 text-xs transition-colors" :class="isZoomActive(1.00) ? 'bg-primary text-on-primary' : 'bg-[var(--surface-control)] text-text-secondary hover:text-text-primary hover:bg-[var(--surface-control-hover)]'" @click="uiStore.setGlobalZoomLevel(1.00)">1.0x</button>
-                  <button class="flex-1 rounded py-1 text-xs transition-colors" :class="isZoomActive(1.25) ? 'bg-primary text-on-primary' : 'bg-[var(--surface-control)] text-text-secondary hover:text-text-primary hover:bg-[var(--surface-control-hover)]'" @click="uiStore.setGlobalZoomLevel(1.25)">1.25x</button>
-                  <button class="flex-1 rounded py-1 text-xs transition-colors" :class="isZoomActive(1.50) ? 'bg-primary text-on-primary' : 'bg-[var(--surface-control)] text-text-secondary hover:text-text-primary hover:bg-[var(--surface-control-hover)]'" @click="uiStore.setGlobalZoomLevel(1.50)">1.5x</button>
-                </div>
-                <div class="px-2 pb-2">
-                  <input
-                    :value="uiStore.globalZoomLevel"
-                    @input="e => uiStore.setGlobalZoomLevel(e.target.value)"
-                    type="range"
-                    min="1.0"
-                    max="1.5"
-                    step="0.05"
-                    class="w-full accent-[var(--accent)] cursor-pointer"
-                  />
-                </div>
-              </div>
-
-              <AdminSettingsPanel />
-
-              <div class="mt-1 border-t border-border-subtle px-2 pt-3 text-xs text-text-muted">
-                {{ t('settings.connection') }}: <span :class="playerStore.connected ? 'text-success' : 'text-error'">{{ playerStore.connected ? t('settings.connected') : t('settings.disconnected') }}</span>
-              </div>
-            </div>
           </div>
         </div>
       </header>
+      <SettingsCenter v-if="isSettingsOpen" @close="isSettingsOpen = false" />
 
       <!-- Main Immersive Canvas -->
       <main class="relative z-20 flex w-full items-center justify-center px-5 pt-[var(--top-bar-height)]" style="height: var(--app-height);">
@@ -255,7 +177,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import AdminSettingsPanel from '../AdminSettingsPanel.vue';
+import SettingsCenter from '../SettingsCenter.vue';
 import LiteModeView from './LiteModeView.vue';
 import UserList from '../UserList.vue';
 import { useUserStore } from '../../stores/user';
@@ -286,7 +208,6 @@ const visibleUsers = computed(() => {
   return users.slice(0, 3);
 });
 const extraUserCount = computed(() => Math.max(0, userStore.onlineUsers.length - visibleUsers.value.length));
-const localeLabel = computed(() => uiStore.locale === 'en' ? t('settings.english') : t('settings.chinese'));
 
 onMounted(() => {
   uiStore.fetchConfig();
@@ -339,10 +260,6 @@ const canDeleteRoom = (room) => !room.system && room.creatorPublicId && room.cre
 const deleteRoom = (room) => {
   roomStore.deleteRoom(room.roomId);
 };
-
-const isScaleActive = (value) => Math.abs(uiStore.mainStageScale - value) < 0.011;
-
-const isZoomActive = (value) => Math.abs(uiStore.globalZoomLevel - value) < 0.011;
 
 const getInitials = (name = '') => {
   const normalized = String(name).trim();

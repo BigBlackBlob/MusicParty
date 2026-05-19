@@ -1,7 +1,7 @@
 <template>
   <section class="flex flex-col h-full bg-bg-base relative overflow-hidden">
     <!-- Header / Tab View -->
-    <header class="fixed top-0 w-full z-40 bg-surface-panel border-b border-border-default pt-md px-md safe-area-top">
+    <header class="w-full z-40 bg-surface-panel border-b border-border-default pt-md px-md flex-shrink-0 safe-area-top">
       <div class="flex justify-between items-center mb-md">
         <h1 class="font-title text-title text-primary">{{ roomStore.currentRoom?.name || 'Lounge' }}</h1>
         <div class="flex items-center">
@@ -45,7 +45,7 @@
     </header>
 
     <!-- Main Content Area -->
-    <main class="flex-1 overflow-y-auto pt-[140px] px-md pb-[92px] safe-area-bottom" :class="{ 'pb-[160px]': selectionMode }">
+    <main class="flex-1 overflow-y-auto px-md py-4" :class="{ 'pb-[100px]': selectionMode }">
       <template v-if="activeView === 'queue'">
         <div v-if="player.queue.length === 0" class="flex flex-col items-center justify-center py-20 text-center opacity-40">
           <span class="material-symbols-outlined text-[48px] mb-2">queue_music</span>
@@ -138,7 +138,7 @@
 
     <!-- Action Bar for Selection Mode -->
     <Transition name="action-bar">
-      <div v-if="selectionMode" class="fixed bottom-[84px] inset-x-md z-40 bg-surface-panel border border-border-default rounded-2xl p-md shadow-2xl backdrop-blur-xl">
+      <div v-if="selectionMode" class="absolute bottom-[84px] inset-x-md z-40 bg-surface-panel border border-border-default rounded-2xl p-md shadow-2xl backdrop-blur-xl">
         <div v-if="pendingDelete" class="flex flex-col gap-3">
           <p class="text-sm font-bold text-error text-center">{{ t('queue.deleteConfirm', { count: selectedCount }) }}</p>
           <div class="grid grid-cols-2 gap-2">
@@ -314,9 +314,6 @@ watch(activeView, () => {
 <style scoped>
 .safe-area-top {
   padding-top: calc(env(safe-area-inset-top) + 16px);
-}
-.safe-area-bottom {
-  padding-bottom: calc(env(safe-area-inset-bottom) + 92px);
 }
 .action-bar-enter-active,
 .action-bar-leave-active {

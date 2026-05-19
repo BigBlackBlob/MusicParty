@@ -188,3 +188,37 @@ create table if not exists room_subsonic_source (
 );
 
 create index if not exists idx_room_subsonic_source_source on room_subsonic_source(source_id);
+
+create table if not exists local_track (
+    id text primary key,
+    original_hash text,
+    original_file_name text,
+    source_path text,
+    source_mime_type text,
+    source_size_bytes integer not null default 0,
+    title text not null,
+    artists text not null,
+    album text,
+    duration_ms integer not null default 0,
+    cover_path text,
+    cover_mime_type text,
+    ogg_path text,
+    status text not null,
+    error_message text,
+    status_message text,
+    progress_percent integer,
+    uploaded_by text,
+    created_at integer not null,
+    updated_at integer not null,
+    started_at integer,
+    completed_at integer
+);
+
+create index if not exists idx_local_track_status on local_track(status);
+create index if not exists idx_local_track_updated on local_track(updated_at desc);
+
+create table if not exists local_upload_access (
+    user_name text primary key,
+    created_at integer not null,
+    updated_at integer not null
+);

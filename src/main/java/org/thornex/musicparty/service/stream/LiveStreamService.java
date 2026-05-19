@@ -215,7 +215,7 @@ public class LiveStreamService {
                 httpHeaders.put("Referer", "https://www.bilibili.com/");
                 httpHeaders.put("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
             }
-            if (url.startsWith("/api/navidrome/") || url.startsWith("/api/subsonic/") || url.startsWith("/api/netease/")) {
+            if (url.startsWith("/api/navidrome/") || url.startsWith("/api/subsonic/") || url.startsWith("/api/netease/") || url.startsWith("/api/local/")) {
                 httpHeaders.put(InternalStreamProxyToken.HEADER_NAME, internalStreamProxyToken.value());
             }
         }

@@ -20,9 +20,9 @@
     </header>
 
     <!-- Main Content Area -->
-    <main class="flex-1 flex flex-col px-md w-full overflow-y-auto overflow-x-hidden pb-[92px]">
+    <main class="flex-1 flex flex-col px-md w-full overflow-y-auto overflow-x-hidden py-4">
       <!-- Artwork Section -->
-      <div class="w-full aspect-square mt-2 mb-6 rounded-2xl overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.6)] flex-shrink-0 relative z-10 group">
+      <div class="w-full aspect-square max-h-[42dvh] mb-6 rounded-2xl overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.6)] flex-shrink-0 relative z-10 group mx-auto">
         <CoverImage
           :src="music?.coverUrl"
           :alt="trackTitle"
@@ -37,6 +37,7 @@
       </div>
 
       <!-- Track Info & Like -->
+      <div v-if="!hasLyrics" class="flex-1 min-h-4"></div>
       <div class="flex items-center justify-between mb-8 flex-shrink-0 z-10 px-1">
         <div class="flex flex-col overflow-hidden">
           <h1 class="font-title text-title text-primary truncate tracking-tight">{{ trackTitle }}</h1>
@@ -72,76 +73,98 @@
       </div>
 
       <!-- Playback Controls -->
-      <div class="flex items-center justify-between mb-8 flex-shrink-0 px-1 z-10 w-full max-w-[400px] mx-auto">
-        <div class="relative" ref="volumePanelContainerRef">
-          <button 
-            @click="toggleVolumePanel"
-            class="w-[36px] h-[36px] flex items-center justify-center transition-colors active:scale-90"
-            :class="volumePanelOpen ? 'text-primary' : 'text-text-secondary hover:text-primary'"
-          >
-            <span class="material-symbols-outlined text-[24px]">
-              {{ ui.volume === 0 ? 'volume_off' : (ui.volume < 0.5 ? 'volume_down' : 'volume_up') }}
-            </span>
-          </button>
+      <div class="flex items-center mb-8 flex-shrink-0 z-10 w-full max-w-[420px] mx-auto px-1">
+        <!-- 1. Volume -->
+        <div class="flex-1 flex justify-center items-center">
+          <div class="relative" ref="volumePanelContainerRef">
+            <button 
+              @click="toggleVolumePanel"
+              class="w-[44px] h-[44px] flex items-center justify-center transition-colors active:scale-90"
+              :class="volumePanelOpen ? 'text-primary' : 'text-text-secondary hover:text-primary'"
+            >
+              <span class="material-symbols-outlined text-[24px]">
+                {{ ui.volume === 0 ? 'volume_off' : (ui.volume < 0.5 ? 'volume_down' : 'volume_up') }}
+              </span>
+            </button>
 
-          <Transition name="mobile-volume-popover">
-            <div v-if="volumePanelOpen" class="absolute bottom-[100%] left-0 mb-4 z-30 flex items-center gap-4 border border-border-default rounded-2xl bg-surface-panel/90 backdrop-blur-2xl px-4 py-3 shadow-[0_24px_48px_rgba(0,0,0,0.5)] w-[200px] origin-bottom-left">
-              <button class="flex-shrink-0 text-text-primary text-xs font-bold font-mono w-[32px] text-left" type="button" @click="toggleMute">
-                {{ ui.volume === 0 ? t('player.muted') : `${Math.round(ui.volume * 100)}%` }}
-              </button>
-              <input
-                :value="ui.volume"
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                :aria-label="t('player.volume')"
-                class="flex-1 min-w-0 accent-primary"
-                @input="event => ui.setVolume(Number(event.target.value))"
-              />
-            </div>
-          </Transition>
+            <Transition name="mobile-volume-popover">
+              <div v-if="volumePanelOpen" class="absolute bottom-[100%] left-0 mb-4 z-30 flex items-center gap-4 border border-border-default rounded-2xl bg-surface-panel/90 backdrop-blur-2xl px-4 py-3 shadow-[0_24px_48px_rgba(0,0,0,0.5)] w-[200px] origin-bottom-left">
+                <button class="flex-shrink-0 text-text-primary text-xs font-bold font-mono w-[32px] text-left" type="button" @click="toggleMute">
+                  {{ ui.volume === 0 ? t('player.muted') : `${Math.round(ui.volume * 100)}%` }}
+                </button>
+                <input
+                  :value="ui.volume"
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  :aria-label="t('player.volume')"
+                  class="flex-1 min-w-0 accent-primary"
+                  @input="event => ui.setVolume(Number(event.target.value))"
+                />
+              </div>
+            </Transition>
+          </div>
         </div>
 
-        <button 
-          @click="player.toggleShuffle"
-          :disabled="player.isShuffleLocked"
-          class="w-[36px] h-[36px] flex items-center justify-center transition-colors active:scale-90"
-          :class="player.isShuffle ? 'text-primary' : 'text-text-secondary hover:text-primary'"
-        >
-          <span class="material-symbols-outlined text-[24px]">shuffle</span>
-        </button>
-        <button 
-          @click="player.playPrevious"
-          class="w-[44px] h-[44px] flex items-center justify-center text-primary hover:text-white transition-colors active:scale-90"
-        >
-          <span class="material-symbols-outlined text-[36px]" style="font-variation-settings: 'FILL' 1;">skip_previous</span>
-        </button>
-        <button 
-          @click="player.togglePause"
-          :disabled="player.isPauseLocked && !player.isPaused"
-          class="w-[64px] h-[64px] flex items-center justify-center text-primary hover:text-white hover:scale-105 transition-all active:scale-95 shadow-lg shadow-primary/20 rounded-full bg-accent-subtle"
-        >
-          <span class="material-symbols-outlined text-[40px]" style="font-variation-settings: 'FILL' 1;">
-            {{ player.isPaused ? 'play_arrow' : 'pause' }}
-          </span>
-        </button>
-        <button 
-          @click="player.playNext"
-          :disabled="player.isSkipLocked"
-          class="w-[44px] h-[44px] flex items-center justify-center text-primary hover:text-white transition-colors active:scale-90"
-        >
-          <span class="material-symbols-outlined text-[36px]" style="font-variation-settings: 'FILL' 1;">skip_next</span>
-        </button>
-        <button 
-          @click="player.toggleRepeat"
-          class="w-[36px] h-[36px] flex items-center justify-center transition-colors active:scale-90"
-          :class="player.repeatMode !== 'none' ? 'text-primary' : 'text-text-secondary hover:text-primary'"
-        >
-          <span class="material-symbols-outlined text-[24px]">
-            {{ player.repeatMode === 'one' ? 'repeat_one' : 'repeat' }}
-          </span>
-        </button>
+        <!-- 2. Shuffle -->
+        <div class="flex-1 flex justify-center items-center">
+          <button 
+            @click="player.toggleShuffle"
+            :disabled="player.isShuffleLocked"
+            class="w-[44px] h-[44px] flex items-center justify-center transition-colors active:scale-90"
+            :class="player.isShuffle ? 'text-primary' : 'text-text-secondary hover:text-primary'"
+          >
+            <span class="material-symbols-outlined text-[24px]">shuffle</span>
+          </button>
+        </div>
+
+        <!-- 3. Previous -->
+        <div class="flex-1 flex justify-center items-center">
+          <button 
+            @click="player.playPrevious"
+            class="w-[44px] h-[44px] flex items-center justify-center text-primary hover:text-white transition-colors active:scale-90"
+          >
+            <span class="material-symbols-outlined text-[36px]" style="font-variation-settings: 'FILL' 1;">skip_previous</span>
+          </button>
+        </div>
+
+        <!-- 4. Play/Pause -->
+        <div class="flex-1 flex justify-center items-center">
+          <button 
+            @click="player.togglePause"
+            :disabled="player.isPauseLocked && !player.isPaused"
+            class="w-[64px] h-[64px] flex items-center justify-center text-primary hover:text-white hover:scale-105 transition-all active:scale-95 shadow-lg shadow-primary/20 rounded-full bg-accent-subtle"
+          >
+            <span class="material-symbols-outlined text-[40px]" style="font-variation-settings: 'FILL' 1;">
+              {{ player.isPaused ? 'play_arrow' : 'pause' }}
+            </span>
+          </button>
+        </div>
+
+        <!-- 5. Next -->
+        <div class="flex-1 flex justify-center items-center">
+          <button 
+            @click="player.playNext"
+            :disabled="player.isSkipLocked"
+            class="w-[44px] h-[44px] flex items-center justify-center text-primary hover:text-white transition-colors active:scale-90"
+          >
+            <span class="material-symbols-outlined text-[36px]" style="font-variation-settings: 'FILL' 1;">skip_next</span>
+          </button>
+        </div>
+
+        <!-- 6. Repeat -->
+        <div class="flex-1 flex justify-center items-center">
+          <button 
+            @click="player.toggleRepeat"
+            class="w-[44px] h-[44px] flex items-center justify-center transition-colors active:scale-90"
+            :class="player.repeatMode !== 'none' ? 'text-primary' : 'text-text-secondary hover:text-primary'"
+          >
+            <span class="material-symbols-outlined text-[24px]">
+              {{ player.repeatMode === 'one' ? 'repeat_one' : 'repeat' }}
+            </span>
+          </button>
+        </div>
       </div>
 
       <!-- Integrated Scrolling Lyrics Section -->

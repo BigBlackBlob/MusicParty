@@ -77,9 +77,6 @@
                   {{ p.label }}
                 </button>
               </div>
-              <div class="mt-4">
-                <SubsonicSourceManager />
-              </div>
             </aside>
 
             <!-- Results -->
@@ -251,7 +248,6 @@ import { useSearchLogic } from '../composables/useSearchLogic';
 import { useToast } from '../composables/useToast';
 import { DialogRoot, DialogPortal, DialogOverlay, DialogContent } from 'reka-ui';
 import CoverImage from './CoverImage.vue';
-import SubsonicSourceManager from './SubsonicSourceManager.vue';
 import {
   addAlbumSelections,
   clearAlbumSelections,

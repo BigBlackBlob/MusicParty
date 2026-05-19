@@ -52,4 +52,40 @@ export const authApi = {
         id,
         sortOrder
     }),
+    listLocalTracks: (adminPassword) => client.get('/api/local/tracks', {
+        params: { adminPassword }
+    }),
+    uploadLocalTrack: (adminPassword, sessionToken, file, metadata = {}) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        Object.entries(metadata).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && String(value).trim()) {
+                formData.append(key, value);
+            }
+        });
+        return client.post('/api/local/tracks/upload', formData, {
+            params: { adminPassword, token: sessionToken },
+            headers: { 'Content-Type': 'multipart/form-data' },
+            timeout: 120000
+        });
+    },
+    updateLocalTrack: (adminPassword, sessionToken, id, track) => client.patch(`/api/local/tracks/${id}`, {
+        ...track,
+        adminPassword,
+        token: sessionToken
+    }),
+    deleteLocalTrack: (adminPassword, sessionToken, id) => client.delete(`/api/local/tracks/${id}`, {
+        params: { adminPassword, token: sessionToken }
+    }),
+    listLocalUploadAccess: (adminPassword) => client.get('/api/local/upload-access', {
+        params: { adminPassword }
+    }),
+    grantLocalUploadAccess: (adminPassword, userName) => client.post('/api/local/upload-access/grant', {
+        adminPassword,
+        userName
+    }),
+    revokeLocalUploadAccess: (adminPassword, userName) => client.post('/api/local/upload-access/revoke', {
+        adminPassword,
+        userName
+    }),
 };
