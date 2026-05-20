@@ -2,6 +2,7 @@ package org.thornex.musicparty.dto;
 
 public record AdminSubsonicSourceRequest(
         String adminPassword,
+        String sessionToken,
         String roomId,
         String id,
         String label,

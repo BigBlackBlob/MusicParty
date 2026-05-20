@@ -1,13 +1,7 @@
 <template>
   <div class="admin-settings-section">
     <div class="admin-auth-strip">
-      <input
-        v-model="password"
-        type="password"
-        autocomplete="current-password"
-        class="admin-input"
-        :placeholder="t('settings.admin.passwordPlaceholder')"
-      />
+      <div class="admin-session-pill">{{ userStore.role }}</div>
       <input
         v-model="targetUser"
         type="text"
@@ -313,7 +307,6 @@ const props = defineProps({
   }
 });
 
-const password = ref('');
 const targetUser = ref(userStore.currentUser?.name || '');
 const customCommand = ref('');
 const localTracks = ref([]);
@@ -347,9 +340,10 @@ const loadingSources = ref(false);
 const busy = ref(false);
 
 const currentTargetUser = () => (targetUser.value || userStore.currentUser?.name || '').trim();
+const adminSessionToken = () => userStore.sessionToken;
 
 const runAdminAction = async (action, successMessage = t('settings.admin.commandExecuted')) => {
-  if (!password.value) {
+  if (!userStore.isAdmin) {
     error(t('settings.admin.passwordRequired'));
     return;
   }
@@ -366,13 +360,13 @@ const runAdminAction = async (action, successMessage = t('settings.admin.command
 };
 
 const loadSubsonicSources = async () => {
-  if (!password.value) {
+  if (!userStore.isAdmin) {
     error(t('settings.admin.passwordRequired'));
     return;
   }
   loadingSources.value = true;
   try {
-    const { data } = await authApi.listSubsonicSources(password.value, roomStore.currentRoomId);
+    const data = await authApi.listSubsonicSources(adminSessionToken(), roomStore.currentRoomId);
     subsonicSources.value = Array.isArray(data) ? data : [];
   } catch (e) {
     error(extractErrorMessage(e, t('settings.admin.sourcesLoadFailed')));
@@ -387,13 +381,13 @@ const normalizeLocalTrack = (track) => ({
 });
 
 const loadLocalTracks = async () => {
-  if (!password.value) {
+  if (!userStore.isAdmin) {
     error(t('settings.admin.passwordRequired'));
     return;
   }
   loadingLocalTracks.value = true;
   try {
-    const data = await authApi.listLocalTracks(password.value);
+    const data = await authApi.listLocalTracks(adminSessionToken());
     localTracks.value = Array.isArray(data) ? data.map(normalizeLocalTrack) : [];
   } catch (e) {
     error(extractErrorMessage(e, t('settings.admin.localTracksLoadFailed')));
@@ -403,9 +397,9 @@ const loadLocalTracks = async () => {
 };
 
 const loadLocalUploadAccess = async () => {
-  if (!password.value) return;
+  if (!userStore.isAdmin) return;
   try {
-    const data = await authApi.listLocalUploadAccess(password.value);
+    const data = await authApi.listLocalUploadAccess(adminSessionToken());
     localUploadUsers.value = Array.isArray(data) ? data : [];
   } catch (e) {
     error(extractErrorMessage(e, t('settings.admin.localAccessLoadFailed')));
@@ -447,7 +441,7 @@ const runUploadLocalTrack = () => runAdminAction(
   async () => {
     if (localFiles.value.length === 0) return;
     for (const file of localFiles.value) {
-      await authApi.uploadLocalTrack(password.value, userStore.sessionToken, file, localForm.value);
+      await authApi.uploadLocalTrack(adminSessionToken(), file, localForm.value);
     }
     localFiles.value = [];
     localForm.value = { title: '', artists: '', album: '' };
@@ -459,7 +453,7 @@ const runUploadLocalTrack = () => runAdminAction(
 
 const runUpdateLocalTrack = (track) => runAdminAction(
   async () => {
-    await authApi.updateLocalTrack(password.value, userStore.sessionToken, track.id, {
+    await authApi.updateLocalTrack(adminSessionToken(), track.id, {
       title: track.title,
       artists: String(track.artistsText || '').split(',').map(item => item.trim()).filter(Boolean),
       album: track.album || ''
@@ -471,7 +465,7 @@ const runUpdateLocalTrack = (track) => runAdminAction(
 
 const runDeleteLocalTrack = (track) => runAdminAction(
   async () => {
-    await authApi.deleteLocalTrack(password.value, userStore.sessionToken, track.id);
+    await authApi.deleteLocalTrack(adminSessionToken(), track.id);
     await loadLocalTracks();
   },
   t('settings.admin.localTrackDeleted')
@@ -479,7 +473,7 @@ const runDeleteLocalTrack = (track) => runAdminAction(
 
 const runGrantLocalUpload = () => runAdminAction(
   async () => {
-    await authApi.grantLocalUploadAccess(password.value, localAccessUser.value.trim());
+    await authApi.grantLocalUploadAccess(adminSessionToken(), localAccessUser.value.trim());
     localAccessUser.value = '';
     await loadLocalUploadAccess();
   },
@@ -488,7 +482,7 @@ const runGrantLocalUpload = () => runAdminAction(
 
 const runRevokeLocalUpload = (name) => runAdminAction(
   async () => {
-    await authApi.revokeLocalUploadAccess(password.value, name);
+    await authApi.revokeLocalUploadAccess(adminSessionToken(), name);
     await loadLocalUploadAccess();
   },
   t('settings.admin.localUploadRevoked')
@@ -539,33 +533,33 @@ const buildSourceBaseUrl = () => {
 };
 
 const runGrantNavidrome = () => runAdminAction(
-  () => authApi.grantNavidrome(password.value, currentTargetUser(), roomStore.currentRoomId),
+  () => authApi.grantNavidrome(adminSessionToken(), currentTargetUser(), roomStore.currentRoomId),
   t('settings.admin.navidromeGranted')
 );
 
 const runRevokeNavidrome = () => runAdminAction(
-  () => authApi.revokeNavidrome(password.value, currentTargetUser(), roomStore.currentRoomId),
+  () => authApi.revokeNavidrome(adminSessionToken(), currentTargetUser(), roomStore.currentRoomId),
   t('settings.admin.navidromeRevoked')
 );
 
 const runStream = (enabled) => runAdminAction(
-  () => authApi.setStreamEnabled(password.value, enabled, roomStore.currentRoomId),
+  () => authApi.setStreamEnabled(adminSessionToken(), enabled, roomStore.currentRoomId),
   enabled ? t('settings.admin.streamEnabled') : t('settings.admin.streamDisabled')
 );
 
 const runClearQueue = () => runAdminAction(
-  () => authApi.clearQueue(password.value, roomStore.currentRoomId),
+  () => authApi.clearQueue(adminSessionToken(), roomStore.currentRoomId),
   t('settings.admin.queueCleared')
 );
 
 const runClearChat = () => runAdminAction(
-  () => authApi.clearChat(password.value, roomStore.currentRoomId),
+  () => authApi.clearChat(adminSessionToken(), roomStore.currentRoomId),
   t('settings.admin.chatCleared')
 );
 
 const runSaveCustomNavidrome = () => runAdminAction(
   async () => {
-    await authApi.saveSubsonicSource(password.value, roomStore.currentRoomId, {
+    await authApi.saveSubsonicSource(adminSessionToken(), roomStore.currentRoomId, {
       id: navidromeForm.value.id.trim(),
       label: navidromeForm.value.label.trim() || navidromeForm.value.id.trim(),
       baseUrl: buildSourceBaseUrl(),
@@ -582,7 +576,7 @@ const runSaveCustomNavidrome = () => runAdminAction(
 
 const runRemoveCustomNavidrome = () => runAdminAction(
   async () => {
-    await authApi.removeSubsonicSource(password.value, roomStore.currentRoomId, navidromeForm.value.id.trim());
+    await authApi.removeSubsonicSource(adminSessionToken(), roomStore.currentRoomId, navidromeForm.value.id.trim());
     resetNavidromeForm();
     await loadSubsonicSources();
   },
@@ -590,21 +584,21 @@ const runRemoveCustomNavidrome = () => runAdminAction(
 );
 
 const runTestCustomNavidrome = () => runAdminAction(
-  () => authApi.testSubsonicSource(password.value, roomStore.currentRoomId, navidromeForm.value.id.trim()),
+  () => authApi.testSubsonicSource(adminSessionToken(), roomStore.currentRoomId, navidromeForm.value.id.trim()),
   t('settings.admin.sourceTested')
 );
 
 const runCustomCommand = () => runAdminAction(async () => {
   const command = customCommand.value.trim();
   if (!command) return;
-  await authApi.adminCommand(password.value, command, roomStore.currentRoomId);
+  await authApi.adminCommand(adminSessionToken(), command, roomStore.currentRoomId);
   customCommand.value = '';
 });
 
 watch(
-  () => [props.section, password.value],
+  () => [props.section, userStore.role],
   async ([section]) => {
-    if (!password.value) return;
+    if (!userStore.isAdmin) return;
     if (section === 'library') {
       await Promise.all([loadLocalTracks(), loadLocalUploadAccess()]);
     }
@@ -629,6 +623,20 @@ watch(
   display: grid;
   grid-template-columns: minmax(180px, 260px) minmax(180px, 1fr);
   gap: 10px;
+}
+
+.admin-session-pill {
+  min-height: 34px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
 }
 
 .admin-page-header {

@@ -10,20 +10,20 @@ import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import org.thornex.musicparty.service.AccountService;
 import org.thornex.musicparty.service.RoomAccessService;
 import org.thornex.musicparty.service.RoomService;
-import org.thornex.musicparty.service.UserService;
 
 @Component
 @Slf4j
 public class WebSocketAuthInterceptor implements ChannelInterceptor {
 
-    private final UserService userService;
+    private final AccountService accountService;
     private final RoomService roomService;
     private final RoomAccessService roomAccessService;
 
-    public WebSocketAuthInterceptor(UserService userService, RoomService roomService, RoomAccessService roomAccessService) {
-        this.userService = userService;
+    public WebSocketAuthInterceptor(AccountService accountService, RoomService roomService, RoomAccessService roomAccessService) {
+        this.accountService = accountService;
         this.roomService = roomService;
         this.roomAccessService = roomAccessService;
     }
@@ -40,13 +40,15 @@ public class WebSocketAuthInterceptor implements ChannelInterceptor {
         RoomService.RoomAccessMetadata metadata = roomService.getRoomAccessMetadata(roomId)
                 .orElseThrow(() -> new MessageDeliveryException("UNKNOWN_ROOM"));
 
+        String sessionToken = accessor.getFirstNativeHeader("session-token");
+        var accountSession = accountService.resolveSession(sessionToken)
+                .orElseThrow(() -> new MessageDeliveryException("INVALID_ACCOUNT_SESSION"));
         if (!metadata.privateRoom()) {
             return message;
         }
 
-        String sessionToken = accessor.getFirstNativeHeader("session-token");
         String roomAccessToken = accessor.getFirstNativeHeader("room-access-token");
-        String publicId = userService.resolvePublicIdBySessionToken(sessionToken).orElse(null);
+        String publicId = accountSession.publicId();
 
         if (!StringUtils.hasText(publicId) || !roomAccessService.validateAccessToken(metadata.roomId(), publicId, roomAccessToken)) {
             log.warn("WebSocket Connection Refused: Invalid room access token. Session={}, Room={}", accessor.getSessionId(), metadata.roomId());

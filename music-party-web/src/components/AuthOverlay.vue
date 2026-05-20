@@ -1,173 +1,113 @@
 <template>
-  <div v-if="!passed" class="fixed inset-0 z-[var(--z-modal)] bg-[var(--surface-0)]/90 backdrop-blur-xl flex items-center justify-center p-4">
-    <div class="bg-[var(--surface-4)] p-8 shadow-2xl border border-[var(--border-default)] w-full max-w-md rounded-2xl relative overflow-hidden">
+  <div v-if="!passed" class="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-[var(--surface-0)]/90 p-4 backdrop-blur-xl">
+    <div class="relative w-full max-w-md overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--surface-4)] p-8 shadow-2xl">
       <div class="absolute inset-x-0 top-0 h-1 bg-[var(--accent)]"></div>
 
       <div class="mb-6">
-        <h2 class="text-2xl font-bold text-[var(--text-primary)] tracking-tight">
-          {{ isSetupMode ? t('auth.initializeTitle') : t('auth.accessTitle') }}
+        <h2 class="text-2xl font-bold tracking-tight text-[var(--text-primary)]">
+          {{ requiresSetup ? t('auth.initializeTitle') : t('auth.accessTitle') }}
         </h2>
-        <p class="text-xs font-mono text-[var(--text-tertiary)] mt-1 tracking-[0.2em]">
-          {{ isSetupMode ? t('auth.initializeDesc') : t('auth.accessDesc') }}
+        <p class="mt-1 font-mono text-xs tracking-[0.2em] text-[var(--text-tertiary)]">
+          {{ requiresSetup ? 'CREATE ADMIN ACCOUNT' : 'ACCOUNT LOGIN' }}
         </p>
       </div>
 
       <div class="space-y-4">
         <input
-            v-if="!isSetupMode || (isSetupMode && setupType === 'password')"
-            v-model="inputPassword"
-            type="password"
-            :placeholder="isSetupMode ? t('auth.setPasswordPlaceholder') : t('auth.inputPasswordPlaceholder')"
-            @keyup.enter="handleAction"
-            class="w-full bg-[var(--surface-2)] border border-[var(--border-default)] p-3 outline-none focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-muted)] font-mono text-center tracking-widest text-lg rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
-            autofocus
+          v-model="username"
+          type="text"
+          autocomplete="username"
+          placeholder="username"
+          class="w-full rounded-xl border border-[var(--border-default)] bg-[var(--surface-2)] p-3 text-center font-mono text-base tracking-widest text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-muted)]"
+          autofocus
+          @keyup.enter="handleAction"
+        />
+        <input
+          v-model="password"
+          type="password"
+          autocomplete="current-password"
+          :placeholder="requiresSetup ? 'set account password' : 'password'"
+          class="w-full rounded-xl border border-[var(--border-default)] bg-[var(--surface-2)] p-3 text-center font-mono text-base tracking-widest text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-muted)]"
+          @keyup.enter="handleAction"
         />
 
         <button
-            v-if="!isSetupMode || setupType === 'password'"
-            @click="handleAction"
-            :disabled="loading"
-            class="w-full min-h-[44px] bg-[var(--accent)] text-[var(--text-inverse)] font-semibold py-3 hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-colors disabled:opacity-50 rounded-xl"
+          class="min-h-[44px] w-full rounded-xl bg-[var(--accent)] py-3 font-semibold text-[var(--text-inverse)] transition-colors hover:bg-[var(--accent-hover)] active:scale-[0.98] disabled:opacity-50"
+          :disabled="loading"
+          @click="handleAction"
         >
-          {{ loading ? t('auth.verifying') : (isSetupMode ? t('auth.confirmPassword') : t('auth.unlock')) }}
+          {{ loading ? t('auth.verifying') : (requiresSetup ? 'Create admin' : t('auth.unlock')) }}
         </button>
-
-        <div v-if="isSetupMode && setupType === 'initial'" class="space-y-3">
-          <button
-              @click="setupType = 'password'"
-              class="w-full min-h-[44px] bg-[var(--surface-2)] text-[var(--text-primary)] font-semibold py-3 hover:bg-[var(--surface-3)] active:scale-[0.98] transition-colors rounded-xl border border-[var(--border-default)]"
-          >
-            {{ t('auth.setPasswordProtection') }}
-          </button>
-
-          <div class="relative flex py-2 items-center">
-            <div class="flex-grow border-t border-[var(--border-default)]"></div>
-            <span class="flex-shrink-0 mx-4 text-[var(--text-tertiary)] text-xs font-mono">{{ t('common.or') }}</span>
-            <div class="flex-grow border-t border-[var(--border-default)]"></div>
-          </div>
-
-          <button
-              @click="setupNoPassword"
-              class="w-full min-h-[44px] bg-[var(--surface-2)] border border-[var(--border-default)] text-[var(--text-secondary)] font-semibold py-3 hover:bg-[var(--surface-3)] active:scale-[0.98] transition-colors hover:text-[var(--text-primary)] rounded-xl"
-          >
-            {{ t('auth.noPasswordPublic') }}
-          </button>
-        </div>
-
-        <button
-            v-if="isSetupMode && setupType === 'password'"
-            @click="setupType = 'initial'"
-            class="w-full min-h-[44px] text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] mt-2 underline"
-        >
-          {{ t('common.back') }}
-        </button>
-
       </div>
 
-      <div v-if="errorKey" class="mt-4 text-center text-[var(--error-soft-text)] font-mono text-xs animate-pulse">
-        > {{ t('common.error') }}: {{ t(errorKey) }}
+      <div v-if="errorMessage" class="mt-4 animate-pulse text-center font-mono text-xs text-[var(--error-soft-text)]">
+        > {{ t('common.error') }}: {{ errorMessage }}
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import {ref, onMounted} from 'vue';
+import { onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import {authApi} from '../api/auth';
-import {STORAGE_KEYS} from '../constants/keys';
+import { authApi } from '../api/auth';
+import { STORAGE_KEYS } from '../constants/keys';
+import { useUserStore } from '../stores/user';
 
 const emit = defineEmits(['unlocked']);
 const { t } = useI18n();
+const userStore = useUserStore();
 
 const passed = ref(false);
-const isSetupMode = ref(false);
-const setupType = ref('initial'); // 'initial' | 'password'
-const inputPassword = ref('');
-const errorKey = ref('');
+const requiresSetup = ref(false);
+const username = ref(localStorage.getItem(STORAGE_KEYS.ACCOUNT_USERNAME) || '');
+const password = ref('');
+const errorMessage = ref('');
 const loading = ref(false);
+
+const finish = (session) => {
+  userStore.initAccount(session);
+  passed.value = true;
+  emit('unlocked');
+};
 
 const checkStatus = async () => {
   loading.value = true;
   try {
-    // 🟢 修复点：直接获取数据，不再需要 .data
-    // 我们的 api/client.js 里的拦截器已经帮我们把 data 取出来了
-    const data = await authApi.getStatus();
-    const {isSetup, hasProtection} = data;
-
-    if (!isSetup) {
-      isSetupMode.value = true;
-    } else {
-      if (!hasProtection) {
-        passed.value = true;
-        emit('unlocked');
-      } else {
-        const cachedPass = localStorage.getItem(STORAGE_KEYS.ROOM_PASSWORD);
-        if (cachedPass) {
-          await verify(cachedPass, true);
-        }
-      }
+    const status = await authApi.getAccountStatus();
+    requiresSetup.value = Boolean(status.requiresSetup);
+    const cachedToken = localStorage.getItem(STORAGE_KEYS.SESSION_TOKEN);
+    if (cachedToken && !requiresSetup.value) {
+      const session = await authApi.getAccountMe(cachedToken);
+      finish(session);
     }
-  } catch (e) {
-    console.error("Auth Status Error:", e); // 在控制台打印真实错误
-    errorKey.value = 'auth.errors.connectionFailed';
+  } catch {
+    localStorage.removeItem(STORAGE_KEYS.SESSION_TOKEN);
   } finally {
     loading.value = false;
   }
 };
 
-const verify = async (pwd, isAuto = false) => {
-  try {
-    await authApi.verify(pwd);
-    localStorage.setItem(STORAGE_KEYS.ROOM_PASSWORD, pwd);
-    passed.value = true;
-    emit('unlocked');
-  } catch {
-    if (!isAuto) {
-      errorKey.value = 'auth.errors.invalidPassword';
-      inputPassword.value = '';
-    } else {
-      localStorage.removeItem(STORAGE_KEYS.ROOM_PASSWORD);
-    }
-  }
-};
-
-const setup = async () => {
-  if (!inputPassword.value) {
-    errorKey.value = 'auth.errors.passwordEmpty';
+const handleAction = async () => {
+  if (loading.value) return;
+  errorMessage.value = '';
+  if (!username.value.trim() || password.value.length < 8) {
+    errorMessage.value = '用户名不能为空，密码至少 8 位';
     return;
   }
-  await performSetup(inputPassword.value);
-};
-
-const setupNoPassword = async () => {
-  await performSetup("");
-};
-
-const performSetup = async (pwd) => {
   loading.value = true;
   try {
-    await authApi.setup(pwd);
-    if (pwd) localStorage.setItem(STORAGE_KEYS.ROOM_PASSWORD, pwd);
-    passed.value = true;
-    emit('unlocked');
-  } catch {
-    errorKey.value = 'auth.errors.setupFailed';
+    const session = requiresSetup.value
+      ? await authApi.registerAccount(username.value.trim(), password.value)
+      : await authApi.loginAccount(username.value.trim(), password.value);
+    finish(session);
+  } catch (error) {
+    errorMessage.value = error?.response?.data?.message || '登录失败';
+  } finally {
     loading.value = false;
+    password.value = '';
   }
 };
 
-const handleAction = () => {
-  if (loading.value) return;
-  errorKey.value = '';
-  if (isSetupMode.value) {
-    setup();
-  } else {
-    verify(inputPassword.value);
-  }
-};
-
-onMounted(() => {
-  checkStatus();
-});
+onMounted(checkStatus);
 </script>

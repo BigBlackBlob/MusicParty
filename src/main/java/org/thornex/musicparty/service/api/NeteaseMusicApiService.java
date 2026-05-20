@@ -9,6 +9,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.*;
 import org.thornex.musicparty.exception.ApiRequestException;
+import org.thornex.musicparty.service.SiteSettingService;
 import reactor.core.publisher.Mono;
 import com.fasterxml.jackson.databind.JsonNode;
 
@@ -24,16 +25,18 @@ public class NeteaseMusicApiService implements IMusicApiService {
     private final String baseUrl;
     private final String initialCookieFromConfig;
     private final String quality;
+    private final SiteSettingService siteSettingService;
     private volatile String currentCookie;
     private static final String PLATFORM = "netease";
 
-    public NeteaseMusicApiService(WebClient webClient, AppProperties appProperties) {
+    public NeteaseMusicApiService(WebClient webClient, AppProperties appProperties, SiteSettingService siteSettingService) {
         this.webClient = webClient;
         this.baseUrl = appProperties.getNetease().getBaseUrl();
         this.initialCookieFromConfig = appProperties.getNetease().getCookie();
         this.quality = appProperties.getNetease().getQuality();
-        // 初始化时先使用配置文件的内容
-        this.currentCookie = initialCookieFromConfig;
+        this.siteSettingService = siteSettingService;
+        this.siteSettingService.importSecretIfMissing(SiteSettingService.NETEASE_COOKIE, initialCookieFromConfig);
+        this.currentCookie = siteSettingService.secretOrDefault(SiteSettingService.NETEASE_COOKIE, initialCookieFromConfig);
     }
 
     @PostConstruct
@@ -54,6 +57,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
 
     public void updateCookie(String newCookie) {
         this.currentCookie = newCookie;
+        siteSettingService.putSecret(SiteSettingService.NETEASE_COOKIE, newCookie);
         checkCookie(newCookie).subscribe(isValid -> {
             if (isValid) {
                 log.info("Netease cookie updated and verified successfully.");

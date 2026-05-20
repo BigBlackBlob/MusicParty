@@ -5,7 +5,6 @@ import org.springframework.util.StringUtils;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.User;
 import org.thornex.musicparty.persistence.LocalTrackRepository;
-import org.thornex.musicparty.security.SecureCompare;
 
 import java.util.LinkedHashSet;
 import java.util.Locale;
@@ -19,11 +18,19 @@ public class LocalLibraryAccessService {
     private final AppProperties appProperties;
     private final UserService userService;
     private final LocalTrackRepository repository;
+    private final AdminAuthorizationService adminAuthorizationService;
+    private final AccountService accountService;
 
-    public LocalLibraryAccessService(AppProperties appProperties, UserService userService, LocalTrackRepository repository) {
+    public LocalLibraryAccessService(AppProperties appProperties,
+                                     UserService userService,
+                                     LocalTrackRepository repository,
+                                     AdminAuthorizationService adminAuthorizationService,
+                                     AccountService accountService) {
         this.appProperties = appProperties;
         this.userService = userService;
         this.repository = repository;
+        this.adminAuthorizationService = adminAuthorizationService;
+        this.accountService = accountService;
     }
 
     public boolean isEnabled() {
@@ -31,27 +38,30 @@ public class LocalLibraryAccessService {
     }
 
     public boolean isAdminPassword(String password) {
-        return StringUtils.hasText(appProperties.getAdminPassword())
-                && SecureCompare.equals(appProperties.getAdminPassword(), password);
+        return false;
+    }
+
+    public boolean isAdminSession(String token) {
+        return adminAuthorizationService.isAdminSession(token);
     }
 
     public boolean canManage(String token, String adminPassword) {
         if (!isEnabled()) return false;
-        if (isAdminPassword(adminPassword)) return true;
+        if (adminAuthorizationService.isAuthorized(token, adminPassword)) return true;
         return canUploadByToken(token);
     }
 
     public boolean canUploadByToken(String token) {
         if (!StringUtils.hasText(token)) return false;
-        return userService.getUserBySessionToken(token)
-                .map(this::canUploadUser)
+        return accountService.resolveSession(token)
+                .map(session -> canUploadAccount(session, userService.getUserBySessionToken(token).orElse(null)))
                 .orElse(false);
     }
 
     public Optional<String> displayNameForToken(String token) {
         if (!StringUtils.hasText(token)) return Optional.empty();
-        return userService.getUserBySessionToken(token)
-                .map(User::getName)
+        return accountService.resolveSession(token)
+                .map(AccountSession::username)
                 .filter(StringUtils::hasText);
     }
 
@@ -80,6 +90,15 @@ public class LocalLibraryAccessService {
         if (user == null || user.isGuest() || !StringUtils.hasText(user.getName())) return false;
         Set<String> allowed = listAllowedUsers();
         return allowed.contains("*") || allowed.contains(normalize(user.getName()));
+    }
+
+    private boolean canUploadAccount(AccountSession session, User onlineUser) {
+        Set<String> allowed = listAllowedUsers();
+        if (allowed.contains("*")) return true;
+        if (allowed.contains(normalize(session.publicId())) || allowed.contains(normalize(session.username()))) {
+            return true;
+        }
+        return onlineUser != null && canUploadUser(onlineUser);
     }
 
     private Set<String> parseConfiguredUsers() {

@@ -244,6 +244,9 @@ public class SubsonicSourceRegistry {
         if (config == null || !config.isEnabled()) {
             return;
         }
+        if (sources.containsKey("navidrome")) {
+            return;
+        }
         SubsonicSource source = SubsonicClient.sourceFromLegacyNavidrome(
                 config.getBaseUrl(),
                 config.getUsername(),
@@ -263,6 +266,9 @@ public class SubsonicSourceRegistry {
             return;
         }
         String id = StringUtils.hasText(config.getId()) ? normalizeId(config.getId()) : "squidify";
+        if (sources.containsKey(id)) {
+            return;
+        }
         long now = System.currentTimeMillis();
         SubsonicSource source = new SubsonicSource(
                 id,

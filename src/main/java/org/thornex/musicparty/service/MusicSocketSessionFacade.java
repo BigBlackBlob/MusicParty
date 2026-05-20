@@ -22,6 +22,7 @@ public class MusicSocketSessionFacade {
     private final MusicPlayerService musicPlayerService;
     private final UserService userService;
     private final SimpMessagingTemplate messagingTemplate;
+    private final AccountService accountService;
 
     public void sendPlayerResync(String sessionId) {
         messagingTemplate.convertAndSendToUser(
@@ -72,7 +73,9 @@ public class MusicSocketSessionFacade {
                     user.getSessionToken(),
                     user.getPublicId(),
                     user.getName(),
-                    user.isGuest()
+                    user.isGuest(),
+                    accountService.roleForPublicId(user.getPublicId()).orElse("GUEST"),
+                    accountService.isAdminSession(user.getSessionToken())
             );
             messagingTemplate.convertAndSendToUser(sessionId, "/queue/me", summary, createSessionHeaders(sessionId));
         });

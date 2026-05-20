@@ -36,8 +36,9 @@ public class LocalTrackController {
     }
 
     @GetMapping("/tracks")
-    public ResponseEntity<?> listTracks(@RequestParam String adminPassword) {
-        if (!accessService.isAdminPassword(adminPassword)) {
+    public ResponseEntity<?> listTracks(@RequestParam(required = false) String adminPassword,
+                                        @RequestParam(required = false) String sessionToken) {
+        if (!accessService.isAdminSession(sessionToken)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "ACCESS DENIED"));
         }
         return ResponseEntity.ok(localLibraryService.listTracks());
@@ -54,7 +55,7 @@ public class LocalTrackController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "ACCESS DENIED"));
         }
         try {
-            String uploadedBy = accessService.isAdminPassword(adminPassword)
+            String uploadedBy = accessService.isAdminSession(token)
                     ? "admin"
                     : accessService.displayNameForToken(token).orElse("user");
             return ResponseEntity.ok(localLibraryService.upload(file, uploadedBy, title, artists, album));
@@ -86,8 +87,9 @@ public class LocalTrackController {
     }
 
     @GetMapping("/upload-access")
-    public ResponseEntity<?> listUploadAccess(@RequestParam String adminPassword) {
-        if (!accessService.isAdminPassword(adminPassword)) {
+    public ResponseEntity<?> listUploadAccess(@RequestParam(required = false) String adminPassword,
+                                              @RequestParam(required = false) String sessionToken) {
+        if (!accessService.isAdminSession(sessionToken)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "ACCESS DENIED"));
         }
         return ResponseEntity.ok(accessService.listAllowedUsers());
@@ -95,7 +97,7 @@ public class LocalTrackController {
 
     @PostMapping("/upload-access/grant")
     public ResponseEntity<?> grantUploadAccess(@RequestBody LocalUploadAccessRequest request) {
-        if (!accessService.isAdminPassword(request.adminPassword())) {
+        if (!accessService.isAdminSession(request.sessionToken())) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "ACCESS DENIED"));
         }
         accessService.grant(request.userName());
@@ -104,7 +106,7 @@ public class LocalTrackController {
 
     @PostMapping("/upload-access/revoke")
     public ResponseEntity<?> revokeUploadAccess(@RequestBody LocalUploadAccessRequest request) {
-        if (!accessService.isAdminPassword(request.adminPassword())) {
+        if (!accessService.isAdminSession(request.sessionToken())) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "ACCESS DENIED"));
         }
         accessService.revoke(request.userName());

@@ -12,6 +12,7 @@ import org.thornex.musicparty.dto.PlayerEvent;
 import org.thornex.musicparty.dto.RoomInfo;
 import org.thornex.musicparty.persistence.InMemoryMigrationStateRepository;
 import org.thornex.musicparty.persistence.InMemoryRoomRepository;
+import org.thornex.musicparty.persistence.InMemoryUserAccountRepository;
 import org.thornex.musicparty.persistence.InMemoryUserProfileRepository;
 
 import java.util.ArrayList;
@@ -40,7 +41,7 @@ class MusicSocketSessionFacadeTests {
         var user = userService.handleConnect("session-1", null, "Alice");
         RecordingMusicPlayerService musicPlayerService = new RecordingMusicPlayerService();
         RecordingSimpMessagingTemplate messagingTemplate = new RecordingSimpMessagingTemplate();
-        MusicSocketSessionFacade facade = new MusicSocketSessionFacade(musicPlayerService, userService, messagingTemplate);
+        MusicSocketSessionFacade facade = new MusicSocketSessionFacade(musicPlayerService, userService, messagingTemplate, accountService());
 
         boolean renamed = facade.renameAndBroadcast("session-1", "AliceNew");
 
@@ -72,7 +73,7 @@ class MusicSocketSessionFacadeTests {
         );
         var user = userService.handleConnect("session-1", null, "Alice");
         RecordingSimpMessagingTemplate messagingTemplate = new RecordingSimpMessagingTemplate();
-        MusicSocketSessionFacade facade = new MusicSocketSessionFacade(new RecordingMusicPlayerService(), userService, messagingTemplate);
+        MusicSocketSessionFacade facade = new MusicSocketSessionFacade(new RecordingMusicPlayerService(), userService, messagingTemplate, accountService());
 
         facade.sendSeekDenied("session-1", "denied");
 
@@ -103,7 +104,7 @@ class MusicSocketSessionFacadeTests {
         );
         userService.handleConnect("session-1", null, "Alice");
         RecordingSimpMessagingTemplate messagingTemplate = new RecordingSimpMessagingTemplate();
-        MusicSocketSessionFacade facade = new MusicSocketSessionFacade(new RecordingMusicPlayerService(), userService, messagingTemplate);
+        MusicSocketSessionFacade facade = new MusicSocketSessionFacade(new RecordingMusicPlayerService(), userService, messagingTemplate, accountService());
 
         facade.sendRoomCreateFailed("session-1", "duplicate");
 
@@ -118,7 +119,7 @@ class MusicSocketSessionFacadeTests {
     @Test
     void sendChatHistoryPushesTargetedHistoryPayload() {
         RecordingSimpMessagingTemplate messagingTemplate = new RecordingSimpMessagingTemplate();
-        MusicSocketSessionFacade facade = new MusicSocketSessionFacade(new RecordingMusicPlayerService(), null, messagingTemplate);
+        MusicSocketSessionFacade facade = new MusicSocketSessionFacade(new RecordingMusicPlayerService(), null, messagingTemplate, accountService());
         List<ChatMessage> history = List.of(new ChatMessage("chat-1", "u-1", "Alice", "hello", 1L, org.thornex.musicparty.enums.MessageType.CHAT));
 
         facade.sendRoomChatHistory("session-1", history);
@@ -142,6 +143,10 @@ class MusicSocketSessionFacadeTests {
         public void broadcastOnlineUsers() {
             this.broadcastOnlineUsersCalled = true;
         }
+    }
+
+    private AccountService accountService() {
+        return new AccountService(new InMemoryUserAccountRepository(), new InMemoryUserProfileRepository());
     }
 
     private static final class RecordingSimpMessagingTemplate extends SimpMessagingTemplate {

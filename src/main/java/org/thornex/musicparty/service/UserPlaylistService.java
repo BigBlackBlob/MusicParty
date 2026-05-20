@@ -11,13 +11,9 @@ import org.thornex.musicparty.dto.PlaylistWriteResult;
 import org.thornex.musicparty.dto.UserPlaylist;
 import org.thornex.musicparty.dto.UserPlaylistTrack;
 import org.thornex.musicparty.persistence.UserPlaylistRepository;
-import org.thornex.musicparty.persistence.UserProfileRepository;
 import org.thornex.musicparty.service.api.IMusicApiService;
 import reactor.core.publisher.Mono;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -28,7 +24,7 @@ public class UserPlaylistService {
     public static final String LIKED_SONGS_SYSTEM_KEY = "liked-songs";
     private static final String LIKED_SONGS_NAME = "喜欢的歌曲";
     private final UserPlaylistRepository repository;
-    private final UserProfileRepository userProfileRepository;
+    private final AccountService accountService;
     private final UserService userService;
     private final MusicPlayerService musicPlayerService;
     private final AppProperties appProperties;
@@ -36,14 +32,14 @@ public class UserPlaylistService {
     private final Map<String, IMusicApiService> apiServiceMap;
 
     public UserPlaylistService(UserPlaylistRepository repository,
-                               UserProfileRepository userProfileRepository,
+                               AccountService accountService,
                                UserService userService,
                                MusicPlayerService musicPlayerService,
                                AppProperties appProperties,
                                PlaylistExportService playlistExportService,
                                List<IMusicApiService> apiServices) {
         this.repository = repository;
-        this.userProfileRepository = userProfileRepository;
+        this.accountService = accountService;
         this.userService = userService;
         this.musicPlayerService = musicPlayerService;
         this.appProperties = appProperties;
@@ -172,13 +168,10 @@ public class UserPlaylistService {
     }
 
     private String requireNamedPublicId(String sessionToken) {
-        if (!StringUtils.hasText(sessionToken)) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
-        var session = userProfileRepository.findSessionByHash(hashSessionToken(sessionToken))
+        AccountSession session = accountService.resolveSession(sessionToken)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
-        var profile = userProfileRepository.findByPublicId(session.publicId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED));
-        if (profile.guest()) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
-        return profile.publicId();
+        if (session.guest()) throw new ResponseStatusException(HttpStatus.FORBIDDEN);
+        return session.publicId();
     }
 
     private String sanitizeName(String name) {
@@ -210,17 +203,5 @@ public class UserPlaylistService {
 
     private String musicKey(String platform, String musicId) {
         return String.valueOf(platform) + ":" + String.valueOf(musicId);
-    }
-
-
-    private String hashSessionToken(String sessionToken) {
-        try {
-            byte[] bytes = MessageDigest.getInstance("SHA-256").digest(sessionToken.getBytes(StandardCharsets.UTF_8));
-            StringBuilder builder = new StringBuilder(bytes.length * 2);
-            for (byte value : bytes) builder.append(String.format("%02x", value));
-            return builder.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 is unavailable", e);
-        }
     }
 }

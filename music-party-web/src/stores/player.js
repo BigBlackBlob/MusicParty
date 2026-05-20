@@ -251,12 +251,12 @@ export const usePlayerStore = defineStore('player', () => {
         // 补充 UserMe 的特殊处理 (因为它需要用到 renameUser，如果放在 socketHandler 会导致循环依赖)
         subscriptions[WS_DEST.USER_ME] = (me) => {
             // me: { sessionToken, publicId, name, isGuest }
-            userStore.initUser(me.sessionToken, me.publicId, me.name, me.isGuest);
+            userStore.initUser(me.sessionToken, me.publicId, me.name, me.isGuest, me.role, me.isAdmin);
             syncLikedSongsFromServer().catch(error => console.warn('Failed to sync liked songs', error));
         };
 
         subscriptions[WS_DEST.USER_ME_UPDATE] = (me) => {
-            userStore.initUser(me.sessionToken, me.publicId, me.name, me.isGuest);
+            userStore.initUser(me.sessionToken, me.publicId, me.name, me.isGuest, me.role, me.isAdmin);
             syncLikedSongsFromServer().catch(error => console.warn('Failed to sync liked songs', error));
         };
 

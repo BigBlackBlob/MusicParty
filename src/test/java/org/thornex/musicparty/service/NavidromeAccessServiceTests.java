@@ -2,6 +2,8 @@ package org.thornex.musicparty.service;
 
 import org.junit.jupiter.api.Test;
 import org.thornex.musicparty.config.AppProperties;
+import org.thornex.musicparty.persistence.InMemoryUserAccountRepository;
+import org.thornex.musicparty.persistence.InMemoryUserProfileRepository;
 
 import java.util.Set;
 
@@ -33,7 +35,8 @@ class NavidromeAccessServiceTests {
     void allowsAllNamedUsersWhenWildcardIsConfigured() {
         AppProperties properties = new AppProperties();
         properties.getNavidrome().setAllowedUsers("*");
-        NavidromeAccessService service = new NavidromeAccessService(properties, null);
+        NavidromeAccessService service = new NavidromeAccessService(properties, null,
+                new AccountService(new InMemoryUserAccountRepository(), new InMemoryUserProfileRepository()));
 
         assertThat(service.allowsAllNamedUsers()).isTrue();
     }

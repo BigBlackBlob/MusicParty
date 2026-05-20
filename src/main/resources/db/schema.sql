@@ -33,6 +33,21 @@ create table if not exists user_session (
 
 create index if not exists idx_user_session_public_id on user_session(public_id);
 
+create table if not exists user_account (
+    username text primary key,
+    public_id text not null unique,
+    password_hash text not null,
+    role text not null,
+    enabled integer not null default 1,
+    created_at integer not null,
+    updated_at integer not null,
+    last_login_at integer,
+    foreign key (public_id) references user_profile(public_id)
+);
+
+create index if not exists idx_user_account_public_id on user_account(public_id);
+create index if not exists idx_user_account_role on user_account(role);
+
 create table if not exists user_binding (
     public_id text not null,
     platform text not null,
@@ -152,6 +167,13 @@ create table if not exists room_playback_state (
 create table if not exists migration_state (
     migration_key text primary key,
     completed_at integer not null
+);
+
+create table if not exists site_setting (
+    setting_key text primary key,
+    setting_value text,
+    secret integer not null default 0,
+    updated_at integer not null
 );
 
 create table if not exists subsonic_source (

@@ -3,8 +3,13 @@ package org.thornex.musicparty.controller;
 import org.junit.jupiter.api.Test;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.MusicPlatform;
+import org.thornex.musicparty.persistence.InMemorySiteSettingRepository;
 import org.thornex.musicparty.persistence.InMemorySubsonicSourceRepository;
+import org.thornex.musicparty.persistence.InMemoryUserAccountRepository;
+import org.thornex.musicparty.persistence.InMemoryUserProfileRepository;
+import org.thornex.musicparty.service.AccountService;
 import org.thornex.musicparty.service.NavidromeAccessService;
+import org.thornex.musicparty.service.SiteSecretService;
 import org.thornex.musicparty.service.SubsonicCredentialCipher;
 import org.thornex.musicparty.service.SubsonicSourceRegistry;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -27,7 +32,7 @@ class ApiControllerTests {
                 List.of(),
                 properties,
                 null,
-                new NavidromeAccessService(properties, null),
+                new NavidromeAccessService(properties, null, newAccountService()),
                 newRegistry(properties),
                 null
         );
@@ -48,7 +53,7 @@ class ApiControllerTests {
                 List.of(),
                 properties,
                 null,
-                new NavidromeAccessService(properties, null),
+                new NavidromeAccessService(properties, null, newAccountService()),
                 newRegistry(properties),
                 null
         );
@@ -66,9 +71,13 @@ class ApiControllerTests {
                 new InMemorySubsonicSourceRepository(),
                 properties,
                 WebClient.builder().build(),
-                new SubsonicCredentialCipher(properties)
+                new SubsonicCredentialCipher(new SiteSecretService(new InMemorySiteSettingRepository()))
         );
         registry.init();
         return registry;
+    }
+
+    private AccountService newAccountService() {
+        return new AccountService(new InMemoryUserAccountRepository(), new InMemoryUserProfileRepository());
     }
 }

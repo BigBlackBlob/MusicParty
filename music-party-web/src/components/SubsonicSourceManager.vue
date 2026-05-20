@@ -6,15 +6,6 @@
     </button>
 
     <div v-if="open" class="source-manager-body">
-      <input
-        v-model="password"
-        type="password"
-        autocomplete="current-password"
-        class="source-input"
-        :placeholder="t('settings.admin.passwordPlaceholder')"
-        @keyup.enter="unlockAdmin"
-      />
-
       <div v-if="!adminUnlocked" class="flex items-center justify-between gap-2">
         <button type="button" class="source-action primary" :disabled="busy || loadingSources" @click="unlockAdmin">
           {{ loadingSources ? t('settings.admin.loadingSources') : t('settings.admin.unlockSourceManager') }}
@@ -89,6 +80,7 @@ import { useI18n } from 'vue-i18n';
 import { authApi } from '../api/auth';
 import { useMusicStore } from '../stores/music';
 import { useRoomStore } from '../stores/room';
+import { useUserStore } from '../stores/user';
 import { useToast } from '../composables/useToast';
 import { extractErrorMessage } from '../utils/errors';
 
@@ -96,12 +88,12 @@ const { t } = useI18n();
 const { success, error } = useToast();
 const roomStore = useRoomStore();
 const musicStore = useMusicStore();
+const userStore = useUserStore();
 
 const open = ref(false);
 const busy = ref(false);
 const loadingSources = ref(false);
 const adminUnlocked = ref(false);
-const password = ref('');
 const sources = ref([]);
 
 const defaultForm = () => ({
@@ -117,8 +109,8 @@ const defaultForm = () => ({
 });
 const form = ref(defaultForm());
 
-const requirePassword = () => {
-  if (password.value) return true;
+const requireAdmin = () => {
+  if (userStore.isAdmin) return true;
   error(t('settings.admin.passwordRequired'));
   return false;
 };
@@ -147,7 +139,7 @@ const buildBaseUrl = () => {
 };
 
 const runAdmin = async (action, message) => {
-  if (!requirePassword()) return;
+  if (!requireAdmin()) return;
   busy.value = true;
   try {
     await action();
@@ -161,7 +153,7 @@ const runAdmin = async (action, message) => {
 };
 
 const runCleanupAction = async (action, message) => {
-  if (!requirePassword()) return;
+  if (!requireAdmin()) return;
   busy.value = true;
   try {
     await action();
@@ -179,10 +171,10 @@ const runCleanupAction = async (action, message) => {
 };
 
 const loadSources = async () => {
-  if (!requirePassword()) return;
+  if (!requireAdmin()) return;
   loadingSources.value = true;
   try {
-    const { data } = await authApi.listSubsonicSources(password.value, roomStore.currentRoomId);
+    const data = await authApi.listSubsonicSources(userStore.sessionToken, roomStore.currentRoomId);
     sources.value = Array.isArray(data) ? data : [];
     adminUnlocked.value = true;
   } catch (e) {
@@ -222,7 +214,7 @@ const resetForm = () => {
 };
 
 const saveSource = () => runAdmin(async () => {
-  await authApi.saveSubsonicSource(password.value, roomStore.currentRoomId, {
+  await authApi.saveSubsonicSource(userStore.sessionToken, roomStore.currentRoomId, {
     id: form.value.id.trim(),
     label: form.value.label.trim() || form.value.id.trim(),
     baseUrl: buildBaseUrl(),
@@ -235,16 +227,16 @@ const saveSource = () => runAdmin(async () => {
 }, t('settings.admin.sourceSaved'));
 
 const testSource = () => runAdmin(
-  () => authApi.testSubsonicSource(password.value, roomStore.currentRoomId, form.value.id.trim()),
+  () => authApi.testSubsonicSource(userStore.sessionToken, roomStore.currentRoomId, form.value.id.trim()),
   t('settings.admin.sourceTested')
 );
 
 const removeSource = () => runCleanupAction(async () => {
-  await authApi.removeSubsonicSource(password.value, roomStore.currentRoomId, form.value.id.trim());
+  await authApi.removeSubsonicSource(userStore.sessionToken, roomStore.currentRoomId, form.value.id.trim());
 }, t('settings.admin.sourceRemoved'));
 
 const removeSourceById = (id) => runCleanupAction(async () => {
-  await authApi.removeSubsonicSource(password.value, roomStore.currentRoomId, id);
+  await authApi.removeSubsonicSource(userStore.sessionToken, roomStore.currentRoomId, id);
   if (form.value.id === id) resetForm();
 }, t('settings.admin.sourceRemoved'));
 
@@ -253,8 +245,8 @@ const moveSource = (index, direction) => runAdmin(async () => {
   const current = sources.value[index];
   const target = sources.value[nextIndex];
   if (!current || !target) return;
-  await authApi.reorderSubsonicSource(password.value, roomStore.currentRoomId, current.id, target.sortOrder);
-  await authApi.reorderSubsonicSource(password.value, roomStore.currentRoomId, target.id, current.sortOrder);
+  await authApi.reorderSubsonicSource(userStore.sessionToken, roomStore.currentRoomId, current.id, target.sortOrder);
+  await authApi.reorderSubsonicSource(userStore.sessionToken, roomStore.currentRoomId, target.id, current.sortOrder);
 }, t('settings.admin.sourceOrderSaved'));
 </script>
 

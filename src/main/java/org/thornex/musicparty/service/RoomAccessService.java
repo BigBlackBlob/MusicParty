@@ -49,7 +49,7 @@ public class RoomAccessService {
         if (!StringUtils.hasText(publicId)) {
             return RoomAccessGrant.denied();
         }
-        if (roomService.isAdminPassword(password) || RoomPasswordHasher.matches(password, room.passwordHash())) {
+        if (RoomPasswordHasher.matches(password, room.passwordHash())) {
             long expiresAt = System.currentTimeMillis() + appProperties.getAuth().getRoomAccessTokenTtlMs();
             return RoomAccessGrant.allowedWithToken(issueToken(room.roomId(), publicId, expiresAt, room.passwordVersion()), expiresAt);
         }

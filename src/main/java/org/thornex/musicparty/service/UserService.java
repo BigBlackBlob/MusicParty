@@ -179,6 +179,10 @@ public class UserService {
             String finalName = rawName.length() > 20 ? rawName.substring(0, 20) : rawName;
 
             if (finalName.isEmpty()) return false;
+            if (user.isGuest()) {
+                log.warn("Rename failed: guest users cannot be promoted by nickname changes.");
+                return false;
+            }
 
             // 禁止伪装成 游客
             if (finalName.toLowerCase().startsWith("guest") || finalName.startsWith("游客")) {
@@ -196,19 +200,11 @@ public class UserService {
             }
 
             String oldName = user.getName();
-            boolean wasGuest = user.isGuest();
-
             log.info("User Renamed: '{}' -> '{}'", oldName, finalName);
             user.setName(finalName);
-            user.setGuest(false); // 改名成功，移除游客身份
             persistUser(user, System.currentTimeMillis());
 
-            // 1. 如果是从游客变成正式用户 -> 发布加入事件
-            if (wasGuest) {
-                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.USER_JOIN, user.getPublicId(), null, user.getRoomId()));
-            }
-            // 2. 如果是正式用户改名 -> 发布系统通知
-            else if (!oldName.equals(finalName)) {
+            if (!oldName.equals(finalName)) {
                 String renameMsg = oldName + " 已更名为 " + finalName;
                 eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, null, "SYSTEM", renameMsg, user.getRoomId()));
             }

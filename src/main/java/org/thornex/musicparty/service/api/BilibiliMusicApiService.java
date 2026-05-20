@@ -12,6 +12,7 @@ import org.thornex.musicparty.dto.UserSearchResult;
 import org.thornex.musicparty.enums.CacheStatus;
 import org.thornex.musicparty.exception.ApiRequestException;
 import org.thornex.musicparty.service.LocalCacheService;
+import org.thornex.musicparty.service.SiteSettingService;
 import org.thornex.musicparty.util.BilibiliApiUtils;
 import reactor.core.publisher.Mono;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -30,15 +31,18 @@ public class BilibiliMusicApiService implements IMusicApiService {
     private final LocalCacheService localCacheService;
     private static final String PLATFORM = "bilibili";
     private final BilibiliWbiService wbiService;
+    private final SiteSettingService siteSettingService;
 
     private static class WbiSignatureException extends RuntimeException {
         public WbiSignatureException(String message) { super(message); }
     }
 
-    public BilibiliMusicApiService(WebClient webClient, AppProperties appProperties, LocalCacheService localCacheService, BilibiliWbiService wbiService) {
+    public BilibiliMusicApiService(WebClient webClient, AppProperties appProperties, LocalCacheService localCacheService, BilibiliWbiService wbiService, SiteSettingService siteSettingService) {
         this.webClient = webClient;
         this.baseUrl = appProperties.getBilibili().getBaseUrl();
-        this.sessdata = appProperties.getBilibili().getSessdata();
+        this.siteSettingService = siteSettingService;
+        this.siteSettingService.importSecretIfMissing(SiteSettingService.BILIBILI_SESSDATA, appProperties.getBilibili().getSessdata());
+        this.sessdata = siteSettingService.secretOrDefault(SiteSettingService.BILIBILI_SESSDATA, appProperties.getBilibili().getSessdata());
         this.localCacheService = localCacheService;
         this.wbiService = wbiService;
     }
@@ -51,6 +55,7 @@ public class BilibiliMusicApiService implements IMusicApiService {
 
     public void updateSessdata(String newSessdata) {
         this.sessdata = newSessdata;
+        this.siteSettingService.putSecret(SiteSettingService.BILIBILI_SESSDATA, newSessdata);
         this.wbiService.updateSessdata(newSessdata);
         log.info("Bilibili API Service SESSDATA updated.");
     }

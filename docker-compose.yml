@@ -21,9 +21,6 @@ services:
     ports:
       - "8848:8080" 
     environment:
-      # [必填] 管理员密码，用于在搜索框输入指令控制系统
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?Set ADMIN_PASSWORD before starting MusicParty}
-      
       # [必填] 网易云 API 地址，指向上面的容器名
       - NETEASE_API_URL=http://netease-api:3000
       
@@ -33,7 +30,7 @@ services:
       - APP_AUTHOR_NAME=ThorNex      # 页面左上角显示的作者名
       - APP_BACK_WORDS=MUSIC PARTY    # 中间背景装饰文字
       
-      # [平台凭证]
+      # [可选迁移] 平台凭证。新版建议在设置页保存到数据库持久化配置。
       - BILIBILI_SESSDATA=""         # B站 SESSDATA
       - NETEASE_COOKIE=""            # 网易云 Cookie
       - NETEASE_QUALITY=exhigh       # 网易云音质 (standard, higher, exhigh, lossless, hires)

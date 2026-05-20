@@ -221,8 +221,7 @@ public class RoomService {
     }
 
     public boolean isAdminPassword(String value) {
-        String adminPassword = appProperties.getAdminPassword();
-        return adminPassword != null && !adminPassword.isBlank() && SecureCompare.equals(adminPassword, value);
+        return false;
     }
 
     public void publishRoomList() {

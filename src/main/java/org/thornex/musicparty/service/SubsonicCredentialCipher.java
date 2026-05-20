@@ -3,7 +3,6 @@ package org.thornex.musicparty.service;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
-import org.thornex.musicparty.config.AppProperties;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
@@ -24,8 +23,8 @@ public class SubsonicCredentialCipher {
     private final SecureRandom secureRandom = new SecureRandom();
     private final SecretKeySpec key;
 
-    public SubsonicCredentialCipher(AppProperties properties) {
-        this.key = new SecretKeySpec(deriveKey(properties), "AES");
+    public SubsonicCredentialCipher(SiteSecretService siteSecretService) {
+        this.key = new SecretKeySpec(deriveKey(siteSecretService.getOrCreateSiteSecret()), "AES");
     }
 
     public String encrypt(String plainText) {
@@ -68,12 +67,7 @@ public class SubsonicCredentialCipher {
         return StringUtils.hasText(value) && value.startsWith(PREFIX);
     }
 
-    private byte[] deriveKey(AppProperties properties) {
-        String seed = firstText(
-                properties.getAuth() == null ? null : properties.getAuth().getRoomAccessTokenSecret(),
-                properties.getAdminPassword(),
-                "musicparty-local-subsonic-credential-key"
-        );
+    private byte[] deriveKey(String seed) {
         try {
             return MessageDigest.getInstance("SHA-256")
                     .digest(seed.getBytes(StandardCharsets.UTF_8));
@@ -82,12 +76,4 @@ public class SubsonicCredentialCipher {
         }
     }
 
-    private String firstText(String... values) {
-        for (String value : values) {
-            if (StringUtils.hasText(value)) {
-                return value;
-            }
-        }
-        return "";
-    }
 }

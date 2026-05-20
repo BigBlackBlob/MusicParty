@@ -8,20 +8,19 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.AdminCommandRequest;
 import org.thornex.musicparty.dto.AdminNavidromeAccessRequest;
 import org.thornex.musicparty.dto.AdminSubsonicSourceRequest;
 import org.thornex.musicparty.dto.AdminSubsonicSourceView;
 import org.thornex.musicparty.dto.SubsonicSourceRequest;
 import org.thornex.musicparty.service.ChatService;
+import org.thornex.musicparty.service.AdminAuthorizationService;
 import org.thornex.musicparty.service.MusicPlayerService;
 import org.thornex.musicparty.service.NavidromeAccessService;
 import org.thornex.musicparty.service.RoomSubsonicSource;
 import org.thornex.musicparty.service.SubsonicSourceRegistry;
 import org.thornex.musicparty.service.api.BilibiliMusicApiService;
 import org.thornex.musicparty.service.api.NeteaseMusicApiService;
-import org.thornex.musicparty.security.SecureCompare;
 
 import java.util.Map;
 import java.util.Set;
@@ -32,37 +31,34 @@ public class AdminController {
 
     private final MusicPlayerService musicPlayerService;
     private final ChatService chatService;
-    private final String adminPassword;
-    private final AuthController authController;
     private final NeteaseMusicApiService neteaseMusicApiService;
     private final BilibiliMusicApiService bilibiliMusicApiService;
     private final org.thornex.musicparty.service.stream.LiveStreamService liveStreamService;
     private final SubsonicSourceRegistry subsonicSourceRegistry;
     private final NavidromeAccessService navidromeAccessService;
+    private final AdminAuthorizationService adminAuthorizationService;
 
     public AdminController(MusicPlayerService musicPlayerService,
                            ChatService chatService,
-                           AppProperties appProperties,
-                           AuthController authController,
                            NeteaseMusicApiService neteaseMusicApiService,
                            BilibiliMusicApiService bilibiliMusicApiService,
                            org.thornex.musicparty.service.stream.LiveStreamService liveStreamService,
                            SubsonicSourceRegistry subsonicSourceRegistry,
-                           NavidromeAccessService navidromeAccessService) {
+                           NavidromeAccessService navidromeAccessService,
+                           AdminAuthorizationService adminAuthorizationService) {
         this.musicPlayerService = musicPlayerService;
         this.chatService = chatService;
-        this.adminPassword = appProperties.getAdminPassword();
-        this.authController = authController;
         this.neteaseMusicApiService = neteaseMusicApiService;
         this.bilibiliMusicApiService = bilibiliMusicApiService;
         this.liveStreamService = liveStreamService;
         this.subsonicSourceRegistry = subsonicSourceRegistry;
         this.navidromeAccessService = navidromeAccessService;
+        this.adminAuthorizationService = adminAuthorizationService;
     }
 
     @PostMapping("/command")
     public ResponseEntity<?> handleAdminCommand(@RequestBody AdminCommandRequest request) {
-        if (!isValidAdminPassword(request.password())) {
+        if (!isValidAdmin(request.sessionToken(), request.password())) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "ACCESS DENIED"));
         }
 
@@ -139,18 +135,10 @@ public class AdminController {
                 }
 
             case "//PASS":
-                if (parts.length < 2) {
-                    return ResponseEntity.badRequest().body(Map.of("message", "Usage: //PASS <new_password>"));
-                }
-                String newRoomPassword = parts[1];
-                authController.forceSetPassword(newRoomPassword);
-                musicPlayerService.broadcastPasswordChanged();
-                return ResponseEntity.ok(Map.of("message", "ROOM PASSWORD UPDATED"));
+                return ResponseEntity.status(HttpStatus.GONE).body(Map.of("message", "Legacy global password commands were removed. Use account login and room privacy settings."));
 
             case "//OPEN":
-                authController.forceSetPassword("");
-                musicPlayerService.broadcastPasswordChanged();
-                return ResponseEntity.ok(Map.of("message", "ROOM IS NOW PUBLIC"));
+                return ResponseEntity.status(HttpStatus.GONE).body(Map.of("message", "Legacy global password commands were removed. Use account login and room privacy settings."));
 
             case "//COOKIE":
                 if (parts.length < 3) {
@@ -182,7 +170,7 @@ public class AdminController {
 
     @PostMapping("/subsonic-source")
     public ResponseEntity<?> upsertSubsonicSource(@RequestBody AdminSubsonicSourceRequest request) {
-        if (!isValidAdminPassword(request.adminPassword())) {
+        if (!isValidAdmin(request.sessionToken(), request.adminPassword())) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "ACCESS DENIED"));
         }
         try {
@@ -206,7 +194,7 @@ public class AdminController {
 
     @PostMapping("/navidrome-access/grant")
     public ResponseEntity<?> grantNavidromeAccess(@RequestBody AdminNavidromeAccessRequest request) {
-        if (!isValidAdminPassword(request.adminPassword())) {
+        if (!isValidAdmin(request.sessionToken(), request.adminPassword())) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "ACCESS DENIED"));
         }
         return updateNavidromeAccess(request.userName(), true);
@@ -214,15 +202,15 @@ public class AdminController {
 
     @PostMapping("/navidrome-access/revoke")
     public ResponseEntity<?> revokeNavidromeAccess(@RequestBody AdminNavidromeAccessRequest request) {
-        if (!isValidAdminPassword(request.adminPassword())) {
+        if (!isValidAdmin(request.sessionToken(), request.adminPassword())) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "ACCESS DENIED"));
         }
         return updateNavidromeAccess(request.userName(), false);
     }
 
     @GetMapping("/subsonic-sources")
-    public ResponseEntity<?> listSubsonicSources(String adminPassword, String roomId) {
-        if (!isValidAdminPassword(adminPassword)) {
+    public ResponseEntity<?> listSubsonicSources(String adminPassword, String sessionToken, String roomId) {
+        if (!isValidAdmin(sessionToken, adminPassword)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "ACCESS DENIED"));
         }
         return ResponseEntity.ok(subsonicSourceRegistry.list(SubsonicSourceRegistry.normalizeRoomId(roomId))
@@ -233,7 +221,7 @@ public class AdminController {
 
     @PostMapping("/subsonic-source/test")
     public ResponseEntity<?> testSubsonicSource(@RequestBody AdminSubsonicSourceRequest request) {
-        if (!isValidAdminPassword(request.adminPassword())) {
+        if (!isValidAdmin(request.sessionToken(), request.adminPassword())) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "ACCESS DENIED"));
         }
         RoomSubsonicSource source = subsonicSourceRegistry
@@ -252,7 +240,7 @@ public class AdminController {
 
     @PostMapping("/subsonic-source/order")
     public ResponseEntity<?> reorderSubsonicSource(@RequestBody AdminSubsonicSourceRequest request) {
-        if (!isValidAdminPassword(request.adminPassword())) {
+        if (!isValidAdmin(request.sessionToken(), request.adminPassword())) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "ACCESS DENIED"));
         }
         if (request.sortOrder() == null) {
@@ -272,7 +260,7 @@ public class AdminController {
 
     @PostMapping("/subsonic-source/remove")
     public ResponseEntity<?> removeSubsonicSource(@RequestBody AdminSubsonicSourceRequest request) {
-        if (!isValidAdminPassword(request.adminPassword())) {
+        if (!isValidAdmin(request.sessionToken(), request.adminPassword())) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "ACCESS DENIED"));
         }
         boolean removed = subsonicSourceRegistry.remove(SubsonicSourceRegistry.normalizeRoomId(request.roomId()), request.id());
@@ -281,8 +269,8 @@ public class AdminController {
                 : ResponseEntity.badRequest().body(Map.of("message", "Source not found in this Lounge"));
     }
 
-    private boolean isValidAdminPassword(String value) {
-        return adminPassword != null && SecureCompare.equals(adminPassword, value);
+    private boolean isValidAdmin(String sessionToken, String legacyPassword) {
+        return adminAuthorizationService.isAuthorized(sessionToken, legacyPassword);
     }
 
     private AdminSubsonicSourceView toSourceView(RoomSubsonicSource source) {

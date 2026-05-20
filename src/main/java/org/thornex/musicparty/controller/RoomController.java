@@ -18,6 +18,7 @@ import org.thornex.musicparty.service.RoomAccessGrant;
 import org.thornex.musicparty.service.RoomAccessService;
 import org.thornex.musicparty.service.RoomService;
 import org.thornex.musicparty.service.UserService;
+import org.thornex.musicparty.service.AccountService;
 
 import java.util.Map;
 import java.util.List;
@@ -29,6 +30,7 @@ public class RoomController {
     private final RoomService roomService;
     private final RoomAccessService roomAccessService;
     private final UserService userService;
+    private final AccountService accountService;
 
     @GetMapping
     public List<RoomInfo> listRooms(@RequestParam(required = false) String sessionToken) {
@@ -77,7 +79,7 @@ public class RoomController {
             RoomInfo updated = roomService.updateRoomSettings(
                     roomId,
                     publicId,
-                    roomService.isAdminPassword(request.adminPassword()),
+                    accountService.isAdminSession(request.sessionToken()),
                     request.name(),
                     Boolean.TRUE.equals(request.isPrivate()),
                     request.password(),

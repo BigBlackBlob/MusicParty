@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { STORAGE_KEYS } from '../constants/keys';
 
 const sessionToken = ref(localStorage.getItem(STORAGE_KEYS.SESSION_TOKEN) || '');
@@ -7,6 +7,7 @@ const publicId = ref('');
 
 export const useUserStore = defineStore('user', () => {
     const onlineUsers = ref([]);
+    const role = ref('GUEST');
 
     const isAuthPassed = ref(false);
 
@@ -42,7 +43,7 @@ export const useUserStore = defineStore('user', () => {
      * 逻辑：对比服务器认为的名字 (serverName) 和我本地存储的名字
      * serverIsGuest: 后端返回的当前是否为游客状态
      */
-    const initUser = (serverSessionToken, serverPublicId, serverName, serverIsGuest) => {
+    const initUser = (serverSessionToken, serverPublicId, serverName, serverIsGuest, serverRole = 'GUEST', serverIsAdmin = false) => {
         if (serverSessionToken) {
             sessionToken.value = serverSessionToken;
             localStorage.setItem(STORAGE_KEYS.SESSION_TOKEN, serverSessionToken);
@@ -50,6 +51,7 @@ export const useUserStore = defineStore('user', () => {
         if (serverPublicId) {
             publicId.value = serverPublicId;
         }
+        role.value = serverIsAdmin ? 'ADMIN' : (serverRole || 'USER');
 
         // 1. 同步名字
         if (serverName) {
@@ -87,6 +89,14 @@ export const useUserStore = defineStore('user', () => {
         return false;
     };
 
+    const initAccount = (session) => {
+        if (!session) return;
+        initUser(session.sessionToken, session.publicId, session.username, session.guest, session.role, session.admin);
+        if (session.username) {
+            localStorage.setItem(STORAGE_KEYS.ACCOUNT_USERNAME, session.username);
+        }
+    };
+
     const setOnlineUsers = (users) => {
         onlineUsers.value = users;
     };
@@ -107,7 +117,7 @@ export const useUserStore = defineStore('user', () => {
 
     const resetAuthentication = () => {
         isAuthPassed.value = false;
-        localStorage.removeItem(STORAGE_KEYS.ROOM_PASSWORD);// 清除本地保存的旧密码
+        localStorage.removeItem(STORAGE_KEYS.ROOM_ACCESS_TOKENS);
     };
 
     return {
@@ -123,6 +133,9 @@ export const useUserStore = defineStore('user', () => {
         resolveName,
         sessionToken,
         publicId,
+        role,
+        isAdmin: computed(() => role.value === 'ADMIN'),
+        initAccount,
         setPostNameAction,
         isAuthPassed,
         resetAuthentication

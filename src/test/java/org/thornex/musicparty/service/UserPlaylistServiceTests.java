@@ -5,8 +5,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.persistence.InMemoryUserPlaylistRepository;
+import org.thornex.musicparty.persistence.InMemoryUserAccountRepository;
 import org.thornex.musicparty.persistence.InMemoryUserProfileRepository;
 import org.thornex.musicparty.persistence.PersistedSession;
+import org.thornex.musicparty.persistence.PersistedUserAccount;
 import org.thornex.musicparty.persistence.PersistedUserProfile;
 
 import java.nio.charset.StandardCharsets;
@@ -21,14 +23,14 @@ import static org.mockito.Mockito.mock;
 class UserPlaylistServiceTests {
 
     @Test
-    void guestUsersCannotCreatePlaylists() {
+    void guestUsersCannotCreatePlaylistsWithoutAccountSession() {
         TestContext context = new TestContext();
         context.persistUser("token-guest", "u_guest", "游客", true);
 
         assertThatThrownBy(() -> context.service.createPlaylist("token-guest", "Mine"))
                 .isInstanceOf(ResponseStatusException.class)
                 .extracting(error -> ((ResponseStatusException) error).getStatusCode())
-                .isEqualTo(HttpStatus.FORBIDDEN);
+                .isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 
     @Test
@@ -103,9 +105,11 @@ class UserPlaylistServiceTests {
 
     private static class TestContext {
         private final InMemoryUserProfileRepository users = new InMemoryUserProfileRepository();
+        private final InMemoryUserAccountRepository accounts = new InMemoryUserAccountRepository();
+        private final AccountService accountService = new AccountService(accounts, users);
         private final UserPlaylistService service = new UserPlaylistService(
                 new InMemoryUserPlaylistRepository(),
-                users,
+                accountService,
                 mock(UserService.class),
                 mock(MusicPlayerService.class),
                 new org.thornex.musicparty.config.AppProperties(),
@@ -116,6 +120,9 @@ class UserPlaylistServiceTests {
         private void persistUser(String sessionToken, String publicId, String name, boolean guest) {
             users.upsertProfile(new PersistedUserProfile(publicId, name, guest, RoomService.DEFAULT_ROOM_ID, 1, 1));
             users.upsertSession(new PersistedSession(hash(sessionToken), publicId, 1, 1));
+            if (!guest) {
+                accounts.create(new PersistedUserAccount(name.toLowerCase(), publicId, "hash", "USER", true, 1, 1, 1L));
+            }
         }
 
         private String hash(String sessionToken) {

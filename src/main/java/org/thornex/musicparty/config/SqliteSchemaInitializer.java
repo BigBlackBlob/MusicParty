@@ -66,6 +66,35 @@ public class SqliteSchemaInitializer {
                                 """)
                 ),
                 new SchemaMigration(
+                        "schema.user_account.table",
+                        jdbc -> !hasTable(jdbc, "user_account"),
+                        jdbc -> jdbc.execute("""
+                                create table user_account (
+                                    username text primary key,
+                                    public_id text not null unique,
+                                    password_hash text not null,
+                                    role text not null,
+                                    enabled integer not null default 1,
+                                    created_at integer not null,
+                                    updated_at integer not null,
+                                    last_login_at integer,
+                                    foreign key (public_id) references user_profile(public_id)
+                                )
+                                """)
+                ),
+                new SchemaMigration(
+                        "schema.site_setting.table",
+                        jdbc -> !hasTable(jdbc, "site_setting"),
+                        jdbc -> jdbc.execute("""
+                                create table site_setting (
+                                    setting_key text primary key,
+                                    setting_value text,
+                                    secret integer not null default 0,
+                                    updated_at integer not null
+                                )
+                                """)
+                ),
+                new SchemaMigration(
                         "schema.subsonic_source.table",
                         jdbc -> !hasTable(jdbc, "subsonic_source"),
                         jdbc -> jdbc.execute("""

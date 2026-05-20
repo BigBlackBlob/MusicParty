@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.SubsonicSourceRequest;
+import org.thornex.musicparty.persistence.InMemorySiteSettingRepository;
 import org.thornex.musicparty.persistence.InMemorySubsonicSourceRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -17,7 +18,7 @@ class SubsonicSourceRegistryTests {
                 new InMemorySubsonicSourceRepository(),
                 properties,
                 WebClient.builder().build(),
-                new SubsonicCredentialCipher(properties)
+                new SubsonicCredentialCipher(new SiteSecretService(new InMemorySiteSettingRepository()))
         );
         registry.init();
         registry.upsert("room-a", new SubsonicSourceRequest(
@@ -48,7 +49,7 @@ class SubsonicSourceRegistryTests {
                 new InMemorySubsonicSourceRepository(),
                 properties,
                 WebClient.builder().build(),
-                new SubsonicCredentialCipher(properties)
+                new SubsonicCredentialCipher(new SiteSecretService(new InMemorySiteSettingRepository()))
         );
         registry.init();
 

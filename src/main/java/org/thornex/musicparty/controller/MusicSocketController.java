@@ -8,6 +8,7 @@ import org.springframework.stereotype.Controller;
 import lombok.extern.slf4j.Slf4j;
 import org.thornex.musicparty.dto.*;
 import org.thornex.musicparty.service.ChatService;
+import org.thornex.musicparty.service.AccountService;
 import org.thornex.musicparty.service.MusicPlayerService;
 import org.thornex.musicparty.service.MusicPlayerService.ControlResult;
 import org.thornex.musicparty.service.MusicSocketSessionFacade;
@@ -32,6 +33,7 @@ public class MusicSocketController {
     private final MusicSocketSessionFacade musicSocketSessionFacade;
     private final SocketRateLimiter socketRateLimiter;
     private final RoomPlaylistService roomPlaylistService;
+    private final AccountService accountService;
 
     public MusicSocketController(MusicPlayerService musicPlayerService,
                                  UserService userService,
@@ -40,7 +42,8 @@ public class MusicSocketController {
                                  RoomLifecycleService roomLifecycleService,
                                  MusicSocketSessionFacade musicSocketSessionFacade,
                                  SocketRateLimiter socketRateLimiter,
-                                 RoomPlaylistService roomPlaylistService) {
+                                 RoomPlaylistService roomPlaylistService,
+                                 AccountService accountService) {
         this.musicPlayerService = musicPlayerService;
         this.userService = userService;
         this.chatService = chatService;
@@ -49,6 +52,7 @@ public class MusicSocketController {
         this.musicSocketSessionFacade = musicSocketSessionFacade;
         this.socketRateLimiter = socketRateLimiter;
         this.roomPlaylistService = roomPlaylistService;
+        this.accountService = accountService;
     }
 
     @MessageMapping("/player/resync")
@@ -229,7 +233,7 @@ public class MusicSocketController {
         if (denyGuest(sessionId, "CONTROL_DENIED", "请先设置昵称再删除房间")) return;
         userService.getUser(sessionId).ifPresent(user -> {
             String roomId = request.roomId();
-            boolean isAdmin = roomService.isAdminPassword(request.adminPassword());
+            boolean isAdmin = accountService.isAdminSession(user.getSessionToken());
             if (roomLifecycleService.deleteRoom(roomId, user.getPublicId(), isAdmin)) {
             } else {
                 musicSocketSessionFacade.sendRoomDeleteFailed(sessionId);
@@ -250,8 +254,11 @@ public class MusicSocketController {
     @SubscribeMapping("/user/me")
     public CurrentUserResponse getMyUserInfo(@Header("simpSessionId") String sessionId) {
         return userService.getUser(sessionId)
-                .map(u -> new CurrentUserResponse(u.getSessionToken(), u.getPublicId(), u.getName(), u.isGuest()))
-                .orElse(new CurrentUserResponse("", "", "Unknown", true));
+                .map(u -> {
+                    String role = accountService.roleForPublicId(u.getPublicId()).orElse("GUEST");
+                    return new CurrentUserResponse(u.getSessionToken(), u.getPublicId(), u.getName(), u.isGuest(), role, "ADMIN".equals(role));
+                })
+                .orElse(new CurrentUserResponse("", "", "Unknown", true, "GUEST", false));
     }
 
     private boolean isGuest(String sessionId) {

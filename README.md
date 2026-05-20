@@ -24,7 +24,7 @@
 - **桌面与移动端 UI**：桌面三栏主界面，移动端底部导航与独立播放/队列/搜索/聊天视图。
 - **歌词体验**：支持歌词和翻译歌词展示，移动端有独立的歌词面板和字号/对齐控制。
 - **实时互动**：聊天室、系统消息、在线成员、点赞反馈和直播流听众计数。
-- **房间控制**：支持房间密码、管理员命令、权限锁定、Cookie 动态更新和访问限流。
+- **账号与房间控制**：首次启动创建管理员账号；后续使用账号密码登录，管理员可管理房间、音源、本地曲库、权限锁定和 Cookie。
 - **可选 HTTP 直播流**：通过 FFmpeg 输出 `/radio/stream`，适合在 VRChat 等外部场景收听。
 - **i18n 与本地字体**：前端接入 `vue-i18n`，Material Symbols 字体已本地化，Docker 部署不依赖外部图标字体源。
 
@@ -42,30 +42,29 @@ docker compose up -d --build
 http://localhost:8848
 ```
 
-正式部署前至少修改这些环境变量：
+首次访问页面时会进入初始化流程，第一个注册账号会自动成为管理员。正式部署前至少修改这些环境变量：
 
 ```yaml
-- ADMIN_PASSWORD=use-a-long-random-password
 - BASE_URL=https://music.example.com
 - NETEASE_COOKIE=
 - BILIBILI_SESSDATA=
 ```
 
 `BASE_URL` 必须是用户实际访问的完整地址，包含协议。直播流链接、部分后端生成的绝对 URL 都依赖它。
+`NETEASE_COOKIE`、`BILIBILI_SESSDATA`、Navidrome/Subsonic 凭据等环境变量只作为首次迁移输入；长期配置应在设置页保存到 `data/` 卷内的 SQLite 数据库。
 
 ## 环境变量
 
 | 变量名 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `ADMIN_PASSWORD` | 是 | 无 | 管理员命令密码。必须显式设置，不能使用 `admin123`、`change-me` 等弱默认值。 |
 | `BASE_URL` | 否 | `http://localhost:8080` | 对外访问地址，生成直播流链接时使用。 |
 | `ALLOWED_ORIGINS` | 否 | 从 `BASE_URL` 与本地开发地址派生 | WebSocket 允许的 Origin，多个值用英文逗号分隔。 |
 | `APP_AUTHOR_NAME` | 否 | `ThorNex` | 页面品牌/作者名。 |
 | `APP_BACK_WORDS` | 否 | `THORNEX` | 播放区背景装饰文字。 |
 | `NETEASE_API_URL` | 是 | `http://netease-api:3000` | NeteaseCloudMusicApi 地址。 |
-| `NETEASE_COOKIE` | 否 | 空 | 网易云 Cookie，用于更高音质或账号相关能力。 |
-| `NETEASE_QUALITY` | 否 | `exhigh` | 网易云音质，可选 `standard`、`higher`、`exhigh`、`lossless`、`hires`。 |
-| `BILIBILI_SESSDATA` | 否 | 空 | Bilibili SESSDATA，用于减少风控和提升解析能力。 |
+| `NETEASE_COOKIE` | 否 | 空 | 首次迁移用网易云 Cookie；长期值在设置页持久化保存。 |
+| `NETEASE_QUALITY` | 否 | `exhigh` | 首次迁移用网易云音质，可选 `standard`、`higher`、`exhigh`、`lossless`、`hires`。 |
+| `BILIBILI_SESSDATA` | 否 | 空 | 首次迁移用 Bilibili SESSDATA；长期值在设置页持久化保存。 |
 | `QUEUE_MAX_SIZE` | 否 | `1000` | 队列最大长度。 |
 | `QUEUE_HISTORY_SIZE` | 否 | `50` | 历史记录保留数量。 |
 | `QUEUE_MAX_USER_SONGS` | 否 | `100` | 单用户最大排队歌曲数。 |
@@ -74,21 +73,21 @@ http://localhost:8848
 | `CHAT_MIN_INTERVAL` | 否 | `1000` | 聊天发送间隔，单位毫秒。 |
 | `CHAT_MAX_LENGTH` | 否 | `200` | 单条聊天消息最大字符数。 |
 | `CACHE_MAX_SIZE` | 否 | `1GB` | 本地媒体缓存上限，例如 `512MB`、`2GB`。 |
-| `AUTH_RATE_LIMIT_ENABLED` | 否 | `true` | 是否启用密码验证限流。 |
-| `AUTH_MAX_ATTEMPTS` | 否 | `5` | 密码验证最大失败次数。 |
-| `AUTH_WINDOW_SECONDS` | 否 | `60` | 密码验证统计窗口。 |
+| `AUTH_RATE_LIMIT_ENABLED` | 否 | `true` | 是否启用账号登录限流。 |
+| `AUTH_MAX_ATTEMPTS` | 否 | `5` | 登录最大失败次数。 |
+| `AUTH_WINDOW_SECONDS` | 否 | `60` | 登录失败统计窗口。 |
 | `AUTH_BLOCK_DURATION` | 否 | `300` | 触发限流后的封锁秒数。 |
 | `NAVIDROME_ENABLED` | 否 | `false` | 是否启用 Navidrome 平台。 |
 | `NAVIDROME_BASE_URL` | 否 | `http://navidrome:4533` | Navidrome 服务地址。 |
-| `NAVIDROME_USERNAME` | 否 | 空 | Navidrome 用户名。 |
-| `NAVIDROME_PASSWORD` | 否 | 空 | Navidrome 密码。 |
+| `NAVIDROME_USERNAME` | 否 | 空 | 首次迁移用 Navidrome 用户名；长期值在设置页持久化保存。 |
+| `NAVIDROME_PASSWORD` | 否 | 空 | 首次迁移用 Navidrome 密码；长期值加密保存。 |
 | `NAVIDROME_CLIENT` | 否 | `musicparty` | Subsonic 客户端名。 |
 | `NAVIDROME_API_VERSION` | 否 | `1.16.1` | Subsonic API 版本。 |
-| `NAVIDROME_ALLOWED_USERS` | 否 | 空 | 允许使用 Navidrome 的 MusicParty 用户名，逗号分隔。 |
+| `NAVIDROME_ALLOWED_USERS` | 否 | 空 | 首次迁移用授权列表，推荐填写账号用户名或 `publicId`，逗号分隔。 |
 
 ## 管理员命令
 
-在前端搜索框输入以下命令，提交后会要求输入 `ADMIN_PASSWORD`：
+登录管理员账号后，可在设置页或前端命令入口执行以下管理员命令：
 
 | 命令 | 说明 |
 | --- | --- |
@@ -98,12 +97,10 @@ http://localhost:8848
 | `//SHUFFLE` | 管理员强制切换随机模式。 |
 | `//RESET` | 重置播放状态、队列和聊天记录，谨慎使用。 |
 | `//CLEAR <QUEUE/CHAT>` | 清空队列或聊天历史。 |
-| `//PASS <new_password>` | 设置房间密码。 |
-| `//OPEN` | 取消房间密码，开放房间。 |
 | `//STREAM ON` | 开启 HTTP 直播流。 |
 | `//STREAM OFF` | 关闭 HTTP 直播流。 |
-| `//COOKIE netease <cookie>` | 动态更新网易云 Cookie。 |
-| `//COOKIE bilibili <sessdata>` | 动态更新 Bilibili SESSDATA。 |
+| `//COOKIE netease <cookie>` | 动态更新网易云 Cookie，并持久化到数据库。 |
+| `//COOKIE bilibili <sessdata>` | 动态更新 Bilibili SESSDATA，并持久化到数据库。 |
 
 聊天框命令：
 
@@ -125,7 +122,7 @@ docker compose -f docker-compose.yml -f docker-compose.navidrome.yml --env-file 
 
 访问边界：
 
-- 只对 `NAVIDROME_ALLOWED_USERS` 中的非游客用户名开放。
+- 只对白名单中的账号开放；推荐使用账号用户名或稳定 `publicId`，改昵称不会影响授权。
 - 用户名白名单是轻量房间信任模型，不是强身份认证。
 - Navidrome 音频通过 MusicParty 后端代理给浏览器，Navidrome 凭据不会直接暴露给前端。
 - 当前版本的 HTTP 直播流不支持 Navidrome 曲目，Navidrome 主要用于浏览器播放。

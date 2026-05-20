@@ -8,6 +8,10 @@ import org.thornex.musicparty.dto.LocalTrack;
 import org.thornex.musicparty.dto.LocalUploadResult;
 import org.thornex.musicparty.enums.LocalTrackStatus;
 import org.thornex.musicparty.persistence.InMemoryLocalTrackRepository;
+import org.thornex.musicparty.persistence.InMemoryUserAccountRepository;
+import org.thornex.musicparty.persistence.InMemoryUserProfileRepository;
+import org.thornex.musicparty.service.AccountService;
+import org.thornex.musicparty.service.AdminAuthorizationService;
 import org.thornex.musicparty.service.LocalLibraryAccessService;
 import org.thornex.musicparty.service.LocalLibraryService;
 import org.thornex.musicparty.service.UserService;
@@ -27,7 +31,8 @@ class LocalTrackControllerTests {
     void uploadRejectsUserOutsideAdminAndAllowlist() {
         AppProperties properties = new AppProperties();
         properties.setAdminPassword("secret");
-        LocalLibraryAccessService accessService = new LocalLibraryAccessService(properties, mock(UserService.class), new InMemoryLocalTrackRepository());
+        AccountService accountService = new AccountService(new InMemoryUserAccountRepository(), new InMemoryUserProfileRepository());
+        LocalLibraryAccessService accessService = new LocalLibraryAccessService(properties, mock(UserService.class), new InMemoryLocalTrackRepository(), adminAuth(accountService), accountService);
         LocalTrackController controller = new LocalTrackController(mock(LocalLibraryService.class), accessService, new InternalStreamProxyToken());
 
         var response = controller.uploadTrack(
@@ -46,19 +51,21 @@ class LocalTrackControllerTests {
     void adminUploadDelegatesToLibraryService() throws Exception {
         AppProperties properties = new AppProperties();
         properties.setAdminPassword("secret");
+        AccountService accountService = new AccountService(new InMemoryUserAccountRepository(), new InMemoryUserProfileRepository());
+        String adminToken = accountService.register("admin", "correct-horse-battery-staple").sessionToken();
         LocalLibraryService libraryService = mock(LocalLibraryService.class);
         LocalTrack track = new LocalTrack("id", "hash", "song.mp3", null, "audio/mpeg", 3,
                 "Song", List.of("Artist"), "", 0, null, null, null, LocalTrackStatus.QUEUED,
                 null, "Queued for transcoding", 0, "admin", 1, 1, null, null);
         LocalUploadResult result = LocalUploadResult.created(track);
         when(libraryService.upload(any(), eq("admin"), eq("Song"), eq("Artist"), eq("Album"))).thenReturn(result);
-        LocalLibraryAccessService accessService = new LocalLibraryAccessService(properties, mock(UserService.class), new InMemoryLocalTrackRepository());
+        LocalLibraryAccessService accessService = new LocalLibraryAccessService(properties, mock(UserService.class), new InMemoryLocalTrackRepository(), adminAuth(accountService), accountService);
         LocalTrackController controller = new LocalTrackController(libraryService, accessService, new InternalStreamProxyToken());
 
         var response = controller.uploadTrack(
                 new MockMultipartFile("file", "song.mp3", "audio/mpeg", "abc".getBytes()),
+                adminToken,
                 null,
-                "secret",
                 "Song",
                 "Artist",
                 "Album"
@@ -66,5 +73,9 @@ class LocalTrackControllerTests {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isEqualTo(result);
+    }
+
+    private AdminAuthorizationService adminAuth(AccountService accountService) {
+        return new AdminAuthorizationService(accountService);
     }
 }

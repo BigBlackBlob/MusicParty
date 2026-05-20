@@ -26,6 +26,8 @@ class SqliteSchemaInitializerTests {
         assertThat(columnNames(jdbcTemplate, "user_profile")).contains("current_room_id");
         assertThat(columnNames(jdbcTemplate, "room_playback_state")).contains("liked_user_ids_json", "like_markers_json");
         assertThat(tableExists(jdbcTemplate, "user_binding")).isTrue();
+        assertThat(tableExists(jdbcTemplate, "user_account")).isTrue();
+        assertThat(tableExists(jdbcTemplate, "site_setting")).isTrue();
         assertThat(tableExists(jdbcTemplate, "user_playlist")).isTrue();
         assertThat(columnNames(jdbcTemplate, "user_playlist")).contains("system_key");
         assertThat(tableExists(jdbcTemplate, "user_playlist_track")).isTrue();
@@ -56,8 +58,10 @@ class SqliteSchemaInitializerTests {
                         "schema.room_playback_state.like_markers_json",
                         "schema.room_playback_state.liked_user_ids_json",
                         "schema.room_subsonic_source.table",
+                        "schema.site_setting.table",
                         "schema.subsonic_source.owner_room_id",
                         "schema.subsonic_source.table",
+                        "schema.user_account.table",
                         "schema.user_binding.table",
                         "schema.user_playlist.system_key",
                         "schema.user_playlist.table",
@@ -76,7 +80,7 @@ class SqliteSchemaInitializerTests {
         initializer.initialize();
         initializer.initialize();
 
-        assertThat(jdbcTemplate.queryForObject("select count(1) from migration_state", Integer.class)).isEqualTo(14);
+        assertThat(jdbcTemplate.queryForObject("select count(1) from migration_state", Integer.class)).isEqualTo(16);
         assertThat(jdbcTemplate.queryForObject("select display_name from user_profile where public_id = 'u_legacy'", String.class))
                 .isEqualTo("Legacy User");
     }
