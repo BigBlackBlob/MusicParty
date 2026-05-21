@@ -43,6 +43,20 @@ public class InMemoryUserAccountRepository implements UserAccountRepository {
     }
 
     @Override
+    public void updatePasswordHash(String username, String passwordHash, long updatedAt) {
+        accounts.computeIfPresent(normalize(username), (key, account) -> new PersistedUserAccount(
+                account.username(),
+                account.publicId(),
+                passwordHash,
+                account.role(),
+                account.enabled(),
+                account.createdAt(),
+                updatedAt,
+                account.lastLoginAt()
+        ));
+    }
+
+    @Override
     public Optional<PersistedUserAccount> findByUsername(String username) {
         return Optional.ofNullable(accounts.get(normalize(username)));
     }

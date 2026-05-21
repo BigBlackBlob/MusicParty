@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
+import { authApi } from '../api/auth';
 import { STORAGE_KEYS } from '../constants/keys';
 
 const sessionToken = ref(localStorage.getItem(STORAGE_KEYS.SESSION_TOKEN) || '');
@@ -8,6 +9,7 @@ const publicId = ref('');
 export const useUserStore = defineStore('user', () => {
     const onlineUsers = ref([]);
     const role = ref('GUEST');
+    const accountLastLoginAt = ref(null);
 
     const isAuthPassed = ref(false);
 
@@ -56,6 +58,9 @@ export const useUserStore = defineStore('user', () => {
         // 1. 同步名字
         if (serverName) {
             currentUser.value.name = serverName;
+            onlineUsers.value = onlineUsers.value.map(user => (
+                user.publicId === serverPublicId ? { ...user, name: serverName } : user
+            ));
         }
 
         // 2. 同步身份状态 (以服务端为准)
@@ -91,10 +96,42 @@ export const useUserStore = defineStore('user', () => {
 
     const initAccount = (session) => {
         if (!session) return;
-        initUser(session.sessionToken, session.publicId, session.username, session.guest, session.role, session.admin);
+        initUser(session.sessionToken, session.publicId, session.displayName || session.username, session.guest, session.role, session.admin);
+        accountLastLoginAt.value = session.lastLoginAt || null;
         if (session.username) {
             localStorage.setItem(STORAGE_KEYS.ACCOUNT_USERNAME, session.username);
         }
+    };
+
+    const refreshAccount = async () => {
+        if (!sessionToken.value) return null;
+        const session = await authApi.getAccountMe(sessionToken.value);
+        initAccount(session);
+        return session;
+    };
+
+    const updateProfile = async (displayName) => {
+        const session = await authApi.updateAccountProfile(sessionToken.value, displayName);
+        initAccount(session);
+        return session;
+    };
+
+    const changePassword = async (currentPassword, newPassword) => {
+        await authApi.changeAccountPassword(sessionToken.value, currentPassword, newPassword);
+        clearAccountIdentity();
+    };
+
+    const logout = async () => {
+        const token = sessionToken.value;
+        if (token) {
+            try {
+                await authApi.logoutAccount(token);
+            } finally {
+                clearAccountIdentity();
+            }
+            return;
+        }
+        clearAccountIdentity();
     };
 
     const setOnlineUsers = (users) => {
@@ -120,6 +157,22 @@ export const useUserStore = defineStore('user', () => {
         localStorage.removeItem(STORAGE_KEYS.ROOM_ACCESS_TOKENS);
     };
 
+    const clearAccountIdentity = () => {
+        sessionToken.value = '';
+        publicId.value = '';
+        role.value = 'GUEST';
+        accountLastLoginAt.value = null;
+        isGuest.value = true;
+        isAuthPassed.value = false;
+        currentUser.value = { name: '游客', sessionId: '' };
+        bindings.value = {};
+        localStorage.removeItem(STORAGE_KEYS.SESSION_TOKEN);
+        localStorage.removeItem(STORAGE_KEYS.ACCOUNT_USERNAME);
+        localStorage.removeItem(STORAGE_KEYS.USERNAME);
+        localStorage.removeItem(STORAGE_KEYS.BINDINGS);
+        localStorage.removeItem(STORAGE_KEYS.ROOM_ACCESS_TOKENS);
+    };
+
     return {
         onlineUsers,
         currentUser,
@@ -134,8 +187,13 @@ export const useUserStore = defineStore('user', () => {
         sessionToken,
         publicId,
         role,
+        accountLastLoginAt,
         isAdmin: computed(() => role.value === 'ADMIN'),
         initAccount,
+        refreshAccount,
+        updateProfile,
+        changePassword,
+        logout,
         setPostNameAction,
         isAuthPassed,
         resetAuthentication

@@ -41,6 +41,11 @@ public class InMemoryUserProfileRepository implements UserProfileRepository {
     }
 
     @Override
+    public void deleteSessionByHash(String sessionTokenHash) {
+        sessions.remove(sessionTokenHash);
+    }
+
+    @Override
     public void moveUsersToRoom(String fromRoomId, String toRoomId) {
         profiles.replaceAll((publicId, profile) -> {
             if (!fromRoomId.equals(profile.currentRoomId())) {

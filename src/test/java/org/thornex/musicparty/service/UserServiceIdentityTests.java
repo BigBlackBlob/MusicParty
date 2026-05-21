@@ -389,6 +389,11 @@ class UserServiceIdentityTests {
         }
 
         @Override
+        public void deleteSessionByHash(String sessionTokenHash) {
+            sessions.remove(sessionTokenHash);
+        }
+
+        @Override
         public void moveUsersToRoom(String fromRoomId, String toRoomId) {
             profiles.replaceAll((publicId, profile) -> {
                 if (!fromRoomId.equals(profile.currentRoomId())) {
@@ -437,6 +442,11 @@ class UserServiceIdentityTests {
         @Override
         public Optional<PersistedSession> findSessionByHash(String sessionTokenHash) {
             return delegate.findSessionByHash(sessionTokenHash);
+        }
+
+        @Override
+        public void deleteSessionByHash(String sessionTokenHash) {
+            delegate.deleteSessionByHash(sessionTokenHash);
         }
 
         @Override

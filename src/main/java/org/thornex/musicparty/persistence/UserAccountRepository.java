@@ -7,6 +7,7 @@ public interface UserAccountRepository {
     boolean usernameExists(String username);
     void create(PersistedUserAccount account);
     void updateLoginTime(String username, long lastLoginAt);
+    void updatePasswordHash(String username, String passwordHash, long updatedAt);
     Optional<PersistedUserAccount> findByUsername(String username);
     Optional<PersistedUserAccount> findByPublicId(String publicId);
 }

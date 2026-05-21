@@ -121,15 +121,31 @@
               <button class="flex items-center text-text-muted transition-colors hover:text-text-primary" @click="toggleMute" :title="t('player.volume')">
                 <span class="material-symbols-outlined text-[18px]">{{ uiStore.volume === 0 ? 'volume_off' : 'volume_up' }}</span>
               </button>
-              <input
-                v-model.number="uiStore.volume"
-                class="lounge-volume w-20"
-                min="0"
-                max="1"
-                step="0.01"
-                type="range"
-                :aria-label="t('player.volume')"
-              />
+              <div class="relative flex items-center">
+                <input
+                  v-model.number="uiStore.volume"
+                  class="lounge-volume w-20"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  type="range"
+                  :aria-label="t('player.volume')"
+                  @focus="showVolumeValue"
+                  @blur="hideVolumeValueSoon"
+                  @input="showVolumeValueSoon"
+                  @keydown="showVolumeValueSoon"
+                  @pointerdown="showVolumeValue"
+                  @pointerup="hideVolumeValueSoon"
+                  @pointercancel="hideVolumeValueSoon"
+                />
+                <span
+                  class="pointer-events-none absolute top-full mt-1 rounded-md border border-border-subtle bg-surface-panel px-1.5 py-0.5 font-mono text-[10px] font-bold tabular-nums text-text-muted shadow-lg transition-opacity duration-150"
+                  :style="{ left: `calc(${Math.round(uiStore.volume * 100)}% - 16px)` }"
+                  :class="volumeValueVisible ? 'opacity-100' : 'opacity-0'"
+                >
+                  {{ Math.round(uiStore.volume * 100) }}%
+                </span>
+              </div>
             </div>
             <button
               class="flex items-center justify-center text-primary transition-colors hover:text-text-primary"
@@ -181,6 +197,8 @@ const {
 const titleViewportRef = ref(null);
 const titleTrackRef = ref(null);
 const shouldScrollTitle = ref(false);
+const volumeValueVisible = ref(false);
+let volumeValueTimer;
 
 const isQueuePlaced = computed(() => layoutStore.placedModuleIds.includes('queue'));
 
@@ -218,6 +236,24 @@ const saveCurrentToPersonalPlaylist = async () => {
 
 const toggleMute = () => {
   uiStore.volume = uiStore.volume === 0 ? 0.75 : 0;
+  showVolumeValueSoon();
+};
+
+const showVolumeValue = () => {
+  clearTimeout(volumeValueTimer);
+  volumeValueVisible.value = true;
+};
+
+const hideVolumeValueSoon = () => {
+  clearTimeout(volumeValueTimer);
+  volumeValueTimer = setTimeout(() => {
+    volumeValueVisible.value = false;
+  }, 700);
+};
+
+const showVolumeValueSoon = () => {
+  showVolumeValue();
+  hideVolumeValueSoon();
 };
 
 const measureTitleOverflow = () => {
@@ -239,6 +275,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  clearTimeout(volumeValueTimer);
   titleResizeObserver?.disconnect();
 });
 

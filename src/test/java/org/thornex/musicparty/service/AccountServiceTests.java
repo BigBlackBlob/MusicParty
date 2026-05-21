@@ -61,6 +61,46 @@ class AccountServiceTests {
                 .hasMessageContaining("Invalid username or password");
     }
 
+    @Test
+    void changePasswordRequiresCurrentPasswordAndInvalidatesOldPassword() {
+        AccountService service = createService();
+        AccountSession registered = service.register("Alice", "correct-horse-battery-staple");
+
+        assertThatThrownBy(() -> service.changePassword(registered.sessionToken(), "wrong-password", "new-correct-horse"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Current password is incorrect");
+
+        service.changePassword(registered.sessionToken(), "correct-horse-battery-staple", "new-correct-horse");
+
+        assertThatThrownBy(() -> service.login("Alice", "correct-horse-battery-staple"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Invalid username or password");
+        assertThat(service.login("Alice", "new-correct-horse").publicId()).isEqualTo(registered.publicId());
+    }
+
+    @Test
+    void logoutRevokesCurrentSession() {
+        AccountService service = createService();
+        AccountSession registered = service.register("Alice", "correct-horse-battery-staple");
+
+        service.logout(registered.sessionToken());
+
+        assertThat(service.resolveSession(registered.sessionToken())).isEmpty();
+    }
+
+    @Test
+    void updateProfileChangesDisplayNameWithoutChangingPublicId() {
+        AccountService service = createService();
+        AccountSession registered = service.register("Alice", "correct-horse-battery-staple");
+
+        AccountSession updated = service.updateProfile(registered.sessionToken(), "Alice Cooper");
+
+        assertThat(updated.publicId()).isEqualTo(registered.publicId());
+        assertThat(updated.displayName()).isEqualTo("Alice Cooper");
+        assertThat(service.resolveSession(registered.sessionToken()).map(AccountSession::displayName))
+                .contains("Alice Cooper");
+    }
+
     private AccountService createService() {
         return new AccountService(new InMemoryUserAccountRepository(), new InMemoryUserProfileRepository());
     }

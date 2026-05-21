@@ -255,7 +255,7 @@ const createRoom = () => {
   newRoomName.value = '';
 };
 
-const canDeleteRoom = (room) => !room.system && room.creatorPublicId && room.creatorPublicId === userStore.publicId;
+const canDeleteRoom = (room) => !room.system && (userStore.isAdmin || (room.creatorPublicId && room.creatorPublicId === userStore.publicId));
 
 const deleteRoom = (room) => {
   roomStore.deleteRoom(room.roomId);

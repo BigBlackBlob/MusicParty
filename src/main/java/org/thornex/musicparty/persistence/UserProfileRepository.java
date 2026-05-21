@@ -10,5 +10,6 @@ public interface UserProfileRepository {
     void replaceBindings(String publicId, Map<String, String> bindings);
     void upsertSession(PersistedSession session);
     Optional<PersistedSession> findSessionByHash(String sessionTokenHash);
+    void deleteSessionByHash(String sessionTokenHash);
     void moveUsersToRoom(String fromRoomId, String toRoomId);
 }

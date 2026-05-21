@@ -61,7 +61,7 @@ public class AccountService {
                 now
         ));
         String sessionToken = issueSession(publicId, now);
-        return new AccountSession(sessionToken, publicId, normalizedUsername, role, false);
+        return new AccountSession(sessionToken, publicId, normalizedUsername, normalizedUsername, role, false, true, now);
     }
 
     public AccountSession login(String username, String password) {
@@ -118,8 +118,57 @@ public class AccountService {
                 .map(account -> toSession(account, "", false));
     }
 
+    public void changePassword(String sessionToken, String currentPassword, String newPassword) {
+        AccountSession session = requireSession(sessionToken);
+        PersistedUserAccount account = accountRepository.findByPublicId(session.publicId())
+                .filter(PersistedUserAccount::enabled)
+                .orElseThrow(() -> new IllegalArgumentException("Unknown session token"));
+        if (!passwordEncoder.matches(currentPassword == null ? "" : currentPassword, account.passwordHash())) {
+            throw new IllegalArgumentException("Current password is incorrect");
+        }
+        validatePassword(newPassword);
+        accountRepository.updatePasswordHash(account.username(), passwordEncoder.encode(newPassword), System.currentTimeMillis());
+    }
+
+    public AccountSession updateProfile(String sessionToken, String displayName) {
+        AccountSession session = requireSession(sessionToken);
+        PersistedUserProfile profile = userProfileRepository.findByPublicId(session.publicId())
+                .orElseThrow(() -> new IllegalArgumentException("Unknown session token"));
+        String normalizedDisplayName = normalizeDisplayName(displayName);
+        long now = System.currentTimeMillis();
+        userProfileRepository.upsertProfile(new PersistedUserProfile(
+                profile.publicId(),
+                normalizedDisplayName,
+                false,
+                profile.currentRoomId(),
+                profile.createdAt(),
+                now
+        ));
+        return resolveSession(sessionToken).orElseThrow(() -> new IllegalArgumentException("Unknown session token"));
+    }
+
+    public void logout(String sessionToken) {
+        if (!StringUtils.hasText(sessionToken)) {
+            return;
+        }
+        userProfileRepository.deleteSessionByHash(hashSessionToken(sessionToken));
+    }
+
     private AccountSession toSession(PersistedUserAccount account, String sessionToken, boolean guest) {
-        return new AccountSession(sessionToken, account.publicId(), account.username(), account.role(), guest);
+        String displayName = userProfileRepository.findByPublicId(account.publicId())
+                .map(PersistedUserProfile::displayName)
+                .filter(StringUtils::hasText)
+                .orElse(account.username());
+        return new AccountSession(
+                sessionToken,
+                account.publicId(),
+                account.username(),
+                displayName,
+                account.role(),
+                guest,
+                account.enabled(),
+                account.lastLoginAt()
+        );
     }
 
     private String issueSession(String publicId, long now) {
@@ -148,6 +197,19 @@ public class AccountService {
         if (password == null || password.length() < MIN_PASSWORD_LENGTH) {
             throw new IllegalArgumentException("password must be at least 8 characters");
         }
+    }
+
+    private AccountSession requireSession(String sessionToken) {
+        return resolveSession(sessionToken)
+                .orElseThrow(() -> new IllegalArgumentException("Unknown session token"));
+    }
+
+    private String normalizeDisplayName(String displayName) {
+        String normalized = displayName == null ? "" : displayName.trim();
+        if (!StringUtils.hasText(normalized) || normalized.length() > 32) {
+            throw new IllegalArgumentException("display name must be 1-32 characters");
+        }
+        return normalized;
     }
 
     private String hashSessionToken(String sessionToken) {

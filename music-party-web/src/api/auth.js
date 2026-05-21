@@ -7,6 +7,18 @@ export const authApi = {
     getAccountMe: (sessionToken) => client.get('/api/account/me', {
         headers: { 'X-Session-Token': sessionToken }
     }),
+    updateAccountProfile: (sessionToken, displayName) => client.put('/api/account/profile', { displayName }, {
+        headers: { 'X-Session-Token': sessionToken }
+    }),
+    changeAccountPassword: (sessionToken, currentPassword, newPassword) => client.post('/api/account/change-password', {
+        currentPassword,
+        newPassword
+    }, {
+        headers: { 'X-Session-Token': sessionToken }
+    }),
+    logoutAccount: (sessionToken) => client.post('/api/account/logout', null, {
+        headers: { 'X-Session-Token': sessionToken }
+    }),
     adminCommand: (sessionToken, command, roomId) => client.post('/api/admin/command', { sessionToken, command, roomId }),
     grantNavidrome: (sessionToken, userName, roomId) => client.post('/api/admin/navidrome-access/grant', {
         sessionToken,

@@ -117,6 +117,14 @@ public class JdbcUserProfileRepository implements UserProfileRepository {
     }
 
     @Override
+    public void deleteSessionByHash(String sessionTokenHash) {
+        jdbcTemplate.update("""
+                delete from user_session
+                where session_token_hash = ?
+                """, sessionTokenHash);
+    }
+
+    @Override
     public void moveUsersToRoom(String fromRoomId, String toRoomId) {
         jdbcTemplate.update("""
                 update user_profile

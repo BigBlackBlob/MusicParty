@@ -66,8 +66,21 @@ export const useRoomStore = defineStore('room', () => {
         socketService.send(WS_DEST.ROOM_CREATE, { name });
     };
 
-    const deleteRoom = (roomId) => {
-        socketService.send(WS_DEST.ROOM_DELETE, { roomId });
+    const updateRoom = async (roomId, payload) => {
+        const updated = await roomApi.update(roomId, {
+            ...payload,
+            sessionToken: userStore.sessionToken
+        });
+        await fetchRooms();
+        return updated;
+    };
+
+    const deleteRoom = async (roomId) => {
+        await roomApi.remove(roomId, userStore.sessionToken);
+        if (currentRoomId.value === roomId) {
+            setCurrentRoom(DEFAULT_ROOM_ID);
+        }
+        await fetchRooms();
     };
 
     return {
@@ -84,6 +97,7 @@ export const useRoomStore = defineStore('room', () => {
         setRoomAccessToken,
         clearRoomAccessToken,
         createRoom,
+        updateRoom,
         deleteRoom
     };
 });

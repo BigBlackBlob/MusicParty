@@ -72,6 +72,15 @@ public class JdbcUserAccountRepository implements UserAccountRepository {
     }
 
     @Override
+    public void updatePasswordHash(String username, String passwordHash, long updatedAt) {
+        jdbcTemplate.update("""
+                update user_account
+                set password_hash = ?, updated_at = ?
+                where username = ?
+                """, passwordHash, updatedAt, username);
+    }
+
+    @Override
     public Optional<PersistedUserAccount> findByUsername(String username) {
         List<PersistedUserAccount> rows = jdbcTemplate.query("""
                 select username, public_id, password_hash, role, enabled, created_at, updated_at, last_login_at

@@ -88,6 +88,10 @@
             </div>
           </section>
 
+          <section v-else-if="activeSection === 'account'" class="settings-section">
+            <PersonalInfoPanel @logged-out="$emit('close')" />
+          </section>
+
           <section v-else class="settings-section">
             <AdminSettingsPanel :section="activeSection" />
           </section>
@@ -101,6 +105,7 @@
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import AdminSettingsPanel from './AdminSettingsPanel.vue';
+import PersonalInfoPanel from './PersonalInfoPanel.vue';
 import { useUiStore } from '../stores/ui';
 import { useUserStore } from '../stores/user';
 
@@ -116,15 +121,24 @@ defineEmits(['close']);
 const { t } = useI18n();
 const ui = useUiStore();
 const user = useUserStore();
-const activeSection = ref('general');
+const activeSection = ref('account');
 
-const sections = computed(() => [
-  { id: 'general', icon: 'tune', label: t('settings.general') },
-  { id: 'library', icon: 'library_music', label: t('settings.admin.localLibrary') },
-  { id: 'sources', icon: 'dns', label: t('settings.admin.sourceManager') },
-  { id: 'admin', icon: 'admin_panel_settings', label: t('settings.admin.title') },
-  { id: 'members', icon: 'group', label: t('settings.onlineMembers') }
-]);
+const sections = computed(() => {
+  const baseSections = [
+    { id: 'account', icon: 'account_circle', label: t('settings.account.title') },
+    { id: 'general', icon: 'tune', label: t('settings.general') },
+    { id: 'members', icon: 'group', label: t('settings.onlineMembers') }
+  ];
+  if (!user.isAdmin) return baseSections;
+  return [
+    baseSections[0],
+    baseSections[1],
+    { id: 'library', icon: 'library_music', label: t('settings.admin.localLibrary') },
+    { id: 'sources', icon: 'dns', label: t('settings.admin.sourceManager') },
+    { id: 'admin', icon: 'admin_panel_settings', label: t('settings.admin.title') },
+    baseSections[2]
+  ];
+});
 
 const displayMembers = computed(() => {
   if (user.onlineUsers.length) return user.onlineUsers;
@@ -202,11 +216,20 @@ const getInitials = (name = '') => {
   place-items: center;
   border-radius: 8px;
   color: var(--text-secondary);
+  transition: background 160ms var(--ease-out, ease), color 160ms var(--ease-out, ease), box-shadow 160ms var(--ease-out, ease);
 }
 
 .settings-center__close:hover {
   background: var(--surface-control-hover);
   color: var(--text-primary);
+}
+
+.settings-center__close:focus-visible,
+.settings-center__nav-item:focus-visible,
+.settings-row:focus-visible,
+.settings-segment button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .settings-center__body {
@@ -234,6 +257,7 @@ const getInitials = (name = '') => {
   font-size: 13px;
   font-weight: 800;
   color: var(--text-secondary);
+  transition: background 160ms var(--ease-out, ease), color 160ms var(--ease-out, ease), box-shadow 160ms var(--ease-out, ease);
 }
 
 .settings-center__nav-item:hover,
@@ -281,6 +305,11 @@ const getInitials = (name = '') => {
   gap: 12px;
   padding: 12px 14px;
   color: var(--text-secondary);
+  transition: background 160ms var(--ease-out, ease), color 160ms var(--ease-out, ease), box-shadow 160ms var(--ease-out, ease);
+}
+
+.settings-row:hover {
+  background: var(--surface-control-hover);
 }
 
 .settings-row strong,
@@ -322,6 +351,7 @@ const getInitials = (name = '') => {
   font-weight: 800;
   color: var(--text-secondary);
   background: var(--surface-raised);
+  transition: background 160ms var(--ease-out, ease), color 160ms var(--ease-out, ease), box-shadow 160ms var(--ease-out, ease);
 }
 
 .settings-segment button.active {

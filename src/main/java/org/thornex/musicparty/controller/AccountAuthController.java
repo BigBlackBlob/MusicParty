@@ -4,12 +4,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.thornex.musicparty.dto.AccountAuthRequests.ChangePasswordRequest;
 import org.thornex.musicparty.dto.AccountAuthRequests.LoginRequest;
 import org.thornex.musicparty.dto.AccountAuthRequests.RegisterRequest;
+import org.thornex.musicparty.dto.AccountAuthRequests.UpdateProfileRequest;
 import org.thornex.musicparty.service.AccountService;
 import org.thornex.musicparty.service.AccountSession;
 
@@ -58,6 +61,35 @@ public class AccountAuthController {
 
     @PostMapping("/logout")
     public ResponseEntity<AccountSession> logout(@RequestHeader(value = SESSION_HEADER, required = false) String sessionToken) {
+        accountService.logout(sessionToken);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/change-password")
+    public ResponseEntity<?> changePassword(
+            @RequestHeader(value = SESSION_HEADER, required = false) String sessionToken,
+            @RequestBody ChangePasswordRequest request
+    ) {
+        try {
+            accountService.changePassword(sessionToken, request.currentPassword(), request.newPassword());
+            accountService.logout(sessionToken);
+            return ResponseEntity.noContent().build();
+        } catch (IllegalArgumentException e) {
+            HttpStatus status = "Unknown session token".equals(e.getMessage()) ? HttpStatus.UNAUTHORIZED : HttpStatus.BAD_REQUEST;
+            return ResponseEntity.status(status).body(Map.of("message", e.getMessage()));
+        }
+    }
+
+    @PutMapping("/profile")
+    public ResponseEntity<?> updateProfile(
+            @RequestHeader(value = SESSION_HEADER, required = false) String sessionToken,
+            @RequestBody UpdateProfileRequest request
+    ) {
+        try {
+            return ResponseEntity.ok(accountService.updateProfile(sessionToken, request.displayName()));
+        } catch (IllegalArgumentException e) {
+            HttpStatus status = "Unknown session token".equals(e.getMessage()) ? HttpStatus.UNAUTHORIZED : HttpStatus.BAD_REQUEST;
+            return ResponseEntity.status(status).body(Map.of("message", e.getMessage()));
+        }
     }
 }

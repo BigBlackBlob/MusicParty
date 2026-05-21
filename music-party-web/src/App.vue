@@ -19,16 +19,33 @@
           <button @click="roomStore.fetchRooms" class="text-xs text-[var(--accent)]">Refresh</button>
         </div>
         <div class="grid max-h-52 gap-2 overflow-y-auto">
-          <button
+          <div
               v-for="room in roomStore.rooms"
               :key="room.roomId"
-              @click="roomStore.setCurrentRoom(room.roomId)"
-              class="flex items-center justify-between rounded-xl border px-3 py-3 text-left transition-colors"
+              class="flex items-center justify-between gap-2 rounded-xl border px-3 py-3 text-left transition-colors"
               :class="roomStore.currentRoomId === room.roomId ? 'border-[var(--accent)] bg-[var(--accent-subtle)]' : 'border-[var(--border-default)] bg-[var(--surface-2)] hover:bg-[var(--surface-3)]'"
           >
-            <span class="font-semibold text-[var(--text-primary)]">{{ room.name }}</span>
-            <span class="text-xs text-[var(--text-tertiary)]">{{ room.onlineCount || 0 }} active</span>
-          </button>
+            <button class="min-w-0 flex-1 text-left" @click="roomStore.setCurrentRoom(room.roomId)">
+              <span class="block truncate font-semibold text-[var(--text-primary)]">{{ room.name }}</span>
+              <span class="text-xs text-[var(--text-tertiary)]">{{ room.onlineCount || 0 }} active</span>
+            </button>
+            <div v-if="canManageRoom(room)" class="flex flex-shrink-0 items-center gap-1">
+              <button
+                class="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--text-tertiary)] transition-colors hover:bg-[var(--surface-3)] hover:text-[var(--text-primary)]"
+                title="Edit room"
+                @click="openEditRoom(room)"
+              >
+                <span class="material-symbols-outlined text-[18px]">edit</span>
+              </button>
+              <button
+                class="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--text-tertiary)] transition-colors hover:bg-[var(--error-soft-bg)] hover:text-[var(--error-soft-text)]"
+                title="Delete room"
+                @click="openDeleteRoom(room)"
+              >
+                <span class="material-symbols-outlined text-[18px]">delete</span>
+              </button>
+            </div>
+          </div>
         </div>
         <div class="mt-3 flex gap-2">
           <input
@@ -46,6 +63,60 @@
       >
         进入 {{ roomStore.currentRoom?.name || 'Lounge' }}
       </button>
+    </div>
+
+    <div v-if="editingRoom" class="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-[var(--surface-0)]/70 p-4 backdrop-blur-xl">
+      <div class="w-full max-w-md rounded-2xl border border-[var(--border-default)] bg-[var(--surface-4)] p-6 shadow-2xl">
+        <div class="mb-5 flex items-center justify-between">
+          <h2 class="text-lg font-bold text-[var(--text-primary)]">Edit Lounge</h2>
+          <button class="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]" @click="closeRoomDialog">
+            <span class="material-symbols-outlined text-[20px]">close</span>
+          </button>
+        </div>
+        <div class="space-y-4">
+          <label class="block">
+            <span class="mb-1 block text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-tertiary)]">Name</span>
+            <input
+              v-model="roomForm.name"
+              class="w-full rounded-xl border border-[var(--border-default)] bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+            />
+          </label>
+          <label class="flex items-center justify-between rounded-xl border border-[var(--border-default)] bg-[var(--surface-2)] px-3 py-2">
+            <span class="text-sm font-semibold text-[var(--text-primary)]">Private Lounge</span>
+            <input v-model="roomForm.isPrivate" type="checkbox" class="h-4 w-4 accent-[var(--accent)]" />
+          </label>
+          <label v-if="roomForm.isPrivate" class="block">
+            <span class="mb-1 block text-xs font-semibold uppercase tracking-[0.16em] text-[var(--text-tertiary)]">Password</span>
+            <input
+              v-model="roomForm.password"
+              type="password"
+              class="w-full rounded-xl border border-[var(--border-default)] bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+              :placeholder="roomForm.keepExistingPassword ? 'Leave blank to keep current password' : 'Required for private Lounge'"
+            />
+          </label>
+          <label v-if="roomForm.isPrivate && editingRoom.privateRoom" class="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+            <input v-model="roomForm.keepExistingPassword" type="checkbox" class="h-4 w-4 accent-[var(--accent)]" />
+            Keep existing password
+          </label>
+          <div v-if="roomDialogError" class="text-sm text-[var(--error-soft-text)]">{{ roomDialogError }}</div>
+        </div>
+        <div class="mt-6 flex justify-end gap-2">
+          <button class="rounded-xl border border-[var(--border-default)] px-4 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-3)]" @click="closeRoomDialog">Cancel</button>
+          <button class="rounded-xl bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--text-inverse)] hover:bg-[var(--accent-hover)]" @click="saveRoomEdit">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="deletingRoom" class="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-[var(--surface-0)]/70 p-4 backdrop-blur-xl">
+      <div class="w-full max-w-sm rounded-2xl border border-[var(--border-default)] bg-[var(--surface-4)] p-6 shadow-2xl">
+        <h2 class="text-lg font-bold text-[var(--text-primary)]">Delete Lounge</h2>
+        <p class="mt-2 text-sm text-[var(--text-secondary)]">Delete {{ deletingRoom.name }} and move listeners back to Lounge?</p>
+        <div v-if="roomDialogError" class="mt-3 text-sm text-[var(--error-soft-text)]">{{ roomDialogError }}</div>
+        <div class="mt-6 flex justify-end gap-2">
+          <button class="rounded-xl border border-[var(--border-default)] px-4 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-3)]" @click="closeRoomDialog">Cancel</button>
+          <button class="rounded-xl bg-[var(--error-soft-bg)] px-4 py-2 text-sm font-semibold text-[var(--error-soft-text)] hover:brightness-110" @click="confirmDeleteRoom">Delete</button>
+        </div>
+      </div>
     </div>
 
     <!-- 3. 主界面 (当 hasStarted 为 true 时显示) -->
@@ -103,6 +174,15 @@ const layoutStore = useLayoutStore();
 const hasStarted = ref(false);
 const showSearch = ref(false);
 const newRoomName = ref('');
+const editingRoom = ref(null);
+const deletingRoom = ref(null);
+const roomDialogError = ref('');
+const roomForm = ref({
+  name: '',
+  isPrivate: false,
+  password: '',
+  keepExistingPassword: true
+});
 const toastInstance = ref(null);
 const chatOverlayRef = ref(null);
 const { register } = useToast();
@@ -161,6 +241,70 @@ const createRoom = () => {
   }
 
   submitCreate();
+};
+
+const canManageRoom = (room) => !room?.system && (userStore.isAdmin || room.creatorPublicId === userStore.publicId);
+
+const closeRoomDialog = () => {
+  editingRoom.value = null;
+  deletingRoom.value = null;
+  roomDialogError.value = '';
+};
+
+const openEditRoom = (room) => {
+  if (!canManageRoom(room)) return;
+  editingRoom.value = room;
+  deletingRoom.value = null;
+  roomDialogError.value = '';
+  roomForm.value = {
+    name: room.name || '',
+    isPrivate: Boolean(room.privateRoom),
+    password: '',
+    keepExistingPassword: Boolean(room.privateRoom)
+  };
+};
+
+const saveRoomEdit = async () => {
+  if (!editingRoom.value) return;
+  roomDialogError.value = '';
+  const name = roomForm.value.name.trim();
+  if (!name) {
+    roomDialogError.value = 'Room name cannot be empty';
+    return;
+  }
+  if (roomForm.value.isPrivate && !roomForm.value.keepExistingPassword && !roomForm.value.password.trim()) {
+    roomDialogError.value = 'Private Lounge password is required';
+    return;
+  }
+  try {
+    await roomStore.updateRoom(editingRoom.value.roomId, {
+      name,
+      isPrivate: roomForm.value.isPrivate,
+      password: roomForm.value.password,
+      keepExistingPassword: roomForm.value.keepExistingPassword
+    });
+    closeRoomDialog();
+  } catch (error) {
+    roomDialogError.value = error?.response?.data?.message || 'Failed to update Lounge';
+  }
+};
+
+const openDeleteRoom = (room) => {
+  if (!canManageRoom(room)) return;
+  deletingRoom.value = room;
+  editingRoom.value = null;
+  roomDialogError.value = '';
+};
+
+const confirmDeleteRoom = async () => {
+  if (!deletingRoom.value) return;
+  roomDialogError.value = '';
+  try {
+    await roomStore.deleteRoom(deletingRoom.value.roomId);
+    closeRoomDialog();
+  } catch (error) {
+    roomDialogError.value = error?.response?.data?.message || 'Failed to delete Lounge';
+  }
 };
 
 const clearAutoLiteTimer = () => {
