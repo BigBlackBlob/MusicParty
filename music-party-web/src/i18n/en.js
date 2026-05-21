@@ -45,6 +45,7 @@ export default {
     verifying: 'Verifying...',
     confirmPassword: 'Confirm Password',
     unlock: 'Unlock',
+    loginAccount: 'Log in',
     createAdmin: 'Create admin',
     createAccount: 'Create account',
     createAccountPrompt: 'Need an account? Create one',

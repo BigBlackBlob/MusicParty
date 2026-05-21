@@ -12,6 +12,29 @@
         </p>
       </div>
 
+      <div
+        v-if="!requiresSetup"
+        data-testid="auth-mode-toggle"
+        class="mb-5 grid grid-cols-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-2)] p-1"
+      >
+        <button
+          type="button"
+          class="min-h-[36px] rounded-lg text-sm font-semibold transition-colors"
+          :class="authMode === 'login' ? 'bg-[var(--accent)] text-[var(--text-inverse)] shadow-sm' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'"
+          @click="setAuthMode('login')"
+        >
+          {{ t('auth.loginAccount') }}
+        </button>
+        <button
+          type="button"
+          class="min-h-[36px] rounded-lg text-sm font-semibold transition-colors"
+          :class="authMode === 'register' ? 'bg-[var(--accent)] text-[var(--text-inverse)] shadow-sm' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'"
+          @click="setAuthMode('register')"
+        >
+          {{ t('auth.createAccount') }}
+        </button>
+      </div>
+
       <div class="space-y-4">
         <input
           v-model="username"
@@ -37,16 +60,6 @@
           @click="handleAction"
         >
           {{ actionLabel }}
-        </button>
-
-        <button
-          v-if="!requiresSetup"
-          data-testid="auth-mode-toggle"
-          type="button"
-          class="w-full rounded-lg py-2 text-center text-sm font-semibold text-[var(--text-secondary)] transition-colors hover:text-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-muted)]"
-          @click="toggleAuthMode"
-        >
-          {{ authMode === 'login' ? t('auth.createAccountPrompt') : t('auth.loginAccountPrompt') }}
         </button>
       </div>
 
@@ -115,8 +128,8 @@ const checkStatus = async () => {
   }
 };
 
-const toggleAuthMode = () => {
-  authMode.value = authMode.value === 'login' ? 'register' : 'login';
+const setAuthMode = (mode) => {
+  authMode.value = mode;
   password.value = '';
   errorMessage.value = '';
 };

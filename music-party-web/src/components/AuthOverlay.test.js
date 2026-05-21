@@ -8,7 +8,7 @@ describe('AuthOverlay registration entry', () => {
   it('exposes a non-bootstrap registration mode for regular visitors', () => {
     expect(source).toContain("authMode = ref('login')");
     expect(source).toContain('auth-mode-toggle');
-    expect(source).toContain("authMode.value = authMode.value === 'login' ? 'register' : 'login'");
+    expect(source).toContain("setAuthMode('register')");
     expect(source).toContain("authMode.value === 'register'");
     expect(source).toContain('authApi.registerAccount');
   });

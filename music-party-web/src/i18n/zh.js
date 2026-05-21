@@ -45,6 +45,7 @@ export default {
     verifying: '验证中...',
     confirmPassword: '确认密码',
     unlock: '解锁',
+    loginAccount: '登录',
     createAdmin: '创建管理员',
     createAccount: '创建账号',
     createAccountPrompt: '没有账号？创建一个',
