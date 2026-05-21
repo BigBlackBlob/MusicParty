@@ -1,24 +1,27 @@
 import client from './client';
 
+const accountRequestOptions = {
+    timeout: 60000
+};
+
+const accountTokenOptions = (sessionToken) => ({
+    ...accountRequestOptions,
+    headers: { 'X-Session-Token': sessionToken }
+});
+
 export const authApi = {
     getAccountStatus: () => client.get('/api/account/status'),
-    registerAccount: (username, password) => client.post('/api/account/register', { username, password }),
-    loginAccount: (username, password) => client.post('/api/account/login', { username, password }),
-    getAccountMe: (sessionToken) => client.get('/api/account/me', {
-        headers: { 'X-Session-Token': sessionToken }
-    }),
+    registerAccount: (username, password) => client.post('/api/account/register', { username, password }, accountRequestOptions),
+    loginAccount: (username, password) => client.post('/api/account/login', { username, password }, accountRequestOptions),
+    getAccountMe: (sessionToken) => client.get('/api/account/me', accountTokenOptions(sessionToken)),
     updateAccountProfile: (sessionToken, displayName) => client.put('/api/account/profile', { displayName }, {
-        headers: { 'X-Session-Token': sessionToken }
+        ...accountTokenOptions(sessionToken)
     }),
     changeAccountPassword: (sessionToken, currentPassword, newPassword) => client.post('/api/account/change-password', {
         currentPassword,
         newPassword
-    }, {
-        headers: { 'X-Session-Token': sessionToken }
-    }),
-    logoutAccount: (sessionToken) => client.post('/api/account/logout', null, {
-        headers: { 'X-Session-Token': sessionToken }
-    }),
+    }, accountTokenOptions(sessionToken)),
+    logoutAccount: (sessionToken) => client.post('/api/account/logout', null, accountTokenOptions(sessionToken)),
     adminCommand: (sessionToken, command, roomId) => client.post('/api/admin/command', { sessionToken, command, roomId }),
     grantNavidrome: (sessionToken, userName, roomId) => client.post('/api/admin/navidrome-access/grant', {
         sessionToken,

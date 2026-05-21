@@ -102,7 +102,9 @@ const handleAction = async () => {
       : await authApi.loginAccount(username.value.trim(), password.value);
     finish(session);
   } catch (error) {
-    errorMessage.value = error?.response?.data?.message || '登录失败';
+    errorMessage.value = error?.code === 'ECONNABORTED'
+      ? '请求超时，服务器可能仍在处理，请稍后尝试登录'
+      : (error?.response?.data?.message || '登录失败');
   } finally {
     loading.value = false;
     password.value = '';
