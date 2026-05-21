@@ -56,6 +56,7 @@
           <div
             v-for="(item, index) in player.queue"
             :key="item.queueId || `${item.music?.platform}:${item.music?.id}:${index}`"
+            :data-queue-id="item.queueId"
             class="flex items-center p-sm rounded-xl transition-colors group cursor-pointer"
             :class="[
               isSelected(item.queueId) ? 'bg-accent-subtle' : 'hover:bg-surface-raised',
@@ -176,6 +177,7 @@ import { usePlayerStore } from '../../stores/player';
 import { useUserStore } from '../../stores/user';
 import { useRoomStore } from '../../stores/room';
 import { createLikedSongsFilename, createLikedSongsText } from '../../utils/likedSongs';
+import { buildQueueReorderPayload, buildQueueReorderPayloadFromDom } from '../../utils/queueReorder';
 import { useQueueSelection } from '../../composables/useQueueSelection';
 import CoverImage from '../CoverImage.vue';
 
@@ -229,15 +231,8 @@ const initSortable = () => {
     ghostClass: 'opacity-40',
     delay: 100,
     onEnd: (evt) => {
-      if (evt.oldIndex !== evt.newIndex) {
-        const moved = queue.value[evt.oldIndex];
-        const target = queue.value[evt.newIndex];
-        if (moved?.queueId && target?.queueId) {
-          player.reorderQueue(evt.oldIndex, evt.newIndex, moved.queueId, target.queueId, 'before');
-        } else {
-          player.reorderQueue(evt.oldIndex, evt.newIndex);
-        }
-      }
+      const payload = buildQueueReorderPayloadFromDom(evt) || buildQueueReorderPayload(queue.value, evt.oldIndex, evt.newIndex);
+      if (payload) player.reorderQueue(payload.oldIndex, payload.newIndex, payload.queueId, payload.targetQueueId, payload.position);
     }
   });
 };

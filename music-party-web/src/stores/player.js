@@ -13,6 +13,7 @@ import { personalPlaylistsApi } from '../api/personalPlaylists';
 import { WS_DEST } from '../constants/api';
 import { STORAGE_KEYS } from '../constants/keys';
 import { shouldForceSocketReconnect } from '../utils/socketHealth';
+import { applyQueueReorder } from '../utils/queueReorder';
 import { useToast } from '../composables/useToast';
 
 export const usePlayerStore = defineStore('player', () => {
@@ -355,8 +356,17 @@ export const usePlayerStore = defineStore('player', () => {
     };
 
     const reorderQueue = (oldIndex, newIndex, queueId = null, targetQueueId = null, position = 'before') => {
-        if (!requireAuth()) return;
-        socketService.send(WS_DEST.QUEUE_REORDER, { oldIndex, newIndex, queueId, targetQueueId, position });
+        if (!requireAuth()) return false;
+        const payload = { oldIndex, newIndex, queueId, targetQueueId, position };
+        const sent = socketService.send(WS_DEST.QUEUE_REORDER, payload);
+        if (!sent) {
+            notifyControlFailure('队列排序没有发出，请等待连接恢复后再试', 'error');
+            requestSyncRefresh('queue-reorder-send-failed', true);
+            return false;
+        }
+        queue.value = applyQueueReorder(queue.value, payload);
+        requestResync('queue-reorder', true);
+        return true;
     };
 
     const bindAccount = (platform, accountId) => {

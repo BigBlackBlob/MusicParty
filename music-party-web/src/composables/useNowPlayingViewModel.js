@@ -52,8 +52,7 @@ export const useNowPlayingViewModel = (options = {}) => {
 
     const canSeek = computed(() => {
         const hasValidTrack = !!music.value && durationMs.value > 0;
-        // Allow seek if it's a valid track AND (no requester exists OR user is the requester OR user is ADMIN)
-        const hasPermission = !requesterName.value || isRequester.value || user.currentUser.name === 'ADMIN' || user.currentUser.name === 'AUTO_DJ';
+        const hasPermission = !requesterName.value || isRequester.value || user.isAdmin || user.currentUser.name === 'AUTO_DJ';
         return hasValidTrack && hasPermission;
     });
     

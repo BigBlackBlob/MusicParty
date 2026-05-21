@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.Music;
+import org.thornex.musicparty.dto.PlayableMusic;
 import org.thornex.musicparty.persistence.InMemoryChatRepository;
 import org.thornex.musicparty.persistence.InMemoryMigrationStateRepository;
 import org.thornex.musicparty.persistence.InMemoryPlaybackStateRepository;
@@ -91,6 +92,26 @@ class MusicPlayerServiceHistoryTests {
         assertThat(secondUserFirstControl).isFalse();
     }
 
+    @Test
+    void seekAllowsRequesterAndAdminButRejectsOtherUsers() throws Exception {
+        RecordingQueueRepository queueRepository = new RecordingQueueRepository();
+        TestContext context = createContext(queueRepository);
+        var requester = context.userService().handleConnect("requester-session", "requester-token", "Requester", context.roomId());
+        var listener = context.userService().handleConnect("listener-session", "listener-token", "Listener", context.roomId());
+        var admin = context.userService().handleConnect("admin-session", "admin-token", "Admin", context.roomId());
+        MusicPlayerService.RoomPlayerSession session = context.musicPlayerService().getSession(context.roomId());
+        Object playbackState = getFieldValue(session, "playbackState");
+        invokeMethod(playbackState, "setCurrentTrack", new Class[]{PlayableMusic.class, String.class, String.class},
+                new PlayableMusic("now-1", "Now Playing", List.of("Artist Now"), 210_000L, "netease", "url", "cover-now", false),
+                requester.getPublicId(),
+                requester.getName());
+
+        assertThat(context.musicPlayerService().seekTo(10_000L, listener.getSessionId(), false))
+                .contains("只有点播者可以调整这首歌的进度");
+        assertThat(context.musicPlayerService().seekTo(20_000L, requester.getSessionId(), false)).isEmpty();
+        assertThat(context.musicPlayerService().seekTo(30_000L, admin.getSessionId(), true)).isEmpty();
+    }
+
     private TestContext createContext(RecordingQueueRepository queueRepository) {
         AppProperties properties = new AppProperties();
         properties.getQueue().setHistorySize(50);
@@ -133,7 +154,7 @@ class MusicPlayerServiceHistoryTests {
                 null,
                 null
         );
-        return new TestContext(properties, roomRepository, roomId, musicPlayerService);
+        return new TestContext(properties, roomRepository, roomId, userService, musicPlayerService);
     }
 
     private Object invokeMethod(Object target, String methodName, Class<?>[] parameterTypes, Object... args) throws Exception {
@@ -142,10 +163,17 @@ class MusicPlayerServiceHistoryTests {
         return method.invoke(target, args);
     }
 
+    private Object getFieldValue(Object target, String fieldName) throws Exception {
+        var field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        return field.get(target);
+    }
+
     private record TestContext(
             AppProperties properties,
             RoomRepository roomRepository,
             String roomId,
+            UserService userService,
             MusicPlayerService musicPlayerService
     ) {
         private TestContext restart(RecordingQueueRepository queueRepository) {
@@ -174,6 +202,7 @@ class MusicPlayerServiceHistoryTests {
                     properties,
                     roomRepository,
                     roomId,
+                    userService,
                     new MusicPlayerService(
                             List.of(),
                             userService,

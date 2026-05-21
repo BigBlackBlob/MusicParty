@@ -19,6 +19,7 @@ import java.util.UUID;
 @Service
 public class AccountService {
     private static final int MIN_PASSWORD_LENGTH = 8;
+    private static final String USERNAME_PATTERN = "[\\p{L}\\p{N}_\\-.]+";
 
     private final UserAccountRepository accountRepository;
     private final UserProfileRepository userProfileRepository;
@@ -187,7 +188,7 @@ public class AccountService {
 
     private String normalizeUsername(String username) {
         String normalized = username == null ? "" : username.trim().toLowerCase(Locale.ROOT);
-        if (!StringUtils.hasText(normalized) || normalized.length() > 32 || !normalized.matches("[a-z0-9_\\-.]+")) {
+        if (!StringUtils.hasText(normalized) || normalized.length() > 32 || !normalized.matches(USERNAME_PATTERN)) {
             throw new IllegalArgumentException("username must be 1-32 characters and contain only letters, numbers, dot, dash or underscore");
         }
         return normalized;

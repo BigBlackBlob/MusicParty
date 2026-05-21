@@ -49,6 +49,17 @@ class AccountServiceTests {
     }
 
     @Test
+    void allowsChineseUsernameRegistrationAndLogin() {
+        AccountService service = createService();
+
+        AccountSession registered = service.register("  小明  ", "correct-horse-battery-staple");
+        AccountSession loggedIn = service.login("小明", "correct-horse-battery-staple");
+
+        assertThat(registered.username()).isEqualTo("小明");
+        assertThat(loggedIn.publicId()).isEqualTo(registered.publicId());
+    }
+
+    @Test
     void rejectsDuplicateUsernameAndBadPassword() {
         AccountService service = createService();
         service.register("Alice", "correct-horse-battery-staple");

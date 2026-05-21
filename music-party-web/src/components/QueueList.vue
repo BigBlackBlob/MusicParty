@@ -78,6 +78,7 @@
             <QueueItem
               v-for="(item, index) in queue"
               :key="item.queueId || `${item.music?.platform || 'track'}:${item.music?.id || index}`"
+              :data-queue-id="item.queueId"
               :item="item"
               :index="index"
               :selection-mode="selectionMode"
@@ -101,6 +102,7 @@ import QueueItem from './QueueItem.vue';
 import TrackListItem from './ui/TrackListItem.vue';
 import { createLikedSongsFilename, createLikedSongsText } from '../utils/likedSongs';
 import { useQueueSelection } from '../composables/useQueueSelection';
+import { buildQueueReorderPayload, buildQueueReorderPayloadFromDom } from '../utils/queueReorder';
 
 const player = usePlayerStore();
 const { t } = useI18n();
@@ -143,15 +145,8 @@ const initSortable = () => {
     handle: '.drag-handle',
     ghostClass: 'opacity-40',
     onEnd: (evt) => {
-      if (evt.oldIndex !== evt.newIndex) {
-        const moved = queue.value[evt.oldIndex];
-        const target = queue.value[evt.newIndex];
-        if (moved?.queueId && target?.queueId) {
-          player.reorderQueue(evt.oldIndex, evt.newIndex, moved.queueId, target.queueId, 'before');
-        } else {
-          player.reorderQueue(evt.oldIndex, evt.newIndex);
-        }
-      }
+      const payload = buildQueueReorderPayloadFromDom(evt) || buildQueueReorderPayload(queue.value, evt.oldIndex, evt.newIndex);
+      if (payload) player.reorderQueue(payload.oldIndex, payload.newIndex, payload.queueId, payload.targetQueueId, payload.position);
     }
   });
 };

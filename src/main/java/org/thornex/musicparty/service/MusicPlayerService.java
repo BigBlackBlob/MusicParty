@@ -219,8 +219,8 @@ public class MusicPlayerService {
         return sessionForUser(sessionId).togglePause(sessionId);
     }
 
-    public Optional<String> seekTo(long positionMs, String sessionId) {
-        return sessionForUser(sessionId).seekTo(positionMs, sessionId);
+    public Optional<String> seekTo(long positionMs, String sessionId, boolean adminOverride) {
+        return sessionForUser(sessionId).seekTo(positionMs, sessionId, adminOverride);
     }
 
     public ControlResult toggleShuffle(String sessionId) {
@@ -579,10 +579,10 @@ public class MusicPlayerService {
             return ControlResult.OK;
         }
 
-        public synchronized Optional<String> seekTo(long positionMs, String sessionId) {
+        public synchronized Optional<String> seekTo(long positionMs, String sessionId, boolean adminOverride) {
             PlayableMusic music = playbackState.currentMusic();
             if (music == null) return Optional.of("当前没有正在播放的歌曲");
-            if (!Objects.equals(playbackState.currentEnqueuerId(), getUserPublicId(sessionId))) return Optional.of("只有点播者可以调整这首歌的进度");
+            if (!adminOverride && !Objects.equals(playbackState.currentEnqueuerId(), getUserPublicId(sessionId))) return Optional.of("只有点播者可以调整这首歌的进度");
             long clamped = music.duration() > 0 ? Math.max(0, Math.min(positionMs, music.duration())) : Math.max(0, positionMs);
             playbackState.updatePlaybackAnchor(clamped);
             playbackState.touchHotActivity();

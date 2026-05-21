@@ -138,7 +138,10 @@ public class MusicSocketController {
             logControlResult("seek", sessionId, ControlResult.LOCKED, "guest");
             return;
         }
-        var denial = musicPlayerService.seekTo(request.positionMs(), sessionId);
+        boolean adminOverride = userService.getUser(sessionId)
+                .map(user -> accountService.isAdminSession(user.getSessionToken()))
+                .orElse(false);
+        var denial = musicPlayerService.seekTo(request.positionMs(), sessionId, adminOverride);
         if (denial.isPresent()) {
             log.info("Playback control seek from session {} rejected: result=DENIED, reason={}, positionMs={}", sessionId, denial.get(), request.positionMs());
         } else {

@@ -41,5 +41,21 @@ class MusicQueueManagerTests {
                 .extracting(MusicQueueItem::queueId)
                 .containsExactly(third.queueId(), first.queueId(), second.queueId());
     }
+
+    @Test
+    void reorderByQueueIdMovesItemAfterTargetWhenDraggingDownward() {
+        MusicQueueManager manager = new MusicQueueManager(new AppProperties());
+        UserSummary user = new UserSummary("public-id", "User", false);
+
+        MusicQueueItem first = manager.add(new Music("a", "A", List.of("A"), 1000, "netease", ""), user, QueueItemStatus.READY);
+        MusicQueueItem second = manager.add(new Music("b", "B", List.of("B"), 1000, "netease", ""), user, QueueItemStatus.READY);
+        MusicQueueItem third = manager.add(new Music("c", "C", List.of("C"), 1000, "netease", ""), user, QueueItemStatus.READY);
+
+        manager.reorderByQueueId(first.queueId(), third.queueId(), "after");
+
+        assertThat(manager.getQueueSnapshot())
+                .extracting(MusicQueueItem::queueId)
+                .containsExactly(second.queueId(), third.queueId(), first.queueId());
+    }
 }
 
