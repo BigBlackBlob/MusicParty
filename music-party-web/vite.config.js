@@ -4,6 +4,24 @@ import { fileURLToPath, URL } from 'node:url'
 
 const backendUrl = process.env.VITE_BACKEND_URL || 'http://localhost:8080'
 const projectRoot = fileURLToPath(new URL('.', import.meta.url))
+const vendorChunks = [
+  { name: 'vendor-vue', packages: ['vue', 'pinia', 'vue-i18n', '@vueuse/core'] },
+  { name: 'vendor-ui', packages: ['reka-ui', 'lucide-vue-next'] },
+  { name: 'vendor-network', packages: ['axios', '@stomp/stompjs'] },
+  { name: 'vendor-dnd', packages: ['sortablejs'] },
+  { name: 'vendor-utils', packages: ['dayjs', 'clsx', 'tailwind-merge', 'class-variance-authority'] }
+]
+
+const normalizeModuleId = (id) => id.replaceAll('\\', '/')
+const packagePattern = (pkg) => `/node_modules/${pkg}/`
+const resolveVendorChunk = (id) => {
+  const normalized = normalizeModuleId(id)
+  if (!normalized.includes('/node_modules/')) return undefined
+
+  return vendorChunks.find(({ packages }) =>
+    packages.some((pkg) => normalized.includes(packagePattern(pkg)))
+  )?.name
+}
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -20,7 +38,12 @@ export default defineConfig({
     __INTLIFY_PROD_DEVTOOLS__: false,
   },
   build: {
-    outDir: fileURLToPath(new URL('./dist', import.meta.url))
+    outDir: fileURLToPath(new URL('./dist', import.meta.url)),
+    rollupOptions: {
+      output: {
+        manualChunks: resolveVendorChunk
+      }
+    }
   },
   server: {
     proxy: {

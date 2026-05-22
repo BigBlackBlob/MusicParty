@@ -22,11 +22,11 @@
       <!-- Actions / Metadata -->
       <div class="flex min-w-0 items-center gap-2">
         <span class="font-micro text-micro text-text-muted uppercase">{{ activeView === 'queue' ? queue.length : player.likedSongs.length }} {{ t('queue.tracks') }}</span>
-        <button v-if="activeView === 'queue' && queue.length > 0" @click="toggleSelectionMode" class="flex h-8 w-8 items-center justify-center rounded-md text-text-muted hover:bg-[var(--surface-control-hover)] hover:text-text-primary" :title="t('queue.selectTracks')">
+        <button v-if="activeView === 'queue' && queue.length > 0" @click="toggleSelectionMode" class="flex h-8 w-8 items-center justify-center rounded-md text-text-muted hover:bg-[var(--surface-control-hover)] hover:text-text-primary" :aria-label="t('queue.selectTracks')" :title="t('queue.selectTracks')">
           <span class="material-symbols-outlined text-[16px]">{{ selectionMode ? 'close' : 'checklist' }}</span>
         </button>
 
-        <button v-if="activeView === 'liked' && player.likedSongs.length > 0" @click="exportLikedSongs" class="text-text-muted hover:text-text-primary" :title="t('common.export')">
+        <button v-if="activeView === 'liked' && player.likedSongs.length > 0" @click="exportLikedSongs" class="text-text-muted hover:text-text-primary" :aria-label="t('common.export')" :title="t('common.export')">
           <span class="material-symbols-outlined text-[16px]">download</span>
         </button>
       </div>
@@ -59,7 +59,7 @@
             {{ song.platform }}
           </template>
           <template #suffix>
-            <button @click="player.removeLikedSongAndSync(song.key)" class="text-error hover:text-red-400" :title="t('queue.remove')">
+            <button @click="player.removeLikedSongAndSync(song.key)" class="text-error hover:text-red-400" :aria-label="t('queue.remove')" :title="t('queue.remove')">
               <span class="material-symbols-outlined text-[18px]">delete</span>
             </button>
           </template>

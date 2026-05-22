@@ -1,6 +1,6 @@
 <template>
   <div
-    class="group flex min-h-[60px] items-center gap-3 rounded-md border p-2.5 transition-colors"
+    class="group flex min-h-[60px] items-center gap-3 rounded-md border p-2.5 transition-colors focus-visible:ring-2 focus-visible:ring-[var(--accent-muted)]"
     :class="[
       active ? 'border-border-subtle bg-[var(--surface-control-active)]' : 'border-transparent hover:bg-[var(--surface-control-hover)]',
       clickable ? 'cursor-pointer' : '',
@@ -9,6 +9,7 @@
     :role="clickable ? 'button' : undefined"
     :tabindex="clickable ? 0 : undefined"
     :aria-disabled="unplayable || undefined"
+    :aria-label="clickable ? (ariaLabel || title) : undefined"
     @keydown.enter="$emit('activate', $event)"
     @keydown.space.prevent="$emit('activate', $event)"
   >
@@ -66,7 +67,11 @@ defineProps({
   coverUrl: String,
   active: Boolean,
   unplayable: Boolean,
-  clickable: Boolean
+  clickable: Boolean,
+  ariaLabel: {
+    type: String,
+    default: ''
+  }
 });
 
 defineEmits(['activate']);

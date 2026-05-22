@@ -61,7 +61,9 @@ export default {
   },
   rooms: {
     title: '房间',
+    currentRoom: '当前房间：{name}',
     create: '创建',
+    delete: '删除房间',
     newRoomPlaceholder: '新房间名称...'
   },
   settings: {
@@ -75,6 +77,7 @@ export default {
     mobileNowDensity: '播放页密度',
     mobileDensity: '移动端密度',
     onlineMembers: '在线成员',
+    activeUsers: '活跃用户',
     active: '活跃',
     guest: '访客',
     member: '成员',

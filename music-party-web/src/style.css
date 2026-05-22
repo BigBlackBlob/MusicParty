@@ -235,7 +235,7 @@ html {
   position: fixed;
   top: 0;
   left: 0;
-  width: 100vw;
+  width: 100%;
   height: var(--app-height, 100dvh);
   min-height: var(--app-height, 100dvh);
   overflow: hidden;

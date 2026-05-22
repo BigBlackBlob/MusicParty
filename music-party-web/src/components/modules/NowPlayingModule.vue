@@ -52,6 +52,7 @@
             class="h-4 flex-1 cursor-pointer rounded-full py-[6px]"
             :class="canSeek ? '' : 'cursor-not-allowed opacity-60'"
             @click="handleSeek"
+            :aria-label="t('player.seek')"
             :title="canSeek ? t('player.seek') : t('player.onlyRequester')"
           >
             <span class="block h-1 overflow-hidden rounded-full bg-[var(--progress-track)]">
@@ -67,17 +68,19 @@
             :class="player.isShuffle ? 'text-primary' : ''"
             :disabled="player.isShuffleLocked"
             @click="player.toggleShuffle"
+            :aria-label="t('player.shuffle')"
             :title="t('player.shuffle')"
           >
             <span class="material-symbols-outlined text-[20px]">shuffle</span>
           </button>
-          <button class="flex h-12 w-12 cursor-not-allowed items-center justify-center rounded-full text-text-secondary opacity-35" :title="t('player.prevUnavailable')">
+          <button class="flex h-12 w-12 cursor-not-allowed items-center justify-center rounded-full text-text-secondary opacity-35" :aria-label="t('player.prevUnavailable')" :title="t('player.prevUnavailable')">
             <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">skip_previous</span>
           </button>
           <button
             class="flex h-[52px] w-[52px] items-center justify-center rounded-lg bg-primary text-on-primary shadow-lg transition-colors hover:bg-[var(--accent-hover)] active:bg-primary disabled:cursor-not-allowed disabled:opacity-45"
             :disabled="player.isPauseLocked && !player.isPaused"
             @click="player.togglePause"
+            :aria-label="player.isPaused ? t('player.play') : t('player.pause')"
             :title="player.isPaused ? t('player.play') : t('player.pause')"
           >
             <span v-if="player.isPaused" class="material-symbols-outlined text-[28px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
@@ -87,6 +90,7 @@
             class="flex h-12 w-12 items-center justify-center rounded-full text-text-secondary transition-all hover:bg-[var(--surface-control-hover)] hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-35"
             :disabled="player.isSkipLocked"
             @click="player.playNext"
+            :aria-label="t('player.next')"
             :title="t('player.next')"
           >
             <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">skip_next</span>
@@ -95,6 +99,7 @@
             class="flex h-10 w-10 items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-control-hover)] hover:text-primary"
             :class="isLiked ? 'text-primary' : 'text-text-muted'"
             @click="toggleLike"
+            :aria-label="isLiked ? t('player.unlike') : t('player.like')"
             :title="isLiked ? t('player.unlike') : t('player.like')"
           >
             <span class="material-symbols-outlined text-[20px]" :style="isLiked ? `font-variation-settings: 'FILL' 1;` : ''">favorite</span>
@@ -102,6 +107,7 @@
           <button
             class="flex h-10 w-10 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-[var(--surface-control-hover)] hover:text-primary"
             @click="saveCurrentToPersonalPlaylist"
+            :aria-label="t('personalPlaylists.saveSong')"
             :title="t('personalPlaylists.saveSong')"
           >
             <span class="material-symbols-outlined text-[20px]">playlist_add</span>
@@ -118,7 +124,7 @@
           </div>
           <div class="flex items-center gap-4">
             <div class="flex items-center gap-3">
-              <button class="flex items-center text-text-muted transition-colors hover:text-text-primary" @click="toggleMute" :title="t('player.volume')">
+              <button class="flex items-center text-text-muted transition-colors hover:text-text-primary" @click="toggleMute" :aria-label="t('player.volume')" :title="t('player.volume')">
                 <span class="material-symbols-outlined text-[18px]">{{ uiStore.volume === 0 ? 'volume_off' : 'volume_up' }}</span>
               </button>
               <div class="relative flex items-center">
@@ -150,6 +156,7 @@
             <button
               class="flex items-center justify-center text-primary transition-colors hover:text-text-primary"
               :class="{ 'opacity-50': !isQueuePlaced }"
+              :aria-label="t('nav.queue')"
               :title="t('nav.queue')"
               @click="toggleQueueModule"
             >

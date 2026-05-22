@@ -110,7 +110,12 @@
             <button type="submit" :disabled="changingPassword || !canSubmitPassword">
               {{ changingPassword ? t('settings.account.saving') : t('settings.account.changePassword') }}
             </button>
-            <button type="button" class="personal-info__secondary" @click="requestLogout">
+            <button
+              type="button"
+              class="personal-info__secondary"
+              :class="{ 'personal-info__secondary--danger': confirmingLogout }"
+              @click="requestLogout"
+            >
               {{ confirmingLogout ? t('settings.account.confirmLogout') : t('settings.account.logout') }}
             </button>
           </div>
@@ -482,12 +487,14 @@ const logout = async () => {
 .personal-info__secondary {
   align-self: end;
   min-height: 40px;
+  border: 1px solid transparent;
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 10px 14px;
   background: var(--primary);
   color: var(--on-primary);
   font-size: 12px;
   font-weight: 900;
+  line-height: 1;
   transition: background 160ms var(--ease-out, ease), color 160ms var(--ease-out, ease), opacity 160ms var(--ease-out, ease), transform 120ms var(--ease-out, ease);
 }
 
@@ -523,13 +530,26 @@ const logout = async () => {
 }
 
 .personal-info__secondary {
-  background: var(--surface-raised);
-  color: var(--text-secondary);
+  border-color: var(--border-default);
+  background: var(--surface-control);
+  color: var(--text-primary);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 8%, transparent);
 }
 
 .personal-info__secondary:hover {
   background: var(--surface-control-hover);
   color: var(--text-primary);
+}
+
+.personal-info__secondary--danger {
+  border-color: color-mix(in srgb, var(--error) 42%, var(--border-default));
+  background: color-mix(in srgb, var(--error) 16%, var(--surface-control));
+  color: var(--error-soft-text, var(--error));
+}
+
+.personal-info__secondary--danger:hover {
+  background: color-mix(in srgb, var(--error) 24%, var(--surface-control));
+  color: var(--error-soft-text, var(--error));
 }
 
 .personal-info__stats {

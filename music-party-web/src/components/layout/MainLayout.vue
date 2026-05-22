@@ -1,5 +1,5 @@
 <template>
-  <div class="h-[var(--app-height)] w-screen relative flex flex-col overflow-hidden bg-bg-base text-text-primary font-body text-body selection:bg-primary selection:text-on-primary" style="--top-bar-height: 64px;">
+  <div class="h-[var(--app-height)] w-full relative flex flex-col overflow-hidden bg-bg-base text-text-primary font-body text-body selection:bg-primary selection:text-on-primary" style="--top-bar-height: 64px;">
     <!-- Full-Bleed Ambient Canvas -->
     <div class="fixed inset-0 ambient-canvas z-0 opacity-40"></div>
     <Transition name="desktop-cover-fade" mode="out-in">
@@ -37,9 +37,10 @@
             <button
               class="font-display flex items-center gap-2 text-[24px] font-black leading-none tracking-tighter text-primary transition-opacity hover:opacity-80"
               @click="toggleRoomMenu"
-              :title="`Current room: ${roomStore.currentRoom?.name || 'Lounge'}`"
+              :aria-label="t('rooms.currentRoom', { name: currentRoomName })"
+              :title="t('rooms.currentRoom', { name: currentRoomName })"
             >
-              <span>{{ roomStore.currentRoom?.name || t('app.lounge') }}</span>
+              <span>{{ currentRoomName }}</span>
               <span class="material-symbols-outlined text-[18px]">expand_more</span>
             </button>
             <span
@@ -65,15 +66,17 @@
                 @click="switchRoom(room.roomId)"
               >
                 <div class="flex flex-col min-w-0 flex-1">
-                   <span class="truncate font-compact text-sm font-bold">{{ room.name }}</span>
-                   <span class="text-[10px] opacity-60 font-mono tracking-tight">{{ room.onlineCount || 0 }} {{ t('settings.active') }}</span>
+                  <span class="truncate font-compact text-sm font-bold">{{ room.name }}</span>
+                  <span class="text-[10px] opacity-60 font-mono tracking-tight">{{ room.onlineCount || 0 }} {{ t('settings.active') }}</span>
                 </div>
                 
                 <div class="ml-3 flex items-center gap-2">
                   <span v-if="roomStore.currentRoomId === room.roomId" class="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_8px_var(--primary)]"></span>
-                  <button 
-                    v-if="canDeleteRoom(room)" 
-                    class="material-symbols-outlined text-[18px] opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:text-error transition-all" 
+                  <button
+                    v-if="canDeleteRoom(room)"
+                    class="material-symbols-outlined text-[18px] opacity-0 group-hover:opacity-60 hover:!opacity-100 hover:text-error transition-all"
+                    :aria-label="t('rooms.delete')"
+                    :title="t('rooms.delete')"
                     @click.stop="deleteRoom(room)"
                   >
                     delete
@@ -91,18 +94,26 @@
               <button class="rounded-md bg-primary px-4 text-xs font-black uppercase tracking-widest text-on-primary hover:bg-[var(--accent-hover)] transition-colors" @click="createRoom">{{ t('rooms.create') }}</button>
             </div>
           </div>
-          <div
-            class="hidden min-w-[220px] cursor-pointer items-center gap-3 rounded-md border border-border-subtle bg-[var(--surface-control)] px-4 py-2 transition-colors hover:bg-[var(--surface-control-hover)] md:flex"
+          <button
+            type="button"
+            class="hidden min-w-[220px] cursor-pointer items-center gap-3 rounded-md border border-border-subtle bg-[var(--surface-control)] px-4 py-2 text-left transition-colors hover:bg-[var(--surface-control-hover)] focus-visible:ring-2 focus-visible:ring-[var(--accent-muted)] md:flex"
+            :aria-label="t('search.searchAndAdd')"
             :title="t('search.searchAndAdd')"
             @click="handleSearchClick"
           >
             <span class="material-symbols-outlined text-text-muted text-[18px]">search</span>
             <span class="text-text-muted font-compact text-compact flex items-center tracking-tight">{{ t('search.placeholder') }}</span>
-          </div>
+          </button>
         </div>
         <div class="flex flex-shrink-0 items-center gap-3">
           <div class="relative">
-            <div class="mr-4 flex -space-x-2 items-center cursor-pointer transition-transform hover:scale-105" @click="toggleUserList">
+            <button
+              type="button"
+              class="mr-4 flex -space-x-2 items-center cursor-pointer rounded-md transition-transform hover:scale-105 focus-visible:ring-2 focus-visible:ring-[var(--accent-muted)]"
+              :aria-label="t('settings.activeUsers')"
+              :title="t('settings.activeUsers')"
+              @click="toggleUserList"
+            >
               <div
                 v-for="user in visibleUsers"
                 :key="user.publicId || user.name"
@@ -118,7 +129,7 @@
               >
                 <span class="font-micro text-micro">+{{ extraUserCount }}</span>
               </div>
-            </div>
+            </button>
 
             <div
               v-if="isUserListOpen"
@@ -129,7 +140,7 @@
             </div>
           </div>
 
-          <button @click="uiStore.toggleDarkMode" class="flex h-10 w-10 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-[var(--surface-control-hover)] hover:text-text-primary" :title="t('settings.toggleTheme')">
+          <button @click="uiStore.toggleDarkMode" class="flex h-10 w-10 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-[var(--surface-control-hover)] hover:text-text-primary" :aria-label="t('settings.toggleTheme')" :title="t('settings.toggleTheme')">
             <span class="material-symbols-outlined">{{ uiStore.isDarkMode ? 'light_mode' : 'dark_mode' }}</span>
           </button>
 
@@ -137,13 +148,14 @@
             @click="layoutStore.enterEditMode"
             class="flex h-10 w-10 items-center justify-center rounded-md transition-all hover:bg-[var(--surface-control-hover)] active:scale-95"
             :class="layoutStore.isEditMode ? 'text-primary bg-primary/10' : 'text-text-secondary hover:text-text-primary'"
+            :aria-label="t('layout.editLayout')"
             :title="t('layout.editLayout')"
           >
             <span class="material-symbols-outlined">grid_view</span>
           </button>
 
           <div class="relative">
-            <button @click="toggleSettings" class="flex h-10 w-10 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-[var(--surface-control-hover)] hover:text-text-primary" :title="t('settings.title')">
+            <button @click="toggleSettings" class="flex h-10 w-10 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-[var(--surface-control-hover)] hover:text-text-primary" :aria-label="t('settings.title')" :title="t('settings.title')">
               <span class="material-symbols-outlined">settings</span>
             </button>
 
@@ -155,14 +167,15 @@
       <!-- Main Immersive Canvas -->
       <main class="relative z-20 flex w-full items-center justify-center px-5 pt-[var(--top-bar-height)]" style="height: var(--app-height);">
         <div
-          class="flex w-full min-h-0 items-stretch overflow-hidden transition-all duration-300"
+          class="flex w-full min-h-0 items-stretch overflow-visible transition-all duration-300"
           :style="{
             '--stage-scale': uiStore.mainStageScale,
             '--stage-height': 'calc(var(--app-height) / var(--global-zoom) - var(--top-bar-height) / var(--global-zoom) - 40px)',
-            maxWidth: `min(calc(1520px * ${uiStore.mainStageScale}), calc(100vw / var(--global-zoom) - 40px))`,
-            zoom: uiStore.globalZoomLevel,
             '--global-zoom': uiStore.globalZoomLevel,
-            height: `min(var(--stage-height), calc(708px * ${uiStore.mainStageScale}))`
+            maxWidth: `min(calc(1520px * ${uiStore.mainStageScale}), calc((100% - 40px) / ${uiStore.globalZoomLevel}))`,
+            height: `min(var(--stage-height), calc(708px * ${uiStore.mainStageScale}))`,
+            transform: `scale(${uiStore.globalZoomLevel})`,
+            transformOrigin: 'center center'
           }"
           id="main-content-grid"
         >
@@ -201,6 +214,7 @@ const isRoomMenuOpen = ref(false);
 const newRoomName = ref('');
 const currentMusic = computed(() => playerStore.nowPlaying?.music || null);
 const currentCover = computed(() => currentMusic.value?.coverUrl || '');
+const currentRoomName = computed(() => roomStore.currentRoom?.name || t('app.lounge'));
 const visibleUsers = computed(() => {
   const users = userStore.onlineUsers.length
     ? userStore.onlineUsers

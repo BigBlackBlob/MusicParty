@@ -14,6 +14,7 @@
         <button
           @click="goBack"
           class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-[var(--surface-control-hover)] hover:text-text-primary"
+          :aria-label="t('common.back')"
           :title="t('common.back')"
         >
           <span class="material-symbols-outlined text-[18px]">arrow_back</span>
@@ -30,6 +31,7 @@
           v-if="viewMode === 'detail' && store.selectedTracks.length > 0"
           @click="playSelected"
           class="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-on-primary transition-colors hover:bg-[var(--accent-hover)]"
+          :aria-label="t('roomPlaylists.playAll')"
           :title="t('roomPlaylists.playAll')"
         >
           <span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
@@ -112,6 +114,7 @@
                 <button 
                   @click.stop="deleteTrack(track.id)"
                   class="w-8 h-8 flex items-center justify-center rounded-lg text-text-disabled hover:text-error hover:bg-error/10 transition-all shrink-0"
+                  :aria-label="t('queue.remove')"
                   :title="t('queue.remove')"
                 >
                   <span class="material-symbols-outlined text-[18px]">delete</span>

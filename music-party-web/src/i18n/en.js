@@ -61,7 +61,9 @@ export default {
   },
   rooms: {
     title: 'Rooms',
+    currentRoom: 'Current room: {name}',
     create: 'Create',
+    delete: 'Delete room',
     newRoomPlaceholder: 'New room name...'
   },
   settings: {
@@ -75,6 +77,7 @@ export default {
     mobileNowDensity: 'Now Playing Density',
     mobileDensity: 'Mobile Density',
     onlineMembers: 'Online Members',
+    activeUsers: 'Active users',
     active: 'Active',
     guest: 'Guest',
     member: 'Member',
