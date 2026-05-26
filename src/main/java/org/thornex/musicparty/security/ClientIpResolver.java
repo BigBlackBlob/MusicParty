@@ -1,8 +1,8 @@
 package org.thornex.musicparty.security;
 
-import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.thornex.musicparty.config.AppProperties;
 
 import java.net.InetAddress;
@@ -18,13 +18,13 @@ public class ClientIpResolver {
         this.trustedProxyCidrs = parseCidrs(appProperties.getAuth().getTrustedProxyCidrs());
     }
 
-    public String resolve(HttpServletRequest request) {
-        String remoteAddr = cleanAddress(request.getRemoteAddr());
+    public String resolve(ServerHttpRequest request) {
+        String remoteAddr = request.getRemoteAddress() == null ? "" : cleanAddress(request.getRemoteAddress().getAddress().getHostAddress());
         if (!isTrustedProxy(remoteAddr)) {
             return remoteAddr;
         }
 
-        String forwardedFor = request.getHeader("X-Forwarded-For");
+        String forwardedFor = request.getHeaders().getFirst("X-Forwarded-For");
         if (StringUtils.hasText(forwardedFor)) {
             for (String candidate : forwardedFor.split(",")) {
                 String cleaned = cleanAddress(candidate);
@@ -34,7 +34,7 @@ public class ClientIpResolver {
             }
         }
 
-        String realIp = cleanAddress(request.getHeader("X-Real-IP"));
+        String realIp = cleanAddress(request.getHeaders().getFirst("X-Real-IP"));
         return StringUtils.hasText(realIp) && !"unknown".equalsIgnoreCase(realIp) ? realIp : remoteAddr;
     }
 

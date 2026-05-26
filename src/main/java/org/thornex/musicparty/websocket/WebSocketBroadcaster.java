@@ -2,7 +2,6 @@ package org.thornex.musicparty.websocket;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.event.EventListener;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 import org.thornex.musicparty.dto.PlayerEvent;
 import org.thornex.musicparty.event.PlayerStateEvent;
@@ -19,7 +18,7 @@ import org.thornex.musicparty.util.MessageFormatter;
 @RequiredArgsConstructor
 public class WebSocketBroadcaster {
 
-    private final SimpMessagingTemplate messagingTemplate;
+    private final ReactiveSocketBroker broker;
     private final UserService userService;
     private final AfterCommitExecutor afterCommitExecutor;
 
@@ -29,7 +28,7 @@ public class WebSocketBroadcaster {
     @EventListener
     public void onPlayerStateChanged(PlayerStateEvent event) {
         afterCommitExecutor.run(() ->
-                messagingTemplate.convertAndSend("/topic/rooms/" + event.getRoomId() + "/player/state", event.getState()));
+                broker.broadcastRoom(event.getRoomId(), "player.state", event.getState()));
     }
 
     /**
@@ -38,7 +37,7 @@ public class WebSocketBroadcaster {
     @EventListener
     public void onQueueChanged(QueueUpdateEvent event) {
         afterCommitExecutor.run(() ->
-                messagingTemplate.convertAndSend("/topic/rooms/" + event.getRoomId() + "/player/queue", event.getQueue()));
+                broker.broadcastRoom(event.getRoomId(), "player.queue", event.getQueue()));
     }
 
     /**
@@ -73,26 +72,26 @@ public class WebSocketBroadcaster {
                 event.getPayload()
         );
         afterCommitExecutor.run(() ->
-                messagingTemplate.convertAndSend("/topic/rooms/" + event.getRoomId() + "/player/events", playerEvent));
+                broker.broadcastRoom(event.getRoomId(), "player.events", playerEvent));
     }
 
     @EventListener
     public void onRoomListChanged(RoomListUpdateEvent event) {
         afterCommitExecutor.run(() ->
-                messagingTemplate.convertAndSend("/topic/rooms/list", event.getRooms()));
+                broker.broadcastAll("rooms.list", event.getRooms()));
     }
 
     @EventListener
     public void onRoomDeleted(RoomDeletedEvent event) {
         PlayerEvent playerEvent = new PlayerEvent("WARN", "ROOM_DELETED", "SYSTEM", "房间已被删除，已返回 Lounge", event.getRoomId());
         afterCommitExecutor.run(() ->
-                messagingTemplate.convertAndSend("/topic/rooms/" + event.getRoomId() + "/player/events", playerEvent));
+                broker.broadcastRoom(event.getRoomId(), "player.events", playerEvent));
     }
 
     @EventListener
     public void onRoomPlaylistsChanged(RoomPlaylistUpdateEvent event) {
         PlayerEvent playerEvent = new PlayerEvent("INFO", "ROOM_PLAYLISTS_UPDATE", "SYSTEM", "", "room-playlists:update");
         afterCommitExecutor.run(() ->
-                messagingTemplate.convertAndSend("/topic/rooms/" + event.getRoomId() + "/player/events", playerEvent));
+                broker.broadcastRoom(event.getRoomId(), "player.events", playerEvent));
     }
 }

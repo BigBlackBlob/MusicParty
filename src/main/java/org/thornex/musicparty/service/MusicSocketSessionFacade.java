@@ -1,10 +1,6 @@
 package org.thornex.musicparty.service;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.messaging.MessageHeaders;
-import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
-import org.springframework.messaging.simp.SimpMessageType;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.thornex.musicparty.dto.ChatMessage;
 import org.thornex.musicparty.dto.CurrentUserResponse;
@@ -12,6 +8,8 @@ import org.thornex.musicparty.dto.PlayerEvent;
 import org.thornex.musicparty.dto.RoomInfo;
 import org.thornex.musicparty.dto.SyncPingRequest;
 import org.thornex.musicparty.dto.SyncPongResponse;
+import org.thornex.musicparty.dto.UserSummary;
+import org.thornex.musicparty.websocket.ReactiveSocketBroker;
 
 import java.util.List;
 
@@ -21,16 +19,11 @@ public class MusicSocketSessionFacade {
 
     private final MusicPlayerService musicPlayerService;
     private final UserService userService;
-    private final SimpMessagingTemplate messagingTemplate;
+    private final ReactiveSocketBroker broker;
     private final AccountService accountService;
 
     public void sendPlayerResync(String sessionId) {
-        messagingTemplate.convertAndSendToUser(
-                sessionId,
-                "/queue/player/state",
-                musicPlayerService.getCurrentPlayerStateForSession(sessionId),
-                createSessionHeaders(sessionId)
-        );
+        broker.sendToSession(sessionId, "player.state", musicPlayerService.getCurrentPlayerStateForSession(sessionId));
     }
 
     public void sendSyncPong(String sessionId, SyncPingRequest request) {
@@ -41,34 +34,11 @@ public class MusicSocketSessionFacade {
                 serverReceiveTime,
                 System.currentTimeMillis()
         );
-        messagingTemplate.convertAndSendToUser(
-                sessionId,
-                "/queue/sync/pong",
-                response,
-                createSessionHeaders(sessionId)
-        );
+        broker.sendToSession(sessionId, "sync.pong", response);
     }
 
-    public void sendSeekDenied(String sessionId, String message) {
-        userService.getUser(sessionId).ifPresent(user -> {
-            PlayerEvent errorEvent = new PlayerEvent("ERROR", "SEEK_DENIED", user.getPublicId(), message, null);
-            messagingTemplate.convertAndSendToUser(sessionId, "/queue/events", errorEvent, createSessionHeaders(sessionId));
-        });
-    }
-
-    public void sendControlDenied(String sessionId, String action, String message) {
-        userService.getUser(sessionId).ifPresent(user -> {
-            PlayerEvent errorEvent = new PlayerEvent("WARN", action, user.getPublicId(), message, null);
-            messagingTemplate.convertAndSendToUser(sessionId, "/queue/events", errorEvent, createSessionHeaders(sessionId));
-        });
-    }
-
-    public boolean renameAndBroadcast(String sessionId, String newName) {
-        if (!userService.renameUser(sessionId, newName)) {
-            return false;
-        }
-        musicPlayerService.broadcastOnlineUsers();
-        userService.getUser(sessionId).ifPresent(user -> {
+    public void sendCurrentUser(String sessionId) {
+        userService.getUser(sessionId).ifPresentOrElse(user -> {
             CurrentUserResponse summary = new CurrentUserResponse(
                     user.getSessionToken(),
                     user.getPublicId(),
@@ -77,48 +47,69 @@ public class MusicSocketSessionFacade {
                     accountService.roleForPublicId(user.getPublicId()).orElse("GUEST"),
                     accountService.isAdminSession(user.getSessionToken())
             );
-            messagingTemplate.convertAndSendToUser(sessionId, "/queue/me", summary, createSessionHeaders(sessionId));
+            broker.sendToSession(sessionId, "user.me", summary);
+        }, () -> broker.sendToSession(sessionId, "user.me", new CurrentUserResponse("", "", "Unknown", true, "GUEST", false)));
+    }
+
+    public void sendOnlineUsers(String sessionId) {
+        String roomId = userService.getRoomIdForSession(sessionId);
+        List<UserSummary> users = userService.getOnlineUserSummaries(roomId);
+        broker.sendToSession(sessionId, "users.online", roomId, users);
+    }
+
+    public void sendSeekDenied(String sessionId, String message) {
+        userService.getUser(sessionId).ifPresent(user -> {
+            PlayerEvent errorEvent = new PlayerEvent("ERROR", "SEEK_DENIED", user.getPublicId(), message, null);
+            broker.sendToSession(sessionId, "player.events", errorEvent);
         });
+    }
+
+    public void sendControlDenied(String sessionId, String action, String message) {
+        userService.getUser(sessionId).ifPresent(user -> {
+            PlayerEvent errorEvent = new PlayerEvent("WARN", action, user.getPublicId(), message, null);
+            broker.sendToSession(sessionId, "player.events", errorEvent);
+        });
+    }
+
+    public boolean renameAndBroadcast(String sessionId, String newName) {
+        if (!userService.renameUser(sessionId, newName)) {
+            return false;
+        }
+        musicPlayerService.broadcastOnlineUsers();
+        sendCurrentUser(sessionId);
         return true;
     }
 
     public void sendRenameFailed(String sessionId) {
         userService.getUser(sessionId).ifPresent(user -> {
             PlayerEvent errorEvent = new PlayerEvent("ERROR", "RENAME_FAILED", user.getPublicId(), "该名称已被占用或包含非法字符，请更换。", null);
-            messagingTemplate.convertAndSendToUser(sessionId, "/queue/events", errorEvent, createSessionHeaders(sessionId));
+            broker.sendToSession(sessionId, "player.events", errorEvent);
         });
     }
 
     public void sendRoomCreated(String sessionId, RoomInfo room) {
-        messagingTemplate.convertAndSendToUser(sessionId, "/queue/rooms/created", room, createSessionHeaders(sessionId));
+        broker.sendToSession(sessionId, "rooms.created", room);
     }
 
     public void sendRoomCreateFailed(String sessionId, String message) {
         userService.getUser(sessionId).ifPresent(user -> {
             PlayerEvent errorEvent = new PlayerEvent("ERROR", "ROOM_CREATE_FAILED", user.getPublicId(), message, null);
-            messagingTemplate.convertAndSendToUser(sessionId, "/queue/events", errorEvent, createSessionHeaders(sessionId));
+            broker.sendToSession(sessionId, "player.events", errorEvent);
         });
     }
 
     public void sendRoomDeleteFailed(String sessionId) {
         userService.getUser(sessionId).ifPresent(user -> {
             PlayerEvent errorEvent = new PlayerEvent("ERROR", "ROOM_DELETE_FAILED", user.getPublicId(), "无权删除该房间", null);
-            messagingTemplate.convertAndSendToUser(sessionId, "/queue/events", errorEvent, createSessionHeaders(sessionId));
+            broker.sendToSession(sessionId, "player.events", errorEvent);
         });
     }
 
     public void sendRoomChatHistory(String sessionId, List<ChatMessage> history) {
-        messagingTemplate.convertAndSendToUser(sessionId, "/queue/chat/history", history, createSessionHeaders(sessionId));
+        broker.sendToSession(sessionId, "chat.history", history);
     }
 
     public void sendPublicChatHistory(String sessionId, List<ChatMessage> history) {
-        messagingTemplate.convertAndSendToUser(sessionId, "/queue/public-chat/history", history, createSessionHeaders(sessionId));
-    }
-
-    private MessageHeaders createSessionHeaders(String sessionId) {
-        SimpMessageHeaderAccessor headerAccessor = SimpMessageHeaderAccessor.create(SimpMessageType.MESSAGE);
-        headerAccessor.setSessionId(sessionId);
-        headerAccessor.setLeaveMutable(true);
-        return headerAccessor.getMessageHeaders();
+        broker.sendToSession(sessionId, "public-chat.history", history);
     }
 }

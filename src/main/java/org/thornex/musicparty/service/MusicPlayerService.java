@@ -531,13 +531,15 @@ public class MusicPlayerService {
         }
 
         public synchronized void reorderQueue(int oldIndex, int newIndex, String sessionId) {
-            queueManager.reorder(oldIndex, newIndex);
+            boolean changed = queueManager.reorder(oldIndex, newIndex);
+            if (!changed) return;
             playbackState.touchHotActivity();
             persistQueueMutation(null, true);
         }
 
         public synchronized void reorderQueue(String queueId, String targetQueueId, String position, String sessionId) {
-            queueManager.reorderByQueueId(queueId, targetQueueId, position);
+            boolean changed = queueManager.reorderByQueueId(queueId, targetQueueId, position);
+            if (!changed) return;
             playbackState.touchHotActivity();
             persistQueueMutation(null, true);
         }
@@ -679,6 +681,10 @@ public class MusicPlayerService {
                 playbackState.touchHotActivity();
                 resumeFromIdlePauseIfNeeded(previousOnlineCount == 0);
             } else if (!isStreamActive.get()) {
+                if (userService.hasPendingReconnectUsers(roomId)) {
+                    broadcastFullPlayerState();
+                    return;
+                }
                 enterIdleMode();
             }
             broadcastFullPlayerState();
@@ -697,11 +703,12 @@ public class MusicPlayerService {
         }
 
         public void cleanupIdlePlayer() {
-            if (playbackState.isPaused() && playbackState.currentMusic() != null) {
+            if (idlePaused.get() && playbackState.isPaused() && playbackState.currentMusic() != null) {
                 long pausedDuration = System.currentTimeMillis() - currentPlaybackStateSnapshot().timestampAnchor();
                 if (pausedDuration > IDLE_RESET_TIMEOUT_MS) {
                     playbackState.clearCurrentTrack();
                     playbackState.setPaused(false);
+                    idlePaused.set(false);
                     persistPlaybackStateSnapshot();
                     playbackState.bumpPlayEpochAndStateVersion();
                     broadcastFullPlayerState();

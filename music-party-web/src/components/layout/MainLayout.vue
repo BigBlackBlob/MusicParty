@@ -63,7 +63,7 @@
                 :key="room.roomId"
                 class="flex w-full items-center justify-between rounded-md px-3 py-2.5 text-left transition-all group"
                 :class="roomStore.currentRoomId === room.roomId ? 'bg-primary/15 text-primary' : 'text-text-secondary hover:bg-surface-raised hover:text-text-primary'"
-                @click="switchRoom(room.roomId)"
+                @click="attemptSwitchRoom(room)"
               >
                 <div class="flex flex-col min-w-0 flex-1">
                   <span class="truncate font-compact text-sm font-bold">{{ room.name }}</span>
@@ -163,6 +163,14 @@
         </div>
       </header>
       <SettingsCenter v-if="isSettingsOpen" @close="isSettingsOpen = false" />
+      <PrivateRoomAccessDialog
+        :open="privateRoomDialogOpen"
+        :room="privateRoomDialogRoom"
+        :loading="privateRoomDialogLoading"
+        :error="privateRoomDialogError"
+        @submit="submitPrivateRoomPassword"
+        @cancel="closePrivateRoomDialog"
+      />
 
       <!-- Main Immersive Canvas -->
       <main class="relative z-20 flex w-full items-center justify-center px-5 pt-[var(--top-bar-height)]" style="height: var(--app-height);">
@@ -191,13 +199,16 @@
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import SettingsCenter from '../SettingsCenter.vue';
+import PrivateRoomAccessDialog from '../PrivateRoomAccessDialog.vue';
 import LiteModeView from './LiteModeView.vue';
 import UserList from '../UserList.vue';
 import { useUserStore } from '../../stores/user';
 import { useUiStore } from '../../stores/ui';
-import { usePlayerStore } from '../../stores/player';
+import { ROOM_SWITCH_PASSWORD_REQUIRED, usePlayerStore } from '../../stores/player';
 import { useRoomStore } from '../../stores/room';
 import { useLayoutStore } from '../../stores/layout';
+import { extractErrorMessage } from '../../utils/errors';
+import { useToast } from '../../composables/useToast';
 
 const emit = defineEmits(['search', 'toggle-mobile-chat']);
 const { t } = useI18n();
@@ -206,12 +217,17 @@ const uiStore = useUiStore();
 const playerStore = usePlayerStore();
 const roomStore = useRoomStore();
 const layoutStore = useLayoutStore();
+const toast = useToast();
 
 
 const isSettingsOpen = ref(false);
 const isUserListOpen = ref(false);
 const isRoomMenuOpen = ref(false);
 const newRoomName = ref('');
+const privateRoomDialogOpen = ref(false);
+const privateRoomDialogRoom = ref(null);
+const privateRoomDialogLoading = ref(false);
+const privateRoomDialogError = ref('');
 const currentMusic = computed(() => playerStore.nowPlaying?.music || null);
 const currentCover = computed(() => currentMusic.value?.coverUrl || '');
 const currentRoomName = computed(() => roomStore.currentRoom?.name || t('app.lounge'));
@@ -252,9 +268,47 @@ const toggleRoomMenu = () => {
   }
 };
 
-const switchRoom = (roomId) => {
-  playerStore.switchRoom(roomId);
-  isRoomMenuOpen.value = false;
+const openPrivateRoomDialog = (room) => {
+  privateRoomDialogRoom.value = room;
+  privateRoomDialogError.value = '';
+  privateRoomDialogOpen.value = true;
+};
+
+const closePrivateRoomDialog = () => {
+  privateRoomDialogOpen.value = false;
+  privateRoomDialogRoom.value = null;
+  privateRoomDialogError.value = '';
+  privateRoomDialogLoading.value = false;
+};
+
+const attemptSwitchRoom = async (room) => {
+  if (!room?.roomId) return;
+  try {
+    await playerStore.switchRoom(room.roomId);
+    isRoomMenuOpen.value = false;
+  } catch (error) {
+    if (error?.code === ROOM_SWITCH_PASSWORD_REQUIRED) {
+      openPrivateRoomDialog(room);
+      return;
+    }
+    toast.error(extractErrorMessage(error, 'Could not switch Lounge'));
+  }
+};
+
+const submitPrivateRoomPassword = async (password) => {
+  const room = privateRoomDialogRoom.value;
+  if (!room?.roomId) return;
+  privateRoomDialogLoading.value = true;
+  privateRoomDialogError.value = '';
+  try {
+    await playerStore.switchRoom(room.roomId, password);
+    closePrivateRoomDialog();
+    isRoomMenuOpen.value = false;
+  } catch (error) {
+    privateRoomDialogError.value = extractErrorMessage(error, 'Room password could not be verified');
+  } finally {
+    privateRoomDialogLoading.value = false;
+  }
 };
 
 const createRoom = () => {

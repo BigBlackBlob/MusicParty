@@ -1,9 +1,9 @@
 package org.thornex.musicparty.controller;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import org.thornex.musicparty.service.NavidromeAccessService;
 import org.thornex.musicparty.service.RoomSubsonicSource;
 import org.thornex.musicparty.service.SubsonicSourceRegistry;
@@ -16,6 +16,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Schedulers;
 
 @RestController
 @RequestMapping("/api/subsonic")
@@ -38,7 +40,7 @@ public class SubsonicProxyController {
     }
 
     @GetMapping("/{sourceId}/stream/{songId}")
-    public ResponseEntity<StreamingResponseBody> streamSong(
+    public Mono<ResponseEntity<Flux<DataBuffer>>> streamSong(
             @PathVariable String sourceId,
             @PathVariable String songId,
             @RequestParam(required = false) String token,
@@ -49,7 +51,7 @@ public class SubsonicProxyController {
     }
 
     @GetMapping("/{roomId}/{sourceId}/stream/{songId}")
-    public ResponseEntity<StreamingResponseBody> streamSong(
+    public Mono<ResponseEntity<Flux<DataBuffer>>> streamSong(
             @PathVariable String roomId,
             @PathVariable String sourceId,
             @PathVariable String songId,
@@ -60,7 +62,7 @@ public class SubsonicProxyController {
         return streamSong(roomId, sourceId, songId, token, internalToken, rangeHeader, source);
     }
 
-    private ResponseEntity<StreamingResponseBody> streamSong(String roomId,
+    private Mono<ResponseEntity<Flux<DataBuffer>>> streamSong(String roomId,
                                                              String sourceId,
                                                              String songId,
                                                              String token,
@@ -68,11 +70,11 @@ public class SubsonicProxyController {
                                                              String rangeHeader,
                                                              RoomSubsonicSource source) {
         if (!canUse(source, token, internalToken)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return Mono.just(ResponseEntity.status(HttpStatus.FORBIDDEN).build());
         }
 
         URI uri = registry.client(source.source()).buildStreamUri(songId);
-        try {
+        return Mono.<ResponseEntity<Flux<DataBuffer>>>fromCallable(() -> {
             log.debug("Subsonic stream proxy request: room={}, source={}, songId={}, range={}",
                     roomId, sourceId, songId, rangeHeader == null ? "" : rangeHeader);
             HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(uri)
@@ -86,13 +88,13 @@ public class SubsonicProxyController {
             int statusCode = upstream.statusCode();
             if (statusCode == HttpStatus.NOT_FOUND.value()) {
                 closeQuietly(upstream.body());
-                return ResponseEntity.notFound().build();
+                return ResponseEntity.notFound().<Flux<DataBuffer>>build();
             }
             if (statusCode >= 400) {
                 closeQuietly(upstream.body());
                 log.warn("Subsonic stream upstream error: room={}, source={}, songId={}, status={}",
                         roomId, sourceId, songId, statusCode);
-                return ResponseEntity.status(HttpStatus.BAD_GATEWAY).build();
+                return ResponseEntity.status(HttpStatus.BAD_GATEWAY).<Flux<DataBuffer>>build();
             }
 
             HttpHeaders headers = new HttpHeaders();
@@ -112,18 +114,13 @@ public class SubsonicProxyController {
                     statusCode,
                     upstream.headers().firstValue(HttpHeaders.CONTENT_TYPE).orElse(""),
                     upstream.headers().firstValue(HttpHeaders.CONTENT_LENGTH).orElse(""));
-            StreamingResponseBody body = outputStream -> {
-                try (InputStream inputStream = upstream.body()) {
-                    inputStream.transferTo(outputStream);
-                    outputStream.flush();
-                }
-            };
+            Flux<DataBuffer> body = ReactiveStreamUtils.readInputStream(upstream.body());
             HttpStatus status = HttpStatus.resolve(statusCode);
             return new ResponseEntity<>(body, headers, status == null ? HttpStatus.OK : status);
-        } catch (Exception e) {
+        }).subscribeOn(Schedulers.boundedElastic()).onErrorResume(e -> {
             log.warn("Subsonic stream proxy failed: room={}, source={}, songId={}, message={}", roomId, sourceId, songId, e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).build();
-        }
+            return Mono.just(ResponseEntity.status(HttpStatus.BAD_GATEWAY).<Flux<DataBuffer>>build());
+        });
     }
 
     @GetMapping("/{sourceId}/cover/{coverArtId}")
@@ -174,7 +171,7 @@ public class SubsonicProxyController {
             headers.set(HttpHeaders.CACHE_CONTROL, "private, max-age=86400");
             HttpStatus status = HttpStatus.resolve(upstream.statusCode());
             return new ResponseEntity<>(upstream.body(), headers, status == null ? HttpStatus.OK : status);
-        }).onErrorResume(e -> {
+        }).subscribeOn(Schedulers.boundedElastic()).onErrorResume(e -> {
             log.warn("Subsonic cover proxy failed: room={}, source={}, coverArtId={}, message={}", roomId, sourceId, coverArtId, e.getMessage());
             return Mono.just(ResponseEntity.status(HttpStatus.BAD_GATEWAY).build());
         });

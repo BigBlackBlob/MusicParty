@@ -1,148 +1,175 @@
-import { Client } from '@stomp/stompjs';
-
 class SocketService {
     constructor() {
         this.client = null;
         this.connected = false;
-        this.stompConfig = null;
-        this.subscriptionIds = [];
+        this.socketConfig = null;
+        this.reconnectTimer = null;
+        this.reconnectDelay = 2000;
+        this.intentionalClose = false;
+        this.requestSeq = 0;
     }
 
-    /**
-     * 初始化连接
-     * @param {Object} authHeaders - { 'user-name':..., 'session-token':..., 'room-password':... }
-     * @param {Object} callbacks - 回调函数集合
-     * @param {Function} callbacks.onConnect - 连接成功
-     * @param {Function} callbacks.onDisconnect - 连接断开
-     * @param {Function} callbacks.onStompError - STOMP 错误 (如密码错误)
-     * @param {Object} subscriptions - 订阅配置 { topic: callbackFn }
-     */
-    connect(authHeaders, callbacks, subscriptions) {
-        const nextConfig = { authHeaders, callbacks, subscriptions };
-        if (this.client && this.client.active) {
+    connect(authParams = {}, callbacks = {}, handlers = {}) {
+        const nextConfig = { authParams, callbacks, handlers };
+        if (this.client && this.isSocketActive(this.client)) {
             if (!this.shouldReconnectForConfig(nextConfig)) return;
-            console.info('Socket context changed, reconnecting with fresh subscriptions.');
+            console.info('Socket context changed, reconnecting.');
             this.disconnect();
         }
-        this.stompConfig = nextConfig;
 
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const brokerURL = `${protocol}//${window.location.host}/ws`;
+        this.socketConfig = nextConfig;
+        this.intentionalClose = false;
+        this.clearReconnectTimer();
 
-        this.client = new Client({
-            brokerURL,
-            connectHeaders: authHeaders,
-            heartbeatIncoming: 10000,
-            heartbeatOutgoing: 10000,
-            reconnectDelay: 2000,
+        const socket = new WebSocket(this.buildUrl(authParams));
+        this.client = socket;
 
-            onConnect: (frame) => {
-                this.connected = true;
+        socket.onopen = (event) => {
+            if (this.client !== socket) return;
+            this.connected = true;
+            callbacks.onConnect?.(event);
+        };
 
-                // 1. 注册所有订阅
-                this.subscriptionIds = [];
-                Object.entries(subscriptions).forEach(([topic, handler]) => {
-                    const subscription = this.client.subscribe(topic, (message) => {
-                        const body = JSON.parse(message.body);
-                        handler(body);
-                    });
-                    this.subscriptionIds.push(subscription.id);
-                });
+        socket.onmessage = (event) => {
+            if (this.client !== socket) return;
+            this.handleMessage(event.data, handlers);
+        };
 
-                // 2. 触发连接成功回调
-                if (callbacks.onConnect) callbacks.onConnect(frame);
-            },
+        socket.onerror = (event) => {
+            if (this.client !== socket) return;
+            callbacks.onError?.(event);
+        };
 
-            // 监听非正常关闭 (如网络中断、服务器重启)
-            onWebSocketClose: () => {
-                console.warn('WebSocket connection closed.');
-                this.connected = false;
-                // 触发断开回调，让 Store 感知状态变化
-                if (callbacks.onDisconnect) callbacks.onDisconnect();
-            },
-
-            onDisconnect: () => {
-                this.connected = false;
-                if (callbacks.onDisconnect) callbacks.onDisconnect();
-            },
-
-            onStompError: (frame) => {
-                console.error('STOMP Error:', frame.body);
-                if (callbacks.onStompError) callbacks.onStompError(frame);
+        socket.onclose = (event) => {
+            if (this.client !== socket) return;
+            this.connected = false;
+            callbacks.onDisconnect?.(event);
+            if (event?.code === 1008) {
+                callbacks.onAuthError?.(event);
+                return;
             }
-        });
-
-        this.client.activate();
+            if (!this.intentionalClose) this.scheduleReconnect();
+        };
     }
 
-    /**
-     * 发送指令 (通用)
-     * @param {string} destination - 目标地址 (来自 WS_DEST)
-     * @param {Object} body - 消息体
-     */
-    send(destination, body = {}) {
-        if (this.client && this.connected) {
-            this.client.publish({ destination, body: JSON.stringify(body) });
+    buildUrl(authParams = {}) {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const url = new URL(`${protocol}//${window.location.host}/ws`);
+        Object.entries(authParams).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                url.searchParams.set(key, value);
+            }
+        });
+        return url.toString();
+    }
+
+    handleMessage(rawData, handlers = {}) {
+        let envelope;
+        try {
+            envelope = JSON.parse(rawData);
+        } catch (error) {
+            console.warn('Ignoring malformed socket message:', rawData, error);
+            return;
+        }
+
+        const type = envelope?.type;
+        if (!type) return;
+        const handler = handlers[type];
+        if (!handler) {
+            console.debug('No socket handler registered for message type:', type);
+            return;
+        }
+        handler(envelope.payload, envelope);
+    }
+
+    send(type, payload = {}) {
+        if (this.client && this.connected && this.client.readyState === WebSocket.OPEN) {
+            this.client.send(JSON.stringify({
+                type,
+                requestId: this.nextRequestId(type),
+                payload
+            }));
             return true;
         }
         console.warn('Socket not connected, cannot send:', {
-            destination,
+            type,
             connected: this.connected,
-            active: Boolean(this.client?.active)
+            readyState: this.client?.readyState
         });
         return false;
     }
 
-    /**
-     * 强制重连 (用于网络恢复或从后台切回时)
-     */
     forceReconnect() {
-        if (this.client && !this.client.active) {
-            console.log('Force reconnecting socket...');
-            this.client.activate();
-        }
+        this.reconnectNow();
     }
 
     reconnectNow() {
-        const config = this.stompConfig;
+        const config = this.socketConfig;
         this.disconnect();
         if (config) {
-            setTimeout(() => this.connect(config.authHeaders, config.callbacks, config.subscriptions), 100);
+            setTimeout(() => this.connect(config.authParams, config.callbacks, config.handlers), 100);
         }
     }
 
-    /**
-     * 断开连接
-     */
     disconnect() {
+        this.intentionalClose = true;
+        this.clearReconnectTimer();
         if (this.client) {
-            this.client.deactivate();
+            const socket = this.client;
             this.client = null;
-            this.connected = false;
-            this.subscriptionIds = [];
+            socket.onopen = null;
+            socket.onmessage = null;
+            socket.onerror = null;
+            socket.onclose = null;
+            if (this.isSocketActive(socket)) socket.close();
         }
+        this.connected = false;
+    }
+
+    scheduleReconnect() {
+        if (this.reconnectTimer || !this.socketConfig) return;
+        const config = this.socketConfig;
+        this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null;
+            this.connect(config.authParams, config.callbacks, config.handlers);
+        }, this.reconnectDelay);
+    }
+
+    clearReconnectTimer() {
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
+    }
+
+    nextRequestId(type) {
+        this.requestSeq += 1;
+        return `${type}-${Date.now()}-${this.requestSeq}`;
+    }
+
+    isSocketActive(socket) {
+        return socket.readyState === WebSocket.CONNECTING || socket.readyState === WebSocket.OPEN;
     }
 
     shouldReconnectForConfig(nextConfig) {
-        if (!this.stompConfig) return true;
-        return !this.sameHeaders(this.stompConfig.authHeaders, nextConfig.authHeaders)
-            || !this.sameSubscriptionTopics(this.stompConfig.subscriptions, nextConfig.subscriptions);
+        if (!this.socketConfig) return true;
+        return !this.sameParams(this.socketConfig.authParams, nextConfig.authParams)
+            || !this.sameHandlerTypes(this.socketConfig.handlers, nextConfig.handlers);
     }
 
-    sameHeaders(current = {}, next = {}) {
+    sameParams(current = {}, next = {}) {
         const currentKeys = Object.keys(current).sort();
         const nextKeys = Object.keys(next).sort();
         if (currentKeys.length !== nextKeys.length) return false;
         return currentKeys.every((key, index) => key === nextKeys[index] && current[key] === next[key]);
     }
 
-    sameSubscriptionTopics(current = {}, next = {}) {
-        const currentTopics = Object.keys(current).sort();
-        const nextTopics = Object.keys(next).sort();
-        if (currentTopics.length !== nextTopics.length) return false;
-        return currentTopics.every((topic, index) => topic === nextTopics[index]);
+    sameHandlerTypes(current = {}, next = {}) {
+        const currentTypes = Object.keys(current).sort();
+        const nextTypes = Object.keys(next).sort();
+        if (currentTypes.length !== nextTypes.length) return false;
+        return currentTypes.every((type, index) => type === nextTypes[index]);
     }
 }
 
-// 导出单例
 export const socketService = new SocketService();

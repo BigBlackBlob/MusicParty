@@ -1,5 +1,7 @@
 package org.thornex.musicparty.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import org.junit.jupiter.api.Test;
 import org.thornex.musicparty.dto.SeekRequest;
 import org.thornex.musicparty.dto.User;
@@ -47,6 +49,24 @@ class MusicSocketControllerTests {
         verify(context.musicSocketSessionFacade).sendControlDenied("ws-guest", "CONTROL_DENIED", "请先设置昵称再调整进度");
     }
 
+    @Test
+    void dispatchRoutesCurrentUserRequest() {
+        TestContext context = new TestContext();
+
+        context.controller.dispatch("user.me", JsonNodeFactory.instance.objectNode(), "ws-user");
+
+        verify(context.musicSocketSessionFacade).sendCurrentUser("ws-user");
+    }
+
+    @Test
+    void dispatchRoutesOnlineUsersRequest() {
+        TestContext context = new TestContext();
+
+        context.controller.dispatch("users.online", JsonNodeFactory.instance.objectNode(), "ws-user");
+
+        verify(context.musicSocketSessionFacade).sendOnlineUsers("ws-user");
+    }
+
     private static final class TestContext {
         private final MusicPlayerService musicPlayerService = mock(MusicPlayerService.class);
         private final UserService userService = mock(UserService.class);
@@ -66,7 +86,8 @@ class MusicSocketControllerTests {
                 musicSocketSessionFacade,
                 socketRateLimiter,
                 roomPlaylistService,
-                accountService
+                accountService,
+                new ObjectMapper()
         );
     }
 }

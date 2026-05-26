@@ -5,7 +5,7 @@ export const buildQueueReorderPayload = (queue, oldIndex, newIndex) => {
   const moved = queue[oldIndex];
   const target = queue[newIndex];
   if (!moved?.queueId || !target?.queueId) {
-    return { oldIndex, newIndex };
+    return null;
   }
 
   return {

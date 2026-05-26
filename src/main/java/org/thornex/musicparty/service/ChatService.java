@@ -2,7 +2,6 @@ package org.thornex.musicparty.service;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.thornex.musicparty.dto.ChatRequest;
 import org.thornex.musicparty.dto.ChatMessage;
@@ -14,6 +13,7 @@ import org.thornex.musicparty.event.SystemMessageEvent;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.service.command.ChatCommand;
 import org.thornex.musicparty.util.MessageFormatter;
+import org.thornex.musicparty.websocket.ReactiveSocketBroker;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedDeque;
@@ -27,7 +27,7 @@ public class ChatService {
     private final Map<String, ConcurrentLinkedDeque<ChatMessage>> roomHistories = new java.util.concurrent.ConcurrentHashMap<>();
     private final ConcurrentLinkedDeque<ChatMessage> publicHistory = new ConcurrentLinkedDeque<>();
     private volatile boolean publicHistoryLoaded = false;
-    private final SimpMessagingTemplate messagingTemplate;
+    private final ReactiveSocketBroker broker;
     private final UserService userService;
     private final AppProperties appProperties;
     private final RoomStatePersistenceService roomStatePersistenceService;
@@ -38,7 +38,7 @@ public class ChatService {
     private final Map<String, ChatCommand> commandMap;
     private final Map<String, Long> lastMessageTime = new java.util.concurrent.ConcurrentHashMap<>();
 
-    public ChatService(SimpMessagingTemplate messagingTemplate,
+    public ChatService(ReactiveSocketBroker broker,
                        UserService userService,
                        AppProperties appProperties,
                        RoomStatePersistenceService roomStatePersistenceService,
@@ -46,7 +46,7 @@ public class ChatService {
                        RoomSessionCoordinator roomSessionCoordinator,
                        AfterCommitExecutor afterCommitExecutor,
                        List<ChatCommand> commands) {
-        this.messagingTemplate = messagingTemplate;
+        this.broker = broker;
         this.userService = userService;
         this.appProperties = appProperties;
         this.roomStatePersistenceService = roomStatePersistenceService;
@@ -388,17 +388,17 @@ public class ChatService {
     }
 
     private void broadcastChatMessage(String roomId, ChatMessage message) {
-        if (messagingTemplate == null) {
+        if (broker == null) {
             return;
         }
-        messagingTemplate.convertAndSend("/topic/rooms/" + roomId + "/chat", message);
+        broker.broadcastRoom(roomId, "chat.message", message);
     }
 
     private void broadcastPublicChatMessage(ChatMessage message) {
-        if (messagingTemplate == null) {
+        if (broker == null) {
             return;
         }
-        messagingTemplate.convertAndSend("/topic/public/chat", message);
+        broker.broadcastAll("public-chat.message", message);
     }
 
     @EventListener

@@ -4,7 +4,8 @@ import { useChatStore } from '../stores/chat';
 import { useRoomStore } from '../stores/room';
 import { useRoomPlaylistsStore } from '../stores/roomPlaylists';
 import { useToast } from '../composables/useToast';
-import {WS_DEST, roomTopic} from "../constants/api.js";
+import { socketService } from './socket';
+import { WS_DEST } from "../constants/api.js";
 
 /**
  * 处理游戏/播放器事件通知 (Toast)
@@ -93,51 +94,45 @@ function handleGameEvent(event) {
 }
 
 /**
- * 创建并返回 Socket 订阅配置
- * @returns {Object} 订阅路径 -> 回调函数 的映射
+ * 创建并返回 Socket 消息处理配置
+ * @returns {Object} message type -> 回调函数 的映射
  */
-export const createSocketSubscriptions = () => {
+export const createSocketHandlers = () => {
     const playerStore = usePlayerStore();
     const userStore = useUserStore();
     const chatStore = useChatStore();
     const roomStore = useRoomStore();
-    const roomId = roomStore.currentRoomId;
 
     return {
         // 1. 状态同步
-        [roomTopic(roomId, '/player/state')]: (state) => playerStore.syncState(state),
-        [WS_DEST.USER_STATE]: (state) => playerStore.syncState(state),
-        [WS_DEST.USER_SYNC_PONG]: (pong) => playerStore.handleSyncPong(pong),
+        [WS_DEST.PLAYER_STATE]: (state) => playerStore.syncState(state),
+        [WS_DEST.SYNC_PONG]: (pong) => playerStore.handleSyncPong(pong),
 
         // 2. 用户列表
-        [roomTopic(roomId, '/users/online')]: (users) => userStore.setOnlineUsers(users),
+        [WS_DEST.USERS_ONLINE]: (users) => userStore.setOnlineUsers(users),
 
         // 3. 队列更新
-        [roomTopic(roomId, '/player/queue')]: (data) => { playerStore.queue = data; },
+        [WS_DEST.PLAYER_QUEUE]: (data) => { playerStore.queue = data; },
 
         // 4. 事件通知 (Toast)
-        [roomTopic(roomId, '/player/events')]: handleGameEvent,
-        [WS_DEST.USER_EVENTS]: handleGameEvent,
+        [WS_DEST.PLAYER_EVENTS]: handleGameEvent,
 
         // 5. 聊天相关
-        [roomTopic(roomId, '/chat')]: (msg) => chatStore.addMessage(msg),
-        [WS_DEST.TOPIC_PUBLIC_CHAT]: (msg) => chatStore.addPublicMessage(msg),
-        [WS_DEST.TOPIC_ROOMS_LIST]: (rooms) => roomStore.setRooms(rooms),
-        [WS_DEST.USER_PRIVATE_CHAT]: (msg) => chatStore.addMessage(msg),
-
-        // 初始历史记录
-        [WS_DEST.APP_CHAT_HISTORY]: (history) => chatStore.setHistory(history),
+        [WS_DEST.CHAT_MESSAGE]: (msg) => chatStore.addMessage(msg),
+        [WS_DEST.PUBLIC_CHAT_MESSAGE]: (msg) => chatStore.addPublicMessage(msg),
+        [WS_DEST.ROOMS_LIST]: (rooms) => roomStore.setRooms(rooms),
+        [WS_DEST.CHAT_PRIVATE]: (msg) => chatStore.addMessage(msg),
 
         // 分页历史记录回调
-        [WS_DEST.USER_CHAT_HISTORY]: (moreMessages) => {
+        [WS_DEST.CHAT_HISTORY]: (moreMessages) => {
             if (chatStore.messages.length === 0) chatStore.setHistory(moreMessages);
             else chatStore.prependHistory(moreMessages);
         },
-        [WS_DEST.USER_PUBLIC_CHAT_HISTORY]: (moreMessages) => {
+        [WS_DEST.PUBLIC_CHAT_HISTORY]: (moreMessages) => {
             if (chatStore.publicMessages.length === 0) chatStore.setPublicHistory(moreMessages);
             else chatStore.prependPublicHistory(moreMessages);
         },
-        [WS_DEST.USER_ROOM_CREATED]: (room) => {
+        [WS_DEST.ROOM_CREATED]: (room) => {
             roomStore.setRooms([...roomStore.rooms.filter(item => item.roomId !== room.roomId), room]);
             playerStore.switchRoom(room.roomId);
         }
@@ -151,12 +146,15 @@ export const createSocketSubscriptions = () => {
 export const createSocketCallbacks = () => {
     const playerStore = usePlayerStore();
     const userStore = useUserStore();
+    const roomStore = useRoomStore();
 
     return {
         // 连接成功
         onConnect: () => {
             playerStore.connected = true;
             playerStore.resetSyncGate();
+            socketService.send(WS_DEST.USER_ME);
+            socketService.send(WS_DEST.USERS_ONLINE);
             playerStore.requestPing('connect', true);
             // 发起同步
             setTimeout(() => {
@@ -175,18 +173,14 @@ export const createSocketCallbacks = () => {
             playerStore.connected = false;
         },
 
-        // STOMP 协议层错误 (如密码错误、Token失效、服务器内部错误等)
-        onStompError: (frame) => {
-            console.error('STOMP Error:', frame);
-
-            const isAuthError = frame.body
-                && (frame.body.includes('INVALID_ACCOUNT_SESSION') || frame.body.includes('INVALID_ROOM_ACCESS_TOKEN'));
-
-            if (isAuthError) {
-                userStore.resetAuthentication();
+        onAuthError: () => {
+            if (roomStore.isPrivateRoom(roomStore.currentRoomId)) {
+                roomStore.clearRoomAccessToken(roomStore.currentRoomId);
+                roomStore.setCurrentRoom('lounge');
+                window.location.reload();
+                return;
             }
-
-            // 强制刷新页面 (STOMP ERROR 帧通常意味着连接已不可用)
+            userStore.resetAuthentication();
             window.location.reload();
         }
     };

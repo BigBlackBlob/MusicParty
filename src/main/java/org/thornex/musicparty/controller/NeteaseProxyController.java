@@ -1,13 +1,13 @@
 package org.thornex.musicparty.controller;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import org.thornex.musicparty.service.UserService;
 import org.thornex.musicparty.service.api.NeteaseMusicApiService;
 import org.thornex.musicparty.service.stream.InternalStreamProxyToken;
@@ -18,6 +18,9 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 @RestController
 @RequestMapping("/api/netease")
@@ -41,29 +44,31 @@ public class NeteaseProxyController {
     }
 
     @GetMapping("/stream/{songId}")
-    public ResponseEntity<StreamingResponseBody> streamSong(
+    public Mono<ResponseEntity<Flux<DataBuffer>>> streamSong(
             @PathVariable String songId,
             @RequestParam(required = false) String token,
             @RequestHeader(value = InternalStreamProxyToken.HEADER_NAME, required = false) String internalToken,
             @RequestHeader(value = "Range", required = false) String rangeHeader) {
 
         if (!canUse(token, internalToken)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return Mono.just(ResponseEntity.status(HttpStatus.FORBIDDEN).build());
         }
 
-        String cdnUrl;
-        try {
-            cdnUrl = neteaseService.resolveCdnUrl(songId).block(Duration.ofSeconds(8));
-        } catch (Exception e) {
-            log.warn("Netease resolve cdn url failed: songId={}, message={}", songId, e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).build();
-        }
+        return neteaseService.resolveCdnUrl(songId)
+                .timeout(Duration.ofSeconds(8))
+                .flatMap(cdnUrl -> streamResolvedUrl(songId, cdnUrl, rangeHeader))
+                .onErrorResume(e -> {
+                    log.warn("Netease resolve cdn url failed: songId={}, message={}", songId, e.getMessage());
+                    return Mono.just(ResponseEntity.status(HttpStatus.BAD_GATEWAY).<Flux<DataBuffer>>build());
+                });
+    }
+
+    private Mono<ResponseEntity<Flux<DataBuffer>>> streamResolvedUrl(String songId, String cdnUrl, String rangeHeader) {
         if (!StringUtils.hasText(cdnUrl)) {
-            // 该歌曲 VIP/下架，没有可用 URL
-            return ResponseEntity.notFound().build();
+            return Mono.just(ResponseEntity.notFound().build());
         }
 
-        try {
+        return Mono.<ResponseEntity<Flux<DataBuffer>>>fromCallable(() -> {
             HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(URI.create(cdnUrl))
                     .timeout(Duration.ofSeconds(30))
                     .GET()
@@ -78,12 +83,12 @@ public class NeteaseProxyController {
             int statusCode = upstream.statusCode();
             if (statusCode == HttpStatus.NOT_FOUND.value()) {
                 closeQuietly(upstream.body());
-                return ResponseEntity.notFound().build();
+                return ResponseEntity.notFound().<Flux<DataBuffer>>build();
             }
             if (statusCode >= 400) {
                 closeQuietly(upstream.body());
                 log.warn("Netease stream upstream error: songId={}, status={}", songId, statusCode);
-                return ResponseEntity.status(HttpStatus.BAD_GATEWAY).build();
+                return ResponseEntity.status(HttpStatus.BAD_GATEWAY).<Flux<DataBuffer>>build();
             }
 
             HttpHeaders headers = new HttpHeaders();
@@ -97,19 +102,14 @@ public class NeteaseProxyController {
             headers.set(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
             headers.set(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, "Content-Length, Content-Range, Accept-Ranges");
 
-            StreamingResponseBody body = outputStream -> {
-                try (InputStream inputStream = upstream.body()) {
-                    inputStream.transferTo(outputStream);
-                    outputStream.flush();
-                }
-            };
+            Flux<DataBuffer> body = ReactiveStreamUtils.readInputStream(upstream.body());
 
             HttpStatus status = HttpStatus.resolve(statusCode);
             return new ResponseEntity<>(body, headers, status == null ? HttpStatus.OK : status);
-        } catch (Exception e) {
+        }).subscribeOn(Schedulers.boundedElastic()).onErrorResume(e -> {
             log.warn("Netease stream proxy failed: songId={}, message={}", songId, e.getMessage());
-            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).build();
-        }
+            return Mono.just(ResponseEntity.status(HttpStatus.BAD_GATEWAY).<Flux<DataBuffer>>build());
+        });
     }
 
     private boolean canUse(String token, String internalToken) {

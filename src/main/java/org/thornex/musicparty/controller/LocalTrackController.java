@@ -1,10 +1,10 @@
 package org.thornex.musicparty.controller;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import org.thornex.musicparty.dto.LocalTrack;
 import org.thornex.musicparty.dto.LocalTrackUpdateRequest;
 import org.thornex.musicparty.dto.LocalUploadAccessRequest;
@@ -14,10 +14,12 @@ import org.thornex.musicparty.service.LocalLibraryService;
 import org.thornex.musicparty.service.stream.InternalStreamProxyToken;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 @RestController
 @RequestMapping("/api/local")
@@ -114,52 +116,58 @@ public class LocalTrackController {
     }
 
     @GetMapping("/media/{id}")
-    public ResponseEntity<StreamingResponseBody> media(@PathVariable String id,
+    public Mono<ResponseEntity<Flux<DataBuffer>>> media(@PathVariable String id,
                                                        @RequestParam(required = false) String token,
                                                        @RequestHeader(value = InternalStreamProxyToken.HEADER_NAME, required = false) String internalToken,
-                                                       @RequestHeader(value = HttpHeaders.RANGE, required = false) String rangeHeader) throws IOException {
+                                                       @RequestHeader(value = HttpHeaders.RANGE, required = false) String rangeHeader) {
         if (!canReadMedia(token, internalToken)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return Mono.just(ResponseEntity.status(HttpStatus.FORBIDDEN).build());
         }
-        LocalTrack track = localLibraryService.getTrack(id);
-        if (track.status() == LocalTrackStatus.DELETED) {
-            return ResponseEntity.status(HttpStatus.GONE).build();
-        }
-        if (track.status() != LocalTrackStatus.COMPLETED || track.oggPath() == null || track.oggPath().isBlank()) {
-            return ResponseEntity.notFound().build();
-        }
-        Path path = localLibraryService.root().resolve(track.oggPath()).normalize();
-        if (!Files.exists(path)) {
-            return ResponseEntity.notFound().build();
-        }
-        return streamFile(path, "audio/ogg", rangeHeader);
+        return Mono.fromCallable(() -> {
+                    LocalTrack track = localLibraryService.getTrack(id);
+                    if (track.status() == LocalTrackStatus.DELETED) {
+                        return ResponseEntity.status(HttpStatus.GONE).<Flux<DataBuffer>>build();
+                    }
+                    if (track.status() != LocalTrackStatus.COMPLETED || track.oggPath() == null || track.oggPath().isBlank()) {
+                        return ResponseEntity.notFound().<Flux<DataBuffer>>build();
+                    }
+                    Path path = localLibraryService.root().resolve(track.oggPath()).normalize();
+                    if (!Files.exists(path)) {
+                        return ResponseEntity.notFound().<Flux<DataBuffer>>build();
+                    }
+                    return streamFile(path, "audio/ogg", rangeHeader);
+                })
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     @GetMapping("/cover/{id}")
-    public ResponseEntity<StreamingResponseBody> cover(@PathVariable String id) throws IOException {
-        LocalTrack track = localLibraryService.getTrack(id);
-        if (track.status() == LocalTrackStatus.DELETED) {
-            return ResponseEntity.status(HttpStatus.GONE).build();
-        }
-        if (track.status() != LocalTrackStatus.COMPLETED) {
-            return ResponseEntity.notFound().build();
-        }
-        if (track.coverPath() == null || track.coverPath().isBlank()) {
-            return ResponseEntity.notFound().build();
-        }
-        Path path = localLibraryService.root().resolve(track.coverPath()).normalize();
-        if (!Files.exists(path)) {
-            return ResponseEntity.notFound().build();
-        }
-        String contentType = Files.probeContentType(path);
-        return streamFile(path, contentType == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : contentType, null);
+    public Mono<ResponseEntity<Flux<DataBuffer>>> cover(@PathVariable String id) {
+        return Mono.fromCallable(() -> {
+                    LocalTrack track = localLibraryService.getTrack(id);
+                    if (track.status() == LocalTrackStatus.DELETED) {
+                        return ResponseEntity.status(HttpStatus.GONE).<Flux<DataBuffer>>build();
+                    }
+                    if (track.status() != LocalTrackStatus.COMPLETED) {
+                        return ResponseEntity.notFound().<Flux<DataBuffer>>build();
+                    }
+                    if (track.coverPath() == null || track.coverPath().isBlank()) {
+                        return ResponseEntity.notFound().<Flux<DataBuffer>>build();
+                    }
+                    Path path = localLibraryService.root().resolve(track.coverPath()).normalize();
+                    if (!Files.exists(path)) {
+                        return ResponseEntity.notFound().<Flux<DataBuffer>>build();
+                    }
+                    String contentType = Files.probeContentType(path);
+                    return streamFile(path, contentType == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : contentType, null);
+                })
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     private boolean canReadMedia(String token, String internalToken) {
         return internalStreamProxyToken.matches(internalToken) || accessService.isEnabled();
     }
 
-    private ResponseEntity<StreamingResponseBody> streamFile(Path path, String contentType, String rangeHeader) throws IOException {
+    private ResponseEntity<Flux<DataBuffer>> streamFile(Path path, String contentType, String rangeHeader) throws IOException {
         long length = Files.size(path);
         long start = 0;
         long end = length - 1;
@@ -191,26 +199,7 @@ public class LocalTrackController {
         if (status == HttpStatus.PARTIAL_CONTENT) {
             headers.set(HttpHeaders.CONTENT_RANGE, "bytes " + start + "-" + end + "/" + length);
         }
-        long finalStart = start;
-        StreamingResponseBody body = outputStream -> {
-            try (InputStream inputStream = Files.newInputStream(path)) {
-                long skipped = inputStream.skip(finalStart);
-                while (skipped < finalStart) {
-                    long next = inputStream.skip(finalStart - skipped);
-                    if (next <= 0) break;
-                    skipped += next;
-                }
-                byte[] buffer = new byte[8192];
-                long remaining = contentLength;
-                while (remaining > 0) {
-                    int read = inputStream.read(buffer, 0, (int) Math.min(buffer.length, remaining));
-                    if (read == -1) break;
-                    outputStream.write(buffer, 0, read);
-                    remaining -= read;
-                }
-                outputStream.flush();
-            }
-        };
+        Flux<DataBuffer> body = ReactiveStreamUtils.readPath(path, start, contentLength);
         return new ResponseEntity<>(body, headers, status);
     }
 }

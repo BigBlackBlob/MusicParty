@@ -2,10 +2,9 @@ server:
   port: 8080
 
 spring:
-  mvc:
-    async:
-      request-timeout: 6h
-  servlet:
+  main:
+    web-application-type: reactive
+  webflux:
     multipart:
       max-file-size: ${MULTIPART_MAX_FILE_SIZE:200MB}
       max-request-size: ${MULTIPART_MAX_REQUEST_SIZE:220MB}

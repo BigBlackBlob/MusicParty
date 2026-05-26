@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 import org.thornex.musicparty.dto.*;
 import org.thornex.musicparty.service.LocalLibraryService;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.util.List;
 
@@ -27,12 +28,14 @@ public class LocalMusicApiService implements IMusicApiService {
 
     @Override
     public Mono<List<Music>> searchMusic(String keyword, int offset, int limit) {
-        return Mono.fromSupplier(() -> localLibraryService.search(keyword, offset, limit).stream().map(LocalTrack::toMusic).toList());
+        return Mono.fromSupplier(() -> localLibraryService.search(keyword, offset, limit).stream().map(LocalTrack::toMusic).toList())
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     @Override
     public Mono<PlayableMusic> getPlayableMusic(String musicId) {
-        return Mono.fromSupplier(() -> localLibraryService.getPlayableTrack(musicId).toPlayableMusic());
+        return Mono.fromSupplier(() -> localLibraryService.getPlayableTrack(musicId).toPlayableMusic())
+                .subscribeOn(Schedulers.boundedElastic());
     }
 
     @Override

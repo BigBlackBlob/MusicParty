@@ -28,6 +28,11 @@ describe('buildQueueReorderPayload', () => {
       position: 'before'
     });
   });
+
+  it('skips payloads that cannot be verified by queue id', () => {
+    expect(buildQueueReorderPayload([{ queueId: 'a' }, {}], 0, 1)).toBeNull();
+    expect(buildQueueReorderPayload(queue, 1, 1)).toBeNull();
+  });
 });
 
 describe('buildQueueReorderPayloadFromDom', () => {
@@ -67,6 +72,11 @@ describe('buildQueueReorderPayloadFromDom', () => {
       targetQueueId: 'a',
       position: 'before'
     });
+  });
+
+  it('returns null when DOM neighbors are missing', () => {
+    const moved = item('a');
+    expect(buildQueueReorderPayloadFromDom({ oldIndex: 0, newIndex: 1, item: moved })).toBeNull();
   });
 });
 

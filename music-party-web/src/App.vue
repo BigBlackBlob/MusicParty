@@ -25,7 +25,7 @@
               class="flex items-center justify-between gap-2 rounded-xl border px-3 py-3 text-left transition-colors"
               :class="roomStore.currentRoomId === room.roomId ? 'border-[var(--accent)] bg-[var(--accent-subtle)]' : 'border-[var(--border-default)] bg-[var(--surface-2)] hover:bg-[var(--surface-3)]'"
           >
-            <button class="min-w-0 flex-1 text-left" @click="roomStore.setCurrentRoom(room.roomId)">
+            <button class="min-w-0 flex-1 text-left" @click="selectRoomBeforeStart(room)">
               <span class="block truncate font-semibold text-[var(--text-primary)]">{{ room.name }}</span>
               <span class="text-xs text-[var(--text-tertiary)]">{{ room.onlineCount || 0 }} active</span>
             </button>
@@ -119,6 +119,15 @@
       </div>
     </div>
 
+    <PrivateRoomAccessDialog
+      :open="privateRoomDialogOpen"
+      :room="privateRoomDialogRoom"
+      :loading="privateRoomDialogLoading"
+      :error="privateRoomDialogError"
+      @submit="submitPrivateRoomPassword"
+      @cancel="closePrivateRoomDialog"
+    />
+
     <!-- 3. 主界面 (当 hasStarted 为 true 时显示) -->
     <MobilePreviewShell v-if="hasStarted && isMobileLayout && usePreviewShell">
       <MobileLayout />
@@ -163,6 +172,7 @@ import SearchModal from './components/SearchModal.vue';
 import NamePromptModal from './components/NamePromptModal.vue';
 import ChatOverlay from './components/ChatOverlay.vue';
 import ToastNotification from './components/ToastNotification.vue';
+import PrivateRoomAccessDialog from './components/PrivateRoomAccessDialog.vue';
 import MobileLayout from './components/mobile/MobileLayout.vue';
 import MobilePreviewShell from './components/mobile/MobilePreviewShell.vue';
 
@@ -177,6 +187,11 @@ const newRoomName = ref('');
 const editingRoom = ref(null);
 const deletingRoom = ref(null);
 const roomDialogError = ref('');
+const privateRoomDialogOpen = ref(false);
+const privateRoomDialogRoom = ref(null);
+const privateRoomDialogAction = ref('select');
+const privateRoomDialogLoading = ref(false);
+const privateRoomDialogError = ref('');
 const roomForm = ref({
   name: '',
   isPrivate: false,
@@ -206,18 +221,68 @@ const showChatOverlay = computed(() =>
 );
 
 let autoLiteTimer = null;
-let autoLiteSuppressedUntil = 0;
+let lastInteractionAt = Date.now();
 const AUTO_LITE_DELAY_MS = 180000;
-const AUTO_LITE_SUPPRESS_MS = 600000;
+const ACTIVITY_EVENTS = ['pointerdown', 'pointermove', 'keydown', 'touchstart', 'wheel'];
 
 const setAppViewportHeight = () => {
   const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
   document.documentElement.style.setProperty('--app-height', `${vh}px`);
 };
 
+const openPrivateRoomDialog = (room, action = 'select') => {
+  privateRoomDialogRoom.value = room;
+  privateRoomDialogAction.value = action;
+  privateRoomDialogError.value = '';
+  privateRoomDialogOpen.value = true;
+};
+
+const closePrivateRoomDialog = () => {
+  privateRoomDialogOpen.value = false;
+  privateRoomDialogRoom.value = null;
+  privateRoomDialogAction.value = 'select';
+  privateRoomDialogError.value = '';
+  privateRoomDialogLoading.value = false;
+};
+
+const selectRoomBeforeStart = (room) => {
+  if (!room?.roomId) return;
+  if (room.privateRoom && !roomStore.hasValidRoomAccess(room.roomId)) {
+    openPrivateRoomDialog(room, 'select');
+    return;
+  }
+  roomStore.setCurrentRoom(room.roomId);
+};
+
 const startGame = () => {
+  const room = roomStore.currentRoom;
+  if (room?.privateRoom && !roomStore.hasValidRoomAccess(room.roomId)) {
+    openPrivateRoomDialog(room, 'start');
+    return;
+  }
   hasStarted.value = true;
   player.connect();
+};
+
+const submitPrivateRoomPassword = async (password) => {
+  const room = privateRoomDialogRoom.value;
+  if (!room?.roomId) return;
+  privateRoomDialogLoading.value = true;
+  privateRoomDialogError.value = '';
+  try {
+    await roomStore.verifyRoomAccess(room.roomId, password);
+    roomStore.setCurrentRoom(room.roomId);
+    const shouldStart = privateRoomDialogAction.value === 'start';
+    closePrivateRoomDialog();
+    if (shouldStart) {
+      hasStarted.value = true;
+      player.connect();
+    }
+  } catch (error) {
+    privateRoomDialogError.value = error?.response?.data?.message || 'Room password could not be verified';
+  } finally {
+    privateRoomDialogLoading.value = false;
+  }
 };
 
 const createRoom = () => {
@@ -314,6 +379,10 @@ const clearAutoLiteTimer = () => {
   }
 };
 
+const recordInteraction = () => {
+  lastInteractionAt = Date.now();
+};
+
 // 自动性能优化：后台停留较久后才进入精简模式，避免短暂切换应用时频繁触发。
 useEventListener(document, 'visibilitychange', () => {
   clearAutoLiteTimer();
@@ -323,21 +392,27 @@ useEventListener(document, 'visibilitychange', () => {
       hasStarted.value &&
       !player.isPaused &&
       uiStore.autoLiteMode &&
-      !uiStore.isLiteMode &&
-      Date.now() > autoLiteSuppressedUntil
+      !uiStore.isLiteMode
     ) {
+      const hiddenAt = Date.now();
       autoLiteTimer = setTimeout(() => {
-        if (document.visibilityState === 'hidden' && hasStarted.value && !player.isPaused && uiStore.autoLiteMode) {
+        if (
+          document.visibilityState === 'hidden' &&
+          hasStarted.value &&
+          !player.isPaused &&
+          uiStore.autoLiteMode &&
+          lastInteractionAt <= hiddenAt
+        ) {
           uiStore.isLiteMode = true;
         }
       }, AUTO_LITE_DELAY_MS);
     }
     return;
   }
+});
 
-  if (uiStore.isLiteMode) {
-    autoLiteSuppressedUntil = Date.now() + AUTO_LITE_SUPPRESS_MS;
-  }
+ACTIVITY_EVENTS.forEach(eventName => {
+  useEventListener(window, eventName, recordInteraction, { passive: true });
 });
 
 const handleSearchClick = () => {

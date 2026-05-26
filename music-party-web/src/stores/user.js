@@ -41,7 +41,7 @@ export const useUserStore = defineStore('user', () => {
     };
 
     /**
-     * 2. 初始化用户身份 (来自 /app/user/me)
+     * 2. 初始化用户身份 (来自 user.me)
      * 逻辑：对比服务器认为的名字 (serverName) 和我本地存储的名字
      * serverIsGuest: 后端返回的当前是否为游客状态
      */

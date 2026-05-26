@@ -6,15 +6,16 @@ import { useUserStore } from './user';
 import { useRoomStore } from './room';
 import { useChatStore } from './chat';
 import { socketService } from '../services/socket';
-import { createSocketSubscriptions, createSocketCallbacks } from '../services/socketHandler'; // 引入新文件
+import { createSocketHandlers, createSocketCallbacks } from '../services/socketHandler'; // 引入新文件
 import { musicApi } from '../api/music';
-import { roomApi } from '../api/rooms';
 import { personalPlaylistsApi } from '../api/personalPlaylists';
 import { WS_DEST } from '../constants/api';
 import { STORAGE_KEYS } from '../constants/keys';
 import { shouldForceSocketReconnect } from '../utils/socketHealth';
 import { applyQueueReorder } from '../utils/queueReorder';
 import { useToast } from '../composables/useToast';
+
+export const ROOM_SWITCH_PASSWORD_REQUIRED = 'PASSWORD_REQUIRED';
 
 export const usePlayerStore = defineStore('player', () => {
     // === 1. State ===
@@ -246,24 +247,19 @@ export const usePlayerStore = defineStore('player', () => {
             'room-access-token': roomStore.getRoomAccessToken(roomStore.currentRoomId)
         };
 
-        // 使用抽离出的订阅配置
-        const subscriptions = createSocketSubscriptions();
+        // 使用抽离出的消息处理配置
+        const handlers = createSocketHandlers();
 
         // 补充 UserMe 的特殊处理 (因为它需要用到 renameUser，如果放在 socketHandler 会导致循环依赖)
-        subscriptions[WS_DEST.USER_ME] = (me) => {
+        handlers[WS_DEST.USER_ME] = (me) => {
             // me: { sessionToken, publicId, name, isGuest }
-            userStore.initUser(me.sessionToken, me.publicId, me.name, me.isGuest, me.role, me.isAdmin);
-            syncLikedSongsFromServer().catch(error => console.warn('Failed to sync liked songs', error));
-        };
-
-        subscriptions[WS_DEST.USER_ME_UPDATE] = (me) => {
             userStore.initUser(me.sessionToken, me.publicId, me.name, me.isGuest, me.role, me.isAdmin);
             syncLikedSongsFromServer().catch(error => console.warn('Failed to sync liked songs', error));
         };
 
         const callbacks = createSocketCallbacks();
 
-        socketService.connect(authHeaders, callbacks, subscriptions);
+        socketService.connect(authHeaders, callbacks, handlers);
     };
 
     const resetRoomState = () => {
@@ -293,14 +289,18 @@ export const usePlayerStore = defineStore('player', () => {
         setTimeout(() => connect(), 100);
     };
 
-    const switchRoom = async (roomId, password = '') => {
+    const switchRoom = async (roomId, password = undefined) => {
         if (!roomId || roomId === roomStore.currentRoomId) return;
         const targetRoom = roomStore.rooms.find(room => room.roomId === roomId);
         if (targetRoom?.privateRoom) {
-            const cachedToken = roomStore.getRoomAccessToken(roomId);
-            if (!cachedToken || password) {
-                const verifyResponse = await roomApi.verify(roomId, password, userStore.sessionToken);
-                roomStore.setRoomAccessToken(roomId, verifyResponse.roomAccessToken || '');
+            const hasPassword = password !== undefined && password !== null;
+            if (hasPassword) {
+                await roomStore.verifyRoomAccess(roomId, password);
+            } else if (!roomStore.hasValidRoomAccess(roomId)) {
+                const error = new Error(ROOM_SWITCH_PASSWORD_REQUIRED);
+                error.code = ROOM_SWITCH_PASSWORD_REQUIRED;
+                error.roomId = roomId;
+                throw error;
             }
         }
         roomStore.setCurrentRoom(roomId);
@@ -365,7 +365,7 @@ export const usePlayerStore = defineStore('player', () => {
             return false;
         }
         queue.value = applyQueueReorder(queue.value, payload);
-        requestResync('queue-reorder', true);
+        setTimeout(() => requestResync('queue-reorder-fallback', false), 400);
         return true;
     };
 

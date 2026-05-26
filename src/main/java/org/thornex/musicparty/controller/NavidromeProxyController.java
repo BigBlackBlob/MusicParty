@@ -1,6 +1,7 @@
 package org.thornex.musicparty.controller;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -9,7 +10,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
-import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import org.thornex.musicparty.service.NavidromeAccessService;
 import org.thornex.musicparty.service.api.NavidromeSubsonicClient;
 import org.thornex.musicparty.service.stream.InternalStreamProxyToken;
@@ -21,6 +21,8 @@ import java.time.Duration;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Schedulers;
 
 @RestController
 @RequestMapping("/api/navidrome")
@@ -48,20 +50,20 @@ public class NavidromeProxyController {
     }
 
     @GetMapping("/stream/{songId}")
-    public ResponseEntity<StreamingResponseBody> streamSong(
+    public Mono<ResponseEntity<Flux<DataBuffer>>> streamSong(
             @PathVariable String songId,
             @RequestParam(required = false) String token,
             @RequestHeader(value = InternalStreamProxyToken.HEADER_NAME, required = false) String internalToken,
             @RequestHeader(value = "Range", required = false) String rangeHeader) {
 
         if (!canUse(token, internalToken)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            return Mono.just(ResponseEntity.status(HttpStatus.FORBIDDEN).build());
         }
 
         URI uri = subsonicClient.buildStreamUri(songId);
         log.debug("Proxying stream for songId: {}", songId);
 
-        try {
+        return Mono.<ResponseEntity<Flux<DataBuffer>>>fromCallable(() -> {
             HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(uri)
                     .timeout(Duration.ofSeconds(30))
                     .GET()
@@ -74,17 +76,17 @@ public class NavidromeProxyController {
             int statusCode = upstream.statusCode();
             if (statusCode == HttpStatus.NOT_FOUND.value()) {
                 closeQuietly(upstream.body());
-                return ResponseEntity.notFound().build();
+                return ResponseEntity.notFound().<Flux<DataBuffer>>build();
             }
             if (statusCode == HttpStatus.UNAUTHORIZED.value() || statusCode == HttpStatus.FORBIDDEN.value()) {
                 closeQuietly(upstream.body());
                 log.warn("Navidrome stream upstream auth error for songId: {}, status={}", songId, statusCode);
-                return ResponseEntity.status(HttpStatus.BAD_GATEWAY).build();
+                return ResponseEntity.status(HttpStatus.BAD_GATEWAY).<Flux<DataBuffer>>build();
             }
             if (statusCode >= 400) {
                 closeQuietly(upstream.body());
                 log.warn("Navidrome stream upstream error for songId: {}, status={}", songId, statusCode);
-                return ResponseEntity.status(HttpStatus.BAD_GATEWAY).build();
+                return ResponseEntity.status(HttpStatus.BAD_GATEWAY).<Flux<DataBuffer>>build();
             }
 
             HttpHeaders headers = new HttpHeaders();
@@ -103,19 +105,14 @@ public class NavidromeProxyController {
                     upstream.headers().firstValue(HttpHeaders.CONTENT_TYPE).orElse(""),
                     upstream.headers().firstValue(HttpHeaders.CONTENT_LENGTH).orElse(""));
 
-            StreamingResponseBody body = outputStream -> {
-                try (InputStream inputStream = upstream.body()) {
-                    inputStream.transferTo(outputStream);
-                    outputStream.flush();
-                }
-            };
+            Flux<DataBuffer> body = ReactiveStreamUtils.readInputStream(upstream.body());
 
             HttpStatus status = HttpStatus.resolve(statusCode);
             return new ResponseEntity<>(body, headers, status == null ? HttpStatus.OK : status);
-        } catch (Exception e) {
+        }).subscribeOn(Schedulers.boundedElastic()).onErrorResume(e -> {
             log.error("Navidrome stream proxy error for songId: {}", songId, e);
-            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).build();
-        }
+            return Mono.just(ResponseEntity.status(HttpStatus.BAD_GATEWAY).<Flux<DataBuffer>>build());
+        });
     }
 
     @GetMapping("/cover/{coverArtId}")

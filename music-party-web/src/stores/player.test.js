@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
-import { usePlayerStore } from './player';
+import { ROOM_SWITCH_PASSWORD_REQUIRED, usePlayerStore } from './player';
 import { useUserStore } from './user';
+import { useRoomStore } from './room';
 import { useToastStore } from './toast';
 import { socketService } from '../services/socket';
+import { roomApi } from '../api/rooms';
 import { WS_DEST } from '../constants/api';
 
 vi.mock('../services/socket', () => ({
@@ -16,6 +18,15 @@ vi.mock('../services/socket', () => ({
   }
 }));
 
+vi.mock('../api/rooms', () => ({
+  roomApi: {
+    list: vi.fn(),
+    verify: vi.fn(),
+    update: vi.fn(),
+    remove: vi.fn()
+  }
+}));
+
 describe('player controls', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -23,6 +34,7 @@ describe('player controls', () => {
     vi.clearAllMocks();
     socketService.connected = false;
     socketService.send.mockReturnValue(true);
+    roomApi.verify.mockResolvedValue({ roomAccessToken: 'verified-token', expiresAt: Date.now() + 60_000 });
     vi.useRealTimers();
   });
 
@@ -76,5 +88,99 @@ describe('player controls', () => {
 
     expect(sent).toBe(true);
     expect(socketService.send).toHaveBeenCalledWith(WS_DEST.PLAYER_SHUFFLE, {});
+  });
+
+  it('optimistically reorders queue without immediate forced resync', () => {
+    vi.useFakeTimers();
+    localStorage.setItem('mp_username', 'Alice');
+    const user = useUserStore();
+    user.initUser('token', 'u1', 'Alice', false);
+    const player = usePlayerStore();
+    player.queue = [{ queueId: 'a' }, { queueId: 'b' }, { queueId: 'c' }];
+
+    const sent = player.reorderQueue(0, 2, 'a', 'c', 'after');
+
+    expect(sent).toBe(true);
+    expect(player.queue.map(item => item.queueId)).toEqual(['b', 'c', 'a']);
+    expect(socketService.send).toHaveBeenCalledWith(WS_DEST.QUEUE_REORDER, {
+      oldIndex: 0,
+      newIndex: 2,
+      queueId: 'a',
+      targetQueueId: 'c',
+      position: 'after'
+    });
+    expect(socketService.send).not.toHaveBeenCalledWith(WS_DEST.RESYNC, expect.anything());
+
+    vi.advanceTimersByTime(399);
+    expect(socketService.send).not.toHaveBeenCalledWith(WS_DEST.RESYNC, expect.anything());
+    vi.advanceTimersByTime(1);
+    expect(socketService.send).toHaveBeenCalledWith(WS_DEST.RESYNC, { reason: 'queue-reorder-fallback' });
+  });
+
+  it('switches public rooms without room access verification', async () => {
+    const roomStore = useRoomStore();
+    const player = usePlayerStore();
+    roomStore.setRooms([
+      { roomId: 'lounge', name: 'Lounge' },
+      { roomId: 'public', name: 'Public' }
+    ]);
+
+    await player.switchRoom('public');
+
+    expect(roomApi.verify).not.toHaveBeenCalled();
+    expect(roomStore.currentRoomId).toBe('public');
+    expect(socketService.disconnect).toHaveBeenCalled();
+  });
+
+  it('requires a password before switching to a private room without access', async () => {
+    const roomStore = useRoomStore();
+    const player = usePlayerStore();
+    roomStore.setRooms([
+      { roomId: 'lounge', name: 'Lounge' },
+      { roomId: 'private', name: 'Private', privateRoom: true }
+    ]);
+
+    await expect(player.switchRoom('private')).rejects.toMatchObject({
+      code: ROOM_SWITCH_PASSWORD_REQUIRED,
+      roomId: 'private'
+    });
+
+    expect(roomApi.verify).not.toHaveBeenCalled();
+    expect(roomStore.currentRoomId).toBe('lounge');
+    expect(socketService.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('verifies private room passwords before switching and reconnecting', async () => {
+    const user = useUserStore();
+    user.initUser('session-token', 'u1', 'Alice', false);
+    const roomStore = useRoomStore();
+    const player = usePlayerStore();
+    roomStore.setRooms([
+      { roomId: 'lounge', name: 'Lounge' },
+      { roomId: 'private', name: 'Private', privateRoom: true }
+    ]);
+
+    await player.switchRoom('private', 'letmein');
+
+    expect(roomApi.verify).toHaveBeenCalledWith('private', 'letmein', 'session-token');
+    expect(roomStore.getRoomAccessToken('private')).toBe('verified-token');
+    expect(roomStore.currentRoomId).toBe('private');
+    expect(socketService.disconnect).toHaveBeenCalled();
+  });
+
+  it('uses cached private room access without verifying again', async () => {
+    const roomStore = useRoomStore();
+    const player = usePlayerStore();
+    roomStore.setRooms([
+      { roomId: 'lounge', name: 'Lounge' },
+      { roomId: 'private', name: 'Private', privateRoom: true }
+    ]);
+    roomStore.setRoomAccessToken('private', 'cached-token', Date.now() + 60_000);
+
+    await player.switchRoom('private');
+
+    expect(roomApi.verify).not.toHaveBeenCalled();
+    expect(roomStore.currentRoomId).toBe('private');
+    expect(socketService.disconnect).toHaveBeenCalled();
   });
 });

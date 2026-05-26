@@ -94,7 +94,7 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, watch } from 'vue';
+import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Sortable from 'sortablejs';
 import { usePlayerStore } from '../stores/player';
@@ -131,12 +131,15 @@ watch([activeView, selectionMode, queueListRef], () => {
   if (activeView.value === 'queue' && !selectionMode.value) {
     if (!sortableInstance) initSortable();
   } else {
-    if (sortableInstance) {
-      sortableInstance.destroy();
-      sortableInstance = null;
-    }
+    destroySortable();
   }
 });
+
+const destroySortable = () => {
+  if (!sortableInstance) return;
+  sortableInstance.destroy();
+  sortableInstance = null;
+};
 
 const initSortable = () => {
   if (!queueListRef.value) return;
@@ -150,6 +153,10 @@ const initSortable = () => {
     }
   });
 };
+
+onBeforeUnmount(() => {
+  destroySortable();
+});
 
 const batchTop = () => {
   const ids = selectedIds.value;

@@ -1,10 +1,6 @@
 package org.thornex.musicparty.service.command;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.messaging.MessageHeaders;
-import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
-import org.springframework.messaging.simp.SimpMessageType;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.ChatMessage;
@@ -12,6 +8,7 @@ import org.thornex.musicparty.dto.User;
 import org.thornex.musicparty.enums.MessageType;
 import org.thornex.musicparty.service.stream.LiveStreamService;
 import org.thornex.musicparty.service.stream.StreamTokenService;
+import org.thornex.musicparty.websocket.ReactiveSocketBroker;
 
 import java.util.UUID;
 
@@ -21,7 +18,7 @@ public class StreamCommand implements ChatCommand {
 
     private final StreamTokenService tokenService;
     private final LiveStreamService liveStreamService;
-    private final SimpMessagingTemplate messagingTemplate;
+    private final ReactiveSocketBroker broker;
     private final AppProperties appProperties;
 
     @Override
@@ -61,18 +58,6 @@ public class StreamCommand implements ChatCommand {
                 MessageType.SYSTEM
         );
 
-        messagingTemplate.convertAndSendToUser(
-                user.getSessionId(),
-                "/queue/chat/private", // Updated destination
-                message,
-                createSessionHeaders(user.getSessionId())
-        );
-    }
-
-    private MessageHeaders createSessionHeaders(String sessionId) {
-        SimpMessageHeaderAccessor headerAccessor = SimpMessageHeaderAccessor.create(SimpMessageType.MESSAGE);
-        headerAccessor.setSessionId(sessionId);
-        headerAccessor.setLeaveMutable(true);
-        return headerAccessor.getMessageHeaders();
+        broker.sendToSession(user.getSessionId(), "chat.private", message);
     }
 }

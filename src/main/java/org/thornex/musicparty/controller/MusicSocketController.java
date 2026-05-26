@@ -1,10 +1,8 @@
 package org.thornex.musicparty.controller;
 
-import org.springframework.messaging.handler.annotation.Header;
-import org.springframework.messaging.handler.annotation.MessageMapping;
-import org.springframework.messaging.handler.annotation.Payload;
-import org.springframework.messaging.simp.annotation.SubscribeMapping;
-import org.springframework.stereotype.Controller;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.stereotype.Component;
 import lombok.extern.slf4j.Slf4j;
 import org.thornex.musicparty.dto.*;
 import org.thornex.musicparty.service.ChatService;
@@ -21,7 +19,7 @@ import org.thornex.musicparty.service.UserService;
 import java.util.List;
 import java.util.UUID;
 
-@Controller
+@Component
 @Slf4j
 public class MusicSocketController {
 
@@ -34,6 +32,7 @@ public class MusicSocketController {
     private final SocketRateLimiter socketRateLimiter;
     private final RoomPlaylistService roomPlaylistService;
     private final AccountService accountService;
+    private final ObjectMapper objectMapper;
 
     public MusicSocketController(MusicPlayerService musicPlayerService,
                                  UserService userService,
@@ -43,7 +42,8 @@ public class MusicSocketController {
                                  MusicSocketSessionFacade musicSocketSessionFacade,
                                  SocketRateLimiter socketRateLimiter,
                                  RoomPlaylistService roomPlaylistService,
-                                 AccountService accountService) {
+                                 AccountService accountService,
+                                 ObjectMapper objectMapper) {
         this.musicPlayerService = musicPlayerService;
         this.userService = userService;
         this.chatService = chatService;
@@ -53,50 +53,88 @@ public class MusicSocketController {
         this.socketRateLimiter = socketRateLimiter;
         this.roomPlaylistService = roomPlaylistService;
         this.accountService = accountService;
+        this.objectMapper = objectMapper;
     }
 
-    @MessageMapping("/player/resync")
-    public void requestResync(@Header("simpSessionId") String sessionId) {
+    public void dispatch(String type, JsonNode payload, String sessionId) {
+        switch (type) {
+            case "player.resync", "/player/resync" -> requestResync(sessionId);
+            case "sync.ping", "/sync/ping" -> syncPing(read(payload, SyncPingRequest.class), sessionId);
+            case "user.me", "/user/me" -> sendCurrentUser(sessionId);
+            case "users.online", "/users/online" -> sendOnlineUsers(sessionId);
+            case "enqueue", "/enqueue" -> enqueue(read(payload, EnqueueRequest.class), sessionId);
+            case "enqueue.playlist", "/enqueue/playlist" -> enqueuePlaylist(read(payload, EnqueuePlaylistRequest.class), sessionId);
+            case "enqueue.room-playlist", "/enqueue/room-playlist" -> enqueueRoomPlaylist(read(payload, org.thornex.musicparty.dto.RoomPlaylistRequests.EnqueueRoomPlaylistRequest.class), sessionId);
+            case "enqueue.album", "/enqueue/album" -> enqueueAlbum(read(payload, EnqueueAlbumRequest.class), sessionId);
+            case "control.next", "/control/next" -> nextSong(sessionId);
+            case "control.toggle-shuffle", "/control/toggle-shuffle" -> toggleShuffle(sessionId);
+            case "control.toggle-pause", "/control/toggle-pause" -> togglePause(sessionId);
+            case "control.seek", "/control/seek" -> seek(read(payload, SeekRequest.class), sessionId);
+            case "queue.top", "/queue/top" -> topSong(read(payload, QueueActionRequest.class), sessionId);
+            case "queue.batch-top", "/queue/batch-top" -> topSongs(read(payload, QueueBatchActionRequest.class), sessionId);
+            case "queue.remove", "/queue/remove" -> removeSong(read(payload, QueueActionRequest.class), sessionId);
+            case "queue.batch-remove", "/queue/batch-remove" -> removeSongs(read(payload, QueueBatchActionRequest.class), sessionId);
+            case "queue.reorder", "/queue/reorder" -> reorderQueue(read(payload, QueueReorderRequest.class), sessionId);
+            case "control.like", "/control/like" -> likeSong(sessionId);
+            case "user.rename", "/user/rename" -> rename(read(payload, RenameRequest.class), sessionId);
+            case "user.bind", "/user/bind" -> bindAccount(read(payload, BindRequest.class), sessionId);
+            case "rooms.create", "/rooms/create" -> createRoom(read(payload, RoomCreateRequest.class), sessionId);
+            case "rooms.delete", "/rooms/delete" -> deleteRoom(read(payload, RoomDeleteRequest.class), sessionId);
+            case "chat.message", "/chat" -> handleChat(read(payload, ChatRequest.class), sessionId);
+            case "public-chat.message", "/public-chat" -> handlePublicChat(read(payload, ChatRequest.class), sessionId);
+            case "chat.history.fetch", "/chat/history/fetch" -> fetchChatHistory(read(payload, ChatHistoryFetchRequest.class), sessionId);
+            case "public-chat.history.fetch", "/public-chat/history/fetch" -> fetchPublicChatHistory(read(payload, ChatHistoryFetchRequest.class), sessionId);
+            default -> log.debug("Ignoring unknown websocket message type={} from session={}", type, sessionId);
+        }
+    }
+
+    private <T> T read(JsonNode payload, Class<T> type) {
+        return objectMapper.convertValue(payload == null || payload.isMissingNode() ? objectMapper.createObjectNode() : payload, type);
+    }
+
+    public void requestResync(String sessionId) {
         musicSocketSessionFacade.sendPlayerResync(sessionId);
     }
 
-    @MessageMapping("/sync/ping")
-    public void syncPing(@Payload SyncPingRequest request, @Header("simpSessionId") String sessionId) {
+    public void syncPing(SyncPingRequest request, String sessionId) {
         musicSocketSessionFacade.sendSyncPong(sessionId, request);
     }
 
-    @MessageMapping("/enqueue")
-    public void enqueue(EnqueueRequest request, @Header("simpSessionId") String sessionId) {
+    public void sendCurrentUser(String sessionId) {
+        musicSocketSessionFacade.sendCurrentUser(sessionId);
+    }
+
+    public void sendOnlineUsers(String sessionId) {
+        musicSocketSessionFacade.sendOnlineUsers(sessionId);
+    }
+
+    public void enqueue(EnqueueRequest request, String sessionId) {
         if (denyRateLimited(sessionId, "enqueue")) return;
         if (denyGuest(sessionId, "CONTROL_DENIED", "请先设置昵称再添加歌曲")) return;
         musicPlayerService.enqueue(request, sessionId);
     }
 
-    @MessageMapping("/enqueue/playlist")
-    public void enqueuePlaylist(EnqueuePlaylistRequest request, @Header("simpSessionId") String sessionId) {
+    public void enqueuePlaylist(EnqueuePlaylistRequest request, String sessionId) {
         if (denyRateLimited(sessionId, "enqueue")) return;
         if (denyGuest(sessionId, "CONTROL_DENIED", "请先设置昵称再添加歌单")) return;
         musicPlayerService.enqueuePlaylist(request, sessionId);
     }
 
-    @MessageMapping("/enqueue/room-playlist")
     public void enqueueRoomPlaylist(org.thornex.musicparty.dto.RoomPlaylistRequests.EnqueueRoomPlaylistRequest request,
-                                    @Header("simpSessionId") String sessionId) {
+                                    String sessionId) {
         if (denyRateLimited(sessionId, "enqueue")) return;
         if (denyGuest(sessionId, "CONTROL_DENIED", "请先设置昵称再添加歌单")) return;
         String roomId = userService.getRoomIdForSession(sessionId);
         musicPlayerService.enqueueSavedPlaylist(roomPlaylistService.getPlaylistMusics(roomId, request.playlistId()), sessionId);
     }
 
-    @MessageMapping("/enqueue/album")
-    public void enqueueAlbum(EnqueueAlbumRequest request, @Header("simpSessionId") String sessionId) {
+    public void enqueueAlbum(EnqueueAlbumRequest request, String sessionId) {
         if (denyRateLimited(sessionId, "enqueue")) return;
         if (denyGuest(sessionId, "CONTROL_DENIED", "请先设置昵称再添加专辑")) return;
         musicPlayerService.enqueueAlbum(request, sessionId);
     }
 
-    @MessageMapping("/control/next")
-    public void nextSong(@Header("simpSessionId") String sessionId) {
+    public void nextSong(String sessionId) {
         if (denyRateLimited(sessionId, "control")) return;
         if (denyGuest(sessionId, "CONTROL_DENIED", "请先设置昵称再切歌")) {
             logControlResult("next", sessionId, ControlResult.LOCKED, "guest");
@@ -107,8 +145,7 @@ public class MusicSocketController {
         sendControlResultIfDenied(sessionId, "CONTROL_DENIED", result);
     }
 
-    @MessageMapping("/control/toggle-shuffle")
-    public void toggleShuffle(@Header("simpSessionId") String sessionId) {
+    public void toggleShuffle(String sessionId) {
         if (denyRateLimited(sessionId, "control")) return;
         if (denyGuest(sessionId, "CONTROL_DENIED", "请先设置昵称再切换随机播放")) {
             logControlResult("shuffle", sessionId, ControlResult.LOCKED, "guest");
@@ -119,8 +156,7 @@ public class MusicSocketController {
         sendControlResultIfDenied(sessionId, "CONTROL_DENIED", result);
     }
 
-    @MessageMapping("/control/toggle-pause")
-    public void togglePause(@Header("simpSessionId") String sessionId) {
+    public void togglePause(String sessionId) {
         if (denyRateLimited(sessionId, "control")) return;
         if (denyGuest(sessionId, "CONTROL_DENIED", "请先设置昵称再控制播放")) {
             logControlResult("pause", sessionId, ControlResult.LOCKED, "guest");
@@ -131,8 +167,7 @@ public class MusicSocketController {
         sendControlResultIfDenied(sessionId, "CONTROL_DENIED", result);
     }
 
-    @MessageMapping("/control/seek")
-    public void seek(@Payload SeekRequest request, @Header("simpSessionId") String sessionId) {
+    public void seek(SeekRequest request, String sessionId) {
         if (denyRateLimited(sessionId, "control")) return;
         if (denyGuest(sessionId, "CONTROL_DENIED", "请先设置昵称再调整进度")) {
             logControlResult("seek", sessionId, ControlResult.LOCKED, "guest");
@@ -150,36 +185,31 @@ public class MusicSocketController {
         denial.ifPresent(message -> musicSocketSessionFacade.sendSeekDenied(sessionId, message));
     }
 
-    @MessageMapping("/queue/top")
-    public void topSong(@Payload QueueActionRequest request, @Header("simpSessionId") String sessionId) {
+    public void topSong(QueueActionRequest request, String sessionId) {
         if (denyRateLimited(sessionId, "queue")) return;
         if (denyGuest(sessionId, "CONTROL_DENIED", "请先设置昵称再操作队列")) return;
         musicPlayerService.topSong(request.queueId(), sessionId);
     }
 
-    @MessageMapping("/queue/batch-top")
-    public void topSongs(@Payload QueueBatchActionRequest request, @Header("simpSessionId") String sessionId) {
+    public void topSongs(QueueBatchActionRequest request, String sessionId) {
         if (denyRateLimited(sessionId, "queue")) return;
         if (denyGuest(sessionId, "CONTROL_DENIED", "请先设置昵称再操作队列")) return;
         musicPlayerService.topSongs(request.queueIds(), sessionId);
     }
 
-    @MessageMapping("/queue/remove")
-    public void removeSong(@Payload QueueActionRequest request, @Header("simpSessionId") String sessionId) {
+    public void removeSong(QueueActionRequest request, String sessionId) {
         if (denyRateLimited(sessionId, "queue")) return;
         if (denyGuest(sessionId, "CONTROL_DENIED", "请先设置昵称再操作队列")) return;
         musicPlayerService.removeSongFromQueue(request.queueId(), sessionId);
     }
 
-    @MessageMapping("/queue/batch-remove")
-    public void removeSongs(@Payload QueueBatchActionRequest request, @Header("simpSessionId") String sessionId) {
+    public void removeSongs(QueueBatchActionRequest request, String sessionId) {
         if (denyRateLimited(sessionId, "queue")) return;
         if (denyGuest(sessionId, "CONTROL_DENIED", "请先设置昵称再操作队列")) return;
         musicPlayerService.removeSongsFromQueue(request.queueIds(), sessionId);
     }
 
-    @MessageMapping("/queue/reorder")
-    public void reorderQueue(@Payload QueueReorderRequest request, @Header("simpSessionId") String sessionId) {
+    public void reorderQueue(QueueReorderRequest request, String sessionId) {
         if (denyRateLimited(sessionId, "queue")) return;
         if (denyGuest(sessionId, "CONTROL_DENIED", "请先设置昵称再操作队列")) return;
         if (request.queueId() != null && request.targetQueueId() != null) {
@@ -190,29 +220,25 @@ public class MusicSocketController {
     }
 
     // 点赞接口
-    @MessageMapping("/control/like")
-    public void likeSong(@Header("simpSessionId") String sessionId) {
+    public void likeSong(String sessionId) {
         if (denyRateLimited(sessionId, "control")) return;
         if (denyGuest(sessionId, "CONTROL_DENIED", "请先设置昵称再点赞")) return;
         musicPlayerService.likeSong(sessionId);
     }
 
-    @MessageMapping("/user/rename")
-    public void rename(RenameRequest request, @Header("simpSessionId") String sessionId) {
+    public void rename(RenameRequest request, String sessionId) {
         if (denyRateLimited(sessionId, "profile")) return;
         if (!musicSocketSessionFacade.renameAndBroadcast(sessionId, request.newName())) {
             musicSocketSessionFacade.sendRenameFailed(sessionId);
         }
     }
 
-    @MessageMapping("/user/bind")
-    public void bindAccount(BindRequest request, @Header("simpSessionId") String sessionId) {
+    public void bindAccount(BindRequest request, String sessionId) {
         if (denyRateLimited(sessionId, "profile")) return;
         userService.bindAccount(sessionId, request.platform(), request.accountId());
     }
 
-    @MessageMapping("/rooms/create")
-    public void createRoom(RoomCreateRequest request, @Header("simpSessionId") String sessionId) {
+    public void createRoom(RoomCreateRequest request, String sessionId) {
         if (denyRateLimited(sessionId, "room")) return;
         if (denyGuest(sessionId, "CONTROL_DENIED", "请先设置昵称再创建房间")) return;
         userService.getUser(sessionId).ifPresent(user -> {
@@ -230,8 +256,7 @@ public class MusicSocketController {
         });
     }
 
-    @MessageMapping("/rooms/delete")
-    public void deleteRoom(RoomDeleteRequest request, @Header("simpSessionId") String sessionId) {
+    public void deleteRoom(RoomDeleteRequest request, String sessionId) {
         if (denyRateLimited(sessionId, "room")) return;
         if (denyGuest(sessionId, "CONTROL_DENIED", "请先设置昵称再删除房间")) return;
         userService.getUser(sessionId).ifPresent(user -> {
@@ -244,18 +269,15 @@ public class MusicSocketController {
         });
     }
 
-    @SubscribeMapping("/topic/player/state")
     public PlayerState getInitialPlayerState() {
         return musicPlayerService.getCurrentPlayerState(RoomService.DEFAULT_ROOM_ID);
     }
 
-    @SubscribeMapping("/topic/users/online")
     public List<UserSummary> getInitialOnlineUsers() {
         return userService.getOnlineUserSummaries(RoomService.DEFAULT_ROOM_ID);
     }
 
-    @SubscribeMapping("/user/me")
-    public CurrentUserResponse getMyUserInfo(@Header("simpSessionId") String sessionId) {
+    public CurrentUserResponse getMyUserInfo(String sessionId) {
         return userService.getUser(sessionId)
                 .map(u -> {
                     String role = accountService.roleForPublicId(u.getPublicId()).orElse("GUEST");
@@ -294,36 +316,31 @@ public class MusicSocketController {
     }
 
     // 聊天消息处理
-    @MessageMapping("/chat")
-    public void handleChat(ChatRequest request, @Header("simpSessionId") String sessionId) {
+    public void handleChat(ChatRequest request, String sessionId) {
         if (denyRateLimited(sessionId, "chat")) return;
         if (denyGuest(sessionId, "CONTROL_DENIED", "请先设置昵称再发送聊天")) return;
         chatService.handleRoomChat(sessionId, request);
     }
 
-    @MessageMapping("/public-chat")
-    public void handlePublicChat(ChatRequest request, @Header("simpSessionId") String sessionId) {
+    public void handlePublicChat(ChatRequest request, String sessionId) {
         if (denyRateLimited(sessionId, "chat")) return;
         if (denyGuest(sessionId, "CONTROL_DENIED", "请先设置昵称再发送聊天")) return;
         chatService.handlePublicChat(sessionId, request);
     }
 
     // 订阅时获取历史记录
-    @SubscribeMapping("/chat/history")
     public List<ChatMessage> getChatHistory() {
         return chatService.getHistory(RoomService.DEFAULT_ROOM_ID, 0, 50);
     }
 
     // 处理分页获取历史记录的请求
-    @MessageMapping("/chat/history/fetch")
-    public void fetchChatHistory(@Payload ChatHistoryFetchRequest request, @Header("simpSessionId") String sessionId) {
+    public void fetchChatHistory(ChatHistoryFetchRequest request, String sessionId) {
         if (denyRateLimited(sessionId, "chat")) return;
         List<ChatMessage> history = chatService.getHistory(userService.getRoomIdForSession(sessionId), request.offset(), request.limit());
         musicSocketSessionFacade.sendRoomChatHistory(sessionId, history);
     }
 
-    @MessageMapping("/public-chat/history/fetch")
-    public void fetchPublicChatHistory(@Payload ChatHistoryFetchRequest request, @Header("simpSessionId") String sessionId) {
+    public void fetchPublicChatHistory(ChatHistoryFetchRequest request, String sessionId) {
         if (denyRateLimited(sessionId, "chat")) return;
         List<ChatMessage> history = chatService.getPublicHistory(request.offset(), request.limit());
         musicSocketSessionFacade.sendPublicChatHistory(sessionId, history);

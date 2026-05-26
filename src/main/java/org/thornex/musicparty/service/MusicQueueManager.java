@@ -364,9 +364,9 @@ public class MusicQueueManager {
         queue.clear();
     }
 
-    public synchronized void reorder(int oldIndex, int newIndex) {
+    public synchronized boolean reorder(int oldIndex, int newIndex) {
         if (oldIndex < 0 || oldIndex >= queue.size() || newIndex < 0 || newIndex >= queue.size() || oldIndex == newIndex) {
-            return;
+            return false;
         }
 
         List<MusicQueueItem> list = new ArrayList<>(queue);
@@ -375,18 +375,19 @@ public class MusicQueueManager {
 
         queue.clear();
         queue.addAll(list);
+        return true;
     }
 
-    public synchronized void reorderByQueueId(String queueId, String targetQueueId, String position) {
+    public synchronized boolean reorderByQueueId(String queueId, String targetQueueId, String position) {
         if (queueId == null || targetQueueId == null || queueId.equals(targetQueueId)) {
-            return;
+            return false;
         }
 
         List<MusicQueueItem> list = new ArrayList<>(queue);
         int oldIndex = indexOfQueueId(list, queueId);
         int targetIndex = indexOfQueueId(list, targetQueueId);
         if (oldIndex < 0 || targetIndex < 0) {
-            return;
+            return false;
         }
 
         MusicQueueItem item = list.remove(oldIndex);
@@ -396,10 +397,14 @@ public class MusicQueueManager {
 
         int insertIndex = "after".equalsIgnoreCase(position) ? targetIndex + 1 : targetIndex;
         insertIndex = Math.max(0, Math.min(insertIndex, list.size()));
+        if (insertIndex == oldIndex) {
+            return false;
+        }
         list.add(insertIndex, item);
 
         queue.clear();
         queue.addAll(list);
+        return true;
     }
 
     private int indexOfQueueId(List<MusicQueueItem> items, String queueId) {

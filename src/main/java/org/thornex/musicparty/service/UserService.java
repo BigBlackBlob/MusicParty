@@ -149,6 +149,7 @@ public class UserService {
                         pendingLeaveEvents.remove(sessionToken);
                         log.info("User Leave Confirmed: {}", user.getName());
                         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.USER_LEAVE, user.getPublicId(), null, roomId));
+                        roomSessionCoordinator.onUserDisconnected(roomId, getOnlineUserSummaries(roomId).size());
                     }, LEAVE_DELAY_SEC, TimeUnit.SECONDS);
                     pendingLeaveEvents.put(sessionToken, future);
                 }
@@ -265,6 +266,13 @@ public class UserService {
 
     public Set<String> getRecentlyActivePublicIds() {
         return getRecentlyActivePublicIds(RoomService.DEFAULT_ROOM_ID);
+    }
+
+    public boolean hasPendingReconnectUsers(String roomId) {
+        String normalizedRoomId = roomService.normalizeRoomId(roomId);
+        return usersBySessionToken.values().stream()
+                .anyMatch(u -> normalizedRoomId.equals(u.getRoomId())
+                        && pendingLeaveEvents.containsKey(u.getSessionToken()));
     }
 
     public String getRoomIdForSession(String sessionId) {

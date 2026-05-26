@@ -1,16 +1,21 @@
 package org.thornex.musicparty.config;
 
-import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.web.reactive.function.server.RouterFunction;
+import org.springframework.web.reactive.function.server.ServerResponse;
 
-@Controller
+import static org.springframework.web.reactive.function.server.RequestPredicates.GET;
+import static org.springframework.web.reactive.function.server.RouterFunctions.route;
+
+@Configuration
 public class SpaRedirectController {
 
-    // 修复点：使用正则负向预查 (Negative Lookahead)
-    // 含义：匹配不含点的路径，且该路径决不能是 "ws" 或 "api" 开头
-    // 这样 WebSocket 请求就会穿透这里，到达真正的 WebSocketHandler
-    @RequestMapping(value = "/{path:(?!ws|api|proxy)[^.]*}")
-    public String redirect() {
-        return "forward:/index.html";
+    @Bean
+    RouterFunction<ServerResponse> spaFallbackRoutes() {
+        ClassPathResource index = new ClassPathResource("static/index.html");
+        return route(GET("/{path:^(?!ws|api|proxy|radio$)[^.]*$}"),
+                request -> ServerResponse.ok().bodyValue(index));
     }
 }

@@ -21,6 +21,7 @@ import org.thornex.musicparty.service.RoomSubsonicSource;
 import org.thornex.musicparty.service.SubsonicSourceRegistry;
 import org.thornex.musicparty.service.api.BilibiliMusicApiService;
 import org.thornex.musicparty.service.api.NeteaseMusicApiService;
+import reactor.core.publisher.Mono;
 
 import java.util.Map;
 import java.util.Set;
@@ -57,14 +58,14 @@ public class AdminController {
     }
 
     @PostMapping("/command")
-    public ResponseEntity<?> handleAdminCommand(@RequestBody AdminCommandRequest request) {
+    public Mono<ResponseEntity<?>> handleAdminCommand(@RequestBody AdminCommandRequest request) {
         if (!isValidAdmin(request.sessionToken(), request.password())) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "ACCESS DENIED"));
+            return just(ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "ACCESS DENIED")));
         }
 
         String command = request.command().trim();
         if (!command.startsWith("//")) {
-            return ResponseEntity.badRequest().body(Map.of("message", "Invalid command format."));
+            return just(ResponseEntity.badRequest().body(Map.of("message", "Invalid command format.")));
         }
 
         String[] parts = command.split("\\s+", 3);
@@ -73,25 +74,25 @@ public class AdminController {
         switch (action) {
             case "//STREAM":
                 if (parts.length < 2) {
-                    return ResponseEntity.badRequest().body(Map.of("message", "Usage: //STREAM <ON/OFF>"));
+                    return just(ResponseEntity.badRequest().body(Map.of("message", "Usage: //STREAM <ON/OFF>")));
                 }
                 String subCmd = parts[1].toUpperCase();
                 if ("ON".equals(subCmd)) {
                     liveStreamService.setEnabled(true);
-                    return ResponseEntity.ok(Map.of("message", "STREAM SERVICE ENABLED"));
+                    return just(ResponseEntity.ok(Map.of("message", "STREAM SERVICE ENABLED")));
                 } else if ("OFF".equals(subCmd)) {
                     liveStreamService.setEnabled(false);
-                    return ResponseEntity.ok(Map.of("message", "STREAM SERVICE DISABLED"));
+                    return just(ResponseEntity.ok(Map.of("message", "STREAM SERVICE DISABLED")));
                 } else {
-                    return ResponseEntity.badRequest().body(Map.of("message", "Invalid stream command"));
+                    return just(ResponseEntity.badRequest().body(Map.of("message", "Invalid stream command")));
                 }
 
             case "//LOCK":
                 if (parts.length < 3) {
                     if (parts.length < 2) {
-                        return ResponseEntity.badRequest().body(Map.of("message", "Usage: //LOCK <TYPE> <ON/OFF>. TYPE: PAUSE, SKIP, SHUFFLE, ALL"));
+                        return just(ResponseEntity.badRequest().body(Map.of("message", "Usage: //LOCK <TYPE> <ON/OFF>. TYPE: PAUSE, SKIP, SHUFFLE, ALL")));
                     }
-                    return ResponseEntity.badRequest().body(Map.of("message", "Missing ON/OFF. Usage: //LOCK <TYPE> <ON/OFF>"));
+                    return just(ResponseEntity.badRequest().body(Map.of("message", "Missing ON/OFF. Usage: //LOCK <TYPE> <ON/OFF>")));
                 }
                 String type = parts[1].toUpperCase();
                 String state = parts[2].toUpperCase();
@@ -99,72 +100,72 @@ public class AdminController {
 
                 if ("ALL".equals(type)) {
                     musicPlayerService.setAllLocks(locked);
-                    return ResponseEntity.ok(Map.of("message", "ALL LOCKS SET TO " + locked));
+                    return just(ResponseEntity.ok(Map.of("message", "ALL LOCKS SET TO " + locked)));
                 } else if (Set.of("PAUSE", "SKIP", "SHUFFLE").contains(type)) {
                     musicPlayerService.setLock(type, locked);
-                    return ResponseEntity.ok(Map.of("message", type + " LOCK SET TO " + locked));
+                    return just(ResponseEntity.ok(Map.of("message", type + " LOCK SET TO " + locked)));
                 } else {
-                    return ResponseEntity.badRequest().body(Map.of("message", "Invalid lock type: " + type));
+                    return just(ResponseEntity.badRequest().body(Map.of("message", "Invalid lock type: " + type)));
                 }
 
             case "//PAUSE":
                 musicPlayerService.togglePause("SYSTEM");
-                return ResponseEntity.ok(Map.of("message", "TOGGLE PAUSE (SYSTEM OVERRIDE)"));
+                return just(ResponseEntity.ok(Map.of("message", "TOGGLE PAUSE (SYSTEM OVERRIDE)")));
 
             case "//SKIP":
                 musicPlayerService.skipToNext("SYSTEM");
-                return ResponseEntity.ok(Map.of("message", "SKIP TO NEXT (SYSTEM OVERRIDE)"));
+                return just(ResponseEntity.ok(Map.of("message", "SKIP TO NEXT (SYSTEM OVERRIDE)")));
 
             case "//SHUFFLE":
                 musicPlayerService.toggleShuffle("SYSTEM");
-                return ResponseEntity.ok(Map.of("message", "TOGGLE SHUFFLE (SYSTEM OVERRIDE)"));
+                return just(ResponseEntity.ok(Map.of("message", "TOGGLE SHUFFLE (SYSTEM OVERRIDE)")));
 
             case "//RESET":
                 musicPlayerService.resetSystem();
-                return ResponseEntity.ok(Map.of("message", "SYSTEM PURGED"));
+                return just(ResponseEntity.ok(Map.of("message", "SYSTEM PURGED")));
 
             case "//CLEAR":
                 if (parts.length < 2 || "QUEUE".equalsIgnoreCase(parts[1])) {
                     musicPlayerService.clearQueue();
-                    return ResponseEntity.ok(Map.of("message", "QUEUE CLEARED"));
+                    return just(ResponseEntity.ok(Map.of("message", "QUEUE CLEARED")));
                 } else if ("CHAT".equalsIgnoreCase(parts[1])) {
                     chatService.clearHistoryAndNotify();
-                    return ResponseEntity.ok(Map.of("message", "CHAT HISTORY CLEARED"));
+                    return just(ResponseEntity.ok(Map.of("message", "CHAT HISTORY CLEARED")));
                 } else {
-                    return ResponseEntity.badRequest().body(Map.of("message", "Usage: //CLEAR <QUEUE/CHAT>"));
+                    return just(ResponseEntity.badRequest().body(Map.of("message", "Usage: //CLEAR <QUEUE/CHAT>")));
                 }
 
             case "//PASS":
-                return ResponseEntity.status(HttpStatus.GONE).body(Map.of("message", "Legacy global password commands were removed. Use account login and room privacy settings."));
+                return just(ResponseEntity.status(HttpStatus.GONE).body(Map.of("message", "Legacy global password commands were removed. Use account login and room privacy settings.")));
 
             case "//OPEN":
-                return ResponseEntity.status(HttpStatus.GONE).body(Map.of("message", "Legacy global password commands were removed. Use account login and room privacy settings."));
+                return just(ResponseEntity.status(HttpStatus.GONE).body(Map.of("message", "Legacy global password commands were removed. Use account login and room privacy settings.")));
 
             case "//COOKIE":
                 if (parts.length < 3) {
-                    return ResponseEntity.badRequest().body(Map.of("message", "Usage: //COOKIE <platform> <cookie_string>"));
+                    return just(ResponseEntity.badRequest().body(Map.of("message", "Usage: //COOKIE <platform> <cookie_string>")));
                 }
                 String platform = parts[1].toLowerCase();
                 String cookie = parts[2];
 
                 if ("netease".equals(platform)) {
                     neteaseMusicApiService.updateCookie(cookie);
-                    return ResponseEntity.ok(Map.of("message", "Netease cookie updated."));
+                    return just(ResponseEntity.ok(Map.of("message", "Netease cookie updated.")));
                 } else if ("bilibili".equals(platform)) {
                     bilibiliMusicApiService.updateSessdata(cookie);
-                    return ResponseEntity.ok(Map.of("message", "Bilibili SESSDATA updated."));
+                    return just(ResponseEntity.ok(Map.of("message", "Bilibili SESSDATA updated.")));
                 } else {
-                    return ResponseEntity.badRequest().body(Map.of("message", "Unsupported platform: " + platform));
+                    return just(ResponseEntity.badRequest().body(Map.of("message", "Unsupported platform: " + platform)));
                 }
 
             case "//SUBSONIC":
                 return handleSubsonicCommand(SubsonicSourceRegistry.normalizeRoomId(request.roomId()), parts);
 
             case "//NAVIDROME":
-                return handleNavidromeCommand(parts);
+                return just(handleNavidromeCommand(parts));
 
             default:
-                return ResponseEntity.badRequest().body(Map.of("message", "Unknown command: " + action));
+                return just(ResponseEntity.badRequest().body(Map.of("message", "Unknown command: " + action)));
         }
     }
 
@@ -220,22 +221,21 @@ public class AdminController {
     }
 
     @PostMapping("/subsonic-source/test")
-    public ResponseEntity<?> testSubsonicSource(@RequestBody AdminSubsonicSourceRequest request) {
+    public Mono<ResponseEntity<Map<String, String>>> testSubsonicSource(@RequestBody AdminSubsonicSourceRequest request) {
         if (!isValidAdmin(request.sessionToken(), request.adminPassword())) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "ACCESS DENIED"));
+            return Mono.just(ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "ACCESS DENIED")));
         }
         RoomSubsonicSource source = subsonicSourceRegistry
                 .findRoomSource(SubsonicSourceRegistry.normalizeRoomId(request.roomId()), request.id())
                 .orElse(null);
         if (source == null) {
-            return ResponseEntity.badRequest().body(Map.of("message", "Source not found"));
+            return Mono.just(ResponseEntity.badRequest().body(Map.of("message", "Source not found")));
         }
-        try {
-            subsonicSourceRegistry.test(source).block(java.time.Duration.ofSeconds(12));
-            return ResponseEntity.ok(Map.of("message", "SUBSONIC SOURCE OK: " + source.label()));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("message", "Subsonic test failed: " + e.getMessage()));
-        }
+        return subsonicSourceRegistry.test(source)
+                .timeout(java.time.Duration.ofSeconds(12))
+                .thenReturn(ResponseEntity.ok(Map.of("message", "SUBSONIC SOURCE OK: " + source.label())))
+                .onErrorResume(e -> Mono.just(ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                        .body(Map.of("message", "Subsonic test failed: " + e.getMessage()))));
     }
 
     @PostMapping("/subsonic-source/order")
@@ -318,57 +318,60 @@ public class AdminController {
         return ResponseEntity.badRequest().body(Map.of("message", grant ? "Unable to grant Navidrome access" : "Unable to revoke Navidrome access"));
     }
 
-    private ResponseEntity<?> handleSubsonicCommand(String roomId, String[] parts) {
+    private Mono<ResponseEntity<?>> handleSubsonicCommand(String roomId, String[] parts) {
         if (parts.length < 2) {
-            return ResponseEntity.badRequest().body(Map.of("message", "Usage: //SUBSONIC <LIST/TEST/REMOVE/ADD>"));
+            return just(ResponseEntity.badRequest().body(Map.of("message", "Usage: //SUBSONIC <LIST/TEST/REMOVE/ADD>")));
         }
         String subCommand = parts[1].toUpperCase();
         return switch (subCommand) {
-            case "LIST" -> ResponseEntity.ok(Map.of(
+            case "LIST" -> just(ResponseEntity.ok(Map.of(
                     "message",
                     subsonicSourceRegistry.list(roomId).stream()
                             .map(source -> source.id() + "=" + (source.enabled() ? "ON" : "OFF") + " " + source.label())
                             .toList()
                             .toString()
-            ));
+            )));
             case "REMOVE" -> {
                 if (parts.length < 3) {
-                    yield ResponseEntity.badRequest().body(Map.of("message", "Usage: //SUBSONIC REMOVE <id>"));
+                    yield just(ResponseEntity.badRequest().body(Map.of("message", "Usage: //SUBSONIC REMOVE <id>")));
                 }
                 boolean removed = subsonicSourceRegistry.remove(roomId, parts[2].trim());
-                yield removed
+                yield just(removed
                         ? ResponseEntity.ok(Map.of("message", "SUBSONIC SOURCE REMOVED"))
-                        : ResponseEntity.badRequest().body(Map.of("message", "Source not found in this Lounge"));
+                        : ResponseEntity.badRequest().body(Map.of("message", "Source not found in this Lounge")));
             }
             case "TEST" -> {
                 if (parts.length < 3) {
-                    yield ResponseEntity.badRequest().body(Map.of("message", "Usage: //SUBSONIC TEST <id>"));
+                    yield just(ResponseEntity.badRequest().body(Map.of("message", "Usage: //SUBSONIC TEST <id>")));
                 }
                 RoomSubsonicSource source = subsonicSourceRegistry.findRoomSource(roomId, parts[2].trim()).orElse(null);
                 if (source == null) {
-                    yield ResponseEntity.badRequest().body(Map.of("message", "Source not found"));
+                    yield just(ResponseEntity.badRequest().body(Map.of("message", "Source not found")));
                 }
-                try {
-                    subsonicSourceRegistry.test(source).block(java.time.Duration.ofSeconds(12));
-                    yield ResponseEntity.ok(Map.of("message", "SUBSONIC SOURCE OK: " + source.label()));
-                } catch (Exception e) {
-                    yield ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("message", "Subsonic test failed: " + e.getMessage()));
-                }
+                yield subsonicSourceRegistry.test(source)
+                        .timeout(java.time.Duration.ofSeconds(12))
+                        .then(Mono.<ResponseEntity<?>>just(ResponseEntity.ok(Map.of("message", "SUBSONIC SOURCE OK: " + source.label()))))
+                        .onErrorResume(e -> Mono.<ResponseEntity<?>>just(ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                                .body(Map.of("message", "Subsonic test failed: " + e.getMessage()))));
             }
             case "ADD" -> {
                 if (parts.length < 3) {
-                    yield ResponseEntity.badRequest().body(Map.of("message", "Usage: //SUBSONIC ADD id=<id> label=<name> baseUrl=<url> username=<user> password=<pass> [allowedUsers=*]"));
+                    yield just(ResponseEntity.badRequest().body(Map.of("message", "Usage: //SUBSONIC ADD id=<id> label=<name> baseUrl=<url> username=<user> password=<pass> [allowedUsers=*]")));
                 }
                 try {
                     SubsonicSourceRequest request = parseSubsonicRequest(parts[2]);
                     var source = subsonicSourceRegistry.upsert(roomId, request);
-                    yield ResponseEntity.ok(Map.of("message", "SUBSONIC SOURCE SAVED: " + source.platformId()));
+                    yield just(ResponseEntity.ok(Map.of("message", "SUBSONIC SOURCE SAVED: " + source.platformId())));
                 } catch (IllegalArgumentException e) {
-                    yield ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
+                    yield just(ResponseEntity.badRequest().body(Map.of("message", e.getMessage())));
                 }
             }
-            default -> ResponseEntity.badRequest().body(Map.of("message", "Usage: //SUBSONIC <LIST/TEST/REMOVE/ADD>"));
+            default -> just(ResponseEntity.badRequest().body(Map.of("message", "Usage: //SUBSONIC <LIST/TEST/REMOVE/ADD>")));
         };
+    }
+
+    private Mono<ResponseEntity<?>> just(ResponseEntity<?> response) {
+        return Mono.just(response);
     }
 
     private SubsonicSourceRequest parseSubsonicRequest(String raw) {
