@@ -1,5 +1,6 @@
 import { ref } from 'vue';
 import { musicApi } from '../api/music';
+import { safeJsonStorage } from '../utils/safeJsonStorage.js';
 
 const PLAYLIST_CACHE_KEY = 'mp_search_playlist_songs';
 const PLAYLIST_ID_CACHE_KEY = 'mp_search_playlist_id';
@@ -23,7 +24,7 @@ export const parseNeteasePlaylistId = (val) => {
 };
 
 export function useExternalPlaylist() {
-  const playlistSongs = ref(JSON.parse(localStorage.getItem(PLAYLIST_CACHE_KEY) || '[]'));
+  const playlistSongs = ref(safeJsonStorage.read(PLAYLIST_CACHE_KEY, [], { validate: Array.isArray }));
   const playlistId = ref(localStorage.getItem(PLAYLIST_ID_CACHE_KEY) || '');
   const currentPlaylistPage = ref(parseInt(localStorage.getItem(PLAYLIST_PAGE_CACHE_KEY) || '1', 10));
   const canGoPlaylistNext = ref(true);

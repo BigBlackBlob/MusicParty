@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseNeteasePlaylistId } from './useExternalPlaylist';
+import { useExternalPlaylist, parseNeteasePlaylistId } from './useExternalPlaylist';
 
 describe('parseNeteasePlaylistId', () => {
   it('accepts a raw numeric playlist id', () => {
@@ -14,5 +14,16 @@ describe('parseNeteasePlaylistId', () => {
   it('rejects invalid playlist input', () => {
     expect(parseNeteasePlaylistId('abc')).toBeNull();
     expect(parseNeteasePlaylistId('')).toBeNull();
+  });
+});
+
+describe('useExternalPlaylist cache hydration', () => {
+  it('ignores corrupt cached playlist songs', () => {
+    localStorage.setItem('mp_search_playlist_songs', '{bad json');
+
+    const playlist = useExternalPlaylist();
+
+    expect(playlist.playlistSongs.value).toEqual([]);
+    expect(localStorage.getItem('mp_search_playlist_songs')).toBeNull();
   });
 });

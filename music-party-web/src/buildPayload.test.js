@@ -1,15 +1,18 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-
-const source = readFileSync(resolve(process.cwd(), 'vite.config.js'), 'utf8');
+import { resolveVendorChunk } from '../config/vendorChunks.js';
 
 describe('frontend payload chunking', () => {
-  it('splits large third-party dependencies out of the entry chunk', () => {
-    expect(source).toContain('manualChunks');
-    expect(source).toContain('vendor-vue');
-    expect(source).toContain('vendor-ui');
-    expect(source).toContain('vendor-network');
-    expect(source).toContain('vendor-dnd');
+  it('keeps Vue ecosystem dependencies in the dedicated vendor-vue chunk', () => {
+    expect(resolveVendorChunk('/repo/node_modules/vue/dist/vue.runtime.esm-bundler.js')).toBe('vendor-vue');
+    expect(resolveVendorChunk('/repo/node_modules/pinia/dist/pinia.mjs')).toBe('vendor-vue');
+    expect(resolveVendorChunk('/repo/node_modules/vue-i18n/dist/vue-i18n.mjs')).toBe('vendor-vue');
+    expect(resolveVendorChunk('/repo/node_modules/@vueuse/core/index.mjs')).toBe('vendor-vue');
+  });
+
+  it('keeps other large third-party dependencies out of the entry chunk', () => {
+    expect(resolveVendorChunk('/repo/node_modules/reka-ui/dist/index.mjs')).toBe('vendor-ui');
+    expect(resolveVendorChunk('/repo/node_modules/axios/index.js')).toBe('vendor-network');
+    expect(resolveVendorChunk('/repo/node_modules/sortablejs/modular/sortable.esm.js')).toBe('vendor-dnd');
+    expect(resolveVendorChunk('/repo/src/main.js')).toBeUndefined();
   });
 });

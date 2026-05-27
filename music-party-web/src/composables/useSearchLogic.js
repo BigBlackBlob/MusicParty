@@ -8,6 +8,7 @@ import { usePlayerStore } from '../stores/player.js';
 import { useRoomStore } from '../stores/room.js';
 import { usePlatforms } from './usePlatforms.js';
 import { useExternalPlaylist, parseNeteasePlaylistId } from './useExternalPlaylist.js';
+import { safeJsonStorage } from '../utils/safeJsonStorage.js';
 
 export function useSearchLogic() {
     const { success, error } = useToast();
@@ -22,8 +23,8 @@ export function useSearchLogic() {
     const platform = ref('netease');
     const { platforms, supportsAlbumSearch, loadPlatforms } = usePlatforms(platform);
     const keyword = ref('');
-    const songs = ref(JSON.parse(localStorage.getItem(SONGS_CACHE_KEY) || '[]'));
-    const albums = ref(JSON.parse(localStorage.getItem(ALBUMS_CACHE_KEY) || '[]'));
+    const songs = ref(safeJsonStorage.read(SONGS_CACHE_KEY, [], { validate: Array.isArray }));
+    const albums = ref(safeJsonStorage.read(ALBUMS_CACHE_KEY, [], { validate: Array.isArray }));
     const {
         playlistSongs,
         playlistId,

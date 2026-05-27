@@ -48,6 +48,15 @@ describe('user store account actions', () => {
     expect(user.publicId).toBe('u_a');
   });
 
+  it('ignores corrupt cached bindings during initialization', () => {
+    localStorage.setItem(STORAGE_KEYS.BINDINGS, '{bad json');
+
+    const user = useUserStore();
+
+    expect(user.bindings).toEqual({});
+    expect(localStorage.getItem(STORAGE_KEYS.BINDINGS)).toBeNull();
+  });
+
   it('logs out and clears persisted account identity', async () => {
     const user = useUserStore();
     user.initAccount({

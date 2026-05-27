@@ -5,6 +5,7 @@ import { ref, watch } from 'vue';
 import { useUserStore } from './user';
 import { useRoomStore } from './room';
 import { useChatStore } from './chat';
+import { useRoomPlaylistsStore } from './roomPlaylists';
 import { socketService } from '../services/socket';
 import { createSocketHandlers, createSocketCallbacks } from '../services/socketHandler'; // 引入新文件
 import { musicApi } from '../api/music';
@@ -81,6 +82,10 @@ export const usePlayerStore = defineStore('player', () => {
         const nextPosition = Number.isFinite(positionMs) ? Math.max(0, positionMs) : 0;
         playbackPositionMs.value = nextPosition;
         localProgress.value = nextPosition;
+    };
+
+    const setQueue = (nextQueue) => {
+        queue.value = Array.isArray(nextQueue) ? nextQueue : [];
     };
 
     const requestPing = (reason = 'manual', force = false) => {
@@ -248,7 +253,23 @@ export const usePlayerStore = defineStore('player', () => {
         };
 
         // 使用抽离出的消息处理配置
-        const handlers = createSocketHandlers();
+        const handlers = createSocketHandlers({
+            player: {
+                syncState,
+                handleSyncPong,
+                switchRoom,
+                setQueue
+            },
+            userStore,
+            chatStore: useChatStore(),
+            roomStore,
+            loadRoomPlaylists: () => useRoomPlaylistsStore().loadPlaylists(),
+            setShowNameModal: (val) => { userStore.showNameModal = val; },
+            resetAuthentication: () => userStore.resetAuthentication(),
+            resetRoomMessages: () => useChatStore().resetRoomMessages(),
+            setCurrentRoom: (roomId) => roomStore.setCurrentRoom(roomId),
+            reconnectToCurrentRoom
+        });
 
         // 补充 UserMe 的特殊处理 (因为它需要用到 renameUser，如果放在 socketHandler 会导致循环依赖)
         handlers[WS_DEST.USER_ME] = (me) => {
@@ -257,7 +278,17 @@ export const usePlayerStore = defineStore('player', () => {
             syncLikedSongsFromServer().catch(error => console.warn('Failed to sync liked songs', error));
         };
 
-        const callbacks = createSocketCallbacks();
+        const callbacks = createSocketCallbacks({
+            setConnected: (val) => { connected.value = val; },
+            resetSyncGate,
+            requestPing,
+            requestResync,
+            requestChatHistory,
+            requestPublicChatHistory,
+            bindAccount,
+            userStore,
+            roomStore
+        });
 
         socketService.connect(authHeaders, callbacks, handlers);
     };

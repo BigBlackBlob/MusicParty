@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import { authApi } from '../api/auth';
 import { STORAGE_KEYS } from '../constants/keys';
+import { isPlainObject, safeJsonStorage } from '../utils/safeJsonStorage.js';
 
 const sessionToken = ref(localStorage.getItem(STORAGE_KEYS.SESSION_TOKEN) || '');
 const publicId = ref('');
@@ -20,7 +21,7 @@ export const useUserStore = defineStore('user', () => {
         sessionId: ''
     });
 
-    const bindings = ref(JSON.parse(localStorage.getItem(STORAGE_KEYS.BINDINGS) || '{}'));
+    const bindings = ref(safeJsonStorage.read(STORAGE_KEYS.BINDINGS, {}, { validate: isPlainObject }));
     // 全局状态：控制改名弹窗显示
     const showNameModal = ref(false);
 
