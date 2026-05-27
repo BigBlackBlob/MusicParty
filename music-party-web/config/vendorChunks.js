@@ -1,6 +1,5 @@
 export const vendorChunks = [
-  { name: 'vendor-vue', packages: ['vue', 'pinia', 'vue-i18n', '@vueuse/core'] },
-  { name: 'vendor-ui', packages: ['reka-ui', 'lucide-vue-next'] },
+  { name: 'vendor-vue', packages: ['vue', 'pinia', 'vue-i18n', '@vueuse/core', 'reka-ui', 'lucide-vue-next'] },
   { name: 'vendor-network', packages: ['axios'] },
   { name: 'vendor-dnd', packages: ['sortablejs'] },
   { name: 'vendor-utils', packages: ['dayjs', 'clsx', 'tailwind-merge', 'class-variance-authority'] }

@@ -10,7 +10,8 @@ describe('frontend payload chunking', () => {
   });
 
   it('keeps other large third-party dependencies out of the entry chunk', () => {
-    expect(resolveVendorChunk('/repo/node_modules/reka-ui/dist/index.mjs')).toBe('vendor-ui');
+    expect(resolveVendorChunk('/repo/node_modules/reka-ui/dist/index.mjs')).toBe('vendor-vue');
+    expect(resolveVendorChunk('/repo/node_modules/lucide-vue-next/dist/lucide-vue-next.js')).toBe('vendor-vue');
     expect(resolveVendorChunk('/repo/node_modules/axios/index.js')).toBe('vendor-network');
     expect(resolveVendorChunk('/repo/node_modules/sortablejs/modular/sortable.esm.js')).toBe('vendor-dnd');
     expect(resolveVendorChunk('/repo/src/main.js')).toBeUndefined();
