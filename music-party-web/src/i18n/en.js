@@ -398,6 +398,7 @@ export default {
     room: 'Room',
     netease: 'Netease',
     bilibili: 'Bilibili',
+    youtube: 'YouTube',
     navidrome: 'Navidrome'
   }
 };

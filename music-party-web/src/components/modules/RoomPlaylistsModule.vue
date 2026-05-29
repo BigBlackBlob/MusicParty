@@ -87,6 +87,7 @@
           >
             <option value="netease">NetEase</option>
             <option value="bilibili">Bilibili</option>
+            <option value="youtube">YouTube</option>
           </select>
           <input
             v-model.trim="externalPlaylistId"

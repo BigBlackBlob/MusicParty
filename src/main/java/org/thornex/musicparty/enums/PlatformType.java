@@ -6,6 +6,7 @@ import lombok.Getter;
 public enum PlatformType {
     NETEASE("netease"),
     BILIBILI("bilibili"),
+    YOUTUBE("youtube"),
     NAVIDROME("navidrome");
 
     private final String value;

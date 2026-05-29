@@ -4,7 +4,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.Music;
+import org.thornex.musicparty.dto.MusicQueueItem;
 import org.thornex.musicparty.dto.PlayableMusic;
+import org.thornex.musicparty.dto.Playlist;
+import org.thornex.musicparty.dto.UserSearchResult;
+import org.thornex.musicparty.dto.UserSummary;
+import org.thornex.musicparty.enums.CacheStatus;
+import org.thornex.musicparty.enums.QueueItemStatus;
+import org.thornex.musicparty.event.DownloadStatusEvent;
+import org.thornex.musicparty.event.QueueUpdateEvent;
 import org.thornex.musicparty.persistence.InMemoryChatRepository;
 import org.thornex.musicparty.persistence.InMemoryMigrationStateRepository;
 import org.thornex.musicparty.persistence.InMemoryPlaybackStateRepository;
@@ -12,12 +20,17 @@ import org.thornex.musicparty.persistence.InMemoryRoomRepository;
 import org.thornex.musicparty.persistence.InMemoryUserProfileRepository;
 import org.thornex.musicparty.persistence.PersistedHistoryEntry;
 import org.thornex.musicparty.persistence.RoomRepository;
+import org.thornex.musicparty.service.api.CachedMusicApiService;
+import org.thornex.musicparty.service.api.IMusicApiService;
+import reactor.core.publisher.Mono;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class MusicPlayerServiceHistoryTests {
 
@@ -93,6 +106,34 @@ class MusicPlayerServiceHistoryTests {
     }
 
     @Test
+    void downloadEventMatchesCachedPlatformCacheKey() {
+        RecordingQueueRepository queueRepository = new RecordingQueueRepository();
+        List<Object> events = new ArrayList<>();
+        LocalCacheService localCacheService = mock(LocalCacheService.class);
+        when(localCacheService.getStatus("youtube-abc123")).thenReturn(CacheStatus.COMPLETED);
+        TestContext context = createContext(
+                queueRepository,
+                List.of(new TestCachedMusicApiService()),
+                localCacheService,
+                event -> events.add(event)
+        );
+        MusicPlayerService.RoomPlayerSession session = context.musicPlayerService().getSession(context.roomId());
+        Music song = new Music("abc123", "Video", List.of("Channel"), 180_000L, "youtube", "cover");
+        session.getQueueManager().add(song, new UserSummary("user-1", "User", false), QueueItemStatus.PENDING);
+
+        session.handleDownloadEvent(new DownloadStatusEvent(this, "youtube-abc123"));
+
+        QueueUpdateEvent queueUpdate = events.stream()
+                .filter(QueueUpdateEvent.class::isInstance)
+                .map(QueueUpdateEvent.class::cast)
+                .findFirst()
+                .orElseThrow();
+        assertThat(queueUpdate.getQueue())
+                .extracting(MusicQueueItem::status)
+                .containsExactly(QueueItemStatus.READY);
+    }
+
+    @Test
     void seekAllowsRequesterAndAdminButRejectsOtherUsers() throws Exception {
         RecordingQueueRepository queueRepository = new RecordingQueueRepository();
         TestContext context = createContext(queueRepository);
@@ -113,20 +154,27 @@ class MusicPlayerServiceHistoryTests {
     }
 
     private TestContext createContext(RecordingQueueRepository queueRepository) {
+        return createContext(queueRepository, List.of(), null, event -> {});
+    }
+
+    private TestContext createContext(RecordingQueueRepository queueRepository,
+                                      List<IMusicApiService> apiServices,
+                                      LocalCacheService localCacheService,
+                                      org.springframework.context.ApplicationEventPublisher eventPublisher) {
         AppProperties properties = new AppProperties();
         properties.getQueue().setHistorySize(50);
         RoomRepository roomRepository = new InMemoryRoomRepository();
         RoomService roomService = new RoomService(
                 new ObjectMapper(),
-                event -> {},
+                eventPublisher,
                 properties,
                 roomRepository,
                 new InMemoryMigrationStateRepository()
         );
         roomService.init();
         String roomId = roomService.createRoom("Focus", "owner-1", false, null).roomId();
-        RoomSessionCoordinator roomSessionCoordinator = new RoomSessionCoordinator(roomService, event -> {});
-        UserService userService = new UserService(event -> {}, roomService, roomSessionCoordinator, new InMemoryUserProfileRepository());
+        RoomSessionCoordinator roomSessionCoordinator = new RoomSessionCoordinator(roomService, eventPublisher);
+        UserService userService = new UserService(eventPublisher, roomService, roomSessionCoordinator, new InMemoryUserProfileRepository());
         RoomStatePersistenceService persistenceService = new RoomStatePersistenceService(
                 queueRepository,
                 new InMemoryChatRepository(),
@@ -136,14 +184,14 @@ class MusicPlayerServiceHistoryTests {
         PlaybackTransitionService playbackTransitionService = new PlaybackTransitionService(
                 persistenceService,
                 mutationService,
-                event -> {}
+                eventPublisher
         );
         MusicPlayerService musicPlayerService = new MusicPlayerService(
-                List.of(),
+                apiServices,
                 userService,
+                localCacheService,
                 null,
-                null,
-                event -> {},
+                eventPublisher,
                 properties,
                 null,
                 roomService,
@@ -239,6 +287,58 @@ class MusicPlayerServiceHistoryTests {
             replaceHistoryCalls++;
             replacedHistorySnapshots.add(new ArrayList<>(historyItems));
             super.replaceHistory(roomId, historyItems);
+        }
+    }
+
+    private static final class TestCachedMusicApiService implements CachedMusicApiService {
+        @Override
+        public String getPlatformName() {
+            return "youtube";
+        }
+
+        @Override
+        public boolean isAvailable() {
+            return true;
+        }
+
+        @Override
+        public String cacheKey(String musicId) {
+            return "youtube-" + musicId;
+        }
+
+        @Override
+        public Mono<List<Music>> searchMusic(String keyword) {
+            return Mono.just(List.of());
+        }
+
+        @Override
+        public Mono<List<Music>> searchMusic(String keyword, int offset, int limit) {
+            return Mono.just(List.of());
+        }
+
+        @Override
+        public Mono<PlayableMusic> getPlayableMusic(String musicId) {
+            return Mono.just(new PlayableMusic(musicId, "Video", List.of("Channel"), 180_000L, "youtube", "/media/youtube-" + musicId + ".m4a", "cover", false));
+        }
+
+        @Override
+        public Mono<List<Playlist>> getUserPlaylists(String userId) {
+            return Mono.just(List.of());
+        }
+
+        @Override
+        public Mono<List<Music>> getPlaylistMusics(String playlistId, int offset, int limit) {
+            return Mono.just(List.of());
+        }
+
+        @Override
+        public Mono<List<UserSearchResult>> searchUsers(String keyword) {
+            return Mono.just(List.of());
+        }
+
+        @Override
+        public Mono<String> getLyric(String musicId) {
+            return Mono.just("");
         }
     }
 }

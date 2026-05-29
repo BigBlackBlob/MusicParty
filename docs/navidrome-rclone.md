@@ -17,6 +17,12 @@ docker compose pull music-party
 docker compose -f docker-compose.yml -f docker-compose.navidrome.yml --env-file .env.navidrome up -d
 ```
 
+`music-party` uses `MUSIC_PARTY_IMAGE` from `docker-compose.yml`. Keep the default for GHCR, or set it to the Aliyun ACR image before running the same commands:
+
+```bash
+MUSIC_PARTY_IMAGE=crpi-533x5q1t88ew0x21.cn-hangzhou.personal.cr.aliyuncs.com/nrt-base/nrt-music-party:latest docker compose -f docker-compose.yml -f docker-compose.navidrome.yml --env-file .env.navidrome up -d
+```
+
 ## Permissions
 
 `NAVIDROME_ALLOWED_USERS` is a lightweight username whitelist, not strong authentication. It is suitable for trusted rooms, but it is not recommended for exposing a private library in a fully public room.

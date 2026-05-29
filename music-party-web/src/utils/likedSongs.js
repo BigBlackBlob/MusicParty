@@ -12,6 +12,9 @@ export const getSongExternalUrl = (song) => {
     if (song.platform === 'bilibili') {
         return `https://www.bilibili.com/video/${song.id}`;
     }
+    if (song.platform === 'youtube') {
+        return `https://www.youtube.com/watch?v=${song.id}`;
+    }
     if (song.platform === 'netease') {
         return `https://music.163.com/#/song?id=${song.id}`;
     }

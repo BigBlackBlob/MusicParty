@@ -397,6 +397,7 @@ export default {
     room: '房间',
     netease: '网易云',
     bilibili: '哔哩哔哩',
+    youtube: 'YouTube',
     navidrome: 'Navidrome'
   }
 };

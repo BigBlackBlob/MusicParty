@@ -80,6 +80,7 @@ public class PlaylistExportService {
     private String externalUrl(Music music) {
         if ("netease".equals(music.platform())) return "https://music.163.com/#/song?id=" + music.id();
         if ("bilibili".equals(music.platform())) return "https://www.bilibili.com/video/" + music.id();
+        if ("youtube".equals(music.platform())) return "https://www.youtube.com/watch?v=" + music.id();
         return "";
     }
 }

@@ -15,6 +15,7 @@ import org.thornex.musicparty.enums.TopResult;
 import org.thornex.musicparty.event.*;
 import org.thornex.musicparty.exception.ApiRequestException;
 import org.thornex.musicparty.persistence.PersistedPlaybackState;
+import org.thornex.musicparty.service.api.CachedMusicApiService;
 import org.thornex.musicparty.service.api.IMusicApiService;
 import org.thornex.musicparty.service.api.SubsonicMusicApiService;
 import org.thornex.musicparty.service.stream.LiveStreamService;
@@ -417,8 +418,8 @@ public class MusicPlayerService {
             IMusicApiService service = getApiService(request.platform());
             service.getPlayableMusic(request.musicId()).subscribe(playable -> {
                 Music music = new Music(playable.id(), playable.name(), playable.artists(), playable.duration(), playable.platform(), playable.coverUrl());
-                QueueItemStatus initialStatus = "bilibili".equals(request.platform()) ? QueueItemStatus.PENDING : QueueItemStatus.READY;
-                if ("bilibili".equals(request.platform())) service.prefetchMusic(music.id());
+                QueueItemStatus initialStatus = isCachedPlatform(request.platform()) ? QueueItemStatus.PENDING : QueueItemStatus.READY;
+                if (isCachedPlatform(request.platform())) service.prefetchMusic(music.id());
                 MusicQueueItem item = queueManager.add(music, new UserSummary(enqueuer.getPublicId(), enqueuer.getName(), enqueuer.isGuest()), initialStatus);
                 if (item != null) {
                     playbackState.touchHotActivity();
@@ -437,9 +438,9 @@ public class MusicPlayerService {
             IMusicApiService service = getApiService(request.platform());
             service.getPlaylistMusics(request.playlistId(), 0, importLimit).subscribe(musics -> {
                 int count = 0;
-                QueueItemStatus initialStatus = "bilibili".equals(request.platform()) ? QueueItemStatus.PENDING : QueueItemStatus.READY;
+                QueueItemStatus initialStatus = isCachedPlatform(request.platform()) ? QueueItemStatus.PENDING : QueueItemStatus.READY;
                 for (Music music : musics) {
-                    if ("bilibili".equals(request.platform())) service.prefetchMusic(music.id());
+                    if (isCachedPlatform(request.platform())) service.prefetchMusic(music.id());
                     if (queueManager.add(music, new UserSummary(enqueuer.getPublicId(), enqueuer.getName(), enqueuer.isGuest()), initialStatus) != null) count++;
                 }
                 playbackState.touchHotActivity();
@@ -486,7 +487,8 @@ public class MusicPlayerService {
             int count = 0;
             UserSummary summary = new UserSummary(enqueuer.getPublicId(), enqueuer.getName(), enqueuer.isGuest());
             for (Music music : musics.stream().limit(limit).toList()) {
-                QueueItemStatus status = "bilibili".equals(music.platform()) ? QueueItemStatus.PENDING : QueueItemStatus.READY;
+                QueueItemStatus status = isCachedPlatform(music.platform()) ? QueueItemStatus.PENDING : QueueItemStatus.READY;
+                if (isCachedPlatform(music.platform())) getApiService(music.platform()).prefetchMusic(music.id());
                 if (queueManager.add(music, summary, status) != null) count++;
             }
             if (count == 0) return;
@@ -668,7 +670,7 @@ public class MusicPlayerService {
         }
 
         public void handleDownloadEvent(DownloadStatusEvent event) {
-            boolean exists = queueManager.getQueueSnapshot().stream().anyMatch(item -> item.music().id().equals(event.getMusicId()));
+            boolean exists = queueManager.getQueueSnapshot().stream().anyMatch(item -> downloadEventMatches(item.music(), event.getMusicId()));
             if (exists) {
                 broadcastQueueUpdate();
                 if (playbackState.currentMusic() == null) playNextInQueue();
@@ -893,8 +895,8 @@ public class MusicPlayerService {
                 if ("netease".equals(item.music().platform())) {
                     return item.status() == QueueItemStatus.READY ? item : item.withStatus(QueueItemStatus.READY);
                 }
-                if ("bilibili".equals(item.music().platform())) {
-                    QueueItemStatus newStatus = mapCacheStatusToEnum(localCacheService.getStatus(item.music().id()));
+                if (isCachedPlatform(item.music().platform())) {
+                    QueueItemStatus newStatus = mapCacheStatusToEnum(localCacheService.getStatus(cacheKey(item.music())));
                     if (item.status() != newStatus) return item.withStatus(newStatus);
                 }
                 return item;
@@ -904,8 +906,8 @@ public class MusicPlayerService {
         private Map<String, QueueItemStatus> buildStatusMap() {
             Map<String, QueueItemStatus> statusMap = new HashMap<>();
             for (MusicQueueItem item : queueManager.getQueueSnapshot()) {
-                statusMap.put(MusicQueueManager.musicKey(item.music()), "bilibili".equals(item.music().platform())
-                        ? mapCacheStatusToEnum(localCacheService.getStatus(item.music().id()))
+                statusMap.put(MusicQueueManager.musicKey(item.music()), isCachedPlatform(item.music().platform())
+                        ? mapCacheStatusToEnum(localCacheService.getStatus(cacheKey(item.music())))
                         : QueueItemStatus.READY);
             }
             return statusMap;
@@ -927,6 +929,22 @@ public class MusicPlayerService {
             if (now - lastControlTimestamp.get() < GLOBAL_COOLDOWN_MS) return true;
             lastControlTimestamp.set(now);
             return false;
+        }
+
+        private boolean isCachedPlatform(String platform) {
+            return apiServiceMap.get(platform) instanceof CachedMusicApiService;
+        }
+
+        private String cacheKey(Music music) {
+            IMusicApiService service = apiServiceMap.get(music.platform());
+            if (service instanceof CachedMusicApiService cached) {
+                return cached.cacheKey(music.id());
+            }
+            return music.id();
+        }
+
+        private boolean downloadEventMatches(Music music, String eventMusicId) {
+            return Objects.equals(music.id(), eventMusicId) || Objects.equals(cacheKey(music), eventMusicId);
         }
     }
 

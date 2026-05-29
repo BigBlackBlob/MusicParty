@@ -49,6 +49,7 @@ WORKDIR /app
 # 安装 FFmpeg 和 Java AWT 运行所需的图形库/字体
 RUN apk add --no-cache \
     ffmpeg \
+    yt-dlp \
     fontconfig \
     ttf-dejavu \
     libxext \

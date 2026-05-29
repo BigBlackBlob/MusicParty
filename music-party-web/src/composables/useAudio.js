@@ -7,7 +7,7 @@ const SMALL_DRIFT_MS = 250;
 const RATE_CORRECTION_DRIFT_MS = 2000;
 const BACKGROUND_HARD_SEEK_DRIFT_MS = 10000;
 const TRANSITION_FADE_MS = 1500;
-const SUPPORTED_TRANSITION_PLATFORMS = new Set(['netease', 'bilibili']);
+const SUPPORTED_TRANSITION_PLATFORMS = new Set(['netease', 'bilibili', 'youtube']);
 
 export function useAudio(audioRef, playerStore, userVolumeRef) {
     const localProgress = ref(0);

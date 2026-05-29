@@ -9,6 +9,8 @@ describe('audioUrl helpers', () => {
       .toBe('/api/subsonic/squidify/stream/song?token=secret');
     expect(withPlaybackToken({ platform: 'netease', url: '/api/netease/stream/123' }, 'secret'))
       .toBe('/api/netease/stream/123?token=secret');
+    expect(withPlaybackToken({ platform: 'youtube', url: '/media/youtube-abc123.m4a' }, 'secret'))
+      .toBe('/media/youtube-abc123.m4a');
   });
 
   it('adds session token to Navidrome resource URLs only', () => {

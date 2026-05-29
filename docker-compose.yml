@@ -12,10 +12,10 @@ services:
 
   # 2. Music Party 主应用
   music-party:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: ghcr.io/bigblackblob/musicparty:latest
+    # VPS 部署默认从 GHCR 拉取镜像；如需走阿里云 ACR，可改为：
+    # ${MUSIC_PARTY_IMAGE:-crpi-533x5q1t88ew0x21.cn-hangzhou.personal.cr.aliyuncs.com/nrt-base/nrt-music-party:latest}
+    image: ${MUSIC_PARTY_IMAGE:-ghcr.io/bigblackblob/musicparty:latest}
+    pull_policy: ${MUSIC_PARTY_PULL_POLICY:-missing}
     container_name: music-party-app
     restart: always
     ports:
@@ -34,6 +34,11 @@ services:
       - BILIBILI_SESSDATA=""         # B站 SESSDATA
       - NETEASE_COOKIE=""            # 网易云 Cookie
       - NETEASE_QUALITY=exhigh       # 网易云音质 (standard, higher, exhigh, lossless, hires)
+      # [可选] YouTube 搜索/点歌；需要 YouTube Data API Key，镜像内默认提供 yt-dlp
+      - YOUTUBE_ENABLED=true
+      - YOUTUBE_API_KEY=
+      - YTDLP_PATH=yt-dlp
+      - YOUTUBE_SEARCH_LIMIT=20
       # [可选] Navidrome 私有曲库；默认不启用，启用请配合 docker-compose.navidrome.yml
       # - NAVIDROME_ENABLED=false
       # - NAVIDROME_BASE_URL=http://navidrome:4533

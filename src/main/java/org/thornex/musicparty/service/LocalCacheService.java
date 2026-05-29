@@ -49,7 +49,11 @@ public class LocalCacheService {
 
     private record DownloadTask(
             String musicId,
-            Mono<String> urlProvider,
+            Mono<DownloadSource> sourceProvider
+    ) {}
+
+    public record DownloadSource(
+            String url,
             Map<String, String> headers,
             String extension
     ) {}
@@ -129,6 +133,10 @@ public class LocalCacheService {
      * @param extension 文件扩展名 (如 .m4a, .mp3)
      */
     public void submitDownload(String musicId, Mono<String> urlProvider, Map<String, String> headers, String extension) {
+        submitDynamicDownload(musicId, urlProvider.map(url -> new DownloadSource(url, headers, extension)));
+    }
+
+    public void submitDynamicDownload(String musicId, Mono<DownloadSource> sourceProvider) {
         if (cacheIndex.containsKey(musicId) && cacheIndex.get(musicId).getStatus() == CacheStatus.COMPLETED) {
             log.info("Music {} already cached.", musicId);
             touch(musicId); // 更新访问时间
@@ -153,7 +161,7 @@ public class LocalCacheService {
 
         eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
 
-        Sinks.EmitResult result = downloadQueue.tryEmitNext(new DownloadTask(musicId, urlProvider, headers, extension));
+        Sinks.EmitResult result = downloadQueue.tryEmitNext(new DownloadTask(musicId, sourceProvider));
 
         if (result.isFailure()) {
             log.error("Failed to enqueue download task for {}", musicId);
@@ -176,18 +184,20 @@ public class LocalCacheService {
         eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
         log.info("Processing download: {}", musicId);
 
-        return task.urlProvider()
-                .flatMap(url -> {
-                    entry.setOriginalUrl(url);
-                    String fileName = musicId + task.extension();
+        return task.sourceProvider()
+                .flatMap(source -> {
+                    entry.setOriginalUrl(source.url());
+                    String fileName = musicId + source.extension();
                     entry.setFileName(fileName);
                     Path destPath = Paths.get(LocalResourceConfig.CACHE_DIR, fileName);
                     Path partPath = Paths.get(LocalResourceConfig.CACHE_DIR, fileName + ".part");
 
                     return DataBufferUtils.write(
                                     webClient.get()
-                                            .uri(url)
-                                            .headers(httpHeaders -> task.headers().forEach(httpHeaders::add))
+                                            .uri(source.url())
+                                            .headers(httpHeaders -> {
+                                                if (source.headers() != null) source.headers().forEach(httpHeaders::add);
+                                            })
                                             .retrieve()
                                             .bodyToFlux(DataBuffer.class),
                                     partPath,
@@ -215,7 +225,9 @@ public class LocalCacheService {
                 .doOnError(error -> {
                     log.error("Download Task failed for {}: {}", musicId, error.getMessage());
                     try {
-                        Files.deleteIfExists(Paths.get(LocalResourceConfig.CACHE_DIR, musicId + task.extension() + ".part"));
+                        if (entry.getFileName() != null) {
+                            Files.deleteIfExists(Paths.get(LocalResourceConfig.CACHE_DIR, entry.getFileName() + ".part"));
+                        }
                     } catch (IOException cleanupError) {
                         log.warn("Failed to delete partial cache for {}", musicId, cleanupError);
                     }

@@ -7,6 +7,7 @@ import { useUserStore } from '../stores/user';
 const platformLabelKeyMap = {
     netease: 'platforms.netease',
     bilibili: 'platforms.bilibili',
+    youtube: 'platforms.youtube',
     navidrome: 'platforms.navidrome'
 };
 

@@ -69,6 +69,10 @@ public class ApiController {
         List<MusicPlatform> platforms = new ArrayList<>();
         platforms.add(new MusicPlatform("netease", "netease", true));
         platforms.add(new MusicPlatform("bilibili", "bilibili", false));
+        IMusicApiService youtube = apiServiceMap.get("youtube");
+        if (youtube != null && youtube.isAvailable()) {
+            platforms.add(new MusicPlatform("youtube", "youtube", false));
+        }
         if (apiServiceMap.containsKey("local")) {
             platforms.add(new MusicPlatform("local", "local", false));
         }

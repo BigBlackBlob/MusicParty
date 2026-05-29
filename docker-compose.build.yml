@@ -1,0 +1,6 @@
+services:
+  music-party:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${MUSIC_PARTY_IMAGE:-musicparty:local}

@@ -23,7 +23,7 @@ import java.util.stream.StreamSupport;
 
 @Service
 @Slf4j
-public class BilibiliMusicApiService implements IMusicApiService {
+public class BilibiliMusicApiService implements CachedMusicApiService {
 
     private final WebClient webClient;
     private final String baseUrl;

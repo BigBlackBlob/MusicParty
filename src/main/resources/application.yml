@@ -34,6 +34,11 @@ app:
       # Bilibili API base URL, it's public
       base-url: "https://api.bilibili.com"
       sessdata: ${BILIBILI_SESSDATA:}
+    youtube:
+      enabled: ${YOUTUBE_ENABLED:true}
+      api-key: ${YOUTUBE_API_KEY:}
+      yt-dlp-path: ${YTDLP_PATH:yt-dlp}
+      max-results: ${YOUTUBE_SEARCH_LIMIT:20}
     navidrome:
       enabled: ${NAVIDROME_ENABLED:false}
       base-url: ${NAVIDROME_BASE_URL:http://navidrome:4533}

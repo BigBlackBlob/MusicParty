@@ -190,7 +190,7 @@ public class LiveStreamService {
         java.util.Map<String, String> httpHeaders = new java.util.HashMap<>();
 
         // 1. 尝试使用本地缓存 (优先)
-        LocalCacheService.CacheEntry entry = localCacheService.getCacheEntry(currentMusic.id());
+        LocalCacheService.CacheEntry entry = localCacheService.getCacheEntry(cacheKey(currentMusic));
         if (entry != null && entry.getStatus() == org.thornex.musicparty.enums.CacheStatus.COMPLETED) {
             Path filePath = Paths.get(LocalResourceConfig.CACHE_DIR, entry.getFileName());
             if (Files.exists(filePath)) {
@@ -334,5 +334,11 @@ public class LiveStreamService {
             baseUrl = "http://127.0.0.1:8080";
         }
         return baseUrl.replaceAll("/+$", "") + url;
+    }
+
+    private String cacheKey(PlayableMusic music) {
+        if (music == null) return "";
+        if ("youtube".equals(music.platform())) return "youtube-" + music.id();
+        return music.id();
     }
 }

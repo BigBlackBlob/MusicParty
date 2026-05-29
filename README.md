@@ -38,10 +38,11 @@
 
 ## 快速部署
 
-推荐直接使用 Docker Compose 从当前源码构建：
+推荐直接使用 Docker Compose 拉取预构建镜像运行：
 
 ```bash
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
 默认访问地址：
@@ -61,6 +62,32 @@ http://localhost:8848
 `BASE_URL` 必须是用户实际访问的完整地址，包含协议。直播流链接、部分后端生成的绝对 URL 都依赖它。
 `NETEASE_COOKIE`、`BILIBILI_SESSDATA`、Navidrome/Subsonic 凭据等环境变量只作为首次迁移输入；长期配置应在设置页保存到 `data/` 卷内的 SQLite 数据库。
 
+### 选择镜像源
+
+`docker-compose.yml` 默认使用 GHCR：
+
+```yaml
+image: ${MUSIC_PARTY_IMAGE:-ghcr.io/bigblackblob/musicparty:latest}
+```
+
+如果 VPS 需要走阿里云 ACR，把这一行的默认值改成：
+
+```yaml
+image: ${MUSIC_PARTY_IMAGE:-crpi-533x5q1t88ew0x21.cn-hangzhou.personal.cr.aliyuncs.com/nrt-base/nrt-music-party:latest}
+```
+
+也可以不改文件，启动前设置环境变量：
+
+```bash
+MUSIC_PARTY_IMAGE=crpi-533x5q1t88ew0x21.cn-hangzhou.personal.cr.aliyuncs.com/nrt-base/nrt-music-party:latest docker compose up -d
+```
+
+如果要在本机从源码构建镜像，使用额外的 build override：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+```
+
 ## 环境变量
 
 | 变量名 | 必填 | 默认值 | 说明 |
@@ -73,6 +100,10 @@ http://localhost:8848
 | `NETEASE_COOKIE` | 否 | 空 | 首次迁移用网易云 Cookie；长期值在设置页持久化保存。 |
 | `NETEASE_QUALITY` | 否 | `exhigh` | 首次迁移用网易云音质，可选 `standard`、`higher`、`exhigh`、`lossless`、`hires`。 |
 | `BILIBILI_SESSDATA` | 否 | 空 | 首次迁移用 Bilibili SESSDATA；长期值在设置页持久化保存。 |
+| `YOUTUBE_ENABLED` | 否 | `true` | 是否启用 YouTube 搜索源；未配置 API key 或缺少 `yt-dlp` 时平台会自动隐藏。 |
+| `YOUTUBE_API_KEY` | 否 | 空 | YouTube Data API Key，用于搜索和获取视频元数据。 |
+| `YTDLP_PATH` | 否 | `yt-dlp` | `yt-dlp` 可执行文件路径；Docker 镜像内默认可直接使用。 |
+| `YOUTUBE_SEARCH_LIMIT` | 否 | `20` | YouTube 单次搜索最大结果数。 |
 | `QUEUE_MAX_SIZE` | 否 | `1000` | 队列最大长度。 |
 | `QUEUE_HISTORY_SIZE` | 否 | `50` | 历史记录保留数量。 |
 | `QUEUE_MAX_USER_SONGS` | 否 | `100` | 单用户最大排队歌曲数。 |

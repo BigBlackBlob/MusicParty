@@ -6,7 +6,8 @@ import { useRoomStore } from './room';
 
 const defaultPlatforms = [
     { id: 'netease', label: 'netease', supportsAlbumSearch: true },
-    { id: 'bilibili', label: 'bilibili', supportsAlbumSearch: false }
+    { id: 'bilibili', label: 'bilibili', supportsAlbumSearch: false },
+    { id: 'youtube', label: 'youtube', supportsAlbumSearch: false }
 ];
 
 export const useMusicStore = defineStore('music', () => {

@@ -9,6 +9,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class AppProperties {
     private NeteaseApiConfig  netease;
     private BilibiliApiConfig bilibili;
+    private YoutubeApiConfig youtube = new YoutubeApiConfig();
     private NavidromeApiConfig navidrome = new NavidromeApiConfig();
     private SquidifyConfig squidify = new SquidifyConfig();
     private String adminPassword;
@@ -88,6 +89,14 @@ public class AppProperties {
     @Data
     public static class BilibiliApiConfig extends ApiConfig {
         private String sessdata;
+    }
+
+    @Data
+    public static class YoutubeApiConfig {
+        private boolean enabled = true;
+        private String apiKey = "";
+        private String ytDlpPath = "yt-dlp";
+        private int maxResults = 20;
     }
 
     @EqualsAndHashCode(callSuper = true)
