@@ -188,7 +188,7 @@ public class YoutubeMusicApiService implements CachedMusicApiService {
                         "--no-part",
                         "--force-overwrites",
                         "-f",
-                        "bestaudio[ext=webm][abr<=320]/bestaudio[acodec*=opus][abr<=320]/bestaudio[abr<=320]/bestaudio",
+                        "bestaudio[ext=webm][abr>=192][abr<=320]/bestaudio[ext=webm][acodec*=opus][abr>=192][abr<=320]/bestaudio[ext=webm][abr<=320]/bestaudio[ext=webm]",
                         "-o",
                         "{output}",
                         watchUrl
