@@ -217,7 +217,7 @@ public class LocalCacheService {
                 })
                 // 错误处理
                 .doOnError(error -> {
-                    log.error("Download Task failed for {}: {}", musicId, error.getMessage());
+                    log.error("Download Task failed for {}: {}", musicId, error.getMessage(), error);
                     try {
                         if (entry.getFileName() != null) {
                             Files.deleteIfExists(Paths.get(LocalResourceConfig.CACHE_DIR, entry.getFileName() + ".part"));
@@ -289,7 +289,10 @@ public class LocalCacheService {
 
     private void completeDownload(CacheEntry entry, String musicId, String fileName, Path partPath, Path destPath) {
         try {
-            moveCompletedDownload(partPath, destPath);
+            Path completedPath = resolveCompletedPath(fileName, partPath, destPath);
+            if (!completedPath.equals(destPath)) {
+                moveCompletedDownload(completedPath, destPath);
+            }
             long size = Files.size(destPath);
             entry.setSize(size);
             entry.setStatus(CacheStatus.COMPLETED);
@@ -298,8 +301,28 @@ public class LocalCacheService {
             eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
             ensureCapacity();
         } catch (IOException e) {
-            throw new RuntimeException("File write error", e);
+            throw new RuntimeException("File write error: " + e.getMessage(), e);
         }
+    }
+
+    private Path resolveCompletedPath(String fileName, Path partPath, Path destPath) throws IOException {
+        if (Files.exists(partPath)) return partPath;
+        if (Files.exists(destPath)) return destPath;
+
+        Path parent = partPath.getParent();
+        if (parent != null && Files.isDirectory(parent)) {
+            String partPrefix = partPath.getFileName().toString();
+            try (var stream = Files.list(parent)) {
+                return stream
+                        .filter(path -> {
+                            String name = path.getFileName().toString();
+                            return name.equals(fileName) || name.startsWith(partPrefix);
+                        })
+                        .findFirst()
+                        .orElseThrow(() -> new IOException("Downloaded file not found: expected " + partPath));
+            }
+        }
+        throw new IOException("Downloaded file not found: expected " + partPath);
     }
 
     private void moveCompletedDownload(Path partPath, Path destPath) throws IOException {
