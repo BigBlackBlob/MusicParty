@@ -67,7 +67,7 @@ http://localhost:8848
 `docker-compose.yml` 默认使用 GHCR：
 
 ```yaml
-image: ${MUSIC_PARTY_IMAGE:-ghcr.io/bigblackblob/musicparty:latest}
+image: ${MUSIC_PARTY_IMAGE:-ghcr.io/bigblackblob/musicparty:nrt-base}
 ```
 
 如果 VPS 需要走阿里云 ACR，把这一行的默认值改成：
@@ -77,6 +77,12 @@ image: ${MUSIC_PARTY_IMAGE:-crpi-533x5q1t88ew0x21.cn-hangzhou.personal.cr.aliyun
 ```
 
 也可以不改文件，启动前设置环境变量：
+
+```bash
+MUSIC_PARTY_IMAGE=ghcr.io/bigblackblob/musicparty:nrt-base docker compose up -d
+```
+
+如果 VPS 访问 GHCR 不稳定，可以改用阿里云 ACR：
 
 ```bash
 MUSIC_PARTY_IMAGE=crpi-533x5q1t88ew0x21.cn-hangzhou.personal.cr.aliyuncs.com/nrt-base/nrt-music-party:latest docker compose up -d
