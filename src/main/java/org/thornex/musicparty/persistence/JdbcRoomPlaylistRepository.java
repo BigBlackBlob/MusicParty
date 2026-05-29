@@ -34,6 +34,7 @@ public class JdbcRoomPlaylistRepository implements RoomPlaylistRepository {
                 rs.getString("id"),
                 rs.getString("room_id"),
                 rs.getString("name"),
+                null,
                 rs.getInt("track_count"),
                 rs.getLong("created_at"),
                 rs.getLong("updated_at")
@@ -52,6 +53,7 @@ public class JdbcRoomPlaylistRepository implements RoomPlaylistRepository {
                 rs.getString("id"),
                 rs.getString("room_id"),
                 rs.getString("name"),
+                null,
                 rs.getInt("track_count"),
                 rs.getLong("created_at"),
                 rs.getLong("updated_at")
@@ -65,7 +67,7 @@ public class JdbcRoomPlaylistRepository implements RoomPlaylistRepository {
         String id = UUID.randomUUID().toString();
         jdbcTemplate.update("insert into room_playlist(id, room_id, name, created_at, updated_at) values (?, ?, ?, ?, ?)",
                 id, roomId, name, now, now);
-        return new RoomPlaylist(id, roomId, name, 0, now, now);
+        return new RoomPlaylist(id, roomId, name, null, 0, now, now);
     }
 
     @Override

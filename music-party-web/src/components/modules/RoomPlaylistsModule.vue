@@ -80,7 +80,7 @@
       </div>
 
       <div v-else class="flex min-h-0 flex-1 flex-col gap-3">
-        <form @submit.prevent="importExternal" class="flex flex-shrink-0 gap-2 rounded-md border border-border-subtle bg-[var(--surface-control)] p-2">
+        <form v-if="!isSelectedReadOnly" @submit.prevent="importExternal" class="flex flex-shrink-0 gap-2 rounded-md border border-border-subtle bg-[var(--surface-control)] p-2">
           <select
             v-model="importPlatform"
             class="h-8 rounded-md border border-border-subtle bg-[var(--surface-control)] px-2 font-micro text-micro uppercase text-text-secondary outline-none focus:border-border-strong"
@@ -111,7 +111,8 @@
               :cover-url="track.music.coverUrl"
             >
               <template #suffix>
-                <button 
+                <button
+                  v-if="!isSelectedReadOnly"
                   @click.stop="deleteTrack(track.id)"
                   class="w-8 h-8 flex items-center justify-center rounded-lg text-text-disabled hover:text-error hover:bg-error/10 transition-all shrink-0"
                   :aria-label="t('queue.remove')"
@@ -144,7 +145,7 @@
               {{ t('common.export') }}
             </button>
           </div>
-          <div v-if="!store.selectedPlaylist?.systemKey" class="flex items-center gap-2">
+          <div v-if="!isSelectedReadOnly" class="flex items-center gap-2">
             <button
               @click="rename"
               class="h-8 rounded-md px-2 text-xs font-semibold text-text-secondary transition-colors hover:bg-[var(--surface-control-hover)] hover:text-text-primary"
@@ -182,6 +183,7 @@ const scope = ref('room');
 const exportFormats = ['txt', 'csv', 'json'];
 const exportFormat = ref('txt');
 const store = computed(() => scope.value === 'room' ? roomPlaylistsStore : userPlaylistsStore);
+const isSelectedReadOnly = computed(() => Boolean(store.value.selectedPlaylist?.systemKey));
 
 const create = async () => {
   if (!newName.value) return;

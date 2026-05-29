@@ -180,6 +180,55 @@ public class SqliteSchemaInitializer {
                                 """)
                 ),
                 new SchemaMigration(
+                        "schema.room_history_track.table",
+                        jdbc -> !hasTable(jdbc, "room_history_track")
+                                || hasTable(jdbc, "room_history")
+                                && hasTable(jdbc, "room_history_track")
+                                && rowCount(jdbc, "room_history") > 0
+                                && rowCount(jdbc, "room_history_track") == 0,
+                        jdbc -> {
+                            jdbc.execute("""
+                                    create table if not exists room_history_track (
+                                        room_id text not null,
+                                        platform text not null,
+                                        music_id text not null,
+                                        music_json text not null,
+                                        play_count integer not null,
+                                        first_played_at integer not null,
+                                        last_played_at integer not null,
+                                        primary key (room_id, platform, music_id),
+                                        foreign key (room_id) references room(id)
+                                    )
+                                    """);
+                            jdbc.execute("create index if not exists idx_room_history_track_room_last on room_history_track(room_id, last_played_at desc)");
+                            if (hasTable(jdbc, "room_history")) {
+                                jdbc.execute("""
+                                        insert or ignore into room_history_track(room_id, platform, music_id, music_json, play_count, first_played_at, last_played_at)
+                                        select
+                                            h.room_id,
+                                            json_extract(h.music_json, '$.platform') as platform,
+                                            json_extract(h.music_json, '$.id') as music_id,
+                                            (
+                                                select h2.music_json
+                                                from room_history h2
+                                                where h2.room_id = h.room_id
+                                                  and json_extract(h2.music_json, '$.platform') = json_extract(h.music_json, '$.platform')
+                                                  and json_extract(h2.music_json, '$.id') = json_extract(h.music_json, '$.id')
+                                                order by h2.played_at desc
+                                                limit 1
+                                            ) as music_json,
+                                            count(1) as play_count,
+                                            min(h.played_at) as first_played_at,
+                                            max(h.played_at) as last_played_at
+                                        from room_history h
+                                        where json_extract(h.music_json, '$.platform') is not null
+                                          and json_extract(h.music_json, '$.id') is not null
+                                        group by h.room_id, platform, music_id
+                                        """);
+                            }
+                        }
+                ),
+                new SchemaMigration(
                         "schema.local_track.table",
                         jdbc -> !hasTable(jdbc, "local_track"),
                         jdbc -> jdbc.execute("""
@@ -260,6 +309,11 @@ public class SqliteSchemaInitializer {
                 where type = 'table' and lower(name) = lower(?)
                 """, Integer.class, tableName);
         return count != null && count > 0;
+    }
+
+    private int rowCount(JdbcTemplate jdbcTemplate, String tableName) {
+        Integer count = jdbcTemplate.queryForObject("select count(1) from " + tableName, Integer.class);
+        return count == null ? 0 : count;
     }
 
     private boolean isMigrationCompleted(JdbcTemplate jdbcTemplate, String migrationKey) {

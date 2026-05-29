@@ -148,6 +148,7 @@ public class JdbcLocalTrackRepository implements LocalTrackRepository {
         String platformNeedle = "\"platform\":\"local\"";
         jdbcTemplate.update("delete from room_queue where music_json like ? and music_json like ?", "%" + platformNeedle + "%", "%" + idNeedle + "%");
         jdbcTemplate.update("delete from room_history where music_json like ? and music_json like ?", "%" + platformNeedle + "%", "%" + idNeedle + "%");
+        jdbcTemplate.update("delete from room_history_track where platform = ? and music_id = ?", "local", trackId);
         jdbcTemplate.update("delete from user_playlist_track where music_json like ? and music_json like ?", "%" + platformNeedle + "%", "%" + idNeedle + "%");
         jdbcTemplate.update("delete from room_playlist_track where music_json like ? and music_json like ?", "%" + platformNeedle + "%", "%" + idNeedle + "%");
         jdbcTemplate.update("update room_playback_state set current_music_json = null where current_music_json like ? and current_music_json like ?",

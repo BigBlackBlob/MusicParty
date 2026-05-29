@@ -4,6 +4,7 @@ public record RoomPlaylist(
         String id,
         String roomId,
         String name,
+        String systemKey,
         int trackCount,
         long createdAt,
         long updatedAt

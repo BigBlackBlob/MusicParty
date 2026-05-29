@@ -10,6 +10,7 @@ import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.dto.RoomPlaylist;
 import org.thornex.musicparty.dto.RoomPlaylistTrack;
 import org.thornex.musicparty.event.RoomPlaylistUpdateEvent;
+import org.thornex.musicparty.persistence.QueueRepository;
 import org.thornex.musicparty.persistence.RoomPlaylistRepository;
 import org.thornex.musicparty.service.api.IMusicApiService;
 import org.thornex.musicparty.service.api.SubsonicMusicApiService;
@@ -23,7 +24,12 @@ import java.util.stream.Collectors;
 
 @Service
 public class RoomPlaylistService {
+    public static final String HISTORY_PLAYLIST_ID = "__room_history__";
+    public static final String HISTORY_SYSTEM_KEY = "room-history";
+    private static final String HISTORY_PLAYLIST_NAME = "历史播放";
+
     private final RoomPlaylistRepository repository;
+    private final QueueRepository queueRepository;
     private final AppProperties appProperties;
     private final NavidromeAccessService navidromeAccessService;
     private final SubsonicMusicApiService subsonicMusicApiService;
@@ -33,6 +39,7 @@ public class RoomPlaylistService {
     private final Map<String, IMusicApiService> apiServiceMap;
 
     public RoomPlaylistService(RoomPlaylistRepository repository,
+                               QueueRepository queueRepository,
                                AppProperties appProperties,
                                NavidromeAccessService navidromeAccessService,
                                SubsonicMusicApiService subsonicMusicApiService,
@@ -41,6 +48,7 @@ public class RoomPlaylistService {
                                PlaylistExportService playlistExportService,
                                List<IMusicApiService> apiServices) {
         this.repository = repository;
+        this.queueRepository = queueRepository;
         this.appProperties = appProperties;
         this.navidromeAccessService = navidromeAccessService;
         this.subsonicMusicApiService = subsonicMusicApiService;
@@ -51,7 +59,11 @@ public class RoomPlaylistService {
     }
 
     public List<RoomPlaylist> listPlaylists(String roomId) {
-        return repository.listPlaylists(normalizeRoom(roomId));
+        String normalizedRoom = normalizeRoom(roomId);
+        List<RoomPlaylist> playlists = new java.util.ArrayList<>();
+        playlists.add(historyPlaylist(normalizedRoom));
+        playlists.addAll(repository.listPlaylists(normalizedRoom));
+        return playlists;
     }
 
     @Transactional
@@ -63,6 +75,7 @@ public class RoomPlaylistService {
 
     @Transactional
     public RoomPlaylist renamePlaylist(String roomId, String playlistId, String name) {
+        assertMutablePlaylist(playlistId);
         String normalizedRoom = normalizeRoom(roomId);
         RoomPlaylist playlist = repository.renamePlaylist(normalizedRoom, playlistId, sanitizeName(name))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
@@ -72,6 +85,7 @@ public class RoomPlaylistService {
 
     @Transactional
     public void deletePlaylist(String roomId, String playlistId) {
+        assertMutablePlaylist(playlistId);
         String normalizedRoom = normalizeRoom(roomId);
         if (!repository.deletePlaylist(normalizedRoom, playlistId)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
@@ -80,11 +94,15 @@ public class RoomPlaylistService {
     }
 
     public List<RoomPlaylistTrack> listTracks(String roomId, String playlistId, int offset, int limit) {
+        if (isHistoryPlaylist(playlistId)) {
+            return queueRepository.listHistoryTracks(normalizeRoom(roomId), offset, limit);
+        }
         return repository.listTracks(normalizeRoom(roomId), playlistId, offset, limit);
     }
 
     @Transactional
     public RoomPlaylistTrack addTrack(String roomId, String playlistId, Music music) {
+        assertMutablePlaylist(playlistId);
         String normalizedRoom = normalizeRoom(roomId);
         RoomPlaylistTrack track = repository.addTrack(normalizedRoom, playlistId, music)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
@@ -94,6 +112,7 @@ public class RoomPlaylistService {
 
     @Transactional
     public void deleteTrack(String roomId, String playlistId, String trackId) {
+        assertMutablePlaylist(playlistId);
         String normalizedRoom = normalizeRoom(roomId);
         if (!repository.deleteTrack(normalizedRoom, playlistId, trackId)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
@@ -103,12 +122,14 @@ public class RoomPlaylistService {
 
     @Transactional
     public void reorderTracks(String roomId, String playlistId, List<String> trackIds) {
+        assertMutablePlaylist(playlistId);
         String normalizedRoom = normalizeRoom(roomId);
         repository.reorderTracks(normalizedRoom, playlistId, trackIds == null ? List.of() : trackIds);
         publishUpdate(normalizedRoom);
     }
 
     public Mono<List<RoomPlaylistTrack>> importPlaylist(String roomId, String playlistId, String platform, String externalPlaylistId, String token) {
+        assertMutablePlaylist(playlistId);
         String normalizedRoom = normalizeRoom(roomId);
         assertImportAllowed(normalizedRoom, platform, token);
         int limit = Math.max(1, appProperties.getPlayer().getMaxPlaylistImportSize());
@@ -125,6 +146,9 @@ public class RoomPlaylistService {
     }
 
     public List<Music> getPlaylistMusics(String roomId, String playlistId) {
+        if (isHistoryPlaylist(playlistId)) {
+            return queueRepository.listHistoryMusics(normalizeRoom(roomId), appProperties.getPlayer().getMaxPlaylistImportSize());
+        }
         return repository.listTracks(normalizeRoom(roomId), playlistId, 0, appProperties.getPlayer().getMaxPlaylistImportSize())
                 .stream()
                 .map(RoomPlaylistTrack::music)
@@ -178,5 +202,28 @@ public class RoomPlaylistService {
 
     private void publishUpdate(String roomId) {
         eventPublisher.publishEvent(new RoomPlaylistUpdateEvent(this, roomId));
+    }
+
+    private RoomPlaylist historyPlaylist(String roomId) {
+        long now = System.currentTimeMillis();
+        return new RoomPlaylist(
+                HISTORY_PLAYLIST_ID,
+                roomId,
+                HISTORY_PLAYLIST_NAME,
+                HISTORY_SYSTEM_KEY,
+                queueRepository.countHistoryTracks(roomId),
+                now,
+                now
+        );
+    }
+
+    private boolean isHistoryPlaylist(String playlistId) {
+        return HISTORY_PLAYLIST_ID.equals(playlistId);
+    }
+
+    private void assertMutablePlaylist(String playlistId) {
+        if (isHistoryPlaylist(playlistId)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "System playlist cannot be modified");
+        }
     }
 }

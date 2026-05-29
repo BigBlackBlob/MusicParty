@@ -230,7 +230,20 @@ public class MusicQueueManager {
 
         List<MusicQueueItem> candidates = new ArrayList<>(queue);
 
-        // 1. 优先处理全局置顶项 (TOP-)
+        if (!isShuffle) {
+            Optional<MusicQueueItem> nextInPhysicalOrder = candidates.stream()
+                    .filter(item -> isReadyOrFailed(statusMap, item))
+                    .findFirst();
+            if (nextInPhysicalOrder.isEmpty()) {
+                return null;
+            }
+            MusicQueueItem chosenItem = nextInPhysicalOrder.get();
+            queue.remove(chosenItem);
+            lastPlayedUserToken.set(chosenItem.enqueuedBy().publicId());
+            return chosenItem;
+        }
+
+        // 1. 随机模式优先处理全局置顶项 (TOP-)
         Optional<MusicQueueItem> topItem = candidates.stream()
                 .filter(item -> item.queueId().startsWith("TOP-") && isReadyOrFailed(statusMap, item))
                 .findFirst();
@@ -250,12 +263,7 @@ public class MusicQueueManager {
             return null; // 所有歌曲都在下载中
         }
 
-        MusicQueueItem chosenItem;
-        if (isShuffle) {
-            chosenItem = pollNextFairShuffle(availableItems, recentlyActivePublicIds);
-        } else {
-            chosenItem = availableItems.get(0); // 顺序播放，直接取第一个 (包含 USERTOP- 项，按物理顺序)
-        }
+        MusicQueueItem chosenItem = pollNextFairShuffle(availableItems, recentlyActivePublicIds);
 
         queue.remove(chosenItem);
         lastPlayedUserToken.set(chosenItem.enqueuedBy().publicId());

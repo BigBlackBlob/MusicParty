@@ -8,6 +8,8 @@ import org.thornex.musicparty.dto.UserSummary;
 import org.thornex.musicparty.enums.QueueItemStatus;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -76,6 +78,65 @@ class MusicQueueManagerTests {
         assertThat(manager.getQueueSnapshot())
                 .extracting(MusicQueueItem::queueId)
                 .containsExactly(first.queueId(), second.queueId());
+    }
+
+    @Test
+    void sequentialPollUsesPhysicalOrderWhenToppedItemWasDraggedBehindNormalItem() {
+        MusicQueueManager manager = new MusicQueueManager(new AppProperties());
+        UserSummary user = new UserSummary("public-id", "User", false);
+
+        Music normal = new Music("a", "A", List.of("A"), 1000, "netease", "");
+        Music toppedMusic = new Music("b", "B", List.of("B"), 1000, "netease", "");
+        MusicQueueItem first = manager.add(normal, user, QueueItemStatus.READY);
+        MusicQueueItem second = manager.add(toppedMusic, user, QueueItemStatus.READY);
+
+        manager.top(second.queueId(), false);
+        MusicQueueItem topped = manager.getQueueSnapshot().get(0);
+        manager.reorderByQueueId(topped.queueId(), first.queueId(), "after");
+
+        MusicQueueItem next = manager.pollNext(false, Map.of(
+                MusicQueueManager.musicKey(normal), QueueItemStatus.READY,
+                MusicQueueManager.musicKey(toppedMusic), QueueItemStatus.READY
+        ), Set.of());
+
+        assertThat(next.music()).isEqualTo(normal);
+    }
+
+    @Test
+    void topStillMovesSongToFrontInSequentialMode() {
+        MusicQueueManager manager = new MusicQueueManager(new AppProperties());
+        UserSummary user = new UserSummary("public-id", "User", false);
+
+        MusicQueueItem first = manager.add(new Music("a", "A", List.of("A"), 1000, "netease", ""), user, QueueItemStatus.READY);
+        MusicQueueItem second = manager.add(new Music("b", "B", List.of("B"), 1000, "netease", ""), user, QueueItemStatus.READY);
+
+        manager.top(second.queueId(), false);
+
+        assertThat(manager.getQueueSnapshot())
+                .extracting(MusicQueueItem::queueId)
+                .containsExactly("TOP-" + second.queueId(), first.queueId());
+    }
+
+    @Test
+    void shufflePollStillPrioritizesGlobalTop() {
+        MusicQueueManager manager = new MusicQueueManager(new AppProperties());
+        UserSummary user = new UserSummary("public-id", "User", false);
+
+        Music normal = new Music("a", "A", List.of("A"), 1000, "netease", "");
+        Music toppedMusic = new Music("b", "B", List.of("B"), 1000, "netease", "");
+        MusicQueueItem first = manager.add(normal, user, QueueItemStatus.READY);
+        MusicQueueItem second = manager.add(toppedMusic, user, QueueItemStatus.READY);
+
+        manager.top(second.queueId(), false);
+        MusicQueueItem topped = manager.getQueueSnapshot().get(0);
+        manager.reorderByQueueId(topped.queueId(), first.queueId(), "after");
+
+        MusicQueueItem next = manager.pollNext(true, Map.of(
+                MusicQueueManager.musicKey(normal), QueueItemStatus.READY,
+                MusicQueueManager.musicKey(toppedMusic), QueueItemStatus.READY
+        ), Set.of());
+
+        assertThat(next.music()).isEqualTo(toppedMusic);
     }
 }
 

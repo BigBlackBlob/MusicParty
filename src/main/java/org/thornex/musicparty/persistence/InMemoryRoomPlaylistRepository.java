@@ -122,7 +122,7 @@ public class InMemoryRoomPlaylistRepository implements RoomPlaylistRepository {
     }
 
     private RoomPlaylist toDto(StoredPlaylist playlist) {
-        return new RoomPlaylist(playlist.id, playlist.roomId, playlist.name,
+        return new RoomPlaylist(playlist.id, playlist.roomId, playlist.name, null,
                 tracks.getOrDefault(playlist.id, List.of()).size(), playlist.createdAt, playlist.updatedAt);
     }
 

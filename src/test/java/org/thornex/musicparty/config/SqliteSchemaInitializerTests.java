@@ -31,6 +31,7 @@ class SqliteSchemaInitializerTests {
         assertThat(tableExists(jdbcTemplate, "user_playlist")).isTrue();
         assertThat(columnNames(jdbcTemplate, "user_playlist")).contains("system_key");
         assertThat(tableExists(jdbcTemplate, "user_playlist_track")).isTrue();
+        assertThat(tableExists(jdbcTemplate, "room_history_track")).isTrue();
         assertThat(tableExists(jdbcTemplate, "subsonic_source")).isTrue();
         assertThat(tableExists(jdbcTemplate, "room_subsonic_source")).isTrue();
         assertThat(tableExists(jdbcTemplate, "local_track")).isTrue();
@@ -55,6 +56,7 @@ class SqliteSchemaInitializerTests {
                         "schema.local_track.product_fields",
                         "schema.local_track.table",
                         "schema.local_upload_access.table",
+                        "schema.room_history_track.table",
                         "schema.room_playback_state.like_markers_json",
                         "schema.room_playback_state.liked_user_ids_json",
                         "schema.room_subsonic_source.table",
@@ -80,9 +82,34 @@ class SqliteSchemaInitializerTests {
         initializer.initialize();
         initializer.initialize();
 
-        assertThat(jdbcTemplate.queryForObject("select count(1) from migration_state", Integer.class)).isEqualTo(16);
+        assertThat(jdbcTemplate.queryForObject("select count(1) from migration_state", Integer.class)).isEqualTo(17);
         assertThat(jdbcTemplate.queryForObject("select display_name from user_profile where public_id = 'u_legacy'", String.class))
                 .isEqualTo("Legacy User");
+    }
+
+    @Test
+    void initializeBackfillsRoomHistoryTrackFromExistingRoomHistory() throws Exception {
+        SQLiteDataSource dataSource = createLegacyDataSource("legacy-history-backfill.db");
+        JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+        seedLegacyHistory(jdbcTemplate);
+
+        createInitializer(dataSource).initialize();
+
+        assertThat(jdbcTemplate.query("""
+                select room_id, platform, music_id, play_count, first_played_at, last_played_at
+                from room_history_track
+                order by room_id, platform, music_id
+                """, (rs, rowNum) -> new HistoryTrackRow(
+                rs.getString("room_id"),
+                rs.getString("platform"),
+                rs.getString("music_id"),
+                rs.getInt("play_count"),
+                rs.getLong("first_played_at"),
+                rs.getLong("last_played_at")
+        ))).containsExactly(
+                new HistoryTrackRow("room-a", "netease", "song-1", 2, 100, 300),
+                new HistoryTrackRow("room-b", "netease", "song-1", 1, 200, 200)
+        );
     }
 
     private SqliteSchemaInitializer createInitializer(SQLiteDataSource dataSource) {
@@ -149,6 +176,33 @@ class SqliteSchemaInitializerTests {
                 """);
     }
 
+    private void seedLegacyHistory(JdbcTemplate jdbcTemplate) {
+        ResourceDatabasePopulator legacyPopulator = new ResourceDatabasePopulator(
+                new ByteArrayResource("""
+                        create table room_history (
+                            id text primary key,
+                            room_id text not null,
+                            music_json text not null,
+                            enqueuer_public_id text,
+                            played_at integer not null
+                        );
+                        """.getBytes(StandardCharsets.UTF_8))
+        );
+        legacyPopulator.execute(jdbcTemplate.getDataSource());
+        jdbcTemplate.update("""
+                insert into room_history(id, room_id, music_json, enqueuer_public_id, played_at)
+                values ('h1', 'room-a', '{"id":"song-1","name":"Old","artists":["A"],"duration":1,"platform":"netease","coverUrl":"old"}', null, 100)
+                """);
+        jdbcTemplate.update("""
+                insert into room_history(id, room_id, music_json, enqueuer_public_id, played_at)
+                values ('h2', 'room-a', '{"id":"song-1","name":"New","artists":["A"],"duration":1,"platform":"netease","coverUrl":"new"}', null, 300)
+                """);
+        jdbcTemplate.update("""
+                insert into room_history(id, room_id, music_json, enqueuer_public_id, played_at)
+                values ('h3', 'room-b', '{"id":"song-1","name":"Other Room","artists":["A"],"duration":1,"platform":"netease","coverUrl":"other"}', null, 200)
+                """);
+    }
+
     private List<String> columnNames(JdbcTemplate jdbcTemplate, String tableName) {
         return jdbcTemplate.query("pragma table_info(" + tableName + ")",
                 (rs, rowNum) -> rs.getString("name"));
@@ -162,4 +216,13 @@ class SqliteSchemaInitializerTests {
                 """, Integer.class, tableName);
         return count != null && count > 0;
     }
+
+    private record HistoryTrackRow(
+            String roomId,
+            String platform,
+            String musicId,
+            int playCount,
+            long firstPlayedAt,
+            long lastPlayedAt
+    ) {}
 }

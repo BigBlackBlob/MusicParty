@@ -129,6 +129,20 @@ create table if not exists room_history (
 
 create index if not exists idx_room_history_room_played on room_history(room_id, played_at desc);
 
+create table if not exists room_history_track (
+    room_id text not null,
+    platform text not null,
+    music_id text not null,
+    music_json text not null,
+    play_count integer not null,
+    first_played_at integer not null,
+    last_played_at integer not null,
+    primary key (room_id, platform, music_id),
+    foreign key (room_id) references room(id)
+);
+
+create index if not exists idx_room_history_track_room_last on room_history_track(room_id, last_played_at desc);
+
 create table if not exists chat_message (
     id text primary key,
     room_id text,
