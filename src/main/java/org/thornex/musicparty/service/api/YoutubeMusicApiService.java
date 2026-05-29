@@ -15,10 +15,8 @@ import org.thornex.musicparty.enums.CacheStatus;
 import org.thornex.musicparty.exception.ApiRequestException;
 import org.thornex.musicparty.service.LocalCacheService;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 import java.io.IOException;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -34,7 +32,6 @@ public class YoutubeMusicApiService implements CachedMusicApiService {
 
     private final WebClient webClient;
     private final LocalCacheService localCacheService;
-    private final ObjectMapper objectMapper;
     private final AppProperties.YoutubeApiConfig config;
     private final boolean ytDlpAvailable;
 
@@ -44,7 +41,6 @@ public class YoutubeMusicApiService implements CachedMusicApiService {
                                   AppProperties appProperties) {
         this.webClient = webClient;
         this.localCacheService = localCacheService;
-        this.objectMapper = objectMapper;
         this.config = appProperties.getYoutube();
         this.ytDlpAvailable = isExecutableAvailable(config.getYtDlpPath());
     }
@@ -181,37 +177,23 @@ public class YoutubeMusicApiService implements CachedMusicApiService {
     }
 
     private Mono<LocalCacheService.DownloadSource> resolveDownloadSource(String videoId) {
-        return Mono.fromCallable(() -> {
-                    ProcessBuilder pb = new ProcessBuilder(
-                            config.getYtDlpPath(),
-                            "--dump-single-json",
-                            "--no-playlist",
-                            "-f",
-                            "bestaudio",
-                            "https://www.youtube.com/watch?v=" + videoId);
-                    Process process = pb.start();
-                    String output = new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-                    String error = new String(process.getErrorStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
-                    boolean finished = process.waitFor(60, java.util.concurrent.TimeUnit.SECONDS);
-                    if (!finished) {
-                        process.destroyForcibly();
-                        throw new ApiRequestException("yt-dlp timed out");
-                    }
-                    if (process.exitValue() != 0) {
-                        throw new ApiRequestException("yt-dlp failed: " + error);
-                    }
-                    JsonNode json = objectMapper.readTree(output);
-                    String url = json.path("url").asText();
-                    if (!StringUtils.hasText(url)) {
-                        throw new ApiRequestException("yt-dlp did not return a playable URL");
-                    }
-                    Map<String, String> headers = new HashMap<>();
-                    json.path("http_headers").fields().forEachRemaining(entry -> headers.put(entry.getKey(), entry.getValue().asText()));
-                    String ext = json.path("ext").asText("m4a");
-                    return new LocalCacheService.DownloadSource(url, headers, "." + ext.replaceAll("[^A-Za-z0-9]", ""));
-                })
-                .timeout(Duration.ofSeconds(70))
-                .subscribeOn(Schedulers.boundedElastic());
+        String watchUrl = "https://www.youtube.com/watch?v=" + videoId;
+        return Mono.just(LocalCacheService.DownloadSource.command(
+                watchUrl,
+                ".m4a",
+                List.of(
+                        config.getYtDlpPath(),
+                        "--no-playlist",
+                        "--no-progress",
+                        "--no-part",
+                        "--force-overwrites",
+                        "-f",
+                        "bestaudio[ext=m4a]",
+                        "-o",
+                        "{output}",
+                        watchUrl
+                )
+        ));
     }
 
     @Override

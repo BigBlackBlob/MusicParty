@@ -49,13 +49,15 @@ WORKDIR /app
 # 安装 FFmpeg 和 Java AWT 运行所需的图形库/字体
 RUN apk add --no-cache \
     ffmpeg \
-    yt-dlp \
+    python3 \
+    py3-pip \
     fontconfig \
     ttf-dejavu \
     libxext \
     libxrender \
     libxtst \
-    libxi
+    libxi \
+    && pip3 install --no-cache-dir --break-system-packages -U yt-dlp
 
 # 复制构建好的 JAR 包
 COPY --from=backend-builder /app/backend/target/*.jar app.jar

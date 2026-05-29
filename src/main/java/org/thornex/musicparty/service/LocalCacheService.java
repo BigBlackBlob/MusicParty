@@ -28,8 +28,11 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 @Service
@@ -55,8 +58,21 @@ public class LocalCacheService {
     public record DownloadSource(
             String url,
             Map<String, String> headers,
-            String extension
-    ) {}
+            String extension,
+            List<String> command
+    ) {
+        public DownloadSource(String url, Map<String, String> headers, String extension) {
+            this(url, headers, extension, List.of());
+        }
+
+        public static DownloadSource command(String url, String extension, List<String> command) {
+            return new DownloadSource(url, Map.of(), extension, command);
+        }
+
+        public boolean usesCommand() {
+            return command != null && !command.isEmpty();
+        }
+    }
 
     public LocalCacheService(WebClient webClient, ApplicationEventPublisher eventPublisher, AppProperties appProperties) {
         this.webClient = webClient;
@@ -192,34 +208,12 @@ public class LocalCacheService {
                     Path destPath = Paths.get(LocalResourceConfig.CACHE_DIR, fileName);
                     Path partPath = Paths.get(LocalResourceConfig.CACHE_DIR, fileName + ".part");
 
-                    return DataBufferUtils.write(
-                                    webClient.get()
-                                            .uri(source.url())
-                                            .headers(httpHeaders -> {
-                                                if (source.headers() != null) source.headers().forEach(httpHeaders::add);
-                                            })
-                                            .retrieve()
-                                            .bodyToFlux(DataBuffer.class),
-                                    partPath,
-                                    StandardOpenOption.CREATE,
-                                    StandardOpenOption.TRUNCATE_EXISTING,
-                                    StandardOpenOption.WRITE
-                            )
-                            .publishOn(Schedulers.boundedElastic())
-                            .doOnSuccess(unused -> {
-                                try {
-                                    moveCompletedDownload(partPath, destPath);
-                                    long size = Files.size(destPath);
-                                    entry.setSize(size);
-                                    entry.setStatus(CacheStatus.COMPLETED);
-                                    currentTotalSize.addAndGet(size);
-                                    log.info("Download completed: {}", fileName);
-                                    eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
-                                    ensureCapacity();
-                                } catch (IOException e) {
-                                    throw new RuntimeException("File write error", e);
-                                }
-                            });
+                    Mono<Void> download = source.usesCommand()
+                            ? runDownloadCommand(source.command(), partPath)
+                            : downloadWithWebClient(source, partPath);
+
+                    return download.publishOn(Schedulers.boundedElastic())
+                            .doOnSuccess(unused -> completeDownload(entry, musicId, fileName, partPath, destPath));
                 })
                 // 错误处理
                 .doOnError(error -> {
@@ -237,6 +231,75 @@ public class LocalCacheService {
                 // 这里的 onErrorResume 保证即使这个任务失败，Flux 链也不会断，会继续执行 delay 和下一个任务
                 .onErrorResume(e -> Mono.empty())
                 .then(); // 转为 Mono<Void>
+    }
+
+    private Mono<Void> downloadWithWebClient(DownloadSource source, Path partPath) {
+        return DataBufferUtils.write(
+                webClient.get()
+                        .uri(source.url())
+                        .headers(httpHeaders -> {
+                            if (source.headers() != null) source.headers().forEach(httpHeaders::add);
+                        })
+                        .retrieve()
+                        .bodyToFlux(DataBuffer.class),
+                partPath,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.TRUNCATE_EXISTING,
+                StandardOpenOption.WRITE
+        );
+    }
+
+    private Mono<Void> runDownloadCommand(List<String> command, Path outputPath) {
+        return Mono.fromRunnable(() -> {
+                    List<String> resolvedCommand = command.stream()
+                            .map(arg -> arg.replace("{output}", outputPath.toString()))
+                            .toList();
+                    ProcessBuilder pb = new ProcessBuilder(resolvedCommand);
+                    pb.redirectErrorStream(true);
+                    try {
+                        Process process = pb.start();
+                        CompletableFuture<String> outputFuture = CompletableFuture.supplyAsync(() -> {
+                            try {
+                                return new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                            } catch (IOException e) {
+                                return "Failed to read command output: " + e.getMessage();
+                            }
+                        });
+                        boolean finished = process.waitFor(15, TimeUnit.MINUTES);
+                        if (!finished) {
+                            process.destroyForcibly();
+                            throw new RuntimeException("Download command timed out");
+                        }
+                        String output = outputFuture.get(5, TimeUnit.SECONDS);
+                        if (process.exitValue() != 0) {
+                            throw new RuntimeException("Download command failed: " + output);
+                        }
+                    } catch (IOException e) {
+                        throw new RuntimeException("Download command failed", e);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException("Download command interrupted", e);
+                    } catch (Exception e) {
+                        throw new RuntimeException("Download command failed", e);
+                    }
+                })
+                .subscribeOn(Schedulers.boundedElastic())
+                .then();
+    }
+
+    private void completeDownload(CacheEntry entry, String musicId, String fileName, Path partPath, Path destPath) {
+        try {
+            moveCompletedDownload(partPath, destPath);
+            long size = Files.size(destPath);
+            entry.setSize(size);
+            entry.setStatus(CacheStatus.COMPLETED);
+            currentTotalSize.addAndGet(size);
+            log.info("Download completed: {}", fileName);
+            eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
+            ensureCapacity();
+        } catch (IOException e) {
+            throw new RuntimeException("File write error", e);
+        }
     }
 
     private void moveCompletedDownload(Path partPath, Path destPath) throws IOException {
