@@ -180,7 +180,7 @@ public class YoutubeMusicApiService implements CachedMusicApiService {
         String watchUrl = "https://www.youtube.com/watch?v=" + videoId;
         return Mono.just(LocalCacheService.DownloadSource.command(
                 watchUrl,
-                ".m4a",
+                ".webm",
                 List.of(
                         config.getYtDlpPath(),
                         "--no-playlist",
@@ -188,7 +188,7 @@ public class YoutubeMusicApiService implements CachedMusicApiService {
                         "--no-part",
                         "--force-overwrites",
                         "-f",
-                        "bestaudio[ext=m4a]",
+                        "bestaudio[ext=webm][abr<=320]/bestaudio[acodec*=opus][abr<=320]/bestaudio[abr<=320]/bestaudio",
                         "-o",
                         "{output}",
                         watchUrl
