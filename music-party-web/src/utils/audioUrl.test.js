@@ -9,6 +9,8 @@ describe('audioUrl helpers', () => {
       .toBe('/api/subsonic/squidify/stream/song?token=secret');
     expect(withPlaybackToken({ platform: 'netease', url: '/api/netease/stream/123' }, 'secret'))
       .toBe('/api/netease/stream/123?token=secret');
+    expect(withPlaybackToken({ platform: 'bilibili', url: '/api/bilibili/stream/BV1xx411c7mD' }, 'secret'))
+      .toBe('/api/bilibili/stream/BV1xx411c7mD?token=secret');
     expect(withPlaybackToken({ platform: 'youtube', url: '/media/youtube-abc123.m4a' }, 'secret'))
       .toBe('/media/youtube-abc123.m4a');
   });

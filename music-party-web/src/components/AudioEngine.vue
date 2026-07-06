@@ -9,7 +9,6 @@
         @waiting="onPlaybackStalled('waiting')"
         @stalled="onPlaybackStalled('stalled')"
         @suspend="onPlaybackStalled('suspend')"
-        @emptied="onPlaybackStalled('emptied')"
         @playing="onPlaybackHealthy"
         @canplay="onCanPlay"
         referrerpolicy="no-referrer"
@@ -52,13 +51,15 @@ const SILENT_WAV = 'data:audio/wav;base64,UklGRigAAABXQVZFRm10IBAAAAABAAEARKwAAI
 const {
   localProgress,
   isBuffering,
+  bufferedMs,
   isErrorState,
   needsUserGesture,
   safePlay,
   handleError,
   checkAutoPlay,
   armStalledWatchdog,
-  markPlaybackHealthy
+  markPlaybackHealthy,
+  isActuallyStalled
 } = useAudio(audioRef, player, computed(() => ui.volume));
 
 const audioSrc = computed(() => withPlaybackToken(player.nowPlaying?.music, user.sessionToken));
@@ -69,6 +70,9 @@ watch(localProgress, (val) => {
 });
 watch(isBuffering, (val) => {
   player.isBuffering = val;
+});
+watch(bufferedMs, (val) => {
+  player.bufferedMs = val;
 });
 watch(isErrorState, (val) => {
   player.isErrorState = val;
@@ -93,6 +97,8 @@ const onPlaybackHealthy = () => {
 };
 
 const onPlaybackStalled = (reason) => {
+  // 用 isActuallyStalled 过滤误判：suspend 在"下够了"时也会发，emptied 是切歌导致
+  if (!isActuallyStalled(reason)) return;
   player.isBuffering = true;
   armStalledWatchdog(reason);
 };

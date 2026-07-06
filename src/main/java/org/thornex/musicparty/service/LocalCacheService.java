@@ -424,6 +424,9 @@ public class LocalCacheService {
     @Scheduled(fixedDelay = 60000)
     void cleanupStaleTasks() {
         cleanupStaleTasks(System.currentTimeMillis());
+        // 定期 LRU 巡检：之前只在下载完成时触发 ensureCapacity，
+        // 长期不下载新歌时，缓存可能超限却没人清理。这里每分钟补一次
+        ensureCapacity();
     }
 
     void cleanupStaleTasks(long now) {
@@ -431,7 +434,20 @@ public class LocalCacheService {
         cacheIndex.entrySet().removeIf(entry -> {
             CacheStatus status = entry.getValue().getStatus();
             boolean staleStatus = status == CacheStatus.PENDING || status == CacheStatus.FAILED;
-            return staleStatus && now - entry.getValue().getLastAccessTime() > ttl;
+            if (!staleStatus || now - entry.getValue().getLastAccessTime() <= ttl) {
+                return false;
+            }
+            // 清理孤儿 .part 文件（之前只删索引条目，不删磁盘上的半成品文件）
+            String fileName = entry.getValue().getFileName();
+            if (fileName != null) {
+                try {
+                    Path partPath = Paths.get(LocalResourceConfig.CACHE_DIR, fileName + ".part");
+                    Files.deleteIfExists(partPath);
+                } catch (IOException e) {
+                    log.warn("Failed to delete stale .part file for {}", entry.getValue().getId(), e);
+                }
+            }
+            return true;
         });
     }
 

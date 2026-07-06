@@ -108,6 +108,7 @@
   --on-primary: #21143a;
 
   --progress-track: rgba(255, 255, 255, 0.1);
+  --progress-loaded: rgba(211, 194, 243, 0.30);
   --media-overlay: rgba(0, 0, 0, 0.38);
   --album-gradient-top: rgba(255, 255, 255, 0.05);
   --album-gradient-bottom: rgba(0, 0, 0, 0.36);
@@ -188,6 +189,7 @@
   --error-soft-bg: rgba(220, 38, 38, 0.12);
   --error-soft-text: #991b1b;
   --progress-track: #e5e5e5;
+  --progress-loaded: rgba(124, 92, 191, 0.20);
   --media-overlay: rgba(255, 255, 255, 0.48);
   --album-gradient-top: rgba(255, 255, 255, 0.18);
   --album-gradient-bottom: rgba(255, 255, 255, 0.28);

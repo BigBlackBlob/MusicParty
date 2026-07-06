@@ -59,6 +59,7 @@
           :duration="durationMs"
           :can-seek="canSeek"
           :is-error="player.isErrorState"
+          :loaded-ms="player.bufferedMs"
           :markers="player.nowPlaying?.likeMarkers || []"
           :hide-labels="true"
           @preview-start="player.setSeekingPreview(true)"

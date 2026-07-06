@@ -206,18 +206,34 @@ public class BilibiliMusicApiService implements CachedMusicApiService {
                             PLATFORM, localUrl, music.coverUrl(), false // needsProxy = false
                     ));
         } else {
-            // 3. 如果本地没有（可能是下载失败，或者还没下载完就被强制切歌）
-            // 触发一次预加载（如果任务不存在的话）
+            // 3. 如果本地没有（还在下载或下载失败），返回代理 URL 实现边下边播
+            // 前端 <audio> 直接从 /api/bilibili/stream/{bvid} 拉流，
+            // 后端代理转发到 B站 DASH 音频 CDN（带 Referer/UA），支持 Range
+            // 同时触发后台预下载，下完后 handleDownloadEvent 会切换到 /media/ 本地文件
             prefetchMusic(bvid);
 
-            // 即使在下载中，也返回元数据，但 URL 设为特殊值
-            // 这样 MusicPlayerService.enqueue 就能拿到名字、封面等信息成功入队
+            String streamUrl = "/api/bilibili/stream/" + bvid;
             return BilibiliApiUtils.getVideoDetails(bvid, webClient, baseUrl, sessdata)
                     .map(music -> new PlayableMusic(
                             music.id(), music.name(), music.artists(), music.duration(),
-                            PLATFORM, "PENDING_DOWNLOAD", music.coverUrl(), false
-                    ));
+                            PLATFORM, streamUrl, music.coverUrl(), false
+                    ))
+                    .onErrorResume(e -> {
+                        // 元数据获取失败时仍返回代理 URL（至少能播），但日志记录
+                        log.warn("Bilibili getVideoDetails failed for {}, returning stream-only playable", bvid, e);
+                        return Mono.just(new PlayableMusic(
+                                bvid, bvid, List.of("Bilibili"), 0L,
+                                PLATFORM, streamUrl, "", false
+                        ));
+                    });
         }
+    }
+
+    // 供 BilibiliProxyController 调用：实时解析 DASH 音频 CDN 地址
+    // 每次 stream 请求都重新解析（B站 CDN URL 有时效）
+    public Mono<String> resolveStreamUrl(String bvid) {
+        ensureConfigured();
+        return resolveDashAudioUrl(bvid);
     }
 
     private Mono<String> resolveDashAudioUrl(String bvid) {

@@ -42,6 +42,42 @@ class LocalCacheServicePerformanceTests {
         assertThat(service.getStatus("completed-old")).isEqualTo(CacheStatus.COMPLETED);
     }
 
+    @Test
+    void cleanupStaleTasksDeletesOrphanPartFilesForExpiredEntries() throws Exception {
+        AppProperties properties = new AppProperties();
+        properties.getPerformance().setDownloadTaskTtlMs(1000);
+        LocalCacheService service = newService(properties);
+
+        // 创建一个带 fileName 的 PENDING 条目，并在磁盘上造一个 .part 文件
+        LocalCacheService.CacheEntry entry = new LocalCacheService.CacheEntry();
+        entry.setId("stale-with-part");
+        entry.setFileName("stale-with-part.m4a");
+        entry.setStatus(CacheStatus.PENDING);
+        entry.setLastAccessTime(1000);
+        java.lang.reflect.Field cacheIndexField = LocalCacheService.class.getDeclaredField("cacheIndex");
+        cacheIndexField.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, LocalCacheService.CacheEntry> cacheIndex =
+                (java.util.Map<String, LocalCacheService.CacheEntry>) cacheIndexField.get(service);
+        cacheIndex.put("stale-with-part", entry);
+
+        // 造 .part 文件（在临时目录里，避免污染项目目录）
+        java.nio.file.Path cacheDir = java.nio.file.Paths.get(org.thornex.musicparty.config.LocalResourceConfig.CACHE_DIR);
+        java.nio.file.Files.createDirectories(cacheDir);
+        java.nio.file.Path partFile = cacheDir.resolve("stale-with-part.m4a.part");
+        java.nio.file.Files.writeString(partFile, "partial");
+
+        assertThat(java.nio.file.Files.exists(partFile)).isTrue();
+
+        service.cleanupStaleTasks(3000);
+
+        assertThat(service.getStatus("stale-with-part")).isNull();
+        assertThat(java.nio.file.Files.exists(partFile)).as(".part 文件应被清理").isFalse();
+
+        // 清理测试目录
+        java.nio.file.Files.deleteIfExists(partFile);
+    }
+
     private LocalCacheService newService(AppProperties properties) {
         ApplicationEventPublisher publisher = ignored -> {
         };

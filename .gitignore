@@ -45,3 +45,5 @@ build/
 /data/
 /cached_media/
 /packaging/
+/src-tauri/target/
+/src-tauri/gen/

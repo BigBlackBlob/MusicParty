@@ -40,6 +40,9 @@ public class MusicPlayerService {
         EMPTY_QUEUE
     }
 
+    // B站/YouTube 未下完时 getPlayableMusic 返回的占位 URL，绝不能发到前端成为 audio src
+    static final String PENDING_DOWNLOAD_URL = "PENDING_DOWNLOAD";
+
     private final Map<String, IMusicApiService> apiServiceMap;
     private final UserService userService;
     private final LocalCacheService localCacheService;
@@ -55,6 +58,14 @@ public class MusicPlayerService {
     private final SubsonicMusicApiService subsonicMusicApiService;
     private final SubsonicSourceRegistry subsonicSourceRegistry;
     private final Map<String, RoomPlayerSession> sessions = new ConcurrentHashMap<>();
+
+    // 用于 pending download 轮询的共享调度器
+    private static final java.util.concurrent.ScheduledExecutorService PENDING_POLL_SCHEDULER =
+            java.util.concurrent.Executors.newScheduledThreadPool(2, r -> {
+                Thread t = new Thread(r, "mp-pending-download-poller");
+                t.setDaemon(true);
+                return t;
+            });
 
     public MusicPlayerService(List<IMusicApiService> apiServices,
                               UserService userService,
@@ -114,6 +125,7 @@ public class MusicPlayerService {
         String normalized = roomId == null || roomId.isBlank() ? RoomService.DEFAULT_ROOM_ID : roomId;
         RoomPlayerSession removed = sessions.remove(normalized);
         if (removed != null) {
+            removed.cancelPendingDownloadPoller();
             if (!skipPersistenceCleanup) {
                 removed.flushPersistentState();
             }
@@ -147,6 +159,7 @@ public class MusicPlayerService {
         for (String roomId : coldRoomIds) {
             RoomPlayerSession removed = sessions.remove(roomId);
             if (removed != null) {
+                removed.cancelPendingDownloadPoller();
                 roomSessionCoordinator.evictColdRoom(roomId, removed::flushPersistentState);
             }
         }
@@ -293,9 +306,15 @@ public class MusicPlayerService {
         private final AtomicInteger onlineUserCount = new AtomicInteger(0);
         private final Map<String, AtomicLong> lastControlTimestamps = new ConcurrentHashMap<>();
         private final AtomicLong playHeadVersion = new AtomicLong(0);
+        // 当 playNextInQueue 选中的歌 url=PENDING_DOWNLOAD 时，轮询下载状态的定时任务
+        private java.util.concurrent.ScheduledFuture<?> pendingDownloadPoller;
 
         private static final long GLOBAL_COOLDOWN_MS = 1000;
         private static final long IDLE_RESET_TIMEOUT_MS = 2 * 60 * 60 * 1000L;
+        // 轮询下载状态的间隔
+        private static final long PENDING_DOWNLOAD_POLL_MS = 2000;
+        // 轮询超时：超过这个时间还没下完，放弃这首歌跳下一首
+        private static final long PENDING_DOWNLOAD_TIMEOUT_MS = 120_000;
 
         private RoomPlayerSession(String roomId) {
             this.roomId = roomId;
@@ -360,7 +379,14 @@ public class MusicPlayerService {
                 getApiService(nextItem.music().platform()).getPlayableMusic(nextItem.music().id())
                         .timeout(Duration.ofSeconds(10))
                         .subscribe(playable -> {
-                            if (playHeadVersion.get() == version) applyNewSong(playable, nextItem);
+                            if (playHeadVersion.get() != version) return;
+                            // 拦截 PENDING_DOWNLOAD：不让它成为 currentMusic 发到前端
+                            // 而是保持 loading=true，轮询下载状态，完成后重新 resolve
+                            if (PENDING_DOWNLOAD_URL.equals(playable.url())) {
+                                waitForPendingDownload(nextItem, version);
+                            } else {
+                                applyNewSong(playable, nextItem);
+                            }
                         }, error -> {
                             log.error("Play failed for {} in room {}", nextItem.music().name(), roomId, error);
                             playbackState.setLoading(false);
@@ -389,6 +415,83 @@ public class MusicPlayerService {
                     true,
                     new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.PLAY_START, queueItem.enqueuedBy().publicId(), music.name(), roomId)
             );
+        }
+
+        // 当 getPlayableMusic 返回 PENDING_DOWNLOAD 时，保持 loading=true，轮询下载状态
+        // 下载完成(COMPLETED)后重新 getPlayableMusic → applyNewSong；失败/超时则跳下一首
+        private void waitForPendingDownload(MusicQueueItem pendingItem, long version) {
+            cancelPendingDownloadPoller();
+            final long startedAt = System.currentTimeMillis();
+            log.info("Pending download wait started for {} in room {}", pendingItem.music().name(), roomId);
+            pendingDownloadPoller = PENDING_POLL_SCHEDULER.scheduleAtFixedRate(() -> {
+                try {
+                    if (playHeadVersion.get() != version) {
+                        cancelPendingDownloadPoller();
+                        return;
+                    }
+                    // 超时检查
+                    if (System.currentTimeMillis() - startedAt > PENDING_DOWNLOAD_TIMEOUT_MS) {
+                        log.warn("Pending download timed out for {} in room {}", pendingItem.music().name(), roomId);
+                        cancelPendingDownloadPoller();
+                        playbackState.setLoading(false);
+                        playbackState.bumpStateVersion();
+                        applyPlaybackTransition(
+                                false,
+                                false,
+                                true,
+                                new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", "下载超时: " + pendingItem.music().name(), roomId)
+                        );
+                        playNextInQueue();
+                        return;
+                    }
+                    CacheStatus status = localCacheService.getStatus(cacheKey(pendingItem.music()));
+                    if (status == CacheStatus.COMPLETED) {
+                        cancelPendingDownloadPoller();
+                        // 下载完成，重新 resolve url
+                        getApiService(pendingItem.music().platform())
+                                .getPlayableMusic(pendingItem.music().id())
+                                .timeout(Duration.ofSeconds(10))
+                                .subscribe(playable -> {
+                                    if (playHeadVersion.get() != version) return;
+                                    if (PENDING_DOWNLOAD_URL.equals(playable.url())) {
+                                        // 极端情况：下载完成但仍返回 PENDING（理论不应发生），再等一轮
+                                        log.warn("Pending download completed but URL still PENDING for {}", pendingItem.music().name());
+                                        waitForPendingDownload(pendingItem, version);
+                                        return;
+                                    }
+                                    applyNewSong(playable, pendingItem);
+                                }, error -> {
+                                    if (playHeadVersion.get() != version) return;
+                                    log.error("Re-resolve after download failed for {}", pendingItem.music().name(), error);
+                                    playbackState.setLoading(false);
+                                    playbackState.bumpStateVersion();
+                                    playNextInQueue();
+                                });
+                    } else if (status == CacheStatus.FAILED) {
+                        log.warn("Pending download failed for {} in room {}", pendingItem.music().name(), roomId);
+                        cancelPendingDownloadPoller();
+                        playbackState.setLoading(false);
+                        playbackState.bumpStateVersion();
+                        applyPlaybackTransition(
+                                false,
+                                false,
+                                true,
+                                new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, "SYSTEM", "下载失败: " + pendingItem.music().name(), roomId)
+                        );
+                        playNextInQueue();
+                    }
+                    // PENDING / DOWNLOADING / null → 继续轮询
+                } catch (Exception e) {
+                    log.error("Error in pending download poller for {}", pendingItem.music().name(), e);
+                }
+            }, PENDING_DOWNLOAD_POLL_MS, PENDING_DOWNLOAD_POLL_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
+        }
+
+        private void cancelPendingDownloadPoller() {
+            if (pendingDownloadPoller != null) {
+                pendingDownloadPoller.cancel(false);
+                pendingDownloadPoller = null;
+            }
         }
 
         public PlayerState getCurrentPlayerState() {
@@ -675,6 +778,13 @@ public class MusicPlayerService {
                 broadcastQueueUpdate();
                 if (playbackState.currentMusic() == null) playNextInQueue();
             }
+            // 如果当前正在等下载的歌就是这首，reresolve url 并更新 currentMusic
+            // 这处理"currentMusic 已经是 PENDING_DOWNLOAD 但事件后来才到"的存量情况
+            // （主要来自持久化恢复路径，playNextInQueue 路径已有自己的轮询）
+            PlayableMusic current = playbackState.currentMusic();
+            if (current != null && PENDING_DOWNLOAD_URL.equals(current.url()) && downloadEventMatches(current, event.getMusicId())) {
+                reresolveCurrentPlayableUrl(current);
+            }
         }
 
         public void onUserCountChanged(UserCountChangeEvent event) {
@@ -770,16 +880,29 @@ public class MusicPlayerService {
             if (restoredMusic == null) {
                 return;
             }
+            // 持久化恢复路径：如果当前歌 url 是 PENDING_DOWNLOAD，交给统一的重 resolve 方法
+            reresolveCurrentPlayableUrl(restoredMusic);
+        }
+
+        // 统一的"重新解析当前歌 url"逻辑：用于持久化恢复和下载完成事件两条路径
+        // 重新调 getPlayableMusic，拿到有效 url 后 setCurrentTrack（不 bump playEpoch，保持进度连续）
+        private void reresolveCurrentPlayableUrl(PlayableMusic targetMusic) {
+            if (targetMusic == null) return;
             long version = playHeadVersion.incrementAndGet();
             try {
-                getApiService(restoredMusic.platform()).getPlayableMusic(restoredMusic.id())
+                getApiService(targetMusic.platform()).getPlayableMusic(targetMusic.id())
                         .timeout(Duration.ofSeconds(10))
                         .subscribe(refreshed -> {
                             PlayableMusic current = playbackState.currentMusic();
                             if (playHeadVersion.get() != version
                                     || current == null
-                                    || !Objects.equals(current.id(), restoredMusic.id())
-                                    || !Objects.equals(current.platform(), restoredMusic.platform())) {
+                                    || !Objects.equals(current.id(), targetMusic.id())
+                                    || !Objects.equals(current.platform(), targetMusic.platform())) {
+                                return;
+                            }
+                            // 如果仍是 PENDING_DOWNLOAD，说明下载还没好，不做任何事（轮询或下次事件会再触发）
+                            if (PENDING_DOWNLOAD_URL.equals(refreshed.url())) {
+                                log.debug("Re-resolve still PENDING for {}:{}", targetMusic.platform(), targetMusic.id());
                                 return;
                             }
                             playbackState.setCurrentTrack(
@@ -790,17 +913,17 @@ public class MusicPlayerService {
                             playbackState.bumpStateVersion();
                             applyPlaybackOnlyTransition(null);
                         }, error -> log.warn(
-                                "Failed to refresh restored playable URL for {}:{} in room {}",
-                                restoredMusic.platform(),
-                                restoredMusic.id(),
+                                "Failed to re-resolve playable URL for {}:{} in room {}",
+                                targetMusic.platform(),
+                                targetMusic.id(),
                                 roomId,
                                 error
                         ));
             } catch (Exception e) {
                 log.warn(
-                        "Failed to start restored playable URL refresh for {}:{} in room {}",
-                        restoredMusic.platform(),
-                        restoredMusic.id(),
+                        "Failed to start re-resolve playable URL for {}:{} in room {}",
+                        targetMusic.platform(),
+                        targetMusic.id(),
                         roomId,
                         e
                 );
@@ -945,6 +1068,13 @@ public class MusicPlayerService {
 
         private boolean downloadEventMatches(Music music, String eventMusicId) {
             return Objects.equals(music.id(), eventMusicId) || Objects.equals(cacheKey(music), eventMusicId);
+        }
+
+        // PlayableMusic 重载：currentMusic 是 PlayableMusic 类型
+        private boolean downloadEventMatches(PlayableMusic music, String eventMusicId) {
+            if (Objects.equals(music.id(), eventMusicId)) return true;
+            // cacheKey 接受 Music，PlayableMusic 与 Music 的 platform/id 同构，构造临时 Music 取 key
+            return Objects.equals(cacheKey(new Music(music.id(), music.name(), music.artists(), music.duration(), music.platform(), music.coverUrl())), eventMusicId);
         }
     }
 

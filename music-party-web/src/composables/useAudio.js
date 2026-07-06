@@ -7,7 +7,13 @@ const SMALL_DRIFT_MS = 250;
 const RATE_CORRECTION_DRIFT_MS = 2000;
 const BACKGROUND_HARD_SEEK_DRIFT_MS = 10000;
 const TRANSITION_FADE_MS = 1500;
-const STALLED_WATCHDOG_MS = 7000;
+// 分级软重试：L1 软等待 → L2 软重试(保留缓冲) → L3 硬重载
+// L1: 卡住后只显示缓冲遮罩，不动 audio，给浏览器自我恢复的机会
+const STALLED_L1_SOFT_WAIT_MS = 2500;
+// L2: L1 没恢复，重新发同一个网络请求（浏览器会做 Range 续传补缺口），保留 currentTime 和已缓冲区间
+const STALLED_L2_SOFT_RETRY_MS = 3000;
+// L3: L2 也没恢复，才 load() 核弹重拉（会清空缓冲、currentTime 归零）
+const STALLED_L3_HARD_RELOAD_MS = 5000;
 const STALLED_RETRY_DELAY_MS = 800;
 const STALLED_MAX_RETRIES = 2;
 const SUPPORTED_TRANSITION_PLATFORMS = new Set(['netease', 'bilibili', 'youtube']);
@@ -15,6 +21,7 @@ const SUPPORTED_TRANSITION_PLATFORMS = new Set(['netease', 'bilibili', 'youtube'
 export function useAudio(audioRef, playerStore, userVolumeRef) {
     const localProgress = ref(0);
     const isBuffering = ref(false);
+    const bufferedMs = ref(0);
     const retryCount = ref(0);
     const isErrorState = ref(false);
     const needsUserGesture = ref(false);
@@ -27,8 +34,36 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
     let transitionFadeInPending = false;
     let stalledTimer = null;
     let stalledRetryCount = 0;
+    // 重载音轨后用于恢复进度的目标位置，避免从 0 开始播放
+    let pendingResumePositionMs = null;
 
-    const clearStalledWatchdog = () => {
+    // 读取媒体元素当前已缓冲到的时间（毫秒），用于在进度条上展示缓冲进度
+    const updateBufferedMs = () => {
+        const audio = audioRef.value;
+        if (!audio) {
+            bufferedMs.value = 0;
+            return;
+        }
+        try {
+            const ranges = audio.buffered;
+            if (!ranges || ranges.length === 0) return;
+            const seekPos = audio.currentTime;
+            let end = 0;
+            for (let i = 0; i < ranges.length; i++) {
+                const start = ranges.start(i);
+                const stop = ranges.end(i);
+                if (start <= seekPos + 1 && stop > end) end = stop;
+            }
+            if (!end) end = ranges.end(ranges.length - 1);
+            const durationMs = playerStore.nowPlaying?.music?.duration || audio.duration * 1000 || 0;
+            const candidateMs = end * 1000;
+            bufferedMs.value = durationMs ? Math.max(0, Math.min(candidateMs, durationMs)) : candidateMs;
+        } catch {
+            // buffered 访问偶尔会抛错，忽略
+        }
+    };
+
+const clearStalledWatchdog = () => {
         clearTimeout(stalledTimer);
         stalledTimer = null;
     };
@@ -50,7 +85,8 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
         });
     };
 
-    const retryCurrentSource = (reason) => {
+    // L3 硬重载：load() 清空缓冲、currentTime 归零，记下进度在 canplay 时恢复
+    const hardReloadSource = (reason) => {
         const audio = audioRef.value;
         if (!audio || !playerStore.nowPlaying || playerStore.isPaused) return;
         if (stalledRetryCount >= STALLED_MAX_RETRIES) {
@@ -62,18 +98,76 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
         setTimeout(() => {
             const currentAudio = audioRef.value;
             if (!currentAudio || !playerStore.nowPlaying || playerStore.isPaused || isErrorState.value) return;
-            console.warn(`[Audio] retrying stalled source (${stalledRetryCount}/${STALLED_MAX_RETRIES})`, { reason });
+            console.warn(`[Audio] L3 hard reload (${stalledRetryCount}/${STALLED_MAX_RETRIES})`, { reason });
+            // load() 会重置 currentTime 到 0，先记下目标进度以便 canplay 时恢复
+            pendingResumePositionMs = playerStore.getCurrentProgress();
+            playerStore.forceNextSyncSeek = true;
             currentAudio.load();
-            safePlay();
-            armStalledWatchdog(reason);
+            // canplay -> checkAutoPlay 会先恢复进度再播放，这里重新 arm 从 L1 开始
+            armStalledWatchdog(reason, 1);
         }, STALLED_RETRY_DELAY_MS);
     };
 
-    const armStalledWatchdog = (reason) => {
+    // L2 软重试：重新发同一个网络请求，保留 currentTime 和已缓冲区间
+    // 浏览器实现上会做 Range 续传请求补齐缓冲缺口，不丢已下载字节
+    const softRetrySource = (reason) => {
+        const audio = audioRef.value;
+        if (!audio || !playerStore.nowPlaying || playerStore.isPaused || isErrorState.value) return;
+        console.warn(`[Audio] L2 soft retry (re-request, keep buffer)`, { reason });
+        try {
+            // 重新赋值 src 触发网络层重新请求，但浏览器会保留 buffered ranges
+            // 并按需发 Range 请求补齐，不重置 currentTime
+            const currentSrc = audio.currentSrc || audio.src;
+            if (currentSrc) {
+                audio.src = currentSrc;
+            }
+            safePlay();
+        } catch (e) {
+            // 软重试失败，直接进 L3
+            console.warn('[Audio] L2 soft retry failed, escalating to L3', e);
+        }
+        // 软重试后 arm L3：若 STALLED_L3_HARD_RELOAD_MS 内没恢复，硬重载
+        armStalledWatchdog(reason, 3);
+    };
+
+    // 判断事件是否真的代表卡顿，避免 suspend 误判
+    // suspend 在浏览器"我下够了"时也会发，不是真卡
+    const isActuallyStalled = (reason) => {
+        const audio = audioRef.value;
+        if (!audio) return false;
+        // emptied 通常是切歌/src 变化导致，不是网络卡顿
+        if (reason === 'emptied') return false;
+        if (reason === 'suspend') {
+            // suspend 只在"还在加载但断流"时才算卡：readyState 不足 + 网络还在 loading
+            if (audio.readyState >= 4) return false; // 已 HAVE_ENOUGH_DATA，是正常 suspend
+            if (audio.networkState !== HTMLMediaElement.NETWORK_LOADING) return false;
+            return true;
+        }
+        return true;
+    };
+
+    // 三级 arm：retryLevel=1 → L1 软等待；=2 → L2 软重试；=3 → L3 硬重载
+    // 外部入口（onPlaybackStalled）总是从 L1 开始
+    const armStalledWatchdog = (reason, retryLevel = 1) => {
         clearStalledWatchdog();
         if (!audioRef.value || playerStore.isPaused || !playerStore.nowPlaying || isErrorState.value) return;
         isBuffering.value = true;
-        stalledTimer = setTimeout(() => retryCurrentSource(reason), STALLED_WATCHDOG_MS);
+        let delay;
+        let action;
+        if (retryLevel <= 1) {
+            // L1: 软等待 2.5s，超时升级到 L2
+            delay = STALLED_L1_SOFT_WAIT_MS;
+            action = () => softRetrySource(reason);
+        } else if (retryLevel === 2) {
+            // L2: 软重试前给 3s 缓冲（一般 softRetrySource 直接调，不走这里）
+            delay = STALLED_L2_SOFT_RETRY_MS;
+            action = () => softRetrySource(reason);
+        } else {
+            // L3: 硬重载前等 5s
+            delay = STALLED_L3_HARD_RELOAD_MS;
+            action = () => hardReloadSource(reason);
+        }
+        stalledTimer = setTimeout(action, delay);
     };
 
     const markPlaybackHealthy = () => {
@@ -259,11 +353,29 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
         }
     };
 
-    // === 1. 监听资源加载 (canplay) ===
+// === 1. 监听资源加载 (canplay) ===
     // 这是修复你问题的关键：音频加载就绪后，主动判断是否需要播放
+    // 重载音轨会清空 currentTime，所以重载后需要先恢复到目标进度再播放，
+    // 否则会从歌曲开头短暂播放，导致"缓冲时回到开头"的现象
     const checkAutoPlay = () => {
         if (!playerStore.nowPlaying) return;
         markPlaybackHealthy();
+
+        const audio = audioRef.value;
+        const restoreMs = pendingResumePositionMs;
+        pendingResumePositionMs = null;
+        if (restoreMs !== null && audio) {
+            // 重载后先尝试恢复到中断前进度，避免从 0 开始播放"回到开头"
+            try {
+                if (audio.readyState >= 2 && audio.seekable && audio.seekable.length > 0) {
+                    audio.currentTime = restoreMs / 1000;
+                }
+            } catch {
+                // 即便恢复失败，交给下面 forceNextSyncSeek 由 sync 循环纠偏
+            }
+            // 交给 sync 循环在 readyState 就绪后强制硬跳到服务端目标进度
+            playerStore.forceNextSyncSeek = true;
+        }
 
         if (playerStore.isPaused) {
             audioRef.value.pause();
@@ -303,6 +415,8 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
             clearStalledWatchdog();
             isErrorState.value = false;
             needsUserGesture.value = false;
+            bufferedMs.value = 0;
+            pendingResumePositionMs = null;
         transitionFadeInPending = supportsTransitionFade();
         setFadeGain(transitionFadeInPending ? 0 : 1);
         // 切歌会导致 src 变化，自动触发 load -> canplay -> checkAutoPlay
@@ -342,9 +456,13 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
         retryCount.value++;
         console.log(`Retry audio (${retryCount.value})...`);
         setTimeout(() => {
-            if (audioRef.value) {
-                audioRef.value.load();
-                // load 完会触发 canplay，进而触发 checkAutoPlay
+            const currentAudio = audioRef.value;
+            if (currentAudio) {
+                // 记录中断前进度，canplay 时恢复，避免从开头播放
+                pendingResumePositionMs = playerStore.getCurrentProgress();
+                playerStore.forceNextSyncSeek = true;
+                currentAudio.load();
+                // load 完会触发 canplay，进而触发 checkAutoPlay (其中会恢复进度并播放)
             }
         }, 1500);
     };
@@ -382,6 +500,7 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
         syncTimer = setInterval(() => {
             if (!playerStore.nowPlaying) {
                 localProgress.value = 0;
+                bufferedMs.value = 0;
                 if (audioRef.value) audioRef.value.playbackRate = 1;
                 setFadeGain(1);
                 return;
@@ -396,6 +515,7 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
             localProgress.value = targetTime;
             playerStore.setPlaybackPosition(targetTime);
             updateTransitionFadeOut(targetTime);
+            updateBufferedMs();
 
             // 3. 强行同步逻辑 (纠偏)
             if (audioRef.value && !isBuffering.value && !isErrorState.value && !playerStore.isSeekingPreview) {
@@ -452,9 +572,10 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
         releaseWakeLock();
     });
 
-    return {
+return {
         localProgress,
         isBuffering,
+        bufferedMs,
         isErrorState,
         retryCount,
         needsUserGesture,
@@ -462,6 +583,7 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
         handleError,
         checkAutoPlay,
         armStalledWatchdog,
-        markPlaybackHealthy
+        markPlaybackHealthy,
+        isActuallyStalled
     };
 }

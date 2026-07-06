@@ -55,8 +55,9 @@
             :aria-label="t('player.seek')"
             :title="canSeek ? t('player.seek') : t('player.onlyRequester')"
           >
-            <span class="block h-1 overflow-hidden rounded-full bg-[var(--progress-track)]">
-              <span class="block h-full rounded-full bg-primary transition-[width] duration-200" :style="{ width: progressPercent }" />
+            <span class="block relative h-1 overflow-hidden rounded-full bg-[var(--progress-track)]">
+              <span v-if="bufferedPercent !== '0%'" class="block absolute inset-0 h-full rounded-full bg-[var(--progress-loaded)] pointer-events-none transition-[width] duration-200" :style="{ width: bufferedPercent }"></span>
+              <span class="block relative h-full rounded-full bg-primary transition-[width] duration-200" :style="{ width: progressPercent }" />
             </span>
           </button>
           <span class="w-14 font-micro text-micro tabular-nums text-text-muted">{{ formatDuration(durationMs) }}</span>
@@ -194,6 +195,7 @@ const {
   durationMs,
   progressMs,
   progressPercent,
+  bufferedPercent,
   canSeek,
   isLiked,
   activeUserCount,

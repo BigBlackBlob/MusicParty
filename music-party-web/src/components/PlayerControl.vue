@@ -20,8 +20,9 @@
         <button @click="player.playNext" class="text-[#8A8A8A] hover:text-white transition-colors">{{ t('player.next') }}</button>
       </div>
       <!-- Progress -->
-      <div class="w-full max-w-md h-1.5 bg-[#303033] rounded overflow-hidden cursor-pointer" @click="handleSeek">
-        <div class="h-full bg-[#D3C2F3]" :style="{ width: `${(player.playbackPositionMs / (player.nowPlaying?.music.duration || 1)) * 100}%` }"></div>
+<div class="w-full max-w-md h-1.5 bg-[#303033] rounded overflow-hidden cursor-pointer relative" @click="handleSeek">
+        <div v-if="bufferedPercent > 0" class="absolute inset-0 h-full bg-white/10 pointer-events-none" :style="{ width: bufferedPercent + '%' }"></div>
+        <div class="relative h-full bg-[#D3C2F3]" :style="{ width: `${(player.playbackPositionMs / (player.nowPlaying?.music.duration || 1)) * 100}%` }"></div>
       </div>
     </div>
 
@@ -40,6 +41,11 @@ import { usePlayerStore } from '../stores/player';
 const { t } = useI18n();
 const player = usePlayerStore();
 const currentCover = computed(() => player.nowPlaying?.music.coverUrl || '');
+const bufferedPercent = computed(() => {
+  const duration = player.nowPlaying?.music.duration || 0;
+  if (!duration) return 0;
+  return Math.max(0, Math.min(100, (player.bufferedMs / duration) * 100));
+});
 
 const handleSeek = (e) => {
   if (!player.nowPlaying || !player.nowPlaying.music.duration) return;

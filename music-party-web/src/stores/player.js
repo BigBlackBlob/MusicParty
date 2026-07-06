@@ -56,6 +56,7 @@ export const usePlayerStore = defineStore('player', () => {
     const localProgress = ref(0);
     const playbackPositionMs = ref(0);
     const isBuffering = ref(false);
+    const bufferedMs = ref(0);
     const isErrorState = ref(false);
     const isSeekingPreview = ref(false);
 
@@ -306,8 +307,9 @@ export const usePlayerStore = defineStore('player', () => {
         connected.value = false;
         isLoading.value = false;
         streamListenerCount.value = 0;
-        remotePosition.value = 0;
+remotePosition.value = 0;
         lastSyncTime.value = 0;
+        bufferedMs.value = 0;
         resetSyncGate();
         setPlaybackPosition(0);
         useChatStore().resetRoomMessages();
@@ -603,7 +605,7 @@ export const usePlayerStore = defineStore('player', () => {
 
     return {
         nowPlaying, queue, isPaused, isShuffle, isPauseLocked, isSkipLocked, isShuffleLocked, connected, isLoading, lyricText, lyricDetail, likedSongs,
-        localProgress, playbackPositionMs, isBuffering, isErrorState, streamListenerCount, lastSyncTime, lastRttMs,
+        localProgress, playbackPositionMs, isBuffering, bufferedMs, isErrorState, streamListenerCount, lastSyncTime, lastRttMs,
         isSeekingPreview, forceNextSyncSeek, setSeekingPreview,
         setPlaybackPosition,
         connect, tryReconnect, reconnectToCurrentRoom, switchRoom, resetRoomState, resetSyncGate, getCurrentProgress, syncState, handleSyncPong, requestPing, requestResync, requestSyncRefresh,

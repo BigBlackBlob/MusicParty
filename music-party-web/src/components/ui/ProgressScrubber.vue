@@ -27,6 +27,12 @@
         class="relative grow rounded-full h-1 overflow-hidden transition-colors"
         :class="canSeek ? 'bg-[var(--progress-track)]' : 'bg-[var(--progress-track)]/40'"
       >
+        <!-- 缓冲进度 (已加载部分) -->
+        <div
+          v-if="loadedPercent > 0"
+          class="absolute top-0 left-0 h-full bg-[var(--progress-loaded)] pointer-events-none"
+          :style="{ width: loadedPercent + '%' }"
+        />
         <SliderRange
           class="absolute h-full transition-colors duration-200"
           :class="isError ? 'bg-[var(--error)]' : 'bg-[var(--accent)]'"
@@ -62,6 +68,10 @@ const props = defineProps({
   canSeek: Boolean,
   isError: Boolean,
   hideLabels: Boolean,
+  loadedMs: {
+    type: Number,
+    default: 0
+  },
   markers: {
     type: Array,
     default: () => []
@@ -75,6 +85,13 @@ const localPreviewMs = ref(0);
 
 const displayProgressMs = computed(() => {
   return isDragging.value ? localPreviewMs.value : props.currentMs;
+});
+
+// 已缓冲进度占整条进度的百分比，用于在进度条上展示缓冲进度
+const loadedPercent = computed(() => {
+  if (!props.duration || props.duration <= 0) return 0;
+  const ratio = (props.loadedMs || 0) / props.duration;
+  return Math.max(0, Math.min(100, ratio * 100));
 });
 
 const handleUpdate = (val) => {

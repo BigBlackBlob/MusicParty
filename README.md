@@ -110,6 +110,7 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 | `YOUTUBE_API_KEY` | 否 | 空 | YouTube Data API Key，用于搜索和获取视频元数据。 |
 | `YTDLP_PATH` | 否 | `yt-dlp` | `yt-dlp` 可执行文件路径；Docker 镜像内默认可直接使用。 |
 | `YOUTUBE_SEARCH_LIMIT` | 否 | `20` | YouTube 单次搜索最大结果数。 |
+| `JAVA_TOOL_OPTIONS` | 否 | `-XX:MaxRAMPercentage=65 -XX:+UseG1GC` | Docker 镜像默认 JVM 策略；低内存部署可把 `MaxRAMPercentage` 调低。 |
 | `QUEUE_MAX_SIZE` | 否 | `1000` | 队列最大长度。 |
 | `QUEUE_HISTORY_SIZE` | 否 | `50` | 历史记录保留数量。 |
 | `QUEUE_MAX_USER_SONGS` | 否 | `100` | 单用户最大排队歌曲数。 |
@@ -118,6 +119,14 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 | `CHAT_MIN_INTERVAL` | 否 | `1000` | 聊天发送间隔，单位毫秒。 |
 | `CHAT_MAX_LENGTH` | 否 | `200` | 单条聊天消息最大字符数。 |
 | `CACHE_MAX_SIZE` | 否 | `1GB` | 本地媒体缓存上限，例如 `512MB`、`2GB`。 |
+| `STREAM_MAX_LISTENERS` | 否 | `50` | HTTP 直播最大监听连接数，超过后会拒绝新连接。 |
+| `STREAM_CLIENT_QUEUE_CAPACITY` | 否 | `32` | 单个直播客户端待发送音频块队列容量，慢客户端会更快断开。 |
+| `STREAM_WRITER_THREADS` | 否 | `8` | 直播客户端写出线程池大小，避免无限创建线程。 |
+| `DOWNLOAD_MAX_QUEUED_TASKS` | 否 | `100` | 本地缓存下载最大排队任务数，防止下载风暴放大内存和进程压力。 |
+| `DOWNLOAD_TASK_TTL_MS` | 否 | `1800000` | 失败或长期挂起下载任务保留时间，单位毫秒。 |
+| `COVER_COLOR_CACHE_SIZE` | 否 | `256` | 封面主题色 URL 结果缓存数量。 |
+| `COVER_COLOR_MAX_CONCURRENT` | 否 | `4` | 封面下载和图片解码最大并发数。 |
+| `LOCAL_LIBRARY_MAX_EMBEDDED_COVER_BYTES` | 否 | `1048576` | 本地曲库元数据内嵌封面最大字节数，超过会丢弃以降低 heap 峰值。 |
 | `AUTH_RATE_LIMIT_ENABLED` | 否 | `true` | 是否启用账号登录限流。 |
 | `AUTH_MAX_ATTEMPTS` | 否 | `5` | 登录最大失败次数。 |
 | `AUTH_WINDOW_SECONDS` | 否 | `60` | 登录失败统计窗口。 |
@@ -129,6 +138,12 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 | `NAVIDROME_CLIENT` | 否 | `musicparty` | Subsonic 客户端名。 |
 | `NAVIDROME_API_VERSION` | 否 | `1.16.1` | Subsonic API 版本。 |
 | `NAVIDROME_ALLOWED_USERS` | 否 | 空 | 首次迁移用授权列表，推荐填写账号用户名或 `publicId`，逗号分隔。 |
+
+### 低内存部署建议
+
+1GB 左右内存的 VPS 建议先把 `JAVA_TOOL_OPTIONS` 调整为 `-XX:MaxRAMPercentage=55 -XX:+UseG1GC`，并把 `CACHE_MAX_SIZE=512MB`、`QUEUE_MAX_SIZE=300`、`CHAT_HISTORY_LIMIT=300`、`STREAM_MAX_LISTENERS=10`、`DOWNLOAD_MAX_QUEUED_TASKS=20`。如果同时启用直播和 YouTube 下载，建议至少保留 1.5GB 以上容器内存。
+
+管理员可通过 `GET /api/admin/runtime-metrics` 查看当前 JVM heap、线程数、WebSocket session、直播 listener、缓存索引、下载排队数、聊天历史加载量和限流桶数量，用于压测和空闲回落验证。
 
 ## 数据与持久化
 
@@ -302,11 +317,39 @@ npm run test:run
 npm run build
 ```
 
+## Windows 桌面自托管模式
+
+桌面版以 Tauri 作为外壳，启动本机 Spring Boot 后端和本机 NeteaseCloudMusicApi 伴随服务。这个模式面向 Windows 优先的自托管房主场景：房主电脑承载房间、队列、WebSocket 同步、SQLite 数据、Navidrome/Subsonic 凭据、本地媒体库和音频代理，访客通过局域网邀请链接加入。
+
+核心运行参数：
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `APP_MODE` | `server` | 桌面房主模式使用 `desktop-host`。 |
+| `MUSICPARTY_PROFILE_DIR` | `data/desktop-profile` | 桌面 profile 根目录，存放 SQLite、日志、缓存和本地媒体库。 |
+| `DESKTOP_LAN_BASE_URL` | 空 | 可选局域网访问地址；为空时邀请链接回退到 `BASE_URL`。 |
+| `DESKTOP_NETEASE_API_PORT` | `3000` | Tauri 管理的网易云 API 本机端口。 |
+| `NETEASE_API_URL` | `http://netease-api:3000` | 桌面壳启动后会指向本机 NeteaseCloudMusicApi。 |
+
+后端新增 `GET /api/desktop/status`，用于让桌面壳或前端读取当前运行模式、profile 目录、网易云 API 地址和邀请链接。前端新增 connection profile：浏览器部署默认使用当前 origin，桌面房主模式可切换到本机后端，加入模式可切换到邀请链接中的远端后端。
+
+开发检查：
+
+```powershell
+cmd /c mvnw.cmd "-Dtest=PerformanceConfigTests,DesktopControllerTests" test
+cd music-party-web
+npm test -- connectionProfile.test.js desktopHost.test.js socket.test.js
+cd ..\src-tauri
+cargo check
+```
+
+当前桌面 scaffold 会打包 `target/MusicParty-0.0.1-SNAPSHOT.jar`，因此执行 Tauri 打包前需先运行 `cmd /c mvnw.cmd -DskipTests package`。`src-tauri/icons/icon.ico` 是占位图标，正式发布前应替换为产品图标。
+
 ## 技术栈
 
 - 后端：Java 21、Spring Boot 3.2、WebSocket/STOMP、WebFlux、FFmpeg
 - 前端：Vue 3、Vite 7、Pinia、Tailwind CSS、vue-i18n、lucide-vue-next、Material Symbols 本地字体
-- 部署：Docker、Docker Compose，可选 Cloudflare Tunnel、Navidrome、rclone
+- 部署：Docker、Docker Compose、Tauri Windows 桌面壳，可选 Cloudflare Tunnel、Navidrome、rclone
 
 ## 免责声明
 

@@ -38,11 +38,16 @@ export const useNowPlayingViewModel = (options = {}) => {
         return key ? t(key) : t('platforms.room');
     });
     const requesterName = computed(() => resolveRequesterName(nowPlaying.value, user));
-    const durationMs = computed(() => music.value?.duration || 0);
+const durationMs = computed(() => music.value?.duration || 0);
     const progressMs = computed(() => player.playbackPositionMs || 0);
     const progressPercent = computed(() => {
         if (!durationMs.value) return '0%';
         return `${Math.max(0, Math.min(100, (progressMs.value / durationMs.value) * 100))}%`;
+    });
+    // 已缓冲进度占整条进度的百分比，用于在进度条上展示缓冲进度
+    const bufferedPercent = computed(() => {
+        if (!durationMs.value) return '0%';
+        return `${Math.max(0, Math.min(100, (player.bufferedMs / durationMs.value) * 100))}%`;
     });
 
     const isRequester = computed(() => {
@@ -87,9 +92,10 @@ export const useNowPlayingViewModel = (options = {}) => {
         artistLine,
         platformLabel,
         requesterName,
-        durationMs,
+durationMs,
         progressMs,
         progressPercent,
+        bufferedPercent,
         canSeek,
         isLiked,
         activeUserCount,
