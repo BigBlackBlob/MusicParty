@@ -62,11 +62,21 @@ RUN apk add --no-cache \
 # 复制构建好的 JAR 包
 COPY --from=backend-builder /app/backend/target/*.jar app.jar
 
+# 创建非 root 用户并切换
+RUN addgroup -S appgroup && adduser -S -G appgroup appuser \
+    && mkdir -p /app/data \
+    && chown -R appuser:appgroup /app
+USER appuser
+
 # 暴露端口
 EXPOSE 8080
 
 # 默认按容器内存收敛 JVM heap，并使用适合服务端长运行的 G1。
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=65 -XX:+UseG1GC"
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:8080/actuator/health >/dev/null 2>&1 || wget -qO- http://127.0.0.1:8080/ >/dev/null 2>&1 || exit 1
 
 # 启动命令
 ENTRYPOINT ["java", "-jar", "app.jar"]

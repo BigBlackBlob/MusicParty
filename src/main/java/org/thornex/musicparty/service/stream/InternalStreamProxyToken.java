@@ -1,6 +1,7 @@
 package org.thornex.musicparty.service.stream;
 
 import org.springframework.stereotype.Component;
+import org.thornex.musicparty.security.SecureCompare;
 
 import java.security.SecureRandom;
 import java.util.Base64;
@@ -22,6 +23,6 @@ public class InternalStreamProxyToken {
     }
 
     public boolean matches(String candidate) {
-        return token.equals(candidate);
+        return SecureCompare.equals(token, candidate);
     }
 }

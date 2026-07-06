@@ -120,17 +120,7 @@
           </button>
         </div>
 
-        <!-- 3. Previous -->
-        <div class="flex-1 flex justify-center items-center">
-          <button 
-            @click="player.playPrevious"
-            class="w-[44px] h-[44px] flex items-center justify-center text-primary hover:text-white transition-colors active:scale-90"
-          >
-            <span class="material-symbols-outlined text-[36px]" style="font-variation-settings: 'FILL' 1;">skip_previous</span>
-          </button>
-        </div>
-
-        <!-- 4. Play/Pause -->
+        <!-- 3. Play/Pause -->
         <div class="flex-1 flex justify-center items-center">
           <button 
             @click="player.togglePause"
@@ -143,7 +133,7 @@
           </button>
         </div>
 
-        <!-- 5. Next -->
+        <!-- 4. Next -->
         <div class="flex-1 flex justify-center items-center">
           <button 
             @click="player.playNext"
@@ -151,19 +141,6 @@
             class="w-[44px] h-[44px] flex items-center justify-center text-primary hover:text-white transition-colors active:scale-90"
           >
             <span class="material-symbols-outlined text-[36px]" style="font-variation-settings: 'FILL' 1;">skip_next</span>
-          </button>
-        </div>
-
-        <!-- 6. Repeat -->
-        <div class="flex-1 flex justify-center items-center">
-          <button 
-            @click="player.toggleRepeat"
-            class="w-[44px] h-[44px] flex items-center justify-center transition-colors active:scale-90"
-            :class="player.repeatMode !== 'none' ? 'text-primary' : 'text-text-secondary hover:text-primary'"
-          >
-            <span class="material-symbols-outlined text-[24px]">
-              {{ player.repeatMode === 'one' ? 'repeat_one' : 'repeat' }}
-            </span>
           </button>
         </div>
       </div>

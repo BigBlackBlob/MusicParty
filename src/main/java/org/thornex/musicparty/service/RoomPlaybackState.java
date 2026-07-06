@@ -47,51 +47,51 @@ final class RoomPlaybackState {
         return currentEnqueuerName.get();
     }
 
-    boolean isShuffle() {
+    synchronized boolean isShuffle() {
         return shuffle.get();
     }
 
-    void setShuffle(boolean value) {
+    synchronized void setShuffle(boolean value) {
         shuffle.set(value);
     }
 
-    boolean isPaused() {
+    synchronized boolean isPaused() {
         return paused.get();
     }
 
-    void setPaused(boolean value) {
+    synchronized void setPaused(boolean value) {
         paused.set(value);
     }
 
-    boolean isPauseLocked() {
+    synchronized boolean isPauseLocked() {
         return pauseLocked.get();
     }
 
-    void setPauseLocked(boolean value) {
+    synchronized void setPauseLocked(boolean value) {
         pauseLocked.set(value);
     }
 
-    boolean isSkipLocked() {
+    synchronized boolean isSkipLocked() {
         return skipLocked.get();
     }
 
-    void setSkipLocked(boolean value) {
+    synchronized void setSkipLocked(boolean value) {
         skipLocked.set(value);
     }
 
-    boolean isShuffleLocked() {
+    synchronized boolean isShuffleLocked() {
         return shuffleLocked.get();
     }
 
-    void setShuffleLocked(boolean value) {
+    synchronized void setShuffleLocked(boolean value) {
         shuffleLocked.set(value);
     }
 
-    boolean isLoading() {
+    synchronized boolean isLoading() {
         return loading.get();
     }
 
-    void setLoading(boolean value) {
+    synchronized void setLoading(boolean value) {
         loading.set(value);
     }
 
@@ -103,28 +103,32 @@ final class RoomPlaybackState {
         return likeMarkers;
     }
 
-    long playEpoch() {
+    synchronized long playEpoch() {
         return playEpoch.get();
     }
 
-    void setPlayEpoch(long value) {
+    synchronized void setPlayEpoch(long value) {
         playEpoch.set(value);
     }
 
-    long stateVersion() {
+    synchronized long stateVersion() {
         return stateVersion.get();
     }
 
-    void setStateVersion(long value) {
+    synchronized void setStateVersion(long value) {
         stateVersion.set(value);
     }
 
-    long lastHotActivityAt() {
+    synchronized long lastHotActivityAt() {
         return lastHotActivityAt.get();
     }
 
-    void setLastHotActivityAt(long value) {
+    synchronized void setLastHotActivityAt(long value) {
         lastHotActivityAt.set(value);
+    }
+
+    synchronized CurrentTrackInfo currentTrackInfo() {
+        return new CurrentTrackInfo(currentMusic.get(), currentEnqueuerId.get(), currentEnqueuerName.get());
     }
 
     synchronized void setCurrentTrack(PlayableMusic music, String enqueuerId, String enqueuerName) {
@@ -168,16 +172,16 @@ final class RoomPlaybackState {
         positionUpdatedAt.set(now);
     }
 
-    void bumpStateVersion() {
+    synchronized void bumpStateVersion() {
         stateVersion.incrementAndGet();
     }
 
-    void bumpPlayEpochAndStateVersion() {
+    synchronized void bumpPlayEpochAndStateVersion() {
         playEpoch.incrementAndGet();
         bumpStateVersion();
     }
 
-    void touchHotActivity() {
+    synchronized void touchHotActivity() {
         lastHotActivityAt.set(System.currentTimeMillis());
     }
 
@@ -230,12 +234,13 @@ final class RoomPlaybackState {
                               List<MusicQueueItem> queue,
                               List<UserSummary> onlineUsers,
                               long streamListenerCount) {
-        PlayableMusic music = currentMusic.get();
+        CurrentTrackInfo track = currentTrackInfo();
+        PlayableMusic music = track.music();
         NowPlayingInfo info = music == null ? null : new NowPlayingInfo(
                 music,
                 calculateCurrentPosition(),
-                currentEnqueuerId.get(),
-                currentEnqueuerName.get(),
+                track.enqueuerId(),
+                track.enqueuerName(),
                 likedUserIds,
                 likeMarkers,
                 playEpoch.get(),
@@ -257,4 +262,6 @@ final class RoomPlaybackState {
                 playEpoch.get()
         );
     }
+
+    record CurrentTrackInfo(PlayableMusic music, String enqueuerId, String enqueuerName) {}
 }

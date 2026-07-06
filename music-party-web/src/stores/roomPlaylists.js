@@ -17,6 +17,11 @@ export const useRoomPlaylistsStore = defineStore('roomPlaylists', () => {
   const selectedPlaylist = computed(() => playlists.value.find(item => item.id === selectedPlaylistId.value) || null);
   const selectedTracks = computed(() => tracksByPlaylist.value[selectedPlaylistId.value] || []);
 
+  const authFor = (id = roomId.value) => ({
+    sessionToken: useUserStore().sessionToken || '',
+    roomAccessToken: useRoomStore().getRoomAccessToken(id) || ''
+  });
+
   const loadPlaylists = async () => {
     loading.value = true;
     error.value = '';
@@ -40,35 +45,35 @@ export const useRoomPlaylistsStore = defineStore('roomPlaylists', () => {
   };
 
   const createPlaylist = async (name) => {
-    const playlist = await playlistsApi.create(roomId.value, name);
+    const playlist = await playlistsApi.create(roomId.value, name, authFor());
     selectedPlaylistId.value = playlist.id;
     await loadPlaylists();
   };
 
   const renamePlaylist = async (playlistId, name) => {
-    await playlistsApi.rename(roomId.value, playlistId, name);
+    await playlistsApi.rename(roomId.value, playlistId, name, authFor());
     await loadPlaylists();
   };
 
   const deletePlaylist = async (playlistId) => {
-    await playlistsApi.remove(roomId.value, playlistId);
+    await playlistsApi.remove(roomId.value, playlistId, authFor());
     if (selectedPlaylistId.value === playlistId) selectedPlaylistId.value = '';
     await loadPlaylists();
   };
 
   const deleteTrack = async (playlistId, trackId) => {
-    await playlistsApi.removeTrack(roomId.value, playlistId, trackId);
+    await playlistsApi.removeTrack(roomId.value, playlistId, trackId, authFor());
     await loadTracks(playlistId);
   };
 
   const reorderTracks = async (playlistId, trackIds) => {
-    await playlistsApi.reorder(roomId.value, playlistId, trackIds);
+    await playlistsApi.reorder(roomId.value, playlistId, trackIds, authFor());
     await loadTracks(playlistId);
   };
 
   const importExternal = async (platform, externalPlaylistId) => {
     if (!selectedPlaylistId.value) return;
-    await playlistsApi.importExternal(roomId.value, selectedPlaylistId.value, platform, externalPlaylistId, useUserStore().sessionToken);
+    await playlistsApi.importExternal(roomId.value, selectedPlaylistId.value, platform, externalPlaylistId, useUserStore().sessionToken, authFor());
     await loadPlaylists();
     await loadTracks(selectedPlaylistId.value);
   };

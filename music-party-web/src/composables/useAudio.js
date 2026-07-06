@@ -36,6 +36,22 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
     let stalledRetryCount = 0;
     // 重载音轨后用于恢复进度的目标位置，避免从 0 开始播放
     let pendingResumePositionMs = null;
+    // 跟踪所有重试相关的定时器，切歌/卸载时统一清理，避免在错误的音轨上 load()
+    const retryTimers = new Set();
+    const scheduleRetry = (fn, delay) => {
+        const id = setTimeout(() => {
+            retryTimers.delete(id);
+            fn();
+        }, delay);
+        retryTimers.add(id);
+        return id;
+    };
+    const clearRetryTimers = () => {
+        for (const id of retryTimers) {
+            clearTimeout(id);
+        }
+        retryTimers.clear();
+    };
 
     // 读取媒体元素当前已缓冲到的时间（毫秒），用于在进度条上展示缓冲进度
     const updateBufferedMs = () => {
@@ -95,9 +111,12 @@ const clearStalledWatchdog = () => {
         }
         stalledRetryCount++;
         clearStalledWatchdog();
-        setTimeout(() => {
+        const scheduledTrackId = playerStore.nowPlaying?.music?.id;
+        scheduleRetry(() => {
             const currentAudio = audioRef.value;
+            const currentTrackId = playerStore.nowPlaying?.music?.id;
             if (!currentAudio || !playerStore.nowPlaying || playerStore.isPaused || isErrorState.value) return;
+            if (scheduledTrackId !== currentTrackId) return;
             console.warn(`[Audio] L3 hard reload (${stalledRetryCount}/${STALLED_MAX_RETRIES})`, { reason });
             // load() 会重置 currentTime 到 0，先记下目标进度以便 canplay 时恢复
             pendingResumePositionMs = playerStore.getCurrentProgress();
@@ -413,6 +432,7 @@ const clearStalledWatchdog = () => {
             retryCount.value = 0;
             stalledRetryCount = 0;
             clearStalledWatchdog();
+            clearRetryTimers();
             isErrorState.value = false;
             needsUserGesture.value = false;
             bufferedMs.value = 0;
@@ -455,15 +475,17 @@ const clearStalledWatchdog = () => {
 
         retryCount.value++;
         console.log(`Retry audio (${retryCount.value})...`);
-        setTimeout(() => {
+        const scheduledTrackId = playerStore.nowPlaying?.music?.id;
+        scheduleRetry(() => {
             const currentAudio = audioRef.value;
-            if (currentAudio) {
-                // 记录中断前进度，canplay 时恢复，避免从开头播放
-                pendingResumePositionMs = playerStore.getCurrentProgress();
-                playerStore.forceNextSyncSeek = true;
-                currentAudio.load();
-                // load 完会触发 canplay，进而触发 checkAutoPlay (其中会恢复进度并播放)
-            }
+            const currentTrackId = playerStore.nowPlaying?.music?.id;
+            if (!currentAudio) return;
+            if (scheduledTrackId !== currentTrackId) return;
+            // 记录中断前进度，canplay 时恢复，避免从开头播放
+            pendingResumePositionMs = playerStore.getCurrentProgress();
+            playerStore.forceNextSyncSeek = true;
+            currentAudio.load();
+            // load 完会触发 canplay，进而触发 checkAutoPlay (其中会恢复进度并播放)
         }, 1500);
     };
 
@@ -567,6 +589,7 @@ const clearStalledWatchdog = () => {
         clearInterval(syncTimer);
         clearInterval(pingTimer);
         clearStalledWatchdog();
+        clearRetryTimers();
         if (audioRef.value) audioRef.value.playbackRate = 1;
         setFadeGain(1);
         releaseWakeLock();

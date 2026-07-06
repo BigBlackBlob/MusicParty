@@ -33,7 +33,7 @@ class LocalTrackControllerTests {
         properties.setAdminPassword("secret");
         AccountService accountService = new AccountService(new InMemoryUserAccountRepository(), new InMemoryUserProfileRepository());
         LocalLibraryAccessService accessService = new LocalLibraryAccessService(properties, mock(UserService.class), new InMemoryLocalTrackRepository(), adminAuth(accountService), accountService);
-        LocalTrackController controller = new LocalTrackController(mock(LocalLibraryService.class), accessService, new InternalStreamProxyToken());
+        LocalTrackController controller = new LocalTrackController(mock(LocalLibraryService.class), accessService, new InternalStreamProxyToken(), mock(UserService.class));
 
         var response = controller.uploadTrack(
                 new MockMultipartFile("file", "song.mp3", "audio/mpeg", "abc".getBytes()),
@@ -60,7 +60,7 @@ class LocalTrackControllerTests {
         LocalUploadResult result = LocalUploadResult.created(track);
         when(libraryService.upload(any(), eq("admin"), eq("Song"), eq("Artist"), eq("Album"))).thenReturn(result);
         LocalLibraryAccessService accessService = new LocalLibraryAccessService(properties, mock(UserService.class), new InMemoryLocalTrackRepository(), adminAuth(accountService), accountService);
-        LocalTrackController controller = new LocalTrackController(libraryService, accessService, new InternalStreamProxyToken());
+        LocalTrackController controller = new LocalTrackController(libraryService, accessService, new InternalStreamProxyToken(), mock(UserService.class));
 
         var response = controller.uploadTrack(
                 new MockMultipartFile("file", "song.mp3", "audio/mpeg", "abc".getBytes()),
@@ -73,6 +73,20 @@ class LocalTrackControllerTests {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isEqualTo(result);
+    }
+
+    @Test
+    void mediaRejectsAnonymousRequestWhenNoSessionToken() {
+        AppProperties properties = new AppProperties();
+        properties.setAdminPassword("secret");
+        LocalLibraryAccessService accessService = new LocalLibraryAccessService(properties, mock(UserService.class), new InMemoryLocalTrackRepository(), adminAuth(new AccountService(new InMemoryUserAccountRepository(), new InMemoryUserProfileRepository())), new AccountService(new InMemoryUserAccountRepository(), new InMemoryUserProfileRepository()));
+        UserService userService = mock(UserService.class);
+        when(userService.resolvePublicIdBySessionToken(org.mockito.ArgumentMatchers.any())).thenReturn(java.util.Optional.empty());
+        LocalTrackController controller = new LocalTrackController(mock(LocalLibraryService.class), accessService, new InternalStreamProxyToken(), userService);
+
+        var response = controller.media("track-id", null, null, null).block();
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     }
 
     private AdminAuthorizationService adminAuth(AccountService accountService) {

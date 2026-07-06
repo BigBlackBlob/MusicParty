@@ -20,8 +20,10 @@ const requiresResourceToken = (platform, url) => (
   isSubsonicPlatform(platform)
   || platform === 'netease'
   || platform === 'bilibili'
+  || platform === 'local'
   || String(url || '').startsWith('/api/navidrome/')
   || String(url || '').startsWith('/api/subsonic/')
   || String(url || '').startsWith('/api/netease/')
   || String(url || '').startsWith('/api/bilibili/')
+  || String(url || '').startsWith('/api/local/')
 );

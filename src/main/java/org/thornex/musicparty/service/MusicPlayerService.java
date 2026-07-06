@@ -19,6 +19,7 @@ import org.thornex.musicparty.service.api.CachedMusicApiService;
 import org.thornex.musicparty.service.api.IMusicApiService;
 import org.thornex.musicparty.service.api.SubsonicMusicApiService;
 import org.thornex.musicparty.service.stream.LiveStreamService;
+import reactor.core.scheduler.Schedulers;
 
 import java.time.Duration;
 import java.util.*;
@@ -378,6 +379,7 @@ public class MusicPlayerService {
             try {
                 getApiService(nextItem.music().platform()).getPlayableMusic(nextItem.music().id())
                         .timeout(Duration.ofSeconds(10))
+                        .publishOn(Schedulers.boundedElastic())
                         .subscribe(playable -> {
                             if (playHeadVersion.get() != version) return;
                             // 拦截 PENDING_DOWNLOAD：不让它成为 currentMusic 发到前端
@@ -451,6 +453,7 @@ public class MusicPlayerService {
                         getApiService(pendingItem.music().platform())
                                 .getPlayableMusic(pendingItem.music().id())
                                 .timeout(Duration.ofSeconds(10))
+                                .publishOn(Schedulers.boundedElastic())
                                 .subscribe(playable -> {
                                     if (playHeadVersion.get() != version) return;
                                     if (PENDING_DOWNLOAD_URL.equals(playable.url())) {
@@ -519,7 +522,7 @@ public class MusicPlayerService {
             long count = queueManager.getQueueSnapshot().stream().filter(i -> i.enqueuedBy().publicId().equals(enqueuer.getPublicId())).count();
             if (count >= appProperties.getQueue().getMaxUserSongs()) return;
             IMusicApiService service = getApiService(request.platform());
-            service.getPlayableMusic(request.musicId()).subscribe(playable -> {
+            service.getPlayableMusic(request.musicId()).publishOn(Schedulers.boundedElastic()).subscribe(playable -> {
                 Music music = new Music(playable.id(), playable.name(), playable.artists(), playable.duration(), playable.platform(), playable.coverUrl());
                 QueueItemStatus initialStatus = isCachedPlatform(request.platform()) ? QueueItemStatus.PENDING : QueueItemStatus.READY;
                 if (isCachedPlatform(request.platform())) service.prefetchMusic(music.id());
@@ -539,7 +542,7 @@ public class MusicPlayerService {
             if ("navidrome".equals(request.platform())) return;
             int importLimit = appProperties.getPlayer().getMaxPlaylistImportSize();
             IMusicApiService service = getApiService(request.platform());
-            service.getPlaylistMusics(request.playlistId(), 0, importLimit).subscribe(musics -> {
+            service.getPlaylistMusics(request.playlistId(), 0, importLimit).publishOn(Schedulers.boundedElastic()).subscribe(musics -> {
                 int count = 0;
                 QueueItemStatus initialStatus = isCachedPlatform(request.platform()) ? QueueItemStatus.PENDING : QueueItemStatus.READY;
                 for (Music music : musics) {
@@ -549,7 +552,7 @@ public class MusicPlayerService {
                 playbackState.touchHotActivity();
                 persistQueueMutation(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.IMPORT_PLAYLIST, enqueuer.getPublicId(), String.valueOf(count), roomId), false);
                 if (playbackState.currentMusic() == null) playNextInQueue();
-            });
+            }, error -> eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "导入歌单失败: " + error.getMessage(), roomId)));
         }
 
         public void enqueueAlbum(EnqueueAlbumRequest request, String sessionId) {
@@ -565,7 +568,7 @@ public class MusicPlayerService {
                 return;
             }
             IMusicApiService service = getApiService(request.platform());
-            service.getAlbumMusics(request.albumId()).subscribe(musics -> {
+            service.getAlbumMusics(request.albumId()).publishOn(Schedulers.boundedElastic()).subscribe(musics -> {
                 int count = 0;
                 for (Music music : musics.stream().limit(appProperties.getPlayer().getMaxPlaylistImportSize()).toList()) {
                     if (queueManager.add(music, new UserSummary(enqueuer.getPublicId(), enqueuer.getName(), enqueuer.isGuest()), QueueItemStatus.READY) != null) count++;
@@ -573,7 +576,7 @@ public class MusicPlayerService {
                 playbackState.touchHotActivity();
                 persistQueueMutation(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.IMPORT_PLAYLIST, enqueuer.getPublicId(), String.valueOf(count), roomId), false);
                 if (playbackState.currentMusic() == null) playNextInQueue();
-            });
+            }, error -> eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "导入专辑失败: " + error.getMessage(), roomId)));
         }
 
         public void enqueueSavedPlaylist(List<Music> musics, String sessionId) {
@@ -649,7 +652,7 @@ public class MusicPlayerService {
             persistQueueMutation(null, true);
         }
 
-        public ControlResult skipToNext(String sessionId) {
+        public synchronized ControlResult skipToNext(String sessionId) {
             if (isRateLimited(sessionId)) return ControlResult.COOLDOWN;
             if (playbackState.isSkipLocked() && !"SYSTEM".equals(sessionId)) return ControlResult.LOCKED;
             playHeadVersion.incrementAndGet();
@@ -665,7 +668,7 @@ public class MusicPlayerService {
             return ControlResult.OK;
         }
 
-        public ControlResult togglePause(String sessionId) {
+        public synchronized ControlResult togglePause(String sessionId) {
             if (playbackState.currentMusic() == null) {
                 if (!queueManager.getQueueSnapshot().isEmpty()) {
                     playNextInQueue();
@@ -698,7 +701,7 @@ public class MusicPlayerService {
             return Optional.empty();
         }
 
-        public ControlResult toggleShuffle(String sessionId) {
+        public synchronized ControlResult toggleShuffle(String sessionId) {
             if (isRateLimited(sessionId)) return ControlResult.COOLDOWN;
             if (playbackState.isShuffleLocked() && !"SYSTEM".equals(sessionId)) return ControlResult.LOCKED;
             playbackState.setShuffle(!playbackState.isShuffle());

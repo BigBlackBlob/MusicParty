@@ -11,6 +11,7 @@ import org.thornex.musicparty.dto.LocalUploadAccessRequest;
 import org.thornex.musicparty.enums.LocalTrackStatus;
 import org.thornex.musicparty.service.LocalLibraryAccessService;
 import org.thornex.musicparty.service.LocalLibraryService;
+import org.thornex.musicparty.service.UserService;
 import org.thornex.musicparty.service.stream.InternalStreamProxyToken;
 
 import java.io.IOException;
@@ -28,13 +29,16 @@ public class LocalTrackController {
     private final LocalLibraryService localLibraryService;
     private final LocalLibraryAccessService accessService;
     private final InternalStreamProxyToken internalStreamProxyToken;
+    private final UserService userService;
 
     public LocalTrackController(LocalLibraryService localLibraryService,
                                 LocalLibraryAccessService accessService,
-                                InternalStreamProxyToken internalStreamProxyToken) {
+                                InternalStreamProxyToken internalStreamProxyToken,
+                                UserService userService) {
         this.localLibraryService = localLibraryService;
         this.accessService = accessService;
         this.internalStreamProxyToken = internalStreamProxyToken;
+        this.userService = userService;
     }
 
     @GetMapping("/tracks")
@@ -131,8 +135,9 @@ public class LocalTrackController {
                     if (track.status() != LocalTrackStatus.COMPLETED || track.oggPath() == null || track.oggPath().isBlank()) {
                         return ResponseEntity.notFound().<Flux<DataBuffer>>build();
                     }
-                    Path path = localLibraryService.root().resolve(track.oggPath()).normalize();
-                    if (!Files.exists(path)) {
+                    Path root = localLibraryService.root();
+                    Path path = root.resolve(track.oggPath()).normalize();
+                    if (!path.startsWith(root) || !Files.exists(path)) {
                         return ResponseEntity.notFound().<Flux<DataBuffer>>build();
                     }
                     return streamFile(path, "audio/ogg", rangeHeader);
@@ -141,7 +146,12 @@ public class LocalTrackController {
     }
 
     @GetMapping("/cover/{id}")
-    public Mono<ResponseEntity<Flux<DataBuffer>>> cover(@PathVariable String id) {
+    public Mono<ResponseEntity<Flux<DataBuffer>>> cover(@PathVariable String id,
+                                                        @RequestParam(required = false) String token,
+                                                        @RequestHeader(value = InternalStreamProxyToken.HEADER_NAME, required = false) String internalToken) {
+        if (!canReadMedia(token, internalToken)) {
+            return Mono.just(ResponseEntity.status(HttpStatus.FORBIDDEN).build());
+        }
         return Mono.fromCallable(() -> {
                     LocalTrack track = localLibraryService.getTrack(id);
                     if (track.status() == LocalTrackStatus.DELETED) {
@@ -153,8 +163,9 @@ public class LocalTrackController {
                     if (track.coverPath() == null || track.coverPath().isBlank()) {
                         return ResponseEntity.notFound().<Flux<DataBuffer>>build();
                     }
-                    Path path = localLibraryService.root().resolve(track.coverPath()).normalize();
-                    if (!Files.exists(path)) {
+                    Path root = localLibraryService.root();
+                    Path path = root.resolve(track.coverPath()).normalize();
+                    if (!path.startsWith(root) || !Files.exists(path)) {
                         return ResponseEntity.notFound().<Flux<DataBuffer>>build();
                     }
                     String contentType = Files.probeContentType(path);
@@ -164,7 +175,10 @@ public class LocalTrackController {
     }
 
     private boolean canReadMedia(String token, String internalToken) {
-        return internalStreamProxyToken.matches(internalToken) || accessService.isEnabled();
+        if (internalStreamProxyToken.matches(internalToken)) {
+            return true;
+        }
+        return userService.resolvePublicIdBySessionToken(token).isPresent();
     }
 
     private ResponseEntity<Flux<DataBuffer>> streamFile(Path path, String contentType, String rangeHeader) throws IOException {
