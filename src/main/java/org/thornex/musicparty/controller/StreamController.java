@@ -17,11 +17,9 @@ import org.thornex.musicparty.service.stream.LiveStreamService;
 import org.thornex.musicparty.service.stream.StreamTokenService;
 import org.springframework.web.bind.annotation.RequestParam;
 import reactor.core.publisher.Flux;
-import reactor.core.scheduler.Schedulers;
 
 import java.io.OutputStream;
 import java.time.Duration;
-import java.util.concurrent.CountDownLatch;
 
 @RestController
 @RequestMapping("/radio")
@@ -58,23 +56,14 @@ public class StreamController {
                 }
             };
             sink.onDispose(() -> liveStreamService.removeListener(os, remoteAddr));
-            Schedulers.boundedElastic().schedule(() -> {
-                try {
-                    CountDownLatch closed = liveStreamService.addListener(os, remoteAddr);
-                    if (closed == null) {
-                        sink.error(new IllegalStateException("Live stream listener limit reached"));
-                        return;
-                    }
-                    closed.await();
-                    sink.complete();
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    sink.complete();
-                } catch (Exception e) {
-                    log.debug("Stream client disconnected: {}", e.getMessage());
-                    sink.complete();
+            try {
+                if (liveStreamService.addListener(os, remoteAddr) == null) {
+                    sink.error(new IllegalStateException("Live stream listener limit reached"));
                 }
-            });
+            } catch (Exception e) {
+                log.debug("Stream client disconnected: {}", e.getMessage());
+                sink.complete();
+            }
         }).map(bytes -> (DataBuffer) new DefaultDataBufferFactory().wrap(bytes))
                 .timeout(Duration.ofHours(24));
 

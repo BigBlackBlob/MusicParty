@@ -9,6 +9,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.CoverColorResponse;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
@@ -17,6 +18,7 @@ import java.io.ByteArrayInputStream;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.UnknownHostException;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -32,6 +34,7 @@ public class CoverColorService {
     private final Map<String, CoverColorResponse> responseCache;
     private final Semaphore concurrentExtracts;
     private static final long MAX_COVER_BYTES = 3 * 1024 * 1024;
+    private static final Duration COVER_FETCH_TIMEOUT = Duration.ofSeconds(5);
     private static final Set<String> ALLOWED_SCHEMES = Set.of("http", "https");
 
     public CoverColorService(WebClient webClient, AppProperties appProperties) {
@@ -52,22 +55,43 @@ public class CoverColorService {
             return Mono.empty();
         }
 
-        boolean trustedLocalPath = isTrustedLocalCoverPath(coverUrl);
-        String resolvedUrl = resolveCoverUrl(coverUrl);
-        CoverColorResponse cached = responseCache.get(resolvedUrl);
-        if (cached != null) {
-            return Mono.just(cached);
-        }
-        if (!trustedLocalPath && !isSafeCoverUrl(resolvedUrl)) {
-            log.warn("Rejected unsafe cover URL for color extraction: {}", resolvedUrl);
-            return Mono.empty();
-        }
+        return Mono.defer(() -> {
+                    boolean trustedLocalPath = isTrustedLocalCoverPath(coverUrl);
+                    String resolvedUrl = resolveCoverUrl(coverUrl);
+                    CoverColorResponse cached = responseCache.get(resolvedUrl);
+                    if (cached != null) {
+                        return Mono.just(cached);
+                    }
+                    if (!trustedLocalPath && !isSafeCoverUrl(resolvedUrl)) {
+                        log.warn("Rejected unsafe cover URL for color extraction: {}", resolvedUrl);
+                        return Mono.empty();
+                    }
 
-        if (!concurrentExtracts.tryAcquire()) {
-            log.debug("Cover color extraction concurrency limit reached");
-            return Mono.empty();
-        }
+                    if (!concurrentExtracts.tryAcquire()) {
+                        log.debug("Cover color extraction concurrency limit reached");
+                        return Mono.empty();
+                    }
 
+                    return fetchCoverBytes(resolvedUrl)
+                            .timeout(COVER_FETCH_TIMEOUT)
+                            .filter(bytes -> {
+                                boolean allowed = bytes.length <= MAX_COVER_BYTES;
+                                if (!allowed) {
+                                    log.warn("Rejected oversized cover body: url={}, bytes={}", resolvedUrl, bytes.length);
+                                }
+                                return allowed;
+                            })
+                            .flatMap(bytes -> decodeCoverColor(resolvedUrl, bytes))
+                            .onErrorResume(error -> {
+                                log.warn("Failed to fetch cover for color extraction: {}", resolvedUrl, error);
+                                return Mono.empty();
+                            })
+                            .doFinally(ignored -> concurrentExtracts.release());
+                })
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    private Mono<byte[]> fetchCoverBytes(String resolvedUrl) {
         return webClient.get()
                 .uri(resolvedUrl)
                 .exchangeToMono(response -> {
@@ -75,11 +99,7 @@ public class CoverColorService {
                     if (status.is3xxRedirection()) {
                         String location = response.headers().header("Location").stream().findFirst().orElse("");
                         String redirectUrl = resolveRedirectUrl(resolvedUrl, location);
-                        if (!isSafeCoverUrl(redirectUrl)) {
-                            log.warn("Rejected unsafe cover redirect: from={}, to={}", resolvedUrl, redirectUrl);
-                        } else {
-                            log.warn("Rejected cover redirect for color extraction: from={}, to={}", resolvedUrl, redirectUrl);
-                        }
+                        log.warn("Rejected cover redirect for color extraction: from={}, to={}", resolvedUrl, redirectUrl);
                         return Mono.empty();
                     }
                     if (response.statusCode().isError()) {
@@ -96,37 +116,28 @@ public class CoverColorService {
                         return Mono.empty();
                     }
                     return response.bodyToMono(byte[].class);
-                })
-                .filter(bytes -> {
-                    boolean allowed = bytes.length <= MAX_COVER_BYTES;
-                    if (!allowed) {
-                        log.warn("Rejected oversized cover body: url={}, bytes={}", resolvedUrl, bytes.length);
-                    }
-                    return allowed;
-                })
-                .flatMap(bytes -> {
-                    try {
-                        BufferedImage image = ImageIO.read(new ByteArrayInputStream(bytes));
-                        if (image == null) {
-                            return Mono.empty();
-                        }
+                });
+    }
 
-                        Color dominant = extractDominantColor(image);
-                        CoverColorResponse response = toResponse(dominant);
-                        if (appProperties.getPerformance().getCoverColorCacheSize() > 0) {
-                            responseCache.put(resolvedUrl, response);
-                        }
-                        return Mono.just(response);
-                    } catch (Exception e) {
-                        log.warn("Failed to extract cover color from {}", resolvedUrl, e);
-                        return Mono.empty();
+    private Mono<CoverColorResponse> decodeCoverColor(String resolvedUrl, byte[] bytes) {
+        return Mono.fromCallable(() -> {
+                    BufferedImage image = ImageIO.read(new ByteArrayInputStream(bytes));
+                    if (image == null) {
+                        return null;
                     }
+
+                    Color dominant = extractDominantColor(image);
+                    CoverColorResponse response = toResponse(dominant);
+                    if (appProperties.getPerformance().getCoverColorCacheSize() > 0) {
+                        responseCache.put(resolvedUrl, response);
+                    }
+                    return response;
                 })
+                .subscribeOn(Schedulers.boundedElastic())
                 .onErrorResume(error -> {
-                    log.warn("Failed to fetch cover for color extraction: {}", resolvedUrl, error);
+                    log.warn("Failed to extract cover color from {}", resolvedUrl, error);
                     return Mono.empty();
-                })
-                .doFinally(ignored -> concurrentExtracts.release());
+                });
     }
 
     private String resolveCoverUrl(String coverUrl) {

@@ -1,5 +1,6 @@
 package org.thornex.musicparty.service;
 
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -37,7 +38,11 @@ public class UserService {
     private final UserProfileRepository userProfileRepository;
 
     // 延迟任务调度器，用于处理断连抖动
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "user-leave-scheduler");
+        t.setDaemon(true);
+        return t;
+    });
     private final Map<String, ScheduledFuture<?>> pendingLeaveEvents = new ConcurrentHashMap<>();
 
     private static final long USER_EXPIRATION_MS = 1 * 60 * 60 * 1000L;
@@ -149,7 +154,6 @@ public class UserService {
                         pendingLeaveEvents.remove(sessionToken);
                         log.info("User Leave Confirmed: {}", user.getName());
                         eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.USER_LEAVE, user.getPublicId(), null, roomId));
-                        roomSessionCoordinator.onUserDisconnected(roomId, getOnlineUserSummaries(roomId).size());
                     }, LEAVE_DELAY_SEC, TimeUnit.SECONDS);
                     pendingLeaveEvents.put(sessionToken, future);
                 }
@@ -428,5 +432,10 @@ public class UserService {
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 is unavailable", e);
         }
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        scheduler.shutdownNow();
     }
 }

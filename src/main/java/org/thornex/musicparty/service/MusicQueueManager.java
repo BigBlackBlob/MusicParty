@@ -424,7 +424,7 @@ public class MusicQueueManager {
         return -1;
     }
 
-    public List<MusicQueueItem> getQueueSnapshot() {
+    public synchronized List<MusicQueueItem> getQueueSnapshot() {
         return new ArrayList<>(queue);
     }
 
@@ -475,20 +475,22 @@ public class MusicQueueManager {
      * 当队列为空时，从历史记录随机取一首作为 AutoDJ
      */
     private MusicQueueItem pollFromHistory() {
-        if (playHistory.isEmpty()) {
-            return null;
+        synchronized (playHistory) {
+            if (playHistory.isEmpty()) {
+                return null;
+            }
+            Music randomSong = playHistory.get(new Random().nextInt(playHistory.size()));
+
+            UserSummary systemUser = new UserSummary("SYSTEM", "AutoDJ", false);
+
+            // 注意：历史记录出来的歌需要重新判断状态
+            return new MusicQueueItem(
+                    UUID.randomUUID().toString(),
+                    randomSong,
+                    systemUser,
+                    QueueItemStatus.PENDING
+            );
         }
-        Music randomSong = playHistory.get(new Random().nextInt(playHistory.size()));
-
-        UserSummary systemUser = new UserSummary("SYSTEM", "AutoDJ", false);
-
-        // 注意：历史记录出来的歌需要重新判断状态
-        return new MusicQueueItem(
-                UUID.randomUUID().toString(),
-                randomSong,
-                systemUser,
-                QueueItemStatus.PENDING
-        );
     }
 }
 

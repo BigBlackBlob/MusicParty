@@ -14,11 +14,26 @@ import reactor.core.publisher.Mono;
 
 import java.lang.reflect.Method;
 import java.util.Base64;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class CoverColorServiceTests {
+
+    @Test
+    void extractDoesNotAcquireConcurrencyPermitBeforeSubscription() throws Exception {
+        AppProperties properties = new AppProperties();
+        properties.getPerformance().setCoverColorMaxConcurrent(1);
+        CoverColorService service = new CoverColorService(WebClient.builder().build(), properties);
+        java.lang.reflect.Field semaphoreField = CoverColorService.class.getDeclaredField("concurrentExtracts");
+        semaphoreField.setAccessible(true);
+        Semaphore semaphore = (Semaphore) semaphoreField.get(service);
+
+        service.extract("/media/cover.png");
+
+        assertThat(semaphore.availablePermits()).isEqualTo(1);
+    }
 
     @Test
     void rejectsLocalAndNonHttpCoverUrls() throws Exception {

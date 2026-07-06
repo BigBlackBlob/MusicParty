@@ -87,11 +87,11 @@ public class LocalCacheService {
     @Data
     public static class CacheEntry {
         private String id;
-        private String fileName;
-        private CacheStatus status;
-        private long size;
-        private long lastAccessTime;
-        private String originalUrl; // 用于重试或记录
+        private volatile String fileName;
+        private volatile CacheStatus status;
+        private volatile long size;
+        private volatile long lastAccessTime;
+        private volatile String originalUrl; // 用于重试或记录
     }
 
     @PostConstruct

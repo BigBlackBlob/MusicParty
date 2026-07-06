@@ -287,7 +287,7 @@ public class LiveStreamService {
             
             // 异步读取 stdout 并写入 broadcaster
             streamExecutor.submit(() -> {
-                try (InputStream is = transcoderProcess.getInputStream()) {
+                try (InputStream is = activeProcess.getInputStream()) {
                     byte[] buffer = new byte[4096];
                     int bytesRead;
                     while ((bytesRead = is.read(buffer)) != -1) {

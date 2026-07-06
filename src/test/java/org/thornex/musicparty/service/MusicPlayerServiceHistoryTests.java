@@ -3,6 +3,7 @@ package org.thornex.musicparty.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.thornex.musicparty.config.AppProperties;
+import org.thornex.musicparty.dto.EnqueueRequest;
 import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.dto.MusicQueueItem;
 import org.thornex.musicparty.dto.PlayableMusic;
@@ -25,8 +26,10 @@ import org.thornex.musicparty.service.api.IMusicApiService;
 import reactor.core.publisher.Mono;
 
 import java.lang.reflect.Method;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -106,6 +109,42 @@ class MusicPlayerServiceHistoryTests {
     }
 
     @Test
+    void playerLoopDoesNotQueryRepositoryBackedRoomListEveryTick() {
+        RecordingQueueRepository queueRepository = new RecordingQueueRepository();
+        TestContext context = createContext(queueRepository);
+        CountingRoomRepository roomRepository = (CountingRoomRepository) context.roomRepository();
+
+        int before = roomRepository.findAllActiveCalls.get();
+        context.musicPlayerService().playerLoop();
+
+        assertThat(roomRepository.findAllActiveCalls.get()).isEqualTo(before);
+    }
+
+    @Test
+    void concurrentAsyncEnqueueRechecksUserQueueCapAtAddTime() throws Exception {
+        RecordingQueueRepository queueRepository = new RecordingQueueRepository();
+        LocalCacheService localCacheService = mock(LocalCacheService.class);
+        when(localCacheService.getStatus("cached-song-1")).thenReturn(CacheStatus.PENDING);
+        when(localCacheService.getStatus("cached-song-2")).thenReturn(CacheStatus.PENDING);
+        TestContext context = createContext(
+                queueRepository,
+                List.of(new DelayedCachedMusicApiService()),
+                localCacheService,
+                event -> {}
+        );
+        context.properties().getQueue().setMaxUserSongs(1);
+        MusicPlayerService.RoomPlayerSession session = context.musicPlayerService().getSession(context.roomId());
+        context.userService().handleConnect("session-1", "token-1", "Alice", context.roomId());
+
+        session.enqueue(new EnqueueRequest("cached", "song-1"), "session-1");
+        session.enqueue(new EnqueueRequest("cached", "song-2"), "session-1");
+        pollUntil(() -> session.getQueueManager().getQueueSnapshot().size() >= 1, 3000);
+        Thread.sleep(250);
+
+        assertThat(session.getQueueManager().getQueueSnapshot()).hasSize(1);
+    }
+
+    @Test
     void downloadEventMatchesCachedPlatformCacheKey() {
         RecordingQueueRepository queueRepository = new RecordingQueueRepository();
         List<Object> events = new ArrayList<>();
@@ -163,7 +202,7 @@ class MusicPlayerServiceHistoryTests {
                                       org.springframework.context.ApplicationEventPublisher eventPublisher) {
         AppProperties properties = new AppProperties();
         properties.getQueue().setHistorySize(50);
-        RoomRepository roomRepository = new InMemoryRoomRepository();
+        RoomRepository roomRepository = new CountingRoomRepository();
         RoomService roomService = new RoomService(
                 new ObjectMapper(),
                 eventPublisher,
@@ -215,6 +254,15 @@ class MusicPlayerServiceHistoryTests {
         var field = target.getClass().getDeclaredField(fieldName);
         field.setAccessible(true);
         return field.get(target);
+    }
+
+    private static void pollUntil(java.util.function.BooleanSupplier condition, long timeoutMs) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            if (condition.getAsBoolean()) return;
+            Thread.sleep(50);
+        }
+        throw new AssertionError("Condition not met within " + timeoutMs + "ms");
     }
 
     private record TestContext(
@@ -290,6 +338,16 @@ class MusicPlayerServiceHistoryTests {
         }
     }
 
+    private static final class CountingRoomRepository extends InMemoryRoomRepository {
+        final AtomicInteger findAllActiveCalls = new AtomicInteger();
+
+        @Override
+        public List<org.thornex.musicparty.persistence.PersistedRoom> findAllActive() {
+            findAllActiveCalls.incrementAndGet();
+            return super.findAllActive();
+        }
+    }
+
     private static final class TestCachedMusicApiService implements CachedMusicApiService {
         @Override
         public String getPlatformName() {
@@ -319,6 +377,63 @@ class MusicPlayerServiceHistoryTests {
         @Override
         public Mono<PlayableMusic> getPlayableMusic(String musicId) {
             return Mono.just(new PlayableMusic(musicId, "Video", List.of("Channel"), 180_000L, "youtube", "/media/youtube-" + musicId + ".m4a", "cover", false));
+        }
+
+        @Override
+        public Mono<List<Playlist>> getUserPlaylists(String userId) {
+            return Mono.just(List.of());
+        }
+
+        @Override
+        public Mono<List<Music>> getPlaylistMusics(String playlistId, int offset, int limit) {
+            return Mono.just(List.of());
+        }
+
+        @Override
+        public Mono<List<UserSearchResult>> searchUsers(String keyword) {
+            return Mono.just(List.of());
+        }
+
+        @Override
+        public Mono<String> getLyric(String musicId) {
+            return Mono.just("");
+        }
+    }
+
+    private static final class DelayedCachedMusicApiService implements CachedMusicApiService {
+        @Override
+        public String getPlatformName() {
+            return "cached";
+        }
+
+        @Override
+        public boolean isAvailable() {
+            return true;
+        }
+
+        @Override
+        public String cacheKey(String musicId) {
+            return "cached-" + musicId;
+        }
+
+        @Override
+        public void prefetchMusic(String musicId) {
+        }
+
+        @Override
+        public Mono<List<Music>> searchMusic(String keyword) {
+            return Mono.just(List.of());
+        }
+
+        @Override
+        public Mono<List<Music>> searchMusic(String keyword, int offset, int limit) {
+            return Mono.just(List.of());
+        }
+
+        @Override
+        public Mono<PlayableMusic> getPlayableMusic(String musicId) {
+            return Mono.delay(Duration.ofMillis(100))
+                    .map(ignored -> new PlayableMusic(musicId, "Song " + musicId, List.of("Artist"), 180_000L, "cached", "/media/" + musicId, "cover", false));
         }
 
         @Override

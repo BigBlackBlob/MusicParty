@@ -7,9 +7,20 @@ import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.enums.CacheStatus;
 import reactor.core.publisher.Mono;
 
+import java.lang.reflect.Modifier;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class LocalCacheServicePerformanceTests {
+
+    @Test
+    void cacheEntryMutableFieldsAreVolatileForCrossThreadVisibility() throws Exception {
+        assertThat(Modifier.isVolatile(LocalCacheService.CacheEntry.class.getDeclaredField("fileName").getModifiers())).isTrue();
+        assertThat(Modifier.isVolatile(LocalCacheService.CacheEntry.class.getDeclaredField("status").getModifiers())).isTrue();
+        assertThat(Modifier.isVolatile(LocalCacheService.CacheEntry.class.getDeclaredField("size").getModifiers())).isTrue();
+        assertThat(Modifier.isVolatile(LocalCacheService.CacheEntry.class.getDeclaredField("lastAccessTime").getModifiers())).isTrue();
+        assertThat(Modifier.isVolatile(LocalCacheService.CacheEntry.class.getDeclaredField("originalUrl").getModifiers())).isTrue();
+    }
 
     @Test
     void submitDynamicDownloadRejectsTasksWhenQueueGuardIsFull() {
