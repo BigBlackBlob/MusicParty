@@ -17,6 +17,7 @@ import org.thornex.musicparty.service.LocalCacheService;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -50,9 +51,10 @@ public class LiveStreamService {
     private long activeStreamStartPosition;
     private long activeStreamStartTime;
     private static final long STREAM_POSITION_DRIFT_TOLERANCE_MS = 1500;
+    private static final int FFMPEG_STDERR_LOG_LIMIT = 8192;
     
     // 广播器：负责将转码后的数据分发给所有 HTTP 客户端
-    private final StreamBroadcaster broadcaster = new StreamBroadcaster();
+    private StreamBroadcaster broadcaster;
 
     // 统计唯一收听人数 (按 IP 地址去重)
     private final java.util.Map<String, Integer> ipConnectionCount = new java.util.concurrent.ConcurrentHashMap<>();
@@ -72,6 +74,10 @@ public class LiveStreamService {
     @PostConstruct
     public void init() {
         streamExecutor = Executors.newCachedThreadPool();
+        broadcaster = new StreamBroadcaster(
+                appProperties.getPerformance().getStreamClientQueueCapacity(),
+                appProperties.getPerformance().getStreamWriterThreads()
+        );
         broadcaster.setOnClientRemoved(this::handleClientRemoved);
     }
 
@@ -121,6 +127,14 @@ public class LiveStreamService {
     }
 
     public CountDownLatch addListener(OutputStream outputStream, String remoteAddr) {
+        if (getStreamListenerCount() >= appProperties.getPerformance().getStreamMaxListeners()) {
+            log.warn("Rejecting stream listener because limit {} is reached", appProperties.getPerformance().getStreamMaxListeners());
+            try {
+                outputStream.close();
+            } catch (IOException ignored) {
+            }
+            return null;
+        }
         CountDownLatch closeSignal = new CountDownLatch(1);
         streamCloseSignals.put(outputStream, closeSignal);
         hasListeners.set(true);
@@ -263,12 +277,13 @@ public class LiveStreamService {
             command.add("pipe:1");
 
             ProcessBuilder pb = new ProcessBuilder(command);
-            pb.redirectError(ProcessBuilder.Redirect.DISCARD);
 
             transcoderProcess = pb.start();
             activeStreamKey = streamKey;
             activeStreamStartPosition = currentPosition;
             activeStreamStartTime = System.currentTimeMillis();
+            Process activeProcess = transcoderProcess;
+            streamExecutor.submit(() -> drainFfmpegStderr(activeProcess, currentMusic.name()));
             
             // 异步读取 stdout 并写入 broadcaster
             streamExecutor.submit(() -> {
@@ -289,6 +304,31 @@ public class LiveStreamService {
         } catch (IOException e) {
             activeStreamKey = null;
             log.error("Stream: Failed to start ffmpeg", e);
+        }
+    }
+
+    private void drainFfmpegStderr(Process process, String musicName) {
+        byte[] buffer = new byte[1024];
+        StringBuilder sample = new StringBuilder();
+        int totalBytes = 0;
+        try (InputStream stderr = process.getErrorStream()) {
+            int bytesRead;
+            while ((bytesRead = stderr.read(buffer)) != -1) {
+                totalBytes += bytesRead;
+                if (sample.length() < FFMPEG_STDERR_LOG_LIMIT) {
+                    int remaining = FFMPEG_STDERR_LOG_LIMIT - sample.length();
+                    sample.append(new String(buffer, 0, Math.min(bytesRead, remaining), StandardCharsets.UTF_8));
+                }
+            }
+        } catch (IOException e) {
+            log.debug("Stream: ffmpeg stderr reader stopped: {}", e.getMessage());
+            return;
+        }
+        if (!sample.isEmpty()) {
+            log.warn("Stream: ffmpeg stderr for {}{}: {}",
+                    musicName,
+                    totalBytes > FFMPEG_STDERR_LOG_LIMIT ? " (truncated)" : "",
+                    sample.toString().strip());
         }
     }
 

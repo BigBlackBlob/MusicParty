@@ -47,16 +47,25 @@ services:
       # - NAVIDROME_ALLOWED_USERS=Nirotiy,Alice
 
       # [性能/策略配置]
+      - JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=65 -XX:+UseG1GC
       - QUEUE_MAX_SIZE=1000          # 播放队列最大长度
       - QUEUE_HISTORY_SIZE=50        # 历史记录保留数量
       - PLAYLIST_IMPORT_LIMIT=100    # 导入歌单时的最大歌曲数限制
       - CHAT_HISTORY_LIMIT=1000      # 聊天历史记录保留数量
       - CACHE_MAX_SIZE=1GB           # 本地音乐缓存上限 (例如 512MB, 1GB, 2GB)
+      - STREAM_MAX_LISTENERS=50      # HTTP 直播最大监听连接数
+      - STREAM_CLIENT_QUEUE_CAPACITY=32 # 单个直播客户端待发送音频块队列容量
+      - STREAM_WRITER_THREADS=8      # 直播客户端写出线程数
+      - DOWNLOAD_MAX_QUEUED_TASKS=100 # YouTube/远程缓存下载最大排队数
+      - DOWNLOAD_TASK_TTL_MS=1800000 # 失败或长期挂起下载任务保留时间
+      - COVER_COLOR_CACHE_SIZE=256   # 封面取色 URL 结果缓存数量
+      - COVER_COLOR_MAX_CONCURRENT=4 # 封面下载/解码最大并发数
       # [本地上传曲库]
       - LOCAL_LIBRARY_ENABLED=true
       - LOCAL_LIBRARY_PATH=data/local-library
       - LOCAL_LIBRARY_ALLOWED_USERS= # 管理员始终可上传；非管理员白名单可在设置页维护
       - LOCAL_LIBRARY_MAX_UPLOAD_BYTES=209715200
+      - LOCAL_LIBRARY_MAX_EMBEDDED_COVER_BYTES=1048576
       - MULTIPART_MAX_FILE_SIZE=200MB
       - MULTIPART_MAX_REQUEST_SIZE=220MB
 

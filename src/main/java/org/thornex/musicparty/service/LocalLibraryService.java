@@ -179,6 +179,10 @@ public class LocalLibraryService {
             Tag tag = audioFile.getTag();
             Artwork artwork = tag == null ? null : tag.getFirstArtwork();
             byte[] cover = artwork == null ? null : artwork.getBinaryData();
+            if (cover != null && cover.length > appProperties.getLocalLibrary().getMaxEmbeddedCoverBytes()) {
+                log.info("Ignoring oversized embedded cover for {}", input);
+                cover = null;
+            }
             return new LocalTrackMetadata(
                     text(tag, FieldKey.TITLE),
                     text(tag, FieldKey.ARTIST),

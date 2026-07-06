@@ -2,6 +2,7 @@ package org.thornex.musicparty.service;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.thornex.musicparty.dto.ChatRequest;
 import org.thornex.musicparty.dto.ChatMessage;
@@ -70,6 +71,24 @@ public class ChatService {
 
         lastMessageTime.put(userPublicId, now);
         return true;
+    }
+
+    @Scheduled(fixedDelay = 60000)
+    void cleanupLastMessageTimes() {
+        cleanupLastMessageTimes(System.currentTimeMillis());
+    }
+
+    void cleanupLastMessageTimes(long now) {
+        long ttl = Math.max(appProperties.getChat().getMinIntervalMs() * 10, 60_000L);
+        lastMessageTime.entrySet().removeIf(entry -> now - entry.getValue() > ttl);
+    }
+
+    public int getTrackedMessageRateLimitCount() {
+        return lastMessageTime.size();
+    }
+
+    public int getLoadedRoomHistoryCount() {
+        return roomHistories.size();
     }
 
     /**

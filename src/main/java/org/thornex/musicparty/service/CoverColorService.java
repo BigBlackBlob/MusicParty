@@ -18,8 +18,10 @@ import java.net.InetAddress;
 import java.net.URI;
 import java.net.UnknownHostException;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Semaphore;
 
 @Service
 @Slf4j
@@ -27,12 +29,22 @@ public class CoverColorService {
 
     private final WebClient webClient;
     private final AppProperties appProperties;
+    private final Map<String, CoverColorResponse> responseCache;
+    private final Semaphore concurrentExtracts;
     private static final long MAX_COVER_BYTES = 3 * 1024 * 1024;
     private static final Set<String> ALLOWED_SCHEMES = Set.of("http", "https");
 
     public CoverColorService(WebClient webClient, AppProperties appProperties) {
         this.webClient = webClient;
         this.appProperties = appProperties;
+        int maxCacheSize = Math.max(0, appProperties.getPerformance().getCoverColorCacheSize());
+        this.responseCache = java.util.Collections.synchronizedMap(new LinkedHashMap<>(16, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, CoverColorResponse> eldest) {
+                return maxCacheSize > 0 && size() > maxCacheSize;
+            }
+        });
+        this.concurrentExtracts = new Semaphore(Math.max(1, appProperties.getPerformance().getCoverColorMaxConcurrent()));
     }
 
     public Mono<CoverColorResponse> extract(String coverUrl) {
@@ -42,8 +54,17 @@ public class CoverColorService {
 
         boolean trustedLocalPath = isTrustedLocalCoverPath(coverUrl);
         String resolvedUrl = resolveCoverUrl(coverUrl);
+        CoverColorResponse cached = responseCache.get(resolvedUrl);
+        if (cached != null) {
+            return Mono.just(cached);
+        }
         if (!trustedLocalPath && !isSafeCoverUrl(resolvedUrl)) {
             log.warn("Rejected unsafe cover URL for color extraction: {}", resolvedUrl);
+            return Mono.empty();
+        }
+
+        if (!concurrentExtracts.tryAcquire()) {
+            log.debug("Cover color extraction concurrency limit reached");
             return Mono.empty();
         }
 
@@ -91,7 +112,11 @@ public class CoverColorService {
                         }
 
                         Color dominant = extractDominantColor(image);
-                        return Mono.just(toResponse(dominant));
+                        CoverColorResponse response = toResponse(dominant);
+                        if (appProperties.getPerformance().getCoverColorCacheSize() > 0) {
+                            responseCache.put(resolvedUrl, response);
+                        }
+                        return Mono.just(response);
                     } catch (Exception e) {
                         log.warn("Failed to extract cover color from {}", resolvedUrl, e);
                         return Mono.empty();
@@ -100,7 +125,8 @@ public class CoverColorService {
                 .onErrorResume(error -> {
                     log.warn("Failed to fetch cover for color extraction: {}", resolvedUrl, error);
                     return Mono.empty();
-                });
+                })
+                .doFinally(ignored -> concurrentExtracts.release());
     }
 
     private String resolveCoverUrl(String coverUrl) {

@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferUtils;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.thornex.musicparty.config.LocalResourceConfig;
@@ -34,6 +35,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Service
 @Slf4j
@@ -48,7 +50,9 @@ public class LocalCacheService {
     private final ApplicationEventPublisher eventPublisher;
     private final AppProperties appProperties;
     private final Sinks.Many<DownloadTask> downloadQueue = Sinks.many().unicast().onBackpressureBuffer();
+    private final AtomicInteger pendingDownloadTasks = new AtomicInteger(0);
     private Disposable queueSubscription;
+    private static final int COMMAND_OUTPUT_LIMIT = 16 * 1024;
 
     private record DownloadTask(
             String musicId,
@@ -167,6 +171,10 @@ public class LocalCacheService {
                 return; // 直接返回，不要重复 emit
             }
         }
+        if (pendingDownloadTasks.get() >= appProperties.getPerformance().getDownloadMaxQueuedTasks()) {
+            log.warn("Download queue limit reached; rejecting task {}", musicId);
+            return;
+        }
 
         // 初始化条目
         CacheEntry entry = new CacheEntry();
@@ -176,10 +184,12 @@ public class LocalCacheService {
         cacheIndex.put(musicId, entry);
 
         eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
+        pendingDownloadTasks.incrementAndGet();
 
         Sinks.EmitResult result = downloadQueue.tryEmitNext(new DownloadTask(musicId, sourceProvider));
 
         if (result.isFailure()) {
+            pendingDownloadTasks.decrementAndGet();
             log.error("Failed to enqueue download task for {}", musicId);
             entry.setStatus(CacheStatus.FAILED);
             eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
@@ -189,6 +199,7 @@ public class LocalCacheService {
     }
 
     private Mono<Void> processTask(DownloadTask task) {
+        pendingDownloadTasks.updateAndGet(value -> Math.max(0, value - 1));
         String musicId = task.musicId();
         CacheEntry entry = cacheIndex.get(musicId);
 
@@ -260,7 +271,7 @@ public class LocalCacheService {
                         Process process = pb.start();
                         CompletableFuture<String> outputFuture = CompletableFuture.supplyAsync(() -> {
                             try {
-                                return new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                                return readProcessOutput(process.getInputStream());
                             } catch (IOException e) {
                                 return "Failed to read command output: " + e.getMessage();
                             }
@@ -285,6 +296,27 @@ public class LocalCacheService {
                 })
                 .subscribeOn(Schedulers.boundedElastic())
                 .then();
+    }
+
+    private String readProcessOutput(java.io.InputStream inputStream) throws IOException {
+        byte[] buffer = new byte[1024];
+        byte[] captured = new byte[COMMAND_OUTPUT_LIMIT];
+        int capturedLength = 0;
+        int totalRead = 0;
+        int read;
+        while ((read = inputStream.read(buffer)) != -1) {
+            totalRead += read;
+            int copy = Math.min(read, COMMAND_OUTPUT_LIMIT - capturedLength);
+            if (copy > 0) {
+                System.arraycopy(buffer, 0, captured, capturedLength, copy);
+                capturedLength += copy;
+            }
+        }
+        String output = new String(captured, 0, capturedLength, java.nio.charset.StandardCharsets.UTF_8);
+        if (totalRead > COMMAND_OUTPUT_LIMIT) {
+            output += "\n... output truncated after " + COMMAND_OUTPUT_LIMIT + " bytes";
+        }
+        return output;
     }
 
     private void completeDownload(CacheEntry entry, String musicId, String fileName, Path partPath, Path destPath) {
@@ -387,5 +419,35 @@ public class LocalCacheService {
         if (entry != null) {
             entry.setLastAccessTime(System.currentTimeMillis());
         }
+    }
+
+    @Scheduled(fixedDelay = 60000)
+    void cleanupStaleTasks() {
+        cleanupStaleTasks(System.currentTimeMillis());
+    }
+
+    void cleanupStaleTasks(long now) {
+        long ttl = appProperties.getPerformance().getDownloadTaskTtlMs();
+        cacheIndex.entrySet().removeIf(entry -> {
+            CacheStatus status = entry.getValue().getStatus();
+            boolean staleStatus = status == CacheStatus.PENDING || status == CacheStatus.FAILED;
+            return staleStatus && now - entry.getValue().getLastAccessTime() > ttl;
+        });
+    }
+
+    public int getTrackedCacheEntryCount() {
+        return cacheIndex.size();
+    }
+
+    public int getPendingDownloadTaskCount() {
+        return pendingDownloadTasks.get();
+    }
+
+    void trackForTest(String musicId, CacheStatus status, long lastAccessTime) {
+        CacheEntry entry = new CacheEntry();
+        entry.setId(musicId);
+        entry.setStatus(status);
+        entry.setLastAccessTime(lastAccessTime);
+        cacheIndex.put(musicId, entry);
     }
 }

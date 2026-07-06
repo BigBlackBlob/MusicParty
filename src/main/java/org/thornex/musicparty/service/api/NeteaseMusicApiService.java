@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.*;
 import org.thornex.musicparty.exception.ApiRequestException;
@@ -13,8 +14,11 @@ import org.thornex.musicparty.service.SiteSettingService;
 import reactor.core.publisher.Mono;
 import com.fasterxml.jackson.databind.JsonNode;
 
+import java.net.SocketTimeoutException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.StreamSupport;
 
 @Service
@@ -155,9 +159,22 @@ public class NeteaseMusicApiService implements IMusicApiService {
 
     private Mono<ApiRequestException> handleApiError(String apiName, org.springframework.web.reactive.function.client.ClientResponse response) {
         return response.bodyToMono(String.class)
-                .flatMap(errorBody -> Mono.error(new ApiRequestException(
-                        String.format("Netease API '%s' failed with status %d: %s", apiName, response.statusCode().value(), errorBody)
-                )));
+                .flatMap(errorBody -> {
+                    int status = response.statusCode().value();
+                    String category;
+                    if (status == 401 || status == 403) {
+                        category = "网易云 Cookie 已失效或无权限";
+                    } else if (status >= 400 && status < 500) {
+                        category = "网易云上游客户端错误";
+                    } else if (status >= 500) {
+                        category = "网易云上游服务错误";
+                    } else {
+                        category = "网易云上游错误";
+                    }
+                    return Mono.error(new ApiRequestException(
+                            String.format("%s: api=%s, status=%d, body=%s", category, apiName, status, errorBody)
+                    ));
+                });
     }
 
     // UPDATED: All API calls now use the raw cookie from getCookie()
@@ -256,7 +273,51 @@ public class NeteaseMusicApiService implements IMusicApiService {
                 .retrieve()
                 .onStatus(HttpStatusCode::isError, response -> handleApiError("get song URL", response))
                 .bodyToMono(JsonNode.class)
-                .map(jsonNode -> upgradeToHttps(jsonNode.path("data").get(0).path("url").asText()));
+                .timeout(Duration.ofSeconds(8))
+                .map(jsonNode -> parseCdnUrl(jsonNode, musicId))
+                .onErrorMap(this::classifyResolveError);
+    }
+
+    private String parseCdnUrl(JsonNode jsonNode, String musicId) {
+        JsonNode data = jsonNode.path("data");
+        if (!data.isArray() || data.isEmpty()) {
+            throw new ApiRequestException("网易云未返回播放地址: songId=" + musicId);
+        }
+        JsonNode item = data.get(0);
+        int code = item.path("code").asInt(jsonNode.path("code").asInt(200));
+        if (code == 401 || code == 301 || code == 302) {
+            throw new ApiRequestException("网易云 Cookie 已失效，请更新 Cookie");
+        }
+        if (code == 403 || code == 404 || item.path("fee").asInt(-1) == 1 || item.path("freeTrialInfo").isObject()) {
+            throw new ApiRequestException("网易云歌曲无版权或当前账号不可播放: songId=" + musicId);
+        }
+        String url = item.path("url").asText("");
+        if (!StringUtils.hasText(url)) {
+            throw new ApiRequestException("网易云返回空播放地址: songId=" + musicId + ", code=" + code);
+        }
+        return upgradeToHttps(url);
+    }
+
+    private Throwable classifyResolveError(Throwable error) {
+        if (error instanceof ApiRequestException) {
+            return error;
+        }
+        if (error instanceof TimeoutException || error instanceof SocketTimeoutException) {
+            return new ApiRequestException("网易云播放地址解析超时");
+        }
+        if (error instanceof WebClientResponseException responseException) {
+            int status = responseException.getStatusCode().value();
+            if (status == 401 || status == 403) {
+                return new ApiRequestException("网易云 Cookie 已失效或无权限: HTTP " + status);
+            }
+            if (status >= 400 && status < 500) {
+                return new ApiRequestException("网易云上游客户端错误: HTTP " + status);
+            }
+            if (status >= 500) {
+                return new ApiRequestException("网易云上游服务错误: HTTP " + status);
+            }
+        }
+        return new ApiRequestException("网易云播放地址解析失败: " + error.getMessage());
     }
 
     private Mono<Music> getMusicDetails(String musicId) {

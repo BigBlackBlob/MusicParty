@@ -15,6 +15,7 @@ public class AppProperties {
     private String adminPassword;
     private String baseUrl;
     private String allowedOrigins;
+    private String mode = "server";
     private String authorName = "ThorNex";
     private String backWords = "THORNEX";
     private String ffmpegPath = "ffmpeg"; // 默认使用环境变量中的 ffmpeg
@@ -27,6 +28,8 @@ public class AppProperties {
     private AuthConfig auth = new AuthConfig();
     private DatabaseConfig database = new DatabaseConfig();
     private LocalLibraryConfig localLibrary = new LocalLibraryConfig();
+    private PerformanceConfig performance = new PerformanceConfig();
+    private DesktopConfig desktop = new DesktopConfig();
 
     @Data
     public static class QueueConfig {
@@ -66,6 +69,26 @@ public class AppProperties {
         private String path = "data/local-library";
         private String allowedUsers = "";
         private long maxUploadBytes = 200L * 1024L * 1024L;
+        private long maxEmbeddedCoverBytes = 1024L * 1024L;
+    }
+
+    @Data
+    public static class PerformanceConfig {
+        private int streamMaxListeners = 50;
+        private int streamClientQueueCapacity = 32;
+        private int streamWriterThreads = 8;
+        private int downloadMaxQueuedTasks = 100;
+        private long downloadTaskTtlMs = 30 * 60 * 1000L;
+        private int coverColorCacheSize = 256;
+        private int coverColorMaxConcurrent = 4;
+    }
+
+    @Data
+    public static class DesktopConfig {
+        private String profileDir = "data/desktop-profile";
+        private String lanBaseUrl = "";
+        private int neteaseApiPort = 3000;
+        private boolean adminInitialized = false;
     }
 
     @Data

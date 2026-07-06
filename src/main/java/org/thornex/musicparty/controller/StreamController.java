@@ -61,6 +61,10 @@ public class StreamController {
             Schedulers.boundedElastic().schedule(() -> {
                 try {
                     CountDownLatch closed = liveStreamService.addListener(os, remoteAddr);
+                    if (closed == null) {
+                        sink.error(new IllegalStateException("Live stream listener limit reached"));
+                        return;
+                    }
                     closed.await();
                     sink.complete();
                 } catch (InterruptedException e) {

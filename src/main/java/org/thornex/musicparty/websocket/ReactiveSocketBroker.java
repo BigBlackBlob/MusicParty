@@ -36,6 +36,7 @@ public class ReactiveSocketBroker {
             sink.tryEmitComplete();
         }
         roomSessions.values().forEach(sessions -> sessions.remove(sessionId));
+        roomSessions.entrySet().removeIf(entry -> entry.getValue().isEmpty());
     }
 
     public void subscribeRoom(String sessionId, String roomId) {
@@ -72,6 +73,14 @@ public class ReactiveSocketBroker {
     public void broadcastAll(String type, Object payload) {
         SocketEnvelope envelope = new SocketEnvelope(type, null, null, payload);
         sessions.values().forEach(sink -> emit(sink, envelope));
+    }
+
+    public int getSessionCount() {
+        return sessions.size();
+    }
+
+    public int getSubscribedRoomCount() {
+        return roomSessions.size();
     }
 
     private void emit(Sinks.Many<String> sink, SocketEnvelope envelope) {

@@ -1,3 +1,5 @@
+import { getConnectionProfile } from '../api/connectionProfile';
+
 class SocketService {
     constructor() {
         this.client = null;
@@ -53,8 +55,11 @@ class SocketService {
     }
 
     buildUrl(authParams = {}) {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const url = new URL(`${protocol}//${window.location.host}/ws`);
+        const profile = getConnectionProfile();
+        const origin = profile.baseUrl || window.location.origin;
+        const httpUrl = new URL(origin);
+        const protocol = httpUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+        const url = new URL(`${protocol}//${httpUrl.host}/ws`);
         Object.entries(authParams).forEach(([key, value]) => {
             if (value !== undefined && value !== null && value !== '') {
                 url.searchParams.set(key, value);

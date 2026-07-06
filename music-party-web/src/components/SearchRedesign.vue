@@ -39,6 +39,7 @@
           <div class="space-y-1">
              <button class="w-full text-left px-3 py-2 rounded-[var(--radius-sm)] text-[13px] font-bold bg-surface-raised text-primary">{{ t('platforms.netease') }}</button>
              <button class="w-full text-left px-3 py-2 rounded-[var(--radius-sm)] text-[13px] font-bold text-text-muted hover:bg-surface-raised hover:text-text-primary transition-colors">{{ t('platforms.bilibili') }}</button>
+             <button class="w-full text-left px-3 py-2 rounded-[var(--radius-sm)] text-[13px] font-bold text-text-muted hover:bg-surface-raised hover:text-text-primary transition-colors">{{ t('platforms.youtube') }}</button>
           </div>
         </aside>
         

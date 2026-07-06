@@ -21,6 +21,7 @@ logging:
 app:
   music-api:
     admin-password: ${ADMIN_PASSWORD:}
+    mode: ${APP_MODE:server}
     base-url: ${BASE_URL:http://localhost:8080}
     allowed-origins: ${ALLOWED_ORIGINS:}
     author-name: ${APP_AUTHOR_NAME:ThorNex}
@@ -70,11 +71,25 @@ app:
       max-message-length: ${CHAT_MAX_LENGTH:200}
     cache:
       max-size: ${CACHE_MAX_SIZE:1GB}
+    performance:
+      stream-max-listeners: ${STREAM_MAX_LISTENERS:50}
+      stream-client-queue-capacity: ${STREAM_CLIENT_QUEUE_CAPACITY:32}
+      stream-writer-threads: ${STREAM_WRITER_THREADS:8}
+      download-max-queued-tasks: ${DOWNLOAD_MAX_QUEUED_TASKS:100}
+      download-task-ttl-ms: ${DOWNLOAD_TASK_TTL_MS:1800000}
+      cover-color-cache-size: ${COVER_COLOR_CACHE_SIZE:256}
+      cover-color-max-concurrent: ${COVER_COLOR_MAX_CONCURRENT:4}
+    desktop:
+      profile-dir: ${MUSICPARTY_PROFILE_DIR:data/desktop-profile}
+      lan-base-url: ${DESKTOP_LAN_BASE_URL:}
+      netease-api-port: ${DESKTOP_NETEASE_API_PORT:3000}
+      admin-initialized: ${DESKTOP_ADMIN_INITIALIZED:false}
     local-library:
       enabled: ${LOCAL_LIBRARY_ENABLED:true}
       path: ${LOCAL_LIBRARY_PATH:data/local-library}
       allowed-users: ${LOCAL_LIBRARY_ALLOWED_USERS:}
       max-upload-bytes: ${LOCAL_LIBRARY_MAX_UPLOAD_BYTES:209715200}
+      max-embedded-cover-bytes: ${LOCAL_LIBRARY_MAX_EMBEDDED_COVER_BYTES:1048576}
     database:
       enabled: ${DB_ENABLED:true}
       path: ${DB_PATH:data/musicparty.db}

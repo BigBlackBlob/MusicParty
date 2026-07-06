@@ -56,6 +56,15 @@ describe('socketService', () => {
     expect(socketService.client.url).toContain('room-id=stage');
   });
 
+  it('uses the configured backend origin when building socket URLs', async () => {
+    const { setConnectionProfile } = await import('../api/connectionProfile');
+    setConnectionProfile({ mode: 'join', baseUrl: 'http://192.168.1.10:48120/room/lobby' });
+
+    socketService.connect({ 'room-id': 'lounge' }, {}, {});
+
+    expect(socketService.client.url).toBe('ws://192.168.1.10:48120/ws?room-id=lounge');
+  });
+
   it('returns false instead of silently dropping sends while disconnected', () => {
     const sent = socketService.send('control.toggle-pause');
 

@@ -41,6 +41,10 @@ public class SocketRateLimiter {
         windows.entrySet().removeIf(entry -> now >= entry.getValue().resetAt);
     }
 
+    public int getTrackedWindowCount() {
+        return windows.size();
+    }
+
     private record Rule(int maxEvents, Duration window) {
     }
 

@@ -65,5 +65,8 @@ COPY --from=backend-builder /app/backend/target/*.jar app.jar
 # 暴露端口
 EXPOSE 8080
 
+# 默认按容器内存收敛 JVM heap，并使用适合服务端长运行的 G1。
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=65 -XX:+UseG1GC"
+
 # 启动命令
 ENTRYPOINT ["java", "-jar", "app.jar"]

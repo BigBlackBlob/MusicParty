@@ -22,10 +22,20 @@ import java.util.function.Consumer;
 @Slf4j
 public class StreamBroadcaster {
 
-    private static final int CLIENT_QUEUE_CAPACITY = 64;
+    private static final int DEFAULT_CLIENT_QUEUE_CAPACITY = 32;
     private final Map<OutputStream, ClientSink> clients = new ConcurrentHashMap<>();
-    private final ExecutorService clientWriterExecutor = Executors.newCachedThreadPool(new NamedThreadFactory());
+    private final int clientQueueCapacity;
+    private final ExecutorService clientWriterExecutor;
     private Consumer<OutputStream> onClientRemoved;
+
+    public StreamBroadcaster() {
+        this(DEFAULT_CLIENT_QUEUE_CAPACITY, 8);
+    }
+
+    public StreamBroadcaster(int clientQueueCapacity, int writerThreads) {
+        this.clientQueueCapacity = Math.max(1, clientQueueCapacity);
+        this.clientWriterExecutor = Executors.newFixedThreadPool(Math.max(1, writerThreads), new NamedThreadFactory());
+    }
 
     public void setOnClientRemoved(Consumer<OutputStream> onClientRemoved) {
         this.onClientRemoved = onClientRemoved;
@@ -85,7 +95,7 @@ public class StreamBroadcaster {
 
     private class ClientSink {
         private final OutputStream outputStream;
-        private final ArrayBlockingQueue<byte[]> queue = new ArrayBlockingQueue<>(CLIENT_QUEUE_CAPACITY);
+        private final ArrayBlockingQueue<byte[]> queue = new ArrayBlockingQueue<>(clientQueueCapacity);
         private final AtomicBoolean active = new AtomicBoolean(true);
         private Future<?> writerFuture;
 

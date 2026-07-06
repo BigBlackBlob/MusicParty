@@ -17,6 +17,7 @@ import org.thornex.musicparty.service.ChatService;
 import org.thornex.musicparty.service.AdminAuthorizationService;
 import org.thornex.musicparty.service.MusicPlayerService;
 import org.thornex.musicparty.service.NavidromeAccessService;
+import org.thornex.musicparty.service.RuntimeMetricsService;
 import org.thornex.musicparty.service.RoomSubsonicSource;
 import org.thornex.musicparty.service.SubsonicSourceRegistry;
 import org.thornex.musicparty.service.api.BilibiliMusicApiService;
@@ -38,6 +39,7 @@ public class AdminController {
     private final SubsonicSourceRegistry subsonicSourceRegistry;
     private final NavidromeAccessService navidromeAccessService;
     private final AdminAuthorizationService adminAuthorizationService;
+    private final RuntimeMetricsService runtimeMetricsService;
 
     public AdminController(MusicPlayerService musicPlayerService,
                            ChatService chatService,
@@ -46,7 +48,8 @@ public class AdminController {
                            org.thornex.musicparty.service.stream.LiveStreamService liveStreamService,
                            SubsonicSourceRegistry subsonicSourceRegistry,
                            NavidromeAccessService navidromeAccessService,
-                           AdminAuthorizationService adminAuthorizationService) {
+                           AdminAuthorizationService adminAuthorizationService,
+                           RuntimeMetricsService runtimeMetricsService) {
         this.musicPlayerService = musicPlayerService;
         this.chatService = chatService;
         this.neteaseMusicApiService = neteaseMusicApiService;
@@ -55,6 +58,7 @@ public class AdminController {
         this.subsonicSourceRegistry = subsonicSourceRegistry;
         this.navidromeAccessService = navidromeAccessService;
         this.adminAuthorizationService = adminAuthorizationService;
+        this.runtimeMetricsService = runtimeMetricsService;
     }
 
     @PostMapping("/command")
@@ -167,6 +171,14 @@ public class AdminController {
             default:
                 return just(ResponseEntity.badRequest().body(Map.of("message", "Unknown command: " + action)));
         }
+    }
+
+    @GetMapping("/runtime-metrics")
+    public ResponseEntity<?> runtimeMetrics(String adminPassword, String sessionToken) {
+        if (!isValidAdmin(sessionToken, adminPassword)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "ACCESS DENIED"));
+        }
+        return ResponseEntity.ok(runtimeMetricsService.snapshot());
     }
 
     @PostMapping("/subsonic-source")

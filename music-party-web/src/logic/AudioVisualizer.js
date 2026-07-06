@@ -17,6 +17,8 @@ export class AudioVisualizer {
 
         // 状态标记
         this.isPlaying = false;
+        this.lastIdleFrameAt = 0;
+        this.idleFrameIntervalMs = 250;
 
         // 爆发控制变量
         this.speedMultiplier = 1.0;
@@ -90,13 +92,38 @@ export class AudioVisualizer {
         const loop = () => {
             if (!this.canvas || !this.ctx) return;
 
-            this.draw();
+            const now = Date.now();
+            if (this.shouldDrawFrame({ now })) {
+                this.draw(now);
+            }
             this.animationId = requestAnimationFrame(loop);
         };
         loop();
     }
 
-    draw() {
+    shouldDrawFrame({ visibilityState = document?.visibilityState || 'visible', now = Date.now() } = {}) {
+        if (this.isPlaying) return true;
+
+        const multiplierDelta = Math.max(
+            Math.abs(this.speedMultiplier - 1.0),
+            Math.abs(this.widthMultiplier - 1.0),
+            Math.abs(this.roughnessMultiplier - 1.0)
+        );
+        const visualDelta = Math.max(
+            Math.abs(this.smoothAlpha - 0.05),
+            Math.abs(this.smoothWidthScale - 0.3)
+        );
+        const settled = multiplierDelta < 0.01 && visualDelta < 0.01;
+
+        if (!settled) return true;
+        if (visibilityState === 'hidden') return false;
+        if (now - this.lastIdleFrameAt < this.idleFrameIntervalMs) return false;
+
+        this.lastIdleFrameAt = now;
+        return true;
+    }
+
+    draw(now = Date.now()) {
         const { ctx, width, height, center } = this;
         ctx.clearRect(0, 0, width, height);
 
@@ -176,7 +203,7 @@ export class AudioVisualizer {
 
         for (let i = 0; i < this.breatheBars; i++) {
             const angle = (Math.PI * 2 * i) / this.breatheBars;
-            const h = Math.sin(i * 0.5 + Date.now() / 500) * 5 + 5;
+            const h = Math.sin(i * 0.5 + now / 500) * 5 + 5;
 
             const startX = center + Math.cos(angle) * (this.breatheRadiusBase + 10);
             const startY = center + Math.sin(angle) * (this.breatheRadiusBase + 10);

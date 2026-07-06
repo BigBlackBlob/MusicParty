@@ -6,8 +6,11 @@
         :src="audioSrc"
         crossorigin="anonymous"
         @error="handleError"
-        @waiting="player.isBuffering = true"
-        @playing="player.isBuffering = false"
+        @waiting="onPlaybackStalled('waiting')"
+        @stalled="onPlaybackStalled('stalled')"
+        @suspend="onPlaybackStalled('suspend')"
+        @emptied="onPlaybackStalled('emptied')"
+        @playing="onPlaybackHealthy"
         @canplay="onCanPlay"
         referrerpolicy="no-referrer"
     ></audio>
@@ -53,7 +56,9 @@ const {
   needsUserGesture,
   safePlay,
   handleError,
-  checkAutoPlay
+  checkAutoPlay,
+  armStalledWatchdog,
+  markPlaybackHealthy
 } = useAudio(audioRef, player, computed(() => ui.volume));
 
 const audioSrc = computed(() => withPlaybackToken(player.nowPlaying?.music, user.sessionToken));
@@ -79,8 +84,17 @@ watch(() => player.isPaused, (paused) => {
 });
 
 const onCanPlay = () => {
-  player.isBuffering = false;
+  markPlaybackHealthy();
   checkAutoPlay();
+};
+
+const onPlaybackHealthy = () => {
+  markPlaybackHealthy();
+};
+
+const onPlaybackStalled = (reason) => {
+  player.isBuffering = true;
+  armStalledWatchdog(reason);
 };
 
 onMounted(() => {

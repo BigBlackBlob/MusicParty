@@ -7,6 +7,9 @@ const SMALL_DRIFT_MS = 250;
 const RATE_CORRECTION_DRIFT_MS = 2000;
 const BACKGROUND_HARD_SEEK_DRIFT_MS = 10000;
 const TRANSITION_FADE_MS = 1500;
+const STALLED_WATCHDOG_MS = 7000;
+const STALLED_RETRY_DELAY_MS = 800;
+const STALLED_MAX_RETRIES = 2;
 const SUPPORTED_TRANSITION_PLATFORMS = new Set(['netease', 'bilibili', 'youtube']);
 
 export function useAudio(audioRef, playerStore, userVolumeRef) {
@@ -22,6 +25,62 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
     let fadeGain = 1;
     let activeFadeToken = 0;
     let transitionFadeInPending = false;
+    let stalledTimer = null;
+    let stalledRetryCount = 0;
+
+    const clearStalledWatchdog = () => {
+        clearTimeout(stalledTimer);
+        stalledTimer = null;
+    };
+
+    const enterPlaybackErrorState = (reason) => {
+        clearStalledWatchdog();
+        isBuffering.value = false;
+        isErrorState.value = true;
+        if (audioRef.value) {
+            audioRef.value.pause();
+            audioRef.value.playbackRate = 1;
+        }
+        console.warn('[Audio] playback stalled, pausing current track', {
+            reason,
+            currentSrc: audioRef.value?.currentSrc,
+            readyState: audioRef.value?.readyState,
+            networkState: audioRef.value?.networkState,
+            platform: playerStore.nowPlaying?.music?.platform
+        });
+    };
+
+    const retryCurrentSource = (reason) => {
+        const audio = audioRef.value;
+        if (!audio || !playerStore.nowPlaying || playerStore.isPaused) return;
+        if (stalledRetryCount >= STALLED_MAX_RETRIES) {
+            enterPlaybackErrorState(reason);
+            return;
+        }
+        stalledRetryCount++;
+        clearStalledWatchdog();
+        setTimeout(() => {
+            const currentAudio = audioRef.value;
+            if (!currentAudio || !playerStore.nowPlaying || playerStore.isPaused || isErrorState.value) return;
+            console.warn(`[Audio] retrying stalled source (${stalledRetryCount}/${STALLED_MAX_RETRIES})`, { reason });
+            currentAudio.load();
+            safePlay();
+            armStalledWatchdog(reason);
+        }, STALLED_RETRY_DELAY_MS);
+    };
+
+    const armStalledWatchdog = (reason) => {
+        clearStalledWatchdog();
+        if (!audioRef.value || playerStore.isPaused || !playerStore.nowPlaying || isErrorState.value) return;
+        isBuffering.value = true;
+        stalledTimer = setTimeout(() => retryCurrentSource(reason), STALLED_WATCHDOG_MS);
+    };
+
+    const markPlaybackHealthy = () => {
+        clearStalledWatchdog();
+        stalledRetryCount = 0;
+        isBuffering.value = false;
+    };
 
     const getUserVolume = () => {
         const value = userVolumeRef?.value;
@@ -182,6 +241,7 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
             await audioRef.value.play();
             needsUserGesture.value = false;
             isErrorState.value = false;
+            markPlaybackHealthy();
             updateMediaSession();
             requestWakeLock();
             if (transitionFadeInPending) {
@@ -203,7 +263,7 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
     // 这是修复你问题的关键：音频加载就绪后，主动判断是否需要播放
     const checkAutoPlay = () => {
         if (!playerStore.nowPlaying) return;
-        isBuffering.value = false;
+        markPlaybackHealthy();
 
         if (playerStore.isPaused) {
             audioRef.value.pause();
@@ -239,6 +299,8 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
         }
 
             retryCount.value = 0;
+            stalledRetryCount = 0;
+            clearStalledWatchdog();
             isErrorState.value = false;
             needsUserGesture.value = false;
         transitionFadeInPending = supportsTransitionFade();
@@ -260,6 +322,7 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
         if (audioRef.value && audioRef.value.error && audioRef.value.error.code === 20) return;
 
         isBuffering.value = false;
+        clearStalledWatchdog();
         if (audioRef.value) {
             console.warn('[Audio] media error', {
                 code: audioRef.value.error?.code,
@@ -272,6 +335,7 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
         }
         if (retryCount.value >= 3) {
             isErrorState.value = true;
+            audioRef.value?.pause();
             return;
         }
 
@@ -382,6 +446,7 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
         window.removeEventListener('online', handleNetworkChange);
         clearInterval(syncTimer);
         clearInterval(pingTimer);
+        clearStalledWatchdog();
         if (audioRef.value) audioRef.value.playbackRate = 1;
         setFadeGain(1);
         releaseWakeLock();
@@ -395,6 +460,8 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
         needsUserGesture,
         safePlay,
         handleError,
-        checkAutoPlay
+        checkAutoPlay,
+        armStalledWatchdog,
+        markPlaybackHealthy
     };
 }
