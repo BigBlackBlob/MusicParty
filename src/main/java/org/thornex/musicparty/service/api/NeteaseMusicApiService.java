@@ -288,7 +288,7 @@ public class NeteaseMusicApiService implements IMusicApiService {
         if (code == 401 || code == 301 || code == 302) {
             throw new ApiRequestException("网易云 Cookie 已失效，请更新 Cookie");
         }
-        if (code == 403 || code == 404 || item.path("fee").asInt(-1) == 1 || item.path("freeTrialInfo").isObject()) {
+        if (code == 403 || code == 404 || item.path("freeTrialInfo").isObject()) {
             throw new ApiRequestException("网易云歌曲无版权或当前账号不可播放: songId=" + musicId);
         }
         String url = item.path("url").asText("");

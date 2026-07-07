@@ -12,6 +12,7 @@ import org.thornex.musicparty.service.SiteSettingService;
 import org.thornex.musicparty.service.SubsonicCredentialCipher;
 import reactor.core.publisher.Mono;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class NeteaseMusicApiServiceTests {
@@ -47,6 +48,16 @@ class NeteaseMusicApiServiceTests {
         assertThatThrownBy(() -> service.resolveCdnUrl("1").block())
                 .isInstanceOf(ApiRequestException.class)
                 .hasMessageContaining("无版权");
+    }
+
+    @Test
+    void resolveCdnUrlAllowsPaidFeeSongWithPlayableUrl() {
+        NeteaseMusicApiService service = serviceReturning("""
+                {"data":[{"id":1,"url":"http://m701.music.126.net/song.mp3","code":200,"fee":1,"payed":1,"freeTrialInfo":null}]}
+                """);
+
+        assertThat(service.resolveCdnUrl("1").block())
+                .isEqualTo("https://m701.music.126.net/song.mp3");
     }
 
     @Test
