@@ -14,6 +14,7 @@ import org.thornex.musicparty.exception.ApiRequestException;
 import org.thornex.musicparty.service.LocalCacheService;
 import org.thornex.musicparty.service.SiteSettingService;
 import org.thornex.musicparty.util.BilibiliApiUtils;
+import org.thornex.musicparty.util.BilibiliCookieSupport;
 import reactor.core.publisher.Mono;
 import com.fasterxml.jackson.databind.JsonNode;
 import reactor.util.retry.Retry;
@@ -67,7 +68,7 @@ public class BilibiliMusicApiService implements CachedMusicApiService {
     private WebClient.RequestHeadersSpec<?> buildBilibiliRequest(String uri) {
         return webClient.get()
                 .uri(uri)
-                .header("Cookie", "SESSDATA=" + this.sessdata)
+                .header("Cookie", BilibiliCookieSupport.toCookieHeader(this.sessdata))
                 .header("Referer", "https://www.bilibili.com/");
     }
 
@@ -99,7 +100,7 @@ public class BilibiliMusicApiService implements CachedMusicApiService {
 
                     return webClient.get()
                             .uri(builder.build().toUri()) // 使用编码后的 URI
-                            .header("Cookie", "SESSDATA=" + sessdata)
+                            .header("Cookie", BilibiliCookieSupport.toCookieHeader(sessdata))
                             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                             .header("Referer", "https://www.bilibili.com/") // 必须带 Referer
                             .retrieve()
@@ -243,6 +244,9 @@ public class BilibiliMusicApiService implements CachedMusicApiService {
                     params.put("bvid", bvid);
                     params.put("cid", cid);
                     params.put("fnval", "16"); // DASH
+                    params.put("fnver", "0");
+                    params.put("fourk", "1");
+                    params.put("platform", "pc");
 
                     return wbiService.signParams(params)
                             .flatMap(signedParams -> {
@@ -251,9 +255,15 @@ public class BilibiliMusicApiService implements CachedMusicApiService {
 
                                 return webClient.get()
                                         .uri(builder.build().toUri())
-                                        .header("Cookie", "SESSDATA=" + sessdata)
+                                        .header("Cookie", BilibiliCookieSupport.toCookieHeader(sessdata))
                                         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                                         .header("Referer", "https://www.bilibili.com/video/" + bvid)
+                                        .header("Origin", "https://www.bilibili.com")
+                                        .header("Accept", "application/json, text/plain, */*")
+                                        .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+                                        .header("Sec-Fetch-Site", "same-site")
+                                        .header("Sec-Fetch-Mode", "cors")
+                                        .header("Sec-Fetch-Dest", "empty")
                                         .retrieve()
                                         .bodyToMono(JsonNode.class)
                                         .flatMap(jsonNode -> {
@@ -420,7 +430,7 @@ public class BilibiliMusicApiService implements CachedMusicApiService {
 
                     return webClient.get()
                             .uri(builder.build().toUri())
-                            .header("Cookie", "SESSDATA=" + sessdata)
+                            .header("Cookie", BilibiliCookieSupport.toCookieHeader(sessdata))
                             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                             .header("Referer", "https://www.bilibili.com/")
                             .retrieve()

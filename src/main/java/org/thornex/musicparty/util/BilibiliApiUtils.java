@@ -26,7 +26,7 @@ public class BilibiliApiUtils {
 
     private static WebClient.RequestHeadersSpec<?> buildRequest(String uri, String sessdata, WebClient webClient) {
         return webClient.get().uri(uri)
-                .header("Cookie", "SESSDATA=" + sessdata)
+                .header("Cookie", BilibiliCookieSupport.toCookieHeader(sessdata))
                 .header("Referer", "https://www.bilibili.com/");
     }
 

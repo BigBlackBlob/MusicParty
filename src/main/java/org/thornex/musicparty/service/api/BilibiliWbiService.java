@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.thornex.musicparty.config.AppProperties;
+import org.thornex.musicparty.util.BilibiliCookieSupport;
 import reactor.core.publisher.Mono;
 
 import java.net.URLEncoder;
@@ -56,7 +57,7 @@ public class BilibiliWbiService {
 
         return webClient.get()
                 .uri("https://api.bilibili.com/x/web-interface/nav")
-                .header("Cookie", "SESSDATA=" + sessdata)
+                .header("Cookie", BilibiliCookieSupport.toCookieHeader(sessdata))
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                 .retrieve()
                 .bodyToMono(JsonNode.class)
