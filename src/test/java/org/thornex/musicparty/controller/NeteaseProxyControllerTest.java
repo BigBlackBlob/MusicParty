@@ -35,6 +35,14 @@ class NeteaseProxyControllerTest {
     }
 
     @Test
+    void neteaseProxyHasInflightCdnResolveDedup() throws IOException {
+        String src = Files.readString(BASE.resolve("controller/NeteaseProxyController.java"));
+        assertThat(src).contains("inflightCdnResolves");
+        assertThat(src).contains("resolveCdnDedup");
+        assertThat(src).contains(".cache()");
+    }
+
+    @Test
     void reactiveStreamUtilsHasErrorSuppressionHelper() throws IOException {
         String src = Files.readString(BASE.resolve("controller/ReactiveStreamUtils.java"));
         assertThat(src).contains("withErrorSuppression");

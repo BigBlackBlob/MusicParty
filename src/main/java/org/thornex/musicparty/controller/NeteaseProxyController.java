@@ -41,6 +41,8 @@ public class NeteaseProxyController {
     private static final long CDN_TTL_MS = 30_000;
     private record CdnEntry(String url, long expireAt) {}
     private final Map<String, CdnEntry> cdnUrlCache = new ConcurrentHashMap<>();
+    // 并发去重：同一 songId 的并发 CDN 解析请求共享同一个 Mono，避免 cache miss 时打爆 ncm-api
+    private final Map<String, Mono<String>> inflightCdnResolves = new ConcurrentHashMap<>();
 
     public NeteaseProxyController(NeteaseMusicApiService neteaseService,
                                   UserService userService,
@@ -61,7 +63,7 @@ public class NeteaseProxyController {
             return Mono.just(ResponseEntity.status(HttpStatus.FORBIDDEN).build());
         }
 
-        return resolveCdnWithCache(songId)
+        return resolveCdnDedup(songId)
                 .timeout(Duration.ofSeconds(8))
                 .flatMap(cdnUrl -> streamResolvedUrl(songId, cdnUrl, rangeHeader))
                 .onErrorResume(e -> {
@@ -136,6 +138,26 @@ public class NeteaseProxyController {
         // 缓存 miss 或过期：实际解析
         return neteaseService.resolveCdnUrl(songId)
                 .doOnNext(url -> cdnUrlCache.put(songId, new CdnEntry(url, System.currentTimeMillis() + CDN_TTL_MS)));
+    }
+
+
+    // 并发去重：同一 songId 的并发请求共享同一个 in-flight Mono，避免 cache miss 时多次打 ncm-api
+    // .cache() 将 Mono 变为 hot 源，所有订阅者共享同一次上游调用；.doFinally 在终止后清理 inflight 表
+    private Mono<String> resolveCdnDedup(String songId) {
+        CdnEntry cached = cdnUrlCache.get(songId);
+        if (cached != null && cached.expireAt() > System.currentTimeMillis()) {
+            return Mono.just(cached.url());
+        }
+        Mono<String> existing = inflightCdnResolves.get(songId);
+        if (existing != null) {
+            return existing;
+        }
+        Mono<String> resolve = neteaseService.resolveCdnUrl(songId)
+                .doOnNext(url -> cdnUrlCache.put(songId, new CdnEntry(url, System.currentTimeMillis() + CDN_TTL_MS)))
+                .cache()
+                .doFinally(signal -> inflightCdnResolves.remove(songId));
+        inflightCdnResolves.put(songId, resolve);
+        return resolve;
     }
 
     private void copyHeader(HttpResponse<?> response, HttpHeaders headers, String name) {
