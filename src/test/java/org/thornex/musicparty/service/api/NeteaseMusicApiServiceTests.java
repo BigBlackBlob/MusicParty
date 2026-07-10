@@ -105,6 +105,6 @@ class NeteaseMusicApiServiceTests {
                 repository,
                 new SubsonicCredentialCipher(new SiteSecretService(repository))
         );
-        return new NeteaseMusicApiService(webClient, properties, settings);
+        return new NeteaseMusicApiService(webClient, properties, settings, null);
     }
 }

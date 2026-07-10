@@ -9,7 +9,9 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.*;
+import org.thornex.musicparty.enums.CacheStatus;
 import org.thornex.musicparty.exception.ApiRequestException;
+import org.thornex.musicparty.service.LocalCacheService;
 import org.thornex.musicparty.service.SiteSettingService;
 import reactor.core.publisher.Mono;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -17,28 +19,34 @@ import com.fasterxml.jackson.databind.JsonNode;
 import java.net.SocketTimeoutException;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.StreamSupport;
 
 @Service
 @Slf4j
-public class NeteaseMusicApiService implements IMusicApiService {
+public class NeteaseMusicApiService implements CachedMusicApiService {
 
     private final WebClient webClient;
     private final String baseUrl;
     private final String initialCookieFromConfig;
     private final String quality;
     private final SiteSettingService siteSettingService;
+    private final LocalCacheService localCacheService;
     private volatile String currentCookie;
     private static final String PLATFORM = "netease";
 
-    public NeteaseMusicApiService(WebClient webClient, AppProperties appProperties, SiteSettingService siteSettingService) {
+    public NeteaseMusicApiService(WebClient webClient, AppProperties appProperties,
+                                  SiteSettingService siteSettingService,
+                                  LocalCacheService localCacheService) {
         this.webClient = webClient;
         this.baseUrl = appProperties.getNetease().getBaseUrl();
         this.initialCookieFromConfig = appProperties.getNetease().getCookie();
         this.quality = appProperties.getNetease().getQuality();
         this.siteSettingService = siteSettingService;
+        this.localCacheService = localCacheService;
         this.siteSettingService.importSecretIfMissing(SiteSettingService.NETEASE_COOKIE, initialCookieFromConfig);
         this.currentCookie = siteSettingService.secretOrDefault(SiteSettingService.NETEASE_COOKIE, initialCookieFromConfig);
     }
@@ -261,6 +269,31 @@ public class NeteaseMusicApiService implements IMusicApiService {
                         music.coverUrl(),
                         false
                 ));
+    }
+
+    @Override
+    public void prefetchMusic(String musicId) {
+        ensureConfigured();
+        // 检查缓存状态，如果已经下载或正在下载，直接返回
+        CacheStatus status = localCacheService.getStatus(musicId);
+        if (status == CacheStatus.COMPLETED || status == CacheStatus.DOWNLOADING) {
+            return;
+        }
+
+        log.info("Prefetching Netease music: {}", musicId);
+
+        // CDN URL 作为下载源（由 resolveCdnUrl 提供）
+        Mono<String> urlProvider = resolveCdnUrl(musicId);
+
+        // 网易云 CDN 需要 Referer
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Referer", "https://music.163.com/");
+        headers.put("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+
+        // 扩展名根据音质决定：exhigh 默认 mp3；lossless/hires 可能是 .flac
+        String extension = ".mp3";
+
+        localCacheService.submitDownload(musicId, urlProvider, headers, extension);
     }
 
     /**

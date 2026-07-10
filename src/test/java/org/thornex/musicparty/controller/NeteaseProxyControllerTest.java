@@ -54,4 +54,20 @@ class NeteaseProxyControllerTest {
         String src = Files.readString(BASE.resolve("controller/BilibiliProxyController.java"));
         assertThat(src).contains("withErrorSuppression");
     }
+
+    @Test
+    void neteaseProxyHasLocalCacheFallback() throws IOException {
+        String src = Files.readString(BASE.resolve("controller/NeteaseProxyController.java"));
+        assertThat(src).contains("tryLocalFile");
+        assertThat(src).contains("localCacheService");
+        assertThat(src).contains("streamLocalFile");
+    }
+
+    @Test
+    void neteaseServiceImplementsCachedMusicApiService() throws IOException {
+        String src = Files.readString(BASE.resolve("service/api/NeteaseMusicApiService.java"));
+        assertThat(src).contains("implements CachedMusicApiService");
+        assertThat(src).contains("prefetchMusic");
+        assertThat(src).contains("localCacheService");
+    }
 }
