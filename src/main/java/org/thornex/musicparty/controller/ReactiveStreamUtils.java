@@ -3,7 +3,9 @@ package org.thornex.musicparty.controller;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.core.io.buffer.DefaultDataBufferFactory;
+import org.slf4j.Logger;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.io.InputStream;
 import java.io.IOException;
@@ -18,6 +20,19 @@ final class ReactiveStreamUtils {
 
     static Flux<DataBuffer> readInputStream(InputStream inputStream) {
         return DataBufferUtils.readInputStream(() -> inputStream, new DefaultDataBufferFactory(), BUFFER_SIZE);
+    }
+
+    /**
+     * Wraps a streaming Flux so mid-stream errors are logged and the Flux
+     * completes silently instead of propagating to Spring's error handler.
+     * This prevents HttpMessageNotWritableException when the response is
+     * already committed (e.g. 206 PARTIAL_CONTENT).
+     */
+    static Flux<DataBuffer> withErrorSuppression(Flux<DataBuffer> body, String context, Logger logger) {
+        return body.onErrorResume(e -> {
+            logger.warn("Stream error after response committed (suppressing): {}, message={}", context, e.getMessage());
+            return Mono.empty();
+        });
     }
 
     static Flux<DataBuffer> readPath(Path path, long position, long count) {

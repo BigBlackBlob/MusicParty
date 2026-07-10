@@ -142,7 +142,10 @@ public class BilibiliProxyController {
         if (status == HttpStatus.PARTIAL_CONTENT) {
             headers.set(HttpHeaders.CONTENT_RANGE, "bytes " + start + "-" + end + "/" + length);
         }
-        Flux<DataBuffer> body = ReactiveStreamUtils.readPath(path, start, contentLength);
+        Flux<DataBuffer> body = ReactiveStreamUtils.withErrorSuppression(
+                ReactiveStreamUtils.readPath(path, start, contentLength),
+                "local file=" + path.getFileName(),
+                log);
         return new ResponseEntity<>(body, headers, status);
     }
 
@@ -205,7 +208,10 @@ public class BilibiliProxyController {
             headers.set(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
             headers.set(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, "Content-Length, Content-Range, Accept-Ranges");
 
-            Flux<DataBuffer> body = ReactiveStreamUtils.readInputStream(upstream.body());
+            Flux<DataBuffer> body = ReactiveStreamUtils.withErrorSuppression(
+                    ReactiveStreamUtils.readInputStream(upstream.body()),
+                    "bilibili stream bvid=" + bvid,
+                    log);
             HttpStatus status = HttpStatus.resolve(statusCode);
             return new ResponseEntity<>(body, headers, status == null ? HttpStatus.OK : status);
         }).subscribeOn(Schedulers.boundedElastic())

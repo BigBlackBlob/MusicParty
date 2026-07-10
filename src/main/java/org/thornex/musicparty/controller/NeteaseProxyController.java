@@ -102,7 +102,10 @@ public class NeteaseProxyController {
             headers.set(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "*");
             headers.set(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, "Content-Length, Content-Range, Accept-Ranges");
 
-            Flux<DataBuffer> body = ReactiveStreamUtils.readInputStream(upstream.body());
+            Flux<DataBuffer> body = ReactiveStreamUtils.withErrorSuppression(
+                    ReactiveStreamUtils.readInputStream(upstream.body()),
+                    "netease stream songId=" + songId,
+                    log);
 
             HttpStatus status = HttpStatus.resolve(statusCode);
             return new ResponseEntity<>(body, headers, status == null ? HttpStatus.OK : status);
