@@ -4,24 +4,19 @@ const accountRequestOptions = {
     timeout: 60000
 };
 
-const accountTokenOptions = (sessionToken) => ({
-    ...accountRequestOptions,
-    headers: { 'X-Session-Token': sessionToken }
-});
+const accountTokenOptions = () => accountRequestOptions;
 
 export const authApi = {
     getAccountStatus: () => client.get('/api/account/status'),
     registerAccount: (username, password) => client.post('/api/account/register', { username, password }, accountRequestOptions),
     loginAccount: (username, password) => client.post('/api/account/login', { username, password }, accountRequestOptions),
-    getAccountMe: (sessionToken) => client.get('/api/account/me', accountTokenOptions(sessionToken)),
-    updateAccountProfile: (sessionToken, displayName) => client.put('/api/account/profile', { displayName }, {
-        ...accountTokenOptions(sessionToken)
-    }),
-    changeAccountPassword: (sessionToken, currentPassword, newPassword) => client.post('/api/account/change-password', {
+    getAccountMe: () => client.get('/api/account/me', accountTokenOptions()),
+    updateAccountProfile: (_sessionToken, displayName) => client.put('/api/account/profile', { displayName }, accountTokenOptions()),
+    changeAccountPassword: (_sessionToken, currentPassword, newPassword) => client.post('/api/account/change-password', {
         currentPassword,
         newPassword
-    }, accountTokenOptions(sessionToken)),
-    logoutAccount: (sessionToken) => client.post('/api/account/logout', null, accountTokenOptions(sessionToken)),
+    }, accountTokenOptions()),
+    logoutAccount: () => client.post('/api/account/logout', null, accountTokenOptions()),
     adminCommand: (sessionToken, command, roomId) => client.post('/api/admin/command', { sessionToken, command, roomId }),
     grantNavidrome: (sessionToken, userName, roomId) => client.post('/api/admin/navidrome-access/grant', {
         sessionToken,

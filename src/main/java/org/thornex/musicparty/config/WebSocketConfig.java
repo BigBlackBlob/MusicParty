@@ -17,6 +17,7 @@ import org.thornex.musicparty.service.AccountService;
 import org.thornex.musicparty.service.RoomAccessService;
 import org.thornex.musicparty.service.RoomService;
 import org.thornex.musicparty.service.WebSocketSessionCoordinator;
+import org.thornex.musicparty.security.SessionCookieService;
 import org.thornex.musicparty.websocket.ReactiveSocketBroker;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -36,6 +37,7 @@ public class WebSocketConfig {
     private final AccountService accountService;
     private final RoomService roomService;
     private final RoomAccessService roomAccessService;
+    private final SessionCookieService sessionCookieService;
 
     @Bean
     HandlerMapping webSocketHandlerMapping() {
@@ -57,11 +59,14 @@ public class WebSocketConfig {
     private Mono<Boolean> authorize(WebSocketSession session) {
         return Mono.fromCallable(() -> {
             String roomId = firstQuery(session, "room-id", "roomId");
+            if (!isAllowedOrigin(session)) {
+                return false;
+            }
             var metadata = roomService.getRoomAccessMetadata(roomId).orElse(null);
             if (metadata == null) {
                 return false;
             }
-            String sessionToken = firstQuery(session, "session-token", "sessionToken");
+            String sessionToken = sessionCookieService.sessionToken(session);
             var accountSession = accountService.resolveSession(sessionToken).orElse(null);
             if (accountSession == null) {
                 return false;
@@ -69,16 +74,15 @@ public class WebSocketConfig {
             if (!metadata.privateRoom()) {
                 return true;
             }
-            String roomAccessToken = firstQuery(session, "room-access-token", "roomAccessToken");
             return StringUtils.hasText(accountSession.publicId())
-                    && roomAccessService.validateAccessToken(metadata.roomId(), accountSession.publicId(), roomAccessToken);
+                    && roomAccessService.hasActiveGrant(metadata.roomId(), accountSession.publicId());
         }).subscribeOn(Schedulers.boundedElastic());
     }
 
     private Mono<Void> handleAuthorized(WebSocketSession session) {
         String sessionId = session.getId();
-        String initialName = firstQuery(session, "user-name", "userName");
-        String sessionToken = firstQuery(session, "session-token", "sessionToken");
+        String initialName = null;
+        String sessionToken = sessionCookieService.sessionToken(session);
         String roomId = firstQuery(session, "room-id", "roomId");
         coordinator.handleConnect(sessionId, sessionToken, initialName, roomId);
 
@@ -129,5 +133,11 @@ public class WebSocketConfig {
             }
         }
         return null;
+    }
+
+    private boolean isAllowedOrigin(WebSocketSession session) {
+        String origin = session.getHandshakeInfo().getHeaders().getOrigin();
+        if (!StringUtils.hasText(origin)) return false;
+        return origin.equals(session.getHandshakeInfo().getUri().getScheme() + "://" + session.getHandshakeInfo().getUri().getAuthority());
     }
 }

@@ -35,8 +35,8 @@ describe('userPlaylists store', () => {
     const result = await store.addTracksToSelected([{ id: 's1', platform: 'netease', name: 'Song' }], 'Mine');
 
     expect(result).toMatchObject({ addedCount: 1, skippedCount: 0 });
-    expect(personalPlaylistsApi.create).toHaveBeenCalledWith('token-a', 'Mine');
-    expect(personalPlaylistsApi.addTracks).toHaveBeenCalledWith('token-a', 'p1', expect.any(Array));
+    expect(personalPlaylistsApi.create).toHaveBeenCalledWith('', 'Mine');
+    expect(personalPlaylistsApi.addTracks).toHaveBeenCalledWith('', 'p1', expect.any(Array));
   });
 
   it('prompts guests to set a name instead of writing', async () => {

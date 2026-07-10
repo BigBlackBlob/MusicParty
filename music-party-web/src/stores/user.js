@@ -4,7 +4,7 @@ import { authApi } from '../api/auth';
 import { STORAGE_KEYS } from '../constants/keys';
 import { isPlainObject, safeJsonStorage } from '../utils/safeJsonStorage.js';
 
-const sessionToken = ref(localStorage.getItem(STORAGE_KEYS.SESSION_TOKEN) || '');
+const sessionToken = ref('');
 const publicId = ref('');
 
 export const useUserStore = defineStore('user', () => {
@@ -47,10 +47,7 @@ export const useUserStore = defineStore('user', () => {
      * serverIsGuest: 后端返回的当前是否为游客状态
      */
     const initUser = (serverSessionToken, serverPublicId, serverName, serverIsGuest, serverRole = 'GUEST', serverIsAdmin = false) => {
-        if (serverSessionToken) {
-            sessionToken.value = serverSessionToken;
-            localStorage.setItem(STORAGE_KEYS.SESSION_TOKEN, serverSessionToken);
-        }
+        sessionToken.value = '';
         if (serverPublicId) {
             publicId.value = serverPublicId;
         }
@@ -106,7 +103,7 @@ export const useUserStore = defineStore('user', () => {
 
     const refreshAccount = async () => {
         if (!sessionToken.value) return null;
-        const session = await authApi.getAccountMe(sessionToken.value);
+        const session = await authApi.getAccountMe();
         initAccount(session);
         return session;
     };
@@ -123,16 +120,11 @@ export const useUserStore = defineStore('user', () => {
     };
 
     const logout = async () => {
-        const token = sessionToken.value;
-        if (token) {
-            try {
-                await authApi.logoutAccount(token);
-            } finally {
-                clearAccountIdentity();
-            }
-            return;
+        try {
+            await authApi.logoutAccount();
+        } finally {
+            clearAccountIdentity();
         }
-        clearAccountIdentity();
     };
 
     const setOnlineUsers = (users) => {
@@ -167,7 +159,6 @@ export const useUserStore = defineStore('user', () => {
         isAuthPassed.value = false;
         currentUser.value = { name: '游客', sessionId: '' };
         bindings.value = {};
-        localStorage.removeItem(STORAGE_KEYS.SESSION_TOKEN);
         localStorage.removeItem(STORAGE_KEYS.ACCOUNT_USERNAME);
         localStorage.removeItem(STORAGE_KEYS.USERNAME);
         localStorage.removeItem(STORAGE_KEYS.BINDINGS);

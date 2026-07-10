@@ -11,6 +11,7 @@ import org.thornex.musicparty.service.MusicPlayerService;
 import org.thornex.musicparty.service.MusicPlayerService.ControlResult;
 import org.thornex.musicparty.service.MusicSocketSessionFacade;
 import org.thornex.musicparty.service.RoomLifecycleService;
+import org.thornex.musicparty.service.RoomCommandCoordinator;
 import org.thornex.musicparty.service.RoomPlaylistService;
 import org.thornex.musicparty.service.RoomService;
 import org.thornex.musicparty.service.SocketRateLimiter;
@@ -33,6 +34,7 @@ public class MusicSocketController {
     private final RoomPlaylistService roomPlaylistService;
     private final AccountService accountService;
     private final ObjectMapper objectMapper;
+    private final RoomCommandCoordinator roomCommandCoordinator;
 
     public MusicSocketController(MusicPlayerService musicPlayerService,
                                  UserService userService,
@@ -42,8 +44,9 @@ public class MusicSocketController {
                                  MusicSocketSessionFacade musicSocketSessionFacade,
                                  SocketRateLimiter socketRateLimiter,
                                  RoomPlaylistService roomPlaylistService,
-                                 AccountService accountService,
-                                 ObjectMapper objectMapper) {
+                                  AccountService accountService,
+                                  ObjectMapper objectMapper,
+                                  RoomCommandCoordinator roomCommandCoordinator) {
         this.musicPlayerService = musicPlayerService;
         this.userService = userService;
         this.chatService = chatService;
@@ -54,9 +57,21 @@ public class MusicSocketController {
         this.roomPlaylistService = roomPlaylistService;
         this.accountService = accountService;
         this.objectMapper = objectMapper;
+        this.roomCommandCoordinator = roomCommandCoordinator;
     }
 
     public void dispatch(String type, JsonNode payload, String sessionId) {
+        if (isRoomMutation(type)) {
+            roomCommandCoordinator.execute(userService.getRoomIdForSession(sessionId), () -> {
+                dispatchNow(type, payload, sessionId);
+                return null;
+            });
+            return;
+        }
+        dispatchNow(type, payload, sessionId);
+    }
+
+    private void dispatchNow(String type, JsonNode payload, String sessionId) {
         switch (type) {
             case "player.resync", "/player/resync" -> requestResync(sessionId);
             case "sync.ping", "/sync/ping" -> syncPing(read(payload, SyncPingRequest.class), sessionId);
@@ -86,6 +101,17 @@ public class MusicSocketController {
             case "public-chat.history.fetch", "/public-chat/history/fetch" -> fetchPublicChatHistory(read(payload, ChatHistoryFetchRequest.class), sessionId);
             default -> log.debug("Ignoring unknown websocket message type={} from session={}", type, sessionId);
         }
+    }
+
+    private boolean isRoomMutation(String type) {
+        return switch (type) {
+            case "enqueue", "/enqueue", "enqueue.playlist", "/enqueue/playlist", "enqueue.room-playlist", "/enqueue/room-playlist",
+                    "enqueue.album", "/enqueue/album", "control.next", "/control/next", "control.toggle-shuffle", "/control/toggle-shuffle",
+                    "control.toggle-pause", "/control/toggle-pause", "control.seek", "/control/seek", "queue.top", "/queue/top",
+                    "queue.batch-top", "/queue/batch-top", "queue.remove", "/queue/remove", "queue.batch-remove", "/queue/batch-remove",
+                    "queue.reorder", "/queue/reorder", "control.like", "/control/like" -> true;
+            default -> false;
+        };
     }
 
     private <T> T read(JsonNode payload, Class<T> type) {

@@ -37,6 +37,14 @@ public class JdbcUserAccountRepository implements UserAccountRepository {
     }
 
     @Override
+    public boolean claimAdminBootstrap(long claimedAt) {
+        return jdbcTemplate.update("""
+                insert or ignore into admin_bootstrap_claim(claim_key, claimed_at)
+                values ('initial-admin', ?)
+                """, claimedAt) == 1;
+    }
+
+    @Override
     public boolean usernameExists(String username) {
         Integer count = jdbcTemplate.queryForObject("""
                 select count(1)

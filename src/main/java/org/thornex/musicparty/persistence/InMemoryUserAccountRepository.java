@@ -12,10 +12,16 @@ import java.util.concurrent.ConcurrentHashMap;
 @ConditionalOnProperty(prefix = "app.music-api.database", name = "enabled", havingValue = "false")
 public class InMemoryUserAccountRepository implements UserAccountRepository {
     private final Map<String, PersistedUserAccount> accounts = new ConcurrentHashMap<>();
+    private final java.util.concurrent.atomic.AtomicBoolean bootstrapClaimed = new java.util.concurrent.atomic.AtomicBoolean();
 
     @Override
     public boolean hasAdminAccount() {
         return accounts.values().stream().anyMatch(account -> "ADMIN".equals(account.role()) && account.enabled());
+    }
+
+    @Override
+    public boolean claimAdminBootstrap(long claimedAt) {
+        return bootstrapClaimed.compareAndSet(false, true);
     }
 
     @Override

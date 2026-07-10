@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Base64;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class RoomAccessService {
@@ -20,6 +21,7 @@ public class RoomAccessService {
     private final AppProperties appProperties;
     private final RoomService roomService;
     private volatile byte[] signingSecret;
+    private final ConcurrentHashMap<String, RoomAccessGrant> activeGrants = new ConcurrentHashMap<>();
 
     public RoomAccessService(AppProperties appProperties, RoomService roomService) {
         this.appProperties = appProperties;
@@ -51,9 +53,20 @@ public class RoomAccessService {
         }
         if (RoomPasswordHasher.matches(password, room.passwordHash())) {
             long expiresAt = System.currentTimeMillis() + appProperties.getAuth().getRoomAccessTokenTtlMs();
-            return RoomAccessGrant.allowedWithToken(issueToken(room.roomId(), publicId, expiresAt, room.passwordVersion()), expiresAt);
+            RoomAccessGrant grant = RoomAccessGrant.allowedWithToken(issueToken(room.roomId(), publicId, expiresAt, room.passwordVersion()), expiresAt);
+            activeGrants.put(grantKey(room.roomId(), publicId), grant);
+            return grant;
         }
         return RoomAccessGrant.denied();
+    }
+
+    public boolean hasActiveGrant(String roomId, String publicId) {
+        RoomService.RoomAccessMetadata room = roomService.getRoomAccessMetadata(roomId).orElse(null);
+        if (room == null) return false;
+        if (!room.privateRoom()) return true;
+        RoomAccessGrant grant = activeGrants.get(grantKey(roomId, publicId));
+        return grant != null && grant.allowed() && grant.expiresAt() >= System.currentTimeMillis()
+                && validateAccessToken(roomId, publicId, grant.roomAccessToken());
     }
 
     public boolean validateAccessToken(String roomId, String publicId, String roomAccessToken) {
@@ -130,4 +143,6 @@ public class RoomAccessService {
             init();
         }
     }
+
+    private String grantKey(String roomId, String publicId) { return roomId + "\u0000" + publicId; }
 }

@@ -83,6 +83,16 @@ public class SqliteSchemaInitializer {
                                 """)
                 ),
                 new SchemaMigration(
+                        "schema.admin_bootstrap_claim.table",
+                        jdbc -> !hasTable(jdbc, "admin_bootstrap_claim"),
+                        jdbc -> jdbc.execute("""
+                                create table admin_bootstrap_claim (
+                                    claim_key text primary key,
+                                    claimed_at integer not null
+                                )
+                                """)
+                ),
+                new SchemaMigration(
                         "schema.site_setting.table",
                         jdbc -> !hasTable(jdbc, "site_setting"),
                         jdbc -> jdbc.execute("""

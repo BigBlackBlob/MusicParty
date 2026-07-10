@@ -113,9 +113,10 @@ public class ApiController {
     @GetMapping("/search/{platform}/{keyword}")
     public Mono<List<Music>> searchMusic(@PathVariable String platform, @PathVariable String keyword,
                                           @RequestParam(required = false) String token,
-                                          @RequestParam(required = false) String roomId,
-                                          @RequestParam(defaultValue = "0") int offset,
-                                          @RequestParam(defaultValue = "20") int limit) {
+                                           @RequestParam(required = false) String roomId,
+                                           @RequestParam(defaultValue = "0") int offset,
+                                           @RequestParam(defaultValue = "20") int limit) {
+        validateSearch(keyword, offset, limit);
         if ("navidrome".equals(platform)) {
             if (token == null || !navidromeAccessService.canUseBySessionToken(token)) {
                 return Mono.error(new ResponseStatusException(HttpStatus.FORBIDDEN));
@@ -241,9 +242,19 @@ public class ApiController {
 
     @GetMapping("/theme/extract-cover-color")
     public Mono<CoverColorResponse> extractCoverColor(@RequestParam String url) {
+        if (url == null || !(url.startsWith("/media/") || url.startsWith("/api/navidrome/cover/")
+                || (url.startsWith("/api/subsonic/") && url.contains("/cover/")))) {
+            return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only proxied cover URLs are supported"));
+        }
         log.info("API cover color request: urlLength={}", url == null ? 0 : url.length());
         return coverColorService.extract(url)
                 .doOnSuccess(result -> log.info("API cover color success: found={}", result != null))
                 .doOnError(error -> log.error("API cover color failed", error));
+    }
+
+    private void validateSearch(String keyword, int offset, int limit) {
+        if (keyword == null || keyword.length() > 128 || offset < 0 || offset > 10_000 || limit < 1 || limit > 100) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Search parameters are outside the supported range");
+        }
     }
 }

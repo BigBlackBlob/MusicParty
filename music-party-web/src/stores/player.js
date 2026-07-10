@@ -246,12 +246,7 @@ export const usePlayerStore = defineStore('player', () => {
 
     const connect = () => {
         resetSyncGate();
-        const authHeaders = {
-            'user-name': localStorage.getItem(STORAGE_KEYS.USERNAME) || '游客',
-            'session-token': userStore.sessionToken,
-            'room-id': roomStore.currentRoomId,
-            'room-access-token': roomStore.getRoomAccessToken(roomStore.currentRoomId)
-        };
+        const authHeaders = { 'room-id': roomStore.currentRoomId };
 
         // 使用抽离出的消息处理配置
         const handlers = createSocketHandlers({

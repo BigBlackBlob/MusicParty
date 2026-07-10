@@ -10,23 +10,13 @@ const DEFAULT_ROOM_ID = 'lounge';
 
 const fallbackRooms = [{ roomId: DEFAULT_ROOM_ID, name: 'Lounge', system: true, onlineCount: 0 }];
 
-const parseStoredAccessTokens = () => {
-    try {
-        const parsed = JSON.parse(localStorage.getItem(STORAGE_KEYS.ROOM_ACCESS_TOKENS) || '{}');
-        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-    } catch {
-        localStorage.removeItem(STORAGE_KEYS.ROOM_ACCESS_TOKENS);
-        return {};
-    }
-};
-
 export const useRoomStore = defineStore('room', () => {
     const userStore = useUserStore();
     const rooms = ref([]);
     const currentRoomId = ref(localStorage.getItem(STORAGE_KEYS.ROOM_ID) || DEFAULT_ROOM_ID);
     const isLoading = ref(false);
     const createError = ref('');
-    const roomAccessTokens = ref(parseStoredAccessTokens());
+    const roomAccessTokens = ref({});
 
     const currentRoom = computed(() => rooms.value.find(room => room.roomId === currentRoomId.value) || rooms.value[0] || {
         roomId: DEFAULT_ROOM_ID,
@@ -57,58 +47,22 @@ export const useRoomStore = defineStore('room', () => {
         localStorage.setItem(STORAGE_KEYS.ROOM_ID, currentRoomId.value);
     };
 
-    const persistRoomAccessTokens = () => {
-        localStorage.setItem(STORAGE_KEYS.ROOM_ACCESS_TOKENS, JSON.stringify(roomAccessTokens.value));
-    };
-
     const findRoom = (roomId) => rooms.value.find(room => room.roomId === (roomId || DEFAULT_ROOM_ID));
 
     const isPrivateRoom = (roomId) => Boolean(findRoom(roomId)?.privateRoom);
 
     const getRoomAccessToken = (roomId) => {
         const key = roomId || DEFAULT_ROOM_ID;
-        const entry = roomAccessTokens.value[key];
-        if (!entry) return '';
-
-        if (typeof entry === 'string') {
-            return entry;
-        }
-
-        if (typeof entry !== 'object') {
-            delete roomAccessTokens.value[key];
-            persistRoomAccessTokens();
-            return '';
-        }
-
-        const token = entry.token || '';
-        const expiresAt = Number(entry.expiresAt);
-        if (!token) {
-            delete roomAccessTokens.value[key];
-            persistRoomAccessTokens();
-            return '';
-        }
-
-        if (Number.isFinite(expiresAt) && expiresAt <= Date.now()) {
-            delete roomAccessTokens.value[key];
-            persistRoomAccessTokens();
-            return '';
-        }
-
-        return token;
+        return roomAccessTokens.value[key] ? 'granted' : '';
     };
 
-    const setRoomAccessToken = (roomId, token, expiresAt = null) => {
+    const setRoomAccessToken = (roomId, token) => {
         const key = roomId || DEFAULT_ROOM_ID;
         if (token) {
-            const numericExpiresAt = Number(expiresAt);
-            roomAccessTokens.value[key] = {
-                token,
-                expiresAt: Number.isFinite(numericExpiresAt) ? numericExpiresAt : undefined
-            };
+            roomAccessTokens.value[key] = true;
         } else {
             delete roomAccessTokens.value[key];
         }
-        persistRoomAccessTokens();
     };
 
     const clearRoomAccessToken = (roomId) => {
@@ -118,8 +72,8 @@ export const useRoomStore = defineStore('room', () => {
     const hasValidRoomAccess = (roomId) => !isPrivateRoom(roomId) || Boolean(getRoomAccessToken(roomId));
 
     const verifyRoomAccess = async (roomId, password) => {
-        const response = await roomApi.verify(roomId || DEFAULT_ROOM_ID, password, userStore.sessionToken);
-        setRoomAccessToken(roomId, response?.roomAccessToken || '', response?.expiresAt);
+        const response = await roomApi.verify(roomId || DEFAULT_ROOM_ID, password);
+        setRoomAccessToken(roomId, response?.valid ? 'granted' : '');
         return response;
     };
 

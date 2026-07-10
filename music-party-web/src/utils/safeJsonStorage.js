@@ -33,3 +33,15 @@ export const safeJsonStorage = {
     }
   }
 };
+
+safeJsonStorage.write = (key, value, options = {}) => {
+  const { storage = localStorage, maxLength = DEFAULT_MAX_JSON_LENGTH } = options;
+  try {
+    const raw = JSON.stringify(value);
+    if (raw.length > maxLength) return false;
+    storage.setItem(key, raw);
+    return true;
+  } catch {
+    return false;
+  }
+};

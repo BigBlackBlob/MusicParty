@@ -1,0 +1,35 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MusicParty",
+  "version": "0.1.0",
+  "identifier": "org.thornex.musicparty.desktop",
+  "build": {
+    "beforeDevCommand": "npm --prefix music-party-web run dev",
+    "beforeBuildCommand": "npm --prefix music-party-web run build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../music-party-web/dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "MusicParty",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 960,
+        "minHeight": 640
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "resources": {
+      "../target/MusicParty-0.0.1-SNAPSHOT.jar": "backend/MusicParty.jar",
+      "../start-netease-api.sh": "backend/start-netease-api.sh"
+    }
+  }
+}

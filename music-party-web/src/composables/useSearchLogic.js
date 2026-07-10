@@ -104,13 +104,13 @@ const doSearch = async (page = 1) => {
                 const data = await musicApi.searchAlbums(platform.value, val, userStore.sessionToken, roomStore.currentRoomId);
                 if (requestSeq !== searchRequestSeq) return;
                 albums.value = data;
-                localStorage.setItem(ALBUMS_CACHE_KEY, JSON.stringify(data));
+                safeJsonStorage.write(ALBUMS_CACHE_KEY, data, { maxLength: 128 * 1024 });
                 canGoNext.value = false;
             } else {
                 const data = await musicApi.search(platform.value, effectiveKeyword, userStore.sessionToken, offset, SEARCH_LIMIT, roomStore.currentRoomId);
                 if (requestSeq !== searchRequestSeq) return;
                 songs.value = data;
-                localStorage.setItem(SONGS_CACHE_KEY, JSON.stringify(data));
+                safeJsonStorage.write(SONGS_CACHE_KEY, data, { maxLength: 128 * 1024 });
                 
                 // 如果返回的数量达到 Limit，假设还有下一页
                 canGoNext.value = data.length === SEARCH_LIMIT;

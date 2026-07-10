@@ -42,8 +42,11 @@ public class RoomController {
     }
 
     @PostMapping("/{roomId}/verify")
-    public ResponseEntity<?> verifyRoomAccess(@PathVariable String roomId, @RequestBody RoomVerifyRequest request) {
-        return userService.resolvePublicIdBySessionToken(request.sessionToken())
+    public ResponseEntity<?> verifyRoomAccess(@PathVariable String roomId, @RequestBody RoomVerifyRequest request,
+                                               org.springframework.web.server.ServerWebExchange exchange) {
+        String sessionToken = exchange.getRequest().getCookies().getFirst("MP_SESSION") == null ? null
+                : exchange.getRequest().getCookies().getFirst("MP_SESSION").getValue();
+        return accountService.resolveSession(sessionToken).map(session -> session.publicId())
                 .map(publicId -> toVerifyResponse(roomId, publicId, request.password()))
                 .orElseGet(() -> ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
                         "valid", false,
@@ -62,7 +65,6 @@ public class RoomController {
 
         return ResponseEntity.ok(Map.of(
                 "valid", true,
-                "roomAccessToken", grant.roomAccessToken(),
                 "expiresAt", grant.expiresAt()
         ));
     }

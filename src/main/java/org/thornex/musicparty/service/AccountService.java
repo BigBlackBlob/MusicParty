@@ -2,6 +2,7 @@ package org.thornex.musicparty.service;
 
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.thornex.musicparty.persistence.PersistedSession;
 import org.thornex.musicparty.persistence.PersistedUserAccount;
@@ -34,6 +35,29 @@ public class AccountService {
         return new AuthStatus(!accountRepository.hasAdminAccount());
     }
 
+    public boolean hasAdminAccount() {
+        return accountRepository.hasAdminAccount();
+    }
+
+    @Transactional
+    public void bootstrapAdmin(String username, String password) {
+        String normalizedUsername = normalizeUsername(username);
+        validatePassword(password);
+        if (accountRepository.hasAdminAccount()) {
+            return;
+        }
+        if (!accountRepository.claimAdminBootstrap(System.currentTimeMillis())) {
+            if (!accountRepository.hasAdminAccount()) {
+                throw new IllegalStateException("Administrator bootstrap is being completed by another instance");
+            }
+            return;
+        }
+        if (accountRepository.usernameExists(normalizedUsername)) {
+            throw new IllegalStateException("Bootstrap administrator username already exists");
+        }
+        createAccount(normalizedUsername, password, "ADMIN", System.currentTimeMillis());
+    }
+
     public AccountSession register(String username, String password) {
         String normalizedUsername = normalizeUsername(username);
         validatePassword(password);
@@ -41,8 +65,11 @@ public class AccountService {
             throw new IllegalArgumentException("username already exists");
         }
         long now = System.currentTimeMillis();
+        return createAccount(normalizedUsername, password, "USER", now);
+    }
+
+    private AccountSession createAccount(String normalizedUsername, String password, String role, long now) {
         String publicId = generatePublicId();
-        String role = accountRepository.hasAdminAccount() ? "USER" : "ADMIN";
         userProfileRepository.upsertProfile(new PersistedUserProfile(
                 publicId,
                 normalizedUsername,

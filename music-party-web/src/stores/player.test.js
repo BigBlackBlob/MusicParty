@@ -34,7 +34,7 @@ describe('player controls', () => {
     vi.clearAllMocks();
     socketService.connected = false;
     socketService.send.mockReturnValue(true);
-    roomApi.verify.mockResolvedValue({ roomAccessToken: 'verified-token', expiresAt: Date.now() + 60_000 });
+    roomApi.verify.mockResolvedValue({ valid: true, expiresAt: Date.now() + 60_000 });
     vi.useRealTimers();
   });
 
@@ -162,8 +162,8 @@ describe('player controls', () => {
 
     await player.switchRoom('private', 'letmein');
 
-    expect(roomApi.verify).toHaveBeenCalledWith('private', 'letmein', 'session-token');
-    expect(roomStore.getRoomAccessToken('private')).toBe('verified-token');
+    expect(roomApi.verify).toHaveBeenCalledWith('private', 'letmein');
+    expect(roomStore.getRoomAccessToken('private')).toBe('granted');
     expect(roomStore.currentRoomId).toBe('private');
     expect(socketService.disconnect).toHaveBeenCalled();
   });

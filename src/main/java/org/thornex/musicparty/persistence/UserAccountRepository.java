@@ -4,6 +4,7 @@ import java.util.Optional;
 
 public interface UserAccountRepository {
     boolean hasAdminAccount();
+    boolean claimAdminBootstrap(long claimedAt);
     boolean usernameExists(String username);
     void create(PersistedUserAccount account);
     void updateLoginTime(String username, long lastLoginAt);

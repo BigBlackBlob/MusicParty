@@ -42,7 +42,7 @@ describe('user store account actions', () => {
 
     await user.updateProfile('Alice Cooper');
 
-    expect(authApi.updateAccountProfile).toHaveBeenCalledWith('token-a', 'Alice Cooper');
+    expect(authApi.updateAccountProfile).toHaveBeenCalledWith('', 'Alice Cooper');
     expect(user.currentUser.name).toBe('Alice Cooper');
     expect(user.onlineUsers[0].name).toBe('Alice Cooper');
     expect(user.publicId).toBe('u_a');
@@ -70,7 +70,7 @@ describe('user store account actions', () => {
 
     await user.logout();
 
-    expect(authApi.logoutAccount).toHaveBeenCalledWith('token-a');
+    expect(authApi.logoutAccount).toHaveBeenCalledWith();
     expect(user.sessionToken).toBe('');
     expect(user.role).toBe('GUEST');
     expect(localStorage.getItem(STORAGE_KEYS.SESSION_TOKEN)).toBeNull();

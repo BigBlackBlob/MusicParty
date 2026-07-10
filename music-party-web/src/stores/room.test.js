@@ -1,8 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import { useRoomStore } from './room';
-import { useUserStore } from './user';
-import { STORAGE_KEYS } from '../constants/keys';
 import { roomApi } from '../api/rooms';
 
 vi.mock('../api/rooms', () => ({
@@ -28,32 +26,27 @@ describe('room access tokens', () => {
     vi.useRealTimers();
   });
 
-  it('reads legacy string room access tokens', () => {
-    localStorage.setItem(STORAGE_KEYS.ROOM_ACCESS_TOKENS, JSON.stringify({
-      private: 'legacy-token'
-    }));
-    const roomStore = useRoomStore();
-
-    expect(roomStore.getRoomAccessToken('private')).toBe('legacy-token');
-  });
-
-  it('returns a non-expired room access token', () => {
-    localStorage.setItem(STORAGE_KEYS.ROOM_ACCESS_TOKENS, JSON.stringify({
-      private: { token: 'fresh-token', expiresAt: Date.now() + 60_000 }
-    }));
-    const roomStore = useRoomStore();
-
-    expect(roomStore.getRoomAccessToken('private')).toBe('fresh-token');
-  });
-
-  it('clears and hides expired room access tokens', () => {
-    localStorage.setItem(STORAGE_KEYS.ROOM_ACCESS_TOKENS, JSON.stringify({
-      private: { token: 'expired-token', expiresAt: Date.now() - 1 }
-    }));
+  it('does not restore room access credentials from local storage', () => {
+    localStorage.setItem('mp_room_access_tokens', JSON.stringify({ private: 'legacy-token' }));
     const roomStore = useRoomStore();
 
     expect(roomStore.getRoomAccessToken('private')).toBe('');
-    expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.ROOM_ACCESS_TOKENS))).toEqual({});
+  });
+
+  it('keeps only an in-memory room access marker', () => {
+    const roomStore = useRoomStore();
+    roomStore.setRoomAccessToken('private', 'granted');
+
+    expect(roomStore.getRoomAccessToken('private')).toBe('granted');
+    expect(localStorage.getItem('mp_room_access_tokens')).toBeNull();
+  });
+
+  it('clears a room access marker explicitly', () => {
+    const roomStore = useRoomStore();
+    roomStore.setRoomAccessToken('private', 'granted');
+    roomStore.clearRoomAccessToken('private');
+
+    expect(roomStore.getRoomAccessToken('private')).toBe('');
   });
 
   it('treats public rooms as accessible and private rooms as token-gated', () => {
@@ -71,21 +64,16 @@ describe('room access tokens', () => {
     expect(roomStore.hasValidRoomAccess('private')).toBe(true);
   });
 
-  it('verifies room access and stores the returned token with expiry', async () => {
-    const userStore = useUserStore();
-    userStore.initUser('session-token', 'u1', 'Alice', false);
+  it('verifies room access without receiving a browser-readable token', async () => {
     const roomStore = useRoomStore();
     roomApi.verify.mockResolvedValue({
-      roomAccessToken: 'verified-token',
+      valid: true,
       expiresAt: 123456
     });
 
     await roomStore.verifyRoomAccess('private', 'letmein');
 
-    expect(roomApi.verify).toHaveBeenCalledWith('private', 'letmein', 'session-token');
-    expect(roomStore.roomAccessTokens.private).toEqual({
-      token: 'verified-token',
-      expiresAt: 123456
-    });
+    expect(roomApi.verify).toHaveBeenCalledWith('private', 'letmein');
+    expect(roomStore.roomAccessTokens.private).toBe(true);
   });
 });

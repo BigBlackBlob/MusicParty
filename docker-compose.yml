@@ -1,7 +1,7 @@
 services:
   # 1. 网易云音乐 API 服务
   netease-api:
-    image: moefurina/ncm-api:latest
+    image: ${NETEASE_API_IMAGE:?set a pinned NetEase API image tag in .env}
     container_name: music-party-netease
     restart: always
     environment:
@@ -27,6 +27,9 @@ services:
       # [基础配置]
       - BASE_URL=http://localhost:8848    #你的基础url，用于直播流链接的拼接
       - ALLOWED_ORIGINS=http://localhost:8848 # 逗号分隔；生产环境填写实际访问 Origin
+      # Set these in the untracked .env file before the first production start.
+      - BOOTSTRAP_ADMIN_USERNAME=${BOOTSTRAP_ADMIN_USERNAME:?set in .env before first start}
+      - BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD:?set in .env before first start}
       - APP_AUTHOR_NAME=ThorNex      # 页面左上角显示的作者名
       - APP_BACK_WORDS=MUSIC PARTY    # 中间背景装饰文字
       

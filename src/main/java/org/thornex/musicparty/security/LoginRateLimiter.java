@@ -47,20 +47,18 @@ public class LoginRateLimiter {
         long windowMs = appProperties.getAuth().getWindowSeconds() * MS_PER_SECOND;
         int maxAttempts = appProperties.getAuth().getMaxAttempts();
 
-        Entry entry = attempts.compute(key, (existing, prev) -> {
+        attempts.compute(key, (existing, prev) -> {
             Entry current = prev != null ? prev : new Entry();
-            pruneOlder(current, now, windowMs);
-            current.failures.addLast(now);
+            synchronized (current) {
+                pruneOlder(current, now, windowMs);
+                current.failures.addLast(now);
+                if (current.failures.size() >= maxAttempts) {
+                    current.blockedUntil = now + appProperties.getAuth().getBlockDurationSeconds() * MS_PER_SECOND;
+                    current.failures.clear();
+                }
+            }
             return current;
         });
-
-        if (entry != null && entry.failures.size() >= maxAttempts) {
-            long blockMs = appProperties.getAuth().getBlockDurationSeconds() * MS_PER_SECOND;
-            synchronized (entry) {
-                entry.blockedUntil = now + blockMs;
-                entry.failures.clear();
-            }
-        }
         enforceTrackingCap();
     }
 

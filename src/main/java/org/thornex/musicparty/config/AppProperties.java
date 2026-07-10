@@ -13,6 +13,8 @@ public class AppProperties {
     private NavidromeApiConfig navidrome = new NavidromeApiConfig();
     private SquidifyConfig squidify = new SquidifyConfig();
     private String adminPassword;
+    private String bootstrapAdminUsername = "";
+    private String bootstrapAdminPassword = "";
     private String baseUrl;
     private String allowedOrigins;
     private String mode = "server";
@@ -101,6 +103,7 @@ public class AppProperties {
         private String trustedProxyCidrs = "";
         private long roomAccessTokenTtlMs = 5 * 60 * 1000L;
         private String roomAccessTokenSecret = "";
+        private boolean secureCookies = true;
     }
 
     @Data

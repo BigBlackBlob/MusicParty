@@ -21,6 +21,8 @@ logging:
 app:
   music-api:
     admin-password: ${ADMIN_PASSWORD:}
+    bootstrap-admin-username: ${BOOTSTRAP_ADMIN_USERNAME:}
+    bootstrap-admin-password: ${BOOTSTRAP_ADMIN_PASSWORD:}
     mode: ${APP_MODE:server}
     base-url: ${BASE_URL:http://localhost:8080}
     allowed-origins: ${ALLOWED_ORIGINS:}
@@ -103,3 +105,4 @@ app:
       trusted-proxy-cidrs: ${TRUSTED_PROXY_CIDRS:}
       room-access-token-ttl-ms: ${ROOM_ACCESS_TOKEN_TTL_MS:300000}
       room-access-token-secret: ${ROOM_ACCESS_TOKEN_SECRET:}
+      secure-cookies: ${AUTH_SECURE_COOKIES:true}
