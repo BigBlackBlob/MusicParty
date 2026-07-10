@@ -218,16 +218,11 @@ public class NeteaseProxyController {
         if (cached != null && cached.expireAt() > System.currentTimeMillis()) {
             return Mono.just(cached.url());
         }
-        Mono<String> existing = inflightCdnResolves.get(songId);
-        if (existing != null) {
-            return existing;
-        }
-        Mono<String> resolve = neteaseService.resolveCdnUrl(songId)
-                .doOnNext(url -> cdnUrlCache.put(songId, new CdnEntry(url, System.currentTimeMillis() + CDN_TTL_MS)))
-                .cache()
-                .doFinally(signal -> inflightCdnResolves.remove(songId));
-        inflightCdnResolves.put(songId, resolve);
-        return resolve;
+        return inflightCdnResolves.computeIfAbsent(songId, id ->
+                neteaseService.resolveCdnUrl(id)
+                        .doOnNext(url -> cdnUrlCache.put(id, new CdnEntry(url, System.currentTimeMillis() + CDN_TTL_MS)))
+                        .doFinally(signal -> inflightCdnResolves.remove(id))
+                        .cache());
     }
 
     private void copyHeader(HttpResponse<?> response, HttpHeaders headers, String name) {

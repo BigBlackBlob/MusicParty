@@ -1,10 +1,26 @@
 package org.thornex.musicparty.controller;
 
 import org.junit.jupiter.api.Test;
+import org.thornex.musicparty.service.LocalCacheService;
+import org.thornex.musicparty.service.UserService;
+import org.thornex.musicparty.service.api.NeteaseMusicApiService;
+import org.thornex.musicparty.service.stream.InternalStreamProxyToken;
+import reactor.core.publisher.Mono;
+
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class NeteaseProxyControllerTest {
 
@@ -40,6 +56,43 @@ class NeteaseProxyControllerTest {
         assertThat(src).contains("inflightCdnResolves");
         assertThat(src).contains("resolveCdnDedup");
         assertThat(src).contains(".cache()");
+    }
+
+    @Test
+    void concurrentCdnCacheMissesShareOneUpstreamResolve() throws Exception {
+        AtomicInteger resolves = new AtomicInteger();
+        NeteaseMusicApiService neteaseService = mock(NeteaseMusicApiService.class);
+        when(neteaseService.resolveCdnUrl("42")).thenAnswer(invocation -> {
+            resolves.incrementAndGet();
+            Thread.sleep(100);
+            return Mono.just("https://cdn.example/song.mp3");
+        });
+        NeteaseProxyController controller = new NeteaseProxyController(
+                neteaseService,
+                mock(UserService.class),
+                mock(InternalStreamProxyToken.class),
+                mock(LocalCacheService.class));
+        Method resolveCdnDedup = NeteaseProxyController.class.getDeclaredMethod("resolveCdnDedup", String.class);
+        resolveCdnDedup.setAccessible(true);
+        CyclicBarrier start = new CyclicBarrier(2);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<Mono<String>> first = executor.submit(() -> invokeResolve(resolveCdnDedup, controller, start));
+            Future<Mono<String>> second = executor.submit(() -> invokeResolve(resolveCdnDedup, controller, start));
+
+            assertThat(first.get(1, TimeUnit.SECONDS).block()).isEqualTo("https://cdn.example/song.mp3");
+            assertThat(second.get(1, TimeUnit.SECONDS).block()).isEqualTo("https://cdn.example/song.mp3");
+            assertThat(resolves).hasValue(1);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Mono<String> invokeResolve(Method resolveCdnDedup, NeteaseProxyController controller,
+                                       CyclicBarrier start) throws Exception {
+        start.await(1, TimeUnit.SECONDS);
+        return (Mono<String>) resolveCdnDedup.invoke(controller, "42");
     }
 
     @Test
