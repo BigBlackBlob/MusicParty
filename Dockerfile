@@ -72,7 +72,7 @@ USER appuser
 EXPOSE 8080
 
 # 默认按容器内存收敛 JVM heap，并使用适合服务端长运行的 G1。
-ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=65 -XX:+UseG1GC"
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=50 -XX:+UseG1GC -Dreactor.schedulers.defaultBoundedElasticSize=64"
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \

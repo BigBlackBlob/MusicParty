@@ -47,7 +47,7 @@ services:
       # - NAVIDROME_ALLOWED_USERS=Nirotiy,Alice
 
       # [性能/策略配置]
-      - JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=65 -XX:+UseG1GC
+      - JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=50 -XX:+UseG1GC -Dreactor.schedulers.defaultBoundedElasticSize=64
       - QUEUE_MAX_SIZE=1000          # 播放队列最大长度
       - QUEUE_HISTORY_SIZE=50        # 历史记录保留数量
       - PLAYLIST_IMPORT_LIMIT=100    # 导入歌单时的最大歌曲数限制
