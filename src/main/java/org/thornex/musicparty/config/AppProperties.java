@@ -83,6 +83,7 @@ public class AppProperties {
         private long downloadTaskTtlMs = 30 * 60 * 1000L;
         private int coverColorCacheSize = 256;
         private int coverColorMaxConcurrent = 4;
+        private int boundedElasticSize = 64;
     }
 
     @Data
