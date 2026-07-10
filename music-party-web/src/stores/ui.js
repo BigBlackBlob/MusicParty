@@ -230,6 +230,9 @@ export const useUiStore = defineStore('ui', () => {
         syncAccentVariables();
     };
 
+    let lastAccentRequestTime = 0;
+    const ACCENT_THROTTLE_MS = 2000;
+
     const updateAccentFromCover = async (coverUrl) => {
         if (!coverUrl) {
             clearDynamicAccent();
@@ -242,6 +245,14 @@ export const useUiStore = defineStore('ui', () => {
         if (requestUrl === lastAccentCoverUrl.value && dynamicAccent.value) {
             return;
         }
+
+        // 节流：2 秒内不重复请求（防止 sync 广播风暴时重复拉取）
+        const now = Date.now();
+        if (now - lastAccentRequestTime < ACCENT_THROTTLE_MS) {
+            return;
+        }
+        lastAccentRequestTime = now;
+
 
         try {
             const accentSet = await musicApi.extractCoverColor(requestUrl);
