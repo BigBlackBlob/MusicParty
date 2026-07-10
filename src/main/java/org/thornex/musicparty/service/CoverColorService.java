@@ -24,6 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @Slf4j
@@ -33,6 +34,7 @@ public class CoverColorService {
     private final AppProperties appProperties;
     private final Map<String, CoverColorResponse> responseCache;
     private final Semaphore concurrentExtracts;
+    private final Map<String, Mono<CoverColorResponse>> inflightExtractions = new ConcurrentHashMap<>();
     private static final long MAX_COVER_BYTES = 3 * 1024 * 1024;
     private static final Duration COVER_FETCH_TIMEOUT = Duration.ofSeconds(5);
     private static final Set<String> ALLOWED_SCHEMES = Set.of("http", "https");
@@ -55,32 +57,36 @@ public class CoverColorService {
             return Mono.empty();
         }
 
+        String resolvedUrl = resolveCoverUrl(coverUrl);
+
+        // 早期缓存检查（不消耗 boundedElastic 线程）
+        CoverColorResponse cached = responseCache.get(resolvedUrl);
+        if (cached != null) {
+            return Mono.just(cached);
+        }
+
+        // In-flight 去重：同 URL 的并发请求共享一个 Mono
+        return inflightExtractions.computeIfAbsent(resolvedUrl, url ->
+                doExtract(url, coverUrl)
+                        .cache()
+                        .doFinally(signal -> inflightExtractions.remove(url))
+        );
+    }
+
+    private Mono<CoverColorResponse> doExtract(String resolvedUrl, String originalCoverUrl) {
         return Mono.defer(() -> {
-                    boolean trustedLocalPath = isTrustedLocalCoverPath(coverUrl);
-                    String resolvedUrl = resolveCoverUrl(coverUrl);
-                    CoverColorResponse cached = responseCache.get(resolvedUrl);
-                    if (cached != null) {
-                        return Mono.just(cached);
-                    }
+                    boolean trustedLocalPath = isTrustedLocalCoverPath(originalCoverUrl);
                     if (!trustedLocalPath && !isSafeCoverUrl(resolvedUrl)) {
                         log.warn("Rejected unsafe cover URL for color extraction: {}", resolvedUrl);
                         return Mono.empty();
                     }
-
                     if (!concurrentExtracts.tryAcquire()) {
                         log.debug("Cover color extraction concurrency limit reached");
                         return Mono.empty();
                     }
-
                     return fetchCoverBytes(resolvedUrl)
                             .timeout(COVER_FETCH_TIMEOUT)
-                            .filter(bytes -> {
-                                boolean allowed = bytes.length <= MAX_COVER_BYTES;
-                                if (!allowed) {
-                                    log.warn("Rejected oversized cover body: url={}, bytes={}", resolvedUrl, bytes.length);
-                                }
-                                return allowed;
-                            })
+                            .filter(bytes -> bytes.length <= MAX_COVER_BYTES)
                             .flatMap(bytes -> decodeCoverColor(resolvedUrl, bytes))
                             .onErrorResume(error -> {
                                 log.warn("Failed to fetch cover for color extraction: {}", resolvedUrl, error);

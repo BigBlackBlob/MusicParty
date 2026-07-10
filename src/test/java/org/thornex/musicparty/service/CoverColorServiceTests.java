@@ -83,4 +83,62 @@ class CoverColorServiceTests {
         assertThat(second).isEqualTo(first);
         assertThat(calls).hasValue(1);
     }
+    @Test
+    void concurrentRequestsForSameUrlShareOneExtraction() {
+        AtomicInteger calls = new AtomicInteger();
+        byte[] png = Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4XmNgYPgPAAEDAQD9b6mRAAAAAElFTkSuQmCC");
+        WebClient client = WebClient.builder()
+                .exchangeFunction(request -> {
+                    calls.incrementAndGet();
+                    return Mono.just(ClientResponse.create(HttpStatus.OK)
+                            .header(HttpHeaders.CONTENT_TYPE, MediaType.IMAGE_PNG_VALUE)
+                            .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(png.length))
+                            .body(Flux.just(new DefaultDataBufferFactory().wrap(png)))
+                            .build());
+                })
+                .build();
+        AppProperties properties = new AppProperties();
+        properties.setBaseUrl("http://127.0.0.1:8080");
+        CoverColorService service = new CoverColorService(client, properties);
+
+        // 并发请求同一 URL
+        Mono<CoverColorResponse> r1 = service.extract("/media/cover.png");
+        Mono<CoverColorResponse> r2 = service.extract("/media/cover.png");
+
+        CoverColorResponse first = r1.block();
+        CoverColorResponse second = r2.block();
+
+        assertThat(first).isNotNull();
+        assertThat(second).isEqualTo(first);
+        // 只应有一次上游调用（in-flight 去重）
+        assertThat(calls).hasValue(1);
+    }
+
+    @Test
+    void cacheHitDoesNotConsumeBoundedElasticThread() {
+        AtomicInteger calls = new AtomicInteger();
+        byte[] png = Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4XmNgYPgPAAEDAQD9b6mRAAAAAElFTkSuQmCC");
+        WebClient client = WebClient.builder()
+                .exchangeFunction(request -> {
+                    calls.incrementAndGet();
+                    return Mono.just(ClientResponse.create(HttpStatus.OK)
+                            .header(HttpHeaders.CONTENT_TYPE, MediaType.IMAGE_PNG_VALUE)
+                            .header(HttpHeaders.CONTENT_LENGTH, String.valueOf(png.length))
+                            .body(Flux.just(new DefaultDataBufferFactory().wrap(png)))
+                            .build());
+                })
+                .build();
+        AppProperties properties = new AppProperties();
+        properties.setBaseUrl("http://127.0.0.1:8080");
+        CoverColorService service = new CoverColorService(client, properties);
+
+        // 第一次提取填充缓存
+        service.extract("/media/cover.png").block();
+        int callsAfterFirst = calls.get();
+        assertThat(callsAfterFirst).isEqualTo(1);
+
+        // 第二次应命中缓存，不触发上游调用
+        service.extract("/media/cover.png").block();
+        assertThat(calls).hasValue(1);
+    }
 }
