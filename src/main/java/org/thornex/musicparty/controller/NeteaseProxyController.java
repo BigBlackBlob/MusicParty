@@ -18,6 +18,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -34,6 +36,11 @@ public class NeteaseProxyController {
             .connectTimeout(Duration.ofSeconds(10))
             .followRedirects(HttpClient.Redirect.NORMAL)
             .build();
+    // CDN URL 短时缓存：避免每次 Range 请求都打 网易云 ncm-api 容器（CPU 密集解密）
+    // 网易云 CDN URL 有时效，缓存 30 秒平衡时效性与 API 调用频率
+    private static final long CDN_TTL_MS = 30_000;
+    private record CdnEntry(String url, long expireAt) {}
+    private final Map<String, CdnEntry> cdnUrlCache = new ConcurrentHashMap<>();
 
     public NeteaseProxyController(NeteaseMusicApiService neteaseService,
                                   UserService userService,
@@ -54,7 +61,7 @@ public class NeteaseProxyController {
             return Mono.just(ResponseEntity.status(HttpStatus.FORBIDDEN).build());
         }
 
-        return neteaseService.resolveCdnUrl(songId)
+        return resolveCdnWithCache(songId)
                 .timeout(Duration.ofSeconds(8))
                 .flatMap(cdnUrl -> streamResolvedUrl(songId, cdnUrl, rangeHeader))
                 .onErrorResume(e -> {
@@ -118,6 +125,17 @@ public class NeteaseProxyController {
     private boolean canUse(String token, String internalToken) {
         if (internalStreamProxyToken.matches(internalToken)) return true;
         return StringUtils.hasText(token) && userService.getUserBySessionToken(token).isPresent();
+    }
+
+    // Failsafe: CDN URL 短时缓存（30 秒），避免每次 Range 请求都打 网易云 ncm-api 容器
+    private Mono<String> resolveCdnWithCache(String songId) {
+        CdnEntry cached = cdnUrlCache.get(songId);
+        if (cached != null && cached.expireAt() > System.currentTimeMillis()) {
+            return Mono.just(cached.url());
+        }
+        // 缓存 miss 或过期：实际解析
+        return neteaseService.resolveCdnUrl(songId)
+                .doOnNext(url -> cdnUrlCache.put(songId, new CdnEntry(url, System.currentTimeMillis() + CDN_TTL_MS)));
     }
 
     private void copyHeader(HttpResponse<?> response, HttpHeaders headers, String name) {

@@ -27,6 +27,14 @@ class NeteaseProxyControllerTest {
     }
 
     @Test
+    void neteaseProxyHasCdnUrlShortTermCache() throws IOException {
+        String src = Files.readString(BASE.resolve("controller/NeteaseProxyController.java"));
+        assertThat(src).contains("cdnUrlCache");
+        assertThat(src).contains("CDN_TTL_MS");
+        assertThat(src).contains("resolveCdnWithCache");
+    }
+
+    @Test
     void reactiveStreamUtilsHasErrorSuppressionHelper() throws IOException {
         String src = Files.readString(BASE.resolve("controller/ReactiveStreamUtils.java"));
         assertThat(src).contains("withErrorSuppression");
