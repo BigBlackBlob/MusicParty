@@ -94,7 +94,7 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue';
+import { computed, ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Sortable from 'sortablejs';
 import { usePlayerStore } from '../stores/player';
@@ -102,7 +102,7 @@ import QueueItem from './QueueItem.vue';
 import TrackListItem from './ui/TrackListItem.vue';
 import { createLikedSongsFilename, createLikedSongsText } from '../utils/likedSongs';
 import { useQueueSelection } from '../composables/useQueueSelection';
-import { buildQueueReorderPayload, buildQueueReorderPayloadFromDom } from '../utils/queueReorder';
+import { buildQueueReorderPayload, buildQueueReorderPayloadFromDom, isQueueReorderSourceCurrent } from '../utils/queueReorder';
 
 const player = usePlayerStore();
 const { t } = useI18n();
@@ -127,9 +127,14 @@ onMounted(() => {
   initSortable();
 });
 
-watch([activeView, selectionMode, queueListRef], () => {
-  if (activeView.value === 'queue' && !selectionMode.value) {
-    if (!sortableInstance) initSortable();
+watch([activeView, selectionMode, queueListRef], async () => {
+  await nextTick();
+  if (activeView.value === 'queue') {
+    if (!sortableInstance) {
+      initSortable();
+    } else if (sortableInstance) {
+      sortableInstance.option('disabled', selectionMode.value);
+    }
   } else {
     destroySortable();
   }
@@ -145,11 +150,15 @@ const initSortable = () => {
   if (!queueListRef.value) return;
   sortableInstance = new Sortable(queueListRef.value, {
     animation: 150,
-    handle: '.drag-handle',
     ghostClass: 'opacity-40',
+    disabled: selectionMode.value,
     onEnd: (evt) => {
-      const payload = buildQueueReorderPayloadFromDom(evt) || buildQueueReorderPayload(queue.value, evt.oldIndex, evt.newIndex);
+      const payload = buildQueueReorderPayloadFromDom(evt)
+        || (isQueueReorderSourceCurrent(queue.value, evt)
+          ? buildQueueReorderPayload(queue.value, evt.oldIndex, evt.newIndex)
+          : null);
       if (payload) player.reorderQueue(payload.oldIndex, payload.newIndex, payload.queueId, payload.targetQueueId, payload.position);
+      else if (evt.oldIndex !== evt.newIndex) player.requestResync('queue-reorder-stale-dom', true);
     }
   });
 };

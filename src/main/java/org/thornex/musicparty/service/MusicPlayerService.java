@@ -250,12 +250,12 @@ public class MusicPlayerService {
         sessionForUser(sessionId).removeSongsFromQueue(queueIds, sessionId);
     }
 
-    public void reorderQueue(int oldIndex, int newIndex, String sessionId) {
-        sessionForUser(sessionId).reorderQueue(oldIndex, newIndex, sessionId);
+    public boolean reorderQueue(int oldIndex, int newIndex, String sessionId) {
+        return sessionForUser(sessionId).reorderQueue(oldIndex, newIndex, sessionId);
     }
 
-    public void reorderQueue(String queueId, String targetQueueId, String position, String sessionId) {
-        sessionForUser(sessionId).reorderQueue(queueId, targetQueueId, position, sessionId);
+    public boolean reorderQueue(String queueId, String targetQueueId, String position, String sessionId) {
+        return sessionForUser(sessionId).reorderQueue(queueId, targetQueueId, position, sessionId);
     }
 
     public ControlResult skipToNext(String sessionId) {
@@ -342,6 +342,7 @@ public class MusicPlayerService {
         private final AtomicInteger onlineUserCount = new AtomicInteger(0);
         private final Map<String, AtomicLong> lastControlTimestamps = new ConcurrentHashMap<>();
         private final AtomicLong playHeadVersion = new AtomicLong(0);
+        private final AtomicLong queueVersion = new AtomicLong(0);
         // 当 playNextInQueue 选中的歌 url=PENDING_DOWNLOAD 时，轮询下载状态的定时任务
         private java.util.concurrent.ScheduledFuture<?> pendingDownloadPoller;
 
@@ -632,7 +633,9 @@ public class MusicPlayerService {
                     int remaining = Math.max(0, appProperties.getQueue().getMaxUserSongs() - (int) existingUserCount);
                     int limit = Math.min(remaining, appProperties.getPlayer().getMaxPlaylistImportSize());
                     for (Music music : musics.stream().limit(limit).toList()) {
-                        if (queueManager.add(music, new UserSummary(enqueuer.getPublicId(), enqueuer.getName(), enqueuer.isGuest()), QueueItemStatus.READY) != null) count++;
+                        QueueItemStatus initialStatus = isCachedPlatform(music.platform()) ? QueueItemStatus.PENDING : QueueItemStatus.READY;
+                        if (isCachedPlatform(music.platform())) service.prefetchMusic(music.id());
+                        if (queueManager.add(music, new UserSummary(enqueuer.getPublicId(), enqueuer.getName(), enqueuer.isGuest()), initialStatus) != null) count++;
                     }
                     playbackState.touchHotActivity();
                     persistQueueMutation(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.IMPORT_PLAYLIST, enqueuer.getPublicId(), String.valueOf(count), roomId), false);
@@ -700,18 +703,20 @@ public class MusicPlayerService {
             }
         }
 
-        public synchronized void reorderQueue(int oldIndex, int newIndex, String sessionId) {
+        public synchronized boolean reorderQueue(int oldIndex, int newIndex, String sessionId) {
             boolean changed = queueManager.reorder(oldIndex, newIndex);
-            if (!changed) return;
+            if (!changed) return false;
             playbackState.touchHotActivity();
             persistQueueMutation(null, true);
+            return true;
         }
 
-        public synchronized void reorderQueue(String queueId, String targetQueueId, String position, String sessionId) {
+        public synchronized boolean reorderQueue(String queueId, String targetQueueId, String position, String sessionId) {
             boolean changed = queueManager.reorderByQueueId(queueId, targetQueueId, position);
-            if (!changed) return;
+            if (!changed) return false;
             playbackState.touchHotActivity();
             persistQueueMutation(null, true);
+            return true;
         }
 
         public synchronized ControlResult skipToNext(String sessionId) {
@@ -894,7 +899,7 @@ public class MusicPlayerService {
         }
 
         public void broadcastQueueUpdate() {
-            eventPublisher.publishEvent(new QueueUpdateEvent(this, roomId, getQueueWithUpdatedStatus()));
+            eventPublisher.publishEvent(new QueueUpdateEvent(this, roomId, getQueueWithUpdatedStatus(), queueVersion.incrementAndGet()));
         }
 
         public void broadcastFullPlayerState() {
@@ -1041,7 +1046,7 @@ public class MusicPlayerService {
                     roomId,
                     persistQueue ? queueManager.getQueueSnapshot() : null,
                     currentPlaybackStateSnapshot(),
-                    broadcastQueue ? new QueueUpdateEvent(this, roomId, getQueueWithUpdatedStatus()) : null,
+                    broadcastQueue ? new QueueUpdateEvent(this, roomId, getQueueWithUpdatedStatus(), queueVersion.incrementAndGet()) : null,
                     broadcastPlayerState ? new PlayerStateEvent(this, roomId, getCurrentPlayerState()) : null,
                     systemMessageEvent
             ));
@@ -1094,9 +1099,15 @@ public class MusicPlayerService {
         private Map<String, QueueItemStatus> buildStatusMap() {
             Map<String, QueueItemStatus> statusMap = new HashMap<>();
             for (MusicQueueItem item : queueManager.getQueueSnapshot()) {
-                statusMap.put(MusicQueueManager.musicKey(item.music()), isCachedPlatform(item.music().platform())
-                        ? mapCacheStatusToEnum(localCacheService.getStatus(cacheKey(item.music())))
-                        : QueueItemStatus.READY);
+                QueueItemStatus status;
+                if ("netease".equals(item.music().platform())) {
+                    status = QueueItemStatus.READY;
+                } else if (isCachedPlatform(item.music().platform())) {
+                    status = mapCacheStatusToEnum(localCacheService.getStatus(cacheKey(item.music())));
+                } else {
+                    status = QueueItemStatus.READY;
+                }
+                statusMap.put(MusicQueueManager.musicKey(item.music()), status);
             }
             return statusMap;
         }
