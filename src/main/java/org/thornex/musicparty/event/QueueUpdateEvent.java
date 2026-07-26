@@ -13,14 +13,20 @@ import java.util.List;
 public class QueueUpdateEvent extends ApplicationEvent {
     private final String roomId;
     private final List<MusicQueueItem> queue;
+    private final long queueVersion;
 
     public QueueUpdateEvent(Object source, List<MusicQueueItem> queue) {
-        this(source, "lounge", queue);
+        this(source, "lounge", queue, 0);
     }
 
     public QueueUpdateEvent(Object source, String roomId, List<MusicQueueItem> queue) {
+        this(source, roomId, queue, 0);
+    }
+
+    public QueueUpdateEvent(Object source, String roomId, List<MusicQueueItem> queue, long queueVersion) {
         super(source);
         this.roomId = roomId;
         this.queue = queue;
+        this.queueVersion = queueVersion;
     }
 }
