@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyQueueReorder, buildQueueReorderPayload, buildQueueReorderPayloadFromDom } from './queueReorder';
+import { applyQueueReorder, buildQueueReorderPayload, buildQueueReorderPayloadFromDom, isQueueReorderSourceCurrent } from './queueReorder';
 
 const queue = [
   { queueId: 'a' },
@@ -77,6 +77,16 @@ describe('buildQueueReorderPayloadFromDom', () => {
   it('returns null when DOM neighbors are missing', () => {
     const moved = item('a');
     expect(buildQueueReorderPayloadFromDom({ oldIndex: 0, newIndex: 1, item: moved })).toBeNull();
+  });
+});
+
+describe('isQueueReorderSourceCurrent', () => {
+  it('only permits the index fallback when the dragged DOM item still matches the queue source', () => {
+    const item = document.createElement('div');
+    item.dataset.queueId = 'a';
+
+    expect(isQueueReorderSourceCurrent(queue, { item, oldIndex: 0 })).toBe(true);
+    expect(isQueueReorderSourceCurrent([{ queueId: 'b' }, ...queue.slice(1)], { item, oldIndex: 0 })).toBe(false);
   });
 });
 

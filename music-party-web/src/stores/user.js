@@ -94,7 +94,14 @@ export const useUserStore = defineStore('user', () => {
 
     const initAccount = (session) => {
         if (!session) return;
-        initUser(session.sessionToken, session.publicId, session.displayName || session.username, session.guest, session.role, session.admin);
+        initUser(
+            session.sessionToken,
+            session.publicId,
+            session.displayName || session.username,
+            session.guest,
+            session.role,
+            session.admin === true || session.role === 'ADMIN'
+        );
         accountLastLoginAt.value = session.lastLoginAt || null;
         if (session.username) {
             localStorage.setItem(STORAGE_KEYS.ACCOUNT_USERNAME, session.username);

@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ServerWebExchange;
 import org.thornex.musicparty.dto.AdminCommandRequest;
 import org.thornex.musicparty.dto.AdminNavidromeAccessRequest;
 import org.thornex.musicparty.dto.AdminSubsonicSourceRequest;
@@ -22,6 +23,7 @@ import org.thornex.musicparty.service.RoomSubsonicSource;
 import org.thornex.musicparty.service.SubsonicSourceRegistry;
 import org.thornex.musicparty.service.api.BilibiliMusicApiService;
 import org.thornex.musicparty.service.api.NeteaseMusicApiService;
+import org.thornex.musicparty.security.SessionCookieService;
 import reactor.core.publisher.Mono;
 
 import java.util.Map;
@@ -40,6 +42,7 @@ public class AdminController {
     private final NavidromeAccessService navidromeAccessService;
     private final AdminAuthorizationService adminAuthorizationService;
     private final RuntimeMetricsService runtimeMetricsService;
+    private final SessionCookieService sessionCookieService;
 
     public AdminController(MusicPlayerService musicPlayerService,
                            ChatService chatService,
@@ -49,7 +52,8 @@ public class AdminController {
                            SubsonicSourceRegistry subsonicSourceRegistry,
                            NavidromeAccessService navidromeAccessService,
                            AdminAuthorizationService adminAuthorizationService,
-                           RuntimeMetricsService runtimeMetricsService) {
+                           RuntimeMetricsService runtimeMetricsService,
+                           SessionCookieService sessionCookieService) {
         this.musicPlayerService = musicPlayerService;
         this.chatService = chatService;
         this.neteaseMusicApiService = neteaseMusicApiService;
@@ -59,11 +63,12 @@ public class AdminController {
         this.navidromeAccessService = navidromeAccessService;
         this.adminAuthorizationService = adminAuthorizationService;
         this.runtimeMetricsService = runtimeMetricsService;
+        this.sessionCookieService = sessionCookieService;
     }
 
     @PostMapping("/command")
-    public Mono<ResponseEntity<?>> handleAdminCommand(@RequestBody AdminCommandRequest request) {
-        if (!isValidAdmin(request.sessionToken(), request.password())) {
+    public Mono<ResponseEntity<?>> handleAdminCommand(@RequestBody AdminCommandRequest request, ServerWebExchange exchange) {
+        if (!isValidAdmin(sessionToken(request.sessionToken(), exchange), request.password())) {
             return just(ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "ACCESS DENIED")));
         }
 
@@ -283,6 +288,10 @@ public class AdminController {
 
     private boolean isValidAdmin(String sessionToken, String legacyPassword) {
         return adminAuthorizationService.isAuthorized(sessionToken, legacyPassword);
+    }
+
+    private String sessionToken(String requestToken, ServerWebExchange exchange) {
+        return StringUtils.hasText(requestToken) ? requestToken : sessionCookieService.sessionToken(exchange);
     }
 
     private AdminSubsonicSourceView toSourceView(RoomSubsonicSource source) {

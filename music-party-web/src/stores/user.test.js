@@ -57,6 +57,22 @@ describe('user store account actions', () => {
     expect(localStorage.getItem(STORAGE_KEYS.BINDINGS)).toBeNull();
   });
 
+  it('recognizes an admin role even when the REST session has no admin flag', () => {
+    const user = useUserStore();
+
+    user.initAccount({
+      sessionToken: '',
+      publicId: 'u_admin',
+      username: 'admin',
+      displayName: 'Admin',
+      role: 'ADMIN',
+      guest: false
+    });
+
+    expect(user.role).toBe('ADMIN');
+    expect(user.isAdmin).toBe(true);
+  });
+
   it('logs out and clears persisted account identity', async () => {
     const user = useUserStore();
     user.initAccount({

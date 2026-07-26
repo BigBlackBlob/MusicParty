@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Repository;
 import org.thornex.musicparty.dto.Music;
 import org.thornex.musicparty.dto.UserPlaylist;
@@ -85,6 +86,7 @@ public class JdbcUserPlaylistRepository implements UserPlaylistRepository {
     }
 
     @Override
+    @Transactional
     public boolean deletePlaylist(String ownerPublicId, String playlistId) {
         jdbcTemplate.update("""
                 delete from user_playlist_track
@@ -162,6 +164,7 @@ public class JdbcUserPlaylistRepository implements UserPlaylistRepository {
     }
 
     @Override
+    @Transactional
     public void reorderTracks(String ownerPublicId, String playlistId, List<String> orderedTrackIds) {
         if (findPlaylist(ownerPublicId, playlistId).isEmpty() || orderedTrackIds == null) return;
         int index = 0;

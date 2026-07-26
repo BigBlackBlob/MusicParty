@@ -59,6 +59,11 @@ export const usePlayerStore = defineStore('player', () => {
     const bufferedMs = ref(0);
     const isErrorState = ref(false);
     const isSeekingPreview = ref(false);
+    const lastQueueVersion = ref(0);
+    const pendingReorders = new Map();
+    let deferredQueueUpdate = null;
+    let reconnectTimer = null;
+    let pingTimer = null;
 
     const userStore = useUserStore();
     const roomStore = useRoomStore();
@@ -85,8 +90,44 @@ export const usePlayerStore = defineStore('player', () => {
         localProgress.value = nextPosition;
     };
 
-    const setQueue = (nextQueue) => {
-        queue.value = Array.isArray(nextQueue) ? nextQueue : [];
+    const clearPendingReorders = () => {
+        pendingReorders.forEach(pending => clearTimeout(pending.timeoutId));
+        pendingReorders.clear();
+        deferredQueueUpdate = null;
+    };
+
+    const setQueue = (nextQueue, queueVersion = null) => {
+        const version = Number.isFinite(queueVersion) ? queueVersion : null;
+        if (version !== null && version <= lastQueueVersion.value) return false;
+        if (version !== null) lastQueueVersion.value = version;
+
+        const update = { queue: Array.isArray(nextQueue) ? nextQueue : [], version };
+        if (pendingReorders.size > 0) {
+            deferredQueueUpdate = update;
+            return false;
+        }
+        queue.value = update.queue;
+        return true;
+    };
+
+    const applyDeferredQueueUpdate = () => {
+        if (!deferredQueueUpdate) return;
+        queue.value = deferredQueueUpdate.queue;
+        deferredQueueUpdate = null;
+    };
+
+    const settleQueueReorder = (mutationId, accepted, reason = '') => {
+        const pending = pendingReorders.get(mutationId);
+        if (!pending) return;
+        clearTimeout(pending.timeoutId);
+        pendingReorders.delete(mutationId);
+        if (!accepted) {
+            deferredQueueUpdate = null;
+            notifyControlFailure(reason === 'RATE_LIMITED' ? '队列操作太快了，请稍后重试' : '队列已更新，请重试排序');
+            requestResync('queue-reorder-nack', true);
+            return;
+        }
+        if (pendingReorders.size === 0) applyDeferredQueueUpdate();
     };
 
     const requestPing = (reason = 'manual', force = false) => {
@@ -147,6 +188,17 @@ export const usePlayerStore = defineStore('player', () => {
             return false;
         }
         return true;
+    };
+
+    const startHeartbeat = () => {
+        if (pingTimer) return;
+        pingTimer = setInterval(() => requestPing('interval'), 10000);
+    };
+
+    const stopHeartbeat = () => {
+        if (!pingTimer) return;
+        clearInterval(pingTimer);
+        pingTimer = null;
     };
 
     const notifyControlFailure = (message, type = 'warning') => {
@@ -214,7 +266,7 @@ export const usePlayerStore = defineStore('player', () => {
         }
 
         nowPlaying.value = state.nowPlaying;
-        queue.value = state.queue || [];
+        setQueue(state.queue || []);
         isPaused.value = state.isPaused;
         isShuffle.value = state.isShuffle;
         isPauseLocked.value = state.isPauseLocked || false;
@@ -282,6 +334,8 @@ export const usePlayerStore = defineStore('player', () => {
             requestChatHistory,
             requestPublicChatHistory,
             bindAccount,
+            startHeartbeat,
+            stopHeartbeat,
             userStore,
             roomStore
         });
@@ -290,8 +344,15 @@ export const usePlayerStore = defineStore('player', () => {
     };
 
     const resetRoomState = () => {
+        if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+        }
         nowPlaying.value = null;
         queue.value = [];
+        clearPendingReorders();
+        stopHeartbeat();
+        lastQueueVersion.value = 0;
         isPaused.value = false;
         isShuffle.value = false;
         isPauseLocked.value = false;
@@ -314,7 +375,10 @@ remotePosition.value = 0;
     const reconnectToCurrentRoom = () => {
         socketService.disconnect();
         resetRoomState();
-        setTimeout(() => connect(), 100);
+        reconnectTimer = setTimeout(() => {
+            reconnectTimer = null;
+            connect();
+        }, 100);
     };
 
     const switchRoom = async (roomId, password = undefined) => {
@@ -385,7 +449,8 @@ remotePosition.value = 0;
 
     const reorderQueue = (oldIndex, newIndex, queueId = null, targetQueueId = null, position = 'before') => {
         if (!requireAuth()) return false;
-        const payload = { oldIndex, newIndex, queueId, targetQueueId, position };
+        const mutationId = `queue-reorder-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const payload = { oldIndex, newIndex, queueId, targetQueueId, position, mutationId };
         const sent = socketService.send(WS_DEST.QUEUE_REORDER, payload);
         if (!sent) {
             notifyControlFailure('队列排序没有发出，请等待连接恢复后再试', 'error');
@@ -393,7 +458,13 @@ remotePosition.value = 0;
             return false;
         }
         queue.value = applyQueueReorder(queue.value, payload);
-        setTimeout(() => requestResync('queue-reorder-fallback', false), 400);
+        const timeoutId = setTimeout(() => {
+            if (!pendingReorders.has(mutationId)) return;
+            pendingReorders.delete(mutationId);
+            applyDeferredQueueUpdate();
+            requestResync('queue-reorder-timeout', true);
+        }, 1500);
+        pendingReorders.set(mutationId, { timeoutId });
         return true;
     };
 
@@ -603,7 +674,7 @@ remotePosition.value = 0;
         localProgress, playbackPositionMs, isBuffering, bufferedMs, isErrorState, streamListenerCount, lastSyncTime, lastRttMs,
         isSeekingPreview, forceNextSyncSeek, setSeekingPreview,
         setPlaybackPosition,
-        connect, tryReconnect, reconnectToCurrentRoom, switchRoom, resetRoomState, resetSyncGate, getCurrentProgress, syncState, handleSyncPong, requestPing, requestResync, requestSyncRefresh,
+        connect, tryReconnect, reconnectToCurrentRoom, switchRoom, resetRoomState, resetSyncGate, getCurrentProgress, syncState, handleSyncPong, requestPing, requestResync, requestSyncRefresh, setQueue, settleQueueReorder,
         playNext, togglePause, toggleShuffle,
         seek,
         enqueue, enqueuePlaylist, enqueueAlbum, topSong, removeSong, topSongs, removeSongs, topSongsCompat, removeSongsCompat,

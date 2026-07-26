@@ -23,6 +23,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import java.net.URI;
+import java.util.Arrays;
 import java.util.Map;
 
 @Configuration
@@ -38,6 +39,7 @@ public class WebSocketConfig {
     private final RoomService roomService;
     private final RoomAccessService roomAccessService;
     private final SessionCookieService sessionCookieService;
+    private final AppProperties appProperties;
 
     @Bean
     HandlerMapping webSocketHandlerMapping() {
@@ -88,7 +90,7 @@ public class WebSocketConfig {
 
         Mono<Void> inbound = session.receive()
                 .map(message -> message.getPayloadAsText())
-                .flatMap(text -> dispatch(sessionId, text))
+                .concatMap(text -> dispatch(sessionId, text))
                 .then();
         Mono<Void> outbound = session.send(broker.register(sessionId, roomId).map(session::textMessage));
 
@@ -104,14 +106,15 @@ public class WebSocketConfig {
     }
 
     private Mono<Void> dispatch(String sessionId, String text) {
-        return Mono.fromRunnable(() -> {
+        return Mono.defer(() -> {
             try {
                 JsonNode root = objectMapper.readTree(text);
                 String type = root.path("type").asText("");
                 JsonNode payload = root.path("payload");
-                controller.dispatch(type, payload, sessionId);
+                return Mono.fromFuture(controller.dispatchAsync(type, payload, sessionId));
             } catch (Exception ex) {
                 log.warn("WebSocket message rejected for session {}: {}", sessionId, ex.getMessage());
+                return Mono.empty();
             }
         }).subscribeOn(Schedulers.boundedElastic()).then();
     }
@@ -138,6 +141,11 @@ public class WebSocketConfig {
     private boolean isAllowedOrigin(WebSocketSession session) {
         String origin = session.getHandshakeInfo().getHeaders().getOrigin();
         if (!StringUtils.hasText(origin)) return false;
-        return origin.equals(session.getHandshakeInfo().getUri().getScheme() + "://" + session.getHandshakeInfo().getUri().getAuthority());
+        String socketOrigin = session.getHandshakeInfo().getUri().getScheme() + "://" + session.getHandshakeInfo().getUri().getAuthority();
+        if (origin.equals(socketOrigin)) return true;
+        return Arrays.stream(appProperties.getAllowedOrigins().split(","))
+                .map(String::trim)
+                .filter(StringUtils::hasText)
+                .anyMatch(origin::equals);
     }
 }

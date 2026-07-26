@@ -23,11 +23,6 @@ function handleGameEvent(event, stores = {}) {
     const { show, error } = useToast(); // This now uses the Pinia store wrapper
     const userName = event.userId === 'SYSTEM' ? '系统' : (resolveName?.(event.userId) || userStore?.resolveName?.(event.userId));
 
-    // 1. 处理特殊业务逻辑 (非 UI 展示)
-    if (event.action === 'LIKE') {
-        window.dispatchEvent(new CustomEvent('player:like', { detail: { userId: event.userId } }));
-    }
-
     if (event.action === 'RESET') {
         if (chatStore) chatStore.messages = []; // 清空聊天
     }
@@ -117,14 +112,22 @@ export const createSocketHandlers = (stores = {}) => {
 
     return {
         // 1. 状态同步
-        [WS_DEST.PLAYER_STATE]: (state) => player?.syncState?.(state),
+        [WS_DEST.PLAYER_STATE]: (state, envelope) => {
+            if (!envelope?.roomId || envelope.roomId === roomStore?.currentRoomId) player?.syncState?.(state);
+        },
         [WS_DEST.SYNC_PONG]: (pong) => player?.handleSyncPong?.(pong),
 
         // 2. 用户列表
         [WS_DEST.USERS_ONLINE]: (users) => userStore?.setOnlineUsers(users),
 
         // 3. 队列更新
-        [WS_DEST.PLAYER_QUEUE]: (data) => player?.setQueue?.(data),
+        [WS_DEST.PLAYER_QUEUE]: (data, envelope) => {
+            if (envelope?.roomId && envelope.roomId !== roomStore?.currentRoomId) return;
+            const queue = Array.isArray(data) ? data : data?.queue;
+            player?.setQueue?.(queue, data?.queueVersion);
+        },
+        [WS_DEST.QUEUE_REORDER_ACK]: (data) => player?.settleQueueReorder?.(data?.mutationId, true),
+        [WS_DEST.QUEUE_REORDER_NACK]: (data) => player?.settleQueueReorder?.(data?.mutationId, false, data?.reason),
 
         // 4. 事件通知 (Toast)
         [WS_DEST.PLAYER_EVENTS]: (event) => handleGameEvent(event, {
@@ -180,13 +183,16 @@ export const createSocketCallbacks = (stores = {}) => {
         requestResync,
         requestChatHistory,
         requestPublicChatHistory,
-        bindAccount
+        bindAccount,
+        startHeartbeat,
+        stopHeartbeat
     } = stores;
 
     return {
         // 连接成功
         onConnect: () => {
             setConnected?.(true);
+            startHeartbeat?.();
             resetSyncGate?.();
             socketService.send(WS_DEST.USER_ME);
             socketService.send(WS_DEST.USERS_ONLINE);
@@ -206,6 +212,7 @@ export const createSocketCallbacks = (stores = {}) => {
         // 连接断开 (含异常断开)
         onDisconnect: () => {
             setConnected?.(false);
+            stopHeartbeat?.();
         },
 
         onAuthError: () => {

@@ -81,7 +81,6 @@ app:
       download-task-ttl-ms: ${DOWNLOAD_TASK_TTL_MS:1800000}
       cover-color-cache-size: ${COVER_COLOR_CACHE_SIZE:256}
       cover-color-max-concurrent: ${COVER_COLOR_MAX_CONCURRENT:4}
-      bounded-elastic-size: ${BOUNDED_ELASTIC_SIZE:64}
     desktop:
       profile-dir: ${MUSICPARTY_PROFILE_DIR:data/desktop-profile}
       lan-base-url: ${DESKTOP_LAN_BASE_URL:}

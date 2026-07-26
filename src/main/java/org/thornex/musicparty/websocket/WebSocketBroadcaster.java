@@ -37,8 +37,10 @@ public class WebSocketBroadcaster {
     @EventListener
     public void onQueueChanged(QueueUpdateEvent event) {
         afterCommitExecutor.run(() ->
-                broker.broadcastRoom(event.getRoomId(), "player.queue", event.getQueue()));
+                broker.broadcastRoom(event.getRoomId(), "player.queue", new QueuePayload(event.getQueue(), event.getQueueVersion())));
     }
+
+    private record QueuePayload(java.util.List<org.thornex.musicparty.dto.MusicQueueItem> queue, long queueVersion) {}
 
     /**
      * 监听系统消息事件（用于 Toast 通知等）

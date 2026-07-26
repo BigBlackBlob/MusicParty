@@ -8,7 +8,9 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.sqlite.SQLiteDataSource;
+import org.sqlite.SQLiteConfig;
 
 import javax.sql.DataSource;
 import java.io.IOException;
@@ -32,6 +34,11 @@ public class SqlitePersistenceConfig {
 
         SQLiteDataSource dataSource = new SQLiteDataSource();
         dataSource.setUrl("jdbc:sqlite:" + dbPath);
+        SQLiteConfig config = new SQLiteConfig();
+        config.setJournalMode(SQLiteConfig.JournalMode.WAL);
+        config.setSynchronous(SQLiteConfig.SynchronousMode.NORMAL);
+        config.setBusyTimeout(5000);
+        dataSource.setConfig(config);
         return dataSource;
     }
 
@@ -58,7 +65,8 @@ public class SqlitePersistenceConfig {
 
     @Bean
     public SqliteSchemaInitializer sqliteSchemaInitializer(DataSource sqliteDataSource,
-                                                           ResourceDatabasePopulator sqliteSchemaPopulator) {
-        return new SqliteSchemaInitializer(sqliteDataSource, sqliteSchemaPopulator);
+                                                            ResourceDatabasePopulator sqliteSchemaPopulator,
+                                                            DataSourceTransactionManager transactionManager) {
+        return new SqliteSchemaInitializer(sqliteDataSource, sqliteSchemaPopulator, new TransactionTemplate(transactionManager));
     }
 }

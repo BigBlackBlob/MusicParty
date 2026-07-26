@@ -32,6 +32,22 @@ Working tree note: unrelated/unconfirmed local changes currently exist in `Netea
    - Frontend: `npm run lint`, `npm run test:run`, `npm run build` from `music-party-web`
 3. After tests pass, update this document with results and decide whether to commit the remediation separately from the unrelated Netease/free-trial work.
 
+## 2026-07-21 Follow-up Remediation
+
+| Area | Status | Evidence |
+|---|---|---|
+| Queue reorder delivery | Code done | Reorder requests now carry `mutationId`; the server replies with `queue.reorder.ack` or `queue.reorder.nack` instead of failing silently. |
+| Queue broadcast staleness | Code done | Queue broadcasts now include a room-local `queueVersion`. The frontend rejects stale versions and holds broadcasts while a local reorder awaits acknowledgement. |
+| Drag payload validity | Code done | Desktop and mobile Sortable handlers use DOM neighbours first and only fall back to indices when the dragged queue id still matches the current store state. |
+| Queue rate limiting | Code done | General queue actions are now `30/10s`; reorder has an isolated `20/10s` bucket. |
+| Mobile drag usability | Code done | The mobile drag handle stays visible and Sortable delay only applies to touch input. |
+| Socket and layout lifecycle | Code done | Reconnect timers are cancellable, reconnect uses capped exponential backoff, room-scoped messages are filtered, and layout Sortable initializes after mount. |
+| SQLite and transactions | Code done | SQLite config enables WAL, NORMAL synchronous mode, and a 5s busy timeout. User playlist delete/reorder operations are transactional. |
+| Room command dispatch | Code done | WebSocket dispatch awaits per-room asynchronous command serialization instead of blocking a boundedElastic thread on `join()`. |
+| Queue state synchronization | Code done | `MusicQueueManager` now uses one synchronized concurrency model instead of concurrent collections plus multiple locks. |
+| Heartbeat lifecycle | Code done | WebSocket heartbeat now follows player socket connection state instead of the audio component lifecycle. |
+| Schema migration atomicity | Code done | Each migration apply and completion marker runs in one SQLite transaction. |
+
 ## Verification Log
 
 2026-07-07:
@@ -40,6 +56,16 @@ Working tree note: unrelated/unconfirmed local changes currently exist in `Netea
 - Frontend lint passed with warnings only: `npm run lint` reported 3 `no-unused-vars` warnings in `src/services/socketHandler.js`.
 - Frontend production build passed: `npm run build`.
 - Backend tests not run: `mvnw.cmd test` failed before test execution because `JAVA_HOME` is not defined and `java` is not available on `PATH` in this environment.
+
+2026-07-21:
+
+- Frontend tests passed: `npm run test:run` completed with 31 test files and 97 tests passing.
+- Frontend lint completed with the pre-existing 3 `no-unused-vars` warnings in `src/services/socketHandler.js`; no lint errors.
+- Frontend production build passed: `npm run build`.
+- Backend compilation passed: `cmd /c mvnw.cmd -DskipTests compile`.
+- Backend test suite passed: `cmd /c mvnw.cmd test`.
+- Docker image build passed: `docker build --tag musicparty:queue-audit .` completed the production `mvn clean package -DskipTests` path.
+- Docker smoke test passed: an isolated `musicparty:queue-audit` container started with a fresh named volume on port `18848`; `/actuator/health` returned `200`, Docker health was `healthy`, `/api/account/status` returned `{"requiresSetup":false}`, and SQLite migrations completed without errors. The temporary container and volume were removed after verification.
 
 ## Notes
 

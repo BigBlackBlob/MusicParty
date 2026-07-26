@@ -63,7 +63,6 @@ services:
       - DOWNLOAD_TASK_TTL_MS=1800000 # 失败或长期挂起下载任务保留时间
       - COVER_COLOR_CACHE_SIZE=256   # 封面取色 URL 结果缓存数量
       - COVER_COLOR_MAX_CONCURRENT=4 # 封面下载/解码最大并发数
-      - BOUNDED_ELASTIC_SIZE=64    # boundedElastic 线程池上限（默认 64，防止与 Netty I/O 线程抢核）
       # [本地上传曲库]
       - LOCAL_LIBRARY_ENABLED=true
       - LOCAL_LIBRARY_PATH=data/local-library

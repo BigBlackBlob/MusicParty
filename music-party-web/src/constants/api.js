@@ -29,6 +29,8 @@ export const WS_DEST = {
     USERS_ONLINE: 'users.online',
     PLAYER_STATE: 'player.state',
     PLAYER_QUEUE: 'player.queue',
+    QUEUE_REORDER_ACK: 'queue.reorder.ack',
+    QUEUE_REORDER_NACK: 'queue.reorder.nack',
     PLAYER_EVENTS: 'player.events',
     SYNC_PONG: 'sync.pong',
     CHAT_MESSAGE: 'chat.message',

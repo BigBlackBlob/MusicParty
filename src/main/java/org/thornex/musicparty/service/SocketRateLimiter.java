@@ -13,7 +13,8 @@ public class SocketRateLimiter {
     private static final Map<String, Rule> RULES = Map.ofEntries(
             Map.entry("chat", new Rule(5, Duration.ofSeconds(10))),
             Map.entry("enqueue", new Rule(8, Duration.ofSeconds(10))),
-            Map.entry("queue", new Rule(12, Duration.ofSeconds(10))),
+            Map.entry("queue", new Rule(30, Duration.ofSeconds(10))),
+            Map.entry("queue.reorder", new Rule(20, Duration.ofSeconds(10))),
             Map.entry("control", new Rule(8, Duration.ofSeconds(10))),
             Map.entry("room", new Rule(4, Duration.ofSeconds(30))),
             Map.entry("profile", new Rule(6, Duration.ofSeconds(30)))

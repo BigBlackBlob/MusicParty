@@ -102,19 +102,36 @@ describe('player controls', () => {
 
     expect(sent).toBe(true);
     expect(player.queue.map(item => item.queueId)).toEqual(['b', 'c', 'a']);
-    expect(socketService.send).toHaveBeenCalledWith(WS_DEST.QUEUE_REORDER, {
+    expect(socketService.send).toHaveBeenCalledWith(WS_DEST.QUEUE_REORDER, expect.objectContaining({
       oldIndex: 0,
       newIndex: 2,
       queueId: 'a',
       targetQueueId: 'c',
-      position: 'after'
-    });
+      position: 'after',
+      mutationId: expect.any(String)
+    }));
     expect(socketService.send).not.toHaveBeenCalledWith(WS_DEST.RESYNC, expect.anything());
 
-    vi.advanceTimersByTime(399);
+    vi.advanceTimersByTime(1499);
     expect(socketService.send).not.toHaveBeenCalledWith(WS_DEST.RESYNC, expect.anything());
     vi.advanceTimersByTime(1);
-    expect(socketService.send).toHaveBeenCalledWith(WS_DEST.RESYNC, { reason: 'queue-reorder-fallback' });
+    expect(socketService.send).toHaveBeenCalledWith(WS_DEST.RESYNC, { reason: 'queue-reorder-timeout' });
+  });
+
+  it('defers queue broadcasts until a pending reorder is acknowledged', () => {
+    localStorage.setItem('mp_username', 'Alice');
+    const user = useUserStore();
+    user.initUser('token', 'u1', 'Alice', false);
+    const player = usePlayerStore();
+    player.queue = [{ queueId: 'a' }, { queueId: 'b' }, { queueId: 'c' }];
+
+    player.reorderQueue(0, 2, 'a', 'c', 'after');
+    const payload = socketService.send.mock.calls.find(([type]) => type === WS_DEST.QUEUE_REORDER)[1];
+    player.setQueue([{ queueId: 'a' }, { queueId: 'b' }, { queueId: 'c' }], 2);
+
+    expect(player.queue.map(item => item.queueId)).toEqual(['b', 'c', 'a']);
+    player.settleQueueReorder(payload.mutationId, true);
+    expect(player.queue.map(item => item.queueId)).toEqual(['a', 'b', 'c']);
   });
 
   it('switches public rooms without room access verification', async () => {

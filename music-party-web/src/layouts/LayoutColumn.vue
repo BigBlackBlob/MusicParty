@@ -4,6 +4,7 @@
       ref="moduleListRef"
       class="module-list flex h-full min-h-0 flex-1 flex-col gap-4 overflow-y-auto"
       :class="{ 'edit-mode': layoutStore.isEditMode }"
+      :data-col-id="column.id"
     >
       <div
         v-for="moduleId in column.modules"
@@ -27,6 +28,7 @@
             v-if="MODULE_MANIFEST[moduleId]?.removable"
             @click="layoutStore.removeModule(moduleId, column.id)"
             class="p-1 hover:bg-error/10 hover:text-error rounded transition-colors"
+            :aria-label="t('common.remove')"
           >
             <span class="material-symbols-outlined text-[16px]">close</span>
           </button>
@@ -56,7 +58,7 @@
 </template>
 
 <script setup>
-import { ref, onBeforeUnmount, watch } from 'vue';
+import { ref, nextTick, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useLayoutStore } from '../stores/layout';
 import { MODULE_MANIFEST } from './moduleManifest';
@@ -82,6 +84,7 @@ const initSortable = () => {
   sortableInstance = new Sortable(moduleListRef.value, {
     group: 'layout-modules',
     handle: '.module-drag-handle',
+    draggable: '.layout-module-wrapper',
     animation: 180,
     ghostClass: 'sortable-ghost',
     dragClass: 'sortable-drag',
@@ -103,7 +106,6 @@ const initSortable = () => {
     }
   });
 
-  moduleListRef.value.setAttribute('data-col-id', props.column.id);
 };
 
 const destroySortable = () => {
@@ -113,13 +115,28 @@ const destroySortable = () => {
   }
 };
 
-watch(() => layoutStore.isEditMode, (isEdit) => {
+watch(() => layoutStore.isEditMode, async (isEdit) => {
   if (isEdit) {
+    await nextTick();
     initSortable();
   } else {
     destroySortable();
   }
-}, { immediate: true });
+});
+
+watch(() => props.column.id, async () => {
+  destroySortable();
+  if (layoutStore.isEditMode) {
+    await nextTick();
+    initSortable();
+  }
+});
+
+onMounted(async () => {
+  if (!layoutStore.isEditMode) return;
+  await nextTick();
+  initSortable();
+});
 
 onBeforeUnmount(() => {
   destroySortable();

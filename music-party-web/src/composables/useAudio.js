@@ -28,7 +28,6 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
     let syncTimer = null;
     let wakeLock = null;
     let smoothSeekInFlight = false;
-    let pingTimer = null;
     let fadeGain = 1;
     let activeFadeToken = 0;
     let transitionFadeInPending = false;
@@ -517,8 +516,6 @@ const clearStalledWatchdog = () => {
     onMounted(() => {
         document.addEventListener('visibilitychange', handleVisibilityChange);
         window.addEventListener('online', handleNetworkChange);
-        pingTimer = setInterval(() => playerStore.requestPing('interval'), 10000);
-
         syncTimer = setInterval(() => {
             if (!playerStore.nowPlaying) {
                 localProgress.value = 0;
@@ -587,7 +584,6 @@ const clearStalledWatchdog = () => {
         document.removeEventListener('visibilitychange', handleVisibilityChange);
         window.removeEventListener('online', handleNetworkChange);
         clearInterval(syncTimer);
-        clearInterval(pingTimer);
         clearStalledWatchdog();
         clearRetryTimers();
         if (audioRef.value) audioRef.value.playbackRate = 1;

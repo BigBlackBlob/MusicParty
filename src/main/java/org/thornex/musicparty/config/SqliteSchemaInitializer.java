@@ -4,7 +4,9 @@ import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
 import java.util.List;
@@ -15,6 +17,11 @@ public class SqliteSchemaInitializer {
 
     private final DataSource dataSource;
     private final ResourceDatabasePopulator databasePopulator;
+    private final TransactionTemplate transactionTemplate;
+
+    public SqliteSchemaInitializer(DataSource dataSource, ResourceDatabasePopulator databasePopulator) {
+        this(dataSource, databasePopulator, new TransactionTemplate(new DataSourceTransactionManager(dataSource)));
+    }
 
     @PostConstruct
     public void initialize() {
@@ -28,11 +35,13 @@ public class SqliteSchemaInitializer {
         if (isMigrationCompleted(jdbcTemplate, migration.key())) {
             return;
         }
-        if (migration.needsApply().test(jdbcTemplate)) {
-            migration.apply().accept(jdbcTemplate);
-            log.info("Applied SQLite schema migration: {}", migration.key());
-        }
-        markMigrationCompleted(jdbcTemplate, migration.key());
+        transactionTemplate.executeWithoutResult(status -> {
+            if (migration.needsApply().test(jdbcTemplate)) {
+                migration.apply().accept(jdbcTemplate);
+                log.info("Applied SQLite schema migration: {}", migration.key());
+            }
+            markMigrationCompleted(jdbcTemplate, migration.key());
+        });
     }
 
     private List<SchemaMigration> migrations() {

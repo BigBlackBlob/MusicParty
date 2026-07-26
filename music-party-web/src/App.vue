@@ -456,6 +456,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   clearAutoLiteTimer();
   window.removeEventListener('resize', setAppViewportHeight);
+  window.removeEventListener('orientationchange', setAppViewportHeight);
   window.visualViewport?.removeEventListener('resize', setAppViewportHeight);
 });
 </script>

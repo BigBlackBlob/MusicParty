@@ -6,7 +6,9 @@ class SocketService {
         this.connected = false;
         this.socketConfig = null;
         this.reconnectTimer = null;
-        this.reconnectDelay = 2000;
+        this.reconnectNowTimer = null;
+        this.reconnectDelay = 1000;
+        this.maxReconnectDelay = 10000;
         this.intentionalClose = false;
         this.requestSeq = 0;
     }
@@ -22,6 +24,7 @@ class SocketService {
         this.socketConfig = nextConfig;
         this.intentionalClose = false;
         this.clearReconnectTimer();
+        this.clearReconnectNowTimer();
 
         const socket = new WebSocket(this.buildUrl(authParams));
         this.client = socket;
@@ -29,6 +32,7 @@ class SocketService {
         socket.onopen = (event) => {
             if (this.client !== socket) return;
             this.connected = true;
+            this.reconnectDelay = 1000;
             callbacks.onConnect?.(event);
         };
 
@@ -112,13 +116,17 @@ class SocketService {
         const config = this.socketConfig;
         this.disconnect();
         if (config) {
-            setTimeout(() => this.connect(config.authParams, config.callbacks, config.handlers), 100);
+            this.reconnectNowTimer = setTimeout(() => {
+                this.reconnectNowTimer = null;
+                this.connect(config.authParams, config.callbacks, config.handlers);
+            }, 100);
         }
     }
 
     disconnect() {
         this.intentionalClose = true;
         this.clearReconnectTimer();
+        this.clearReconnectNowTimer();
         if (this.client) {
             const socket = this.client;
             this.client = null;
@@ -138,12 +146,20 @@ class SocketService {
             this.reconnectTimer = null;
             this.connect(config.authParams, config.callbacks, config.handlers);
         }, this.reconnectDelay);
+        this.reconnectDelay = Math.min(this.reconnectDelay * 2, this.maxReconnectDelay);
     }
 
     clearReconnectTimer() {
         if (this.reconnectTimer) {
             clearTimeout(this.reconnectTimer);
             this.reconnectTimer = null;
+        }
+    }
+
+    clearReconnectNowTimer() {
+        if (this.reconnectNowTimer) {
+            clearTimeout(this.reconnectNowTimer);
+            this.reconnectNowTimer = null;
         }
     }
 

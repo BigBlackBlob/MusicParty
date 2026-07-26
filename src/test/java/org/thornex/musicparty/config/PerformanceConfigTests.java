@@ -21,12 +21,6 @@ class PerformanceConfigTests {
     }
 
     @Test
-    void boundedElasticSizeHasDefault() {
-        AppProperties.PerformanceConfig config = new AppProperties.PerformanceConfig();
-        assertThat(config.getBoundedElasticSize()).isEqualTo(64);
-    }
-
-    @Test
     void exposesDesktopHostRuntimeDefaults() {
         AppProperties properties = new AppProperties();
 

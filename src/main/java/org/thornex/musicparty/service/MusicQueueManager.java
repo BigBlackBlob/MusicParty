@@ -10,8 +10,6 @@ import org.thornex.musicparty.enums.QueueItemStatus;
 import org.thornex.musicparty.enums.TopResult;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.atomic.AtomicReference;
 
 @Service
 @RequiredArgsConstructor
@@ -19,12 +17,11 @@ public class MusicQueueManager {
 
     private final AppProperties appProperties;
 
-    // 使用并发安全的双端队列
-    private final Deque<MusicQueueItem> queue = new ConcurrentLinkedDeque<>();
-    private final List<Music> playHistory = Collections.synchronizedList(new LinkedList<>());
+    private final Deque<MusicQueueItem> queue = new ArrayDeque<>();
+    private final List<Music> playHistory = new LinkedList<>();
 
     // 用于实现“公平随机播放”：记录上一个播放的用户
-    private final AtomicReference<String> lastPlayedUserToken = new AtomicReference<>("");
+    private String lastPlayedUserToken = "";
 
     // --- Public API for Queue Manipulation ---
 
@@ -239,7 +236,7 @@ public class MusicQueueManager {
             }
             MusicQueueItem chosenItem = nextInPhysicalOrder.get();
             queue.remove(chosenItem);
-            lastPlayedUserToken.set(chosenItem.enqueuedBy().publicId());
+            lastPlayedUserToken = chosenItem.enqueuedBy().publicId();
             return chosenItem;
         }
 
@@ -266,7 +263,7 @@ public class MusicQueueManager {
         MusicQueueItem chosenItem = pollNextFairShuffle(availableItems, recentlyActivePublicIds);
 
         queue.remove(chosenItem);
-        lastPlayedUserToken.set(chosenItem.enqueuedBy().publicId());
+        lastPlayedUserToken = chosenItem.enqueuedBy().publicId();
         return chosenItem;
     }
 
@@ -297,7 +294,7 @@ public class MusicQueueManager {
         // 3. 严格轮询逻辑
         Collections.sort(targetPublicIds);
 
-        String lastPublicId = lastPlayedUserToken.get();
+        String lastPublicId = lastPlayedUserToken;
         int nextIndex = 0;
 
         if (targetPublicIds.contains(lastPublicId)) {
@@ -331,8 +328,6 @@ public class MusicQueueManager {
         return userSongs.get(0);
     }
     
-    // ... (rest of methods)
-
     private Optional<MusicQueueItem> findByQueueId(String queueId) {
         final String finalId = stripPrefix(queueId);
         return queue.stream()
@@ -349,13 +344,11 @@ public class MusicQueueManager {
     /**
      * 将播放完的歌曲加入历史记录
      */
-    public void addToHistory(Music music) {
+    public synchronized void addToHistory(Music music) {
         if (music == null) return;
-        synchronized (playHistory) {
-            playHistory.add(0, music); // 加到最前面
-            if (playHistory.size() > appProperties.getQueue().getHistorySize()) {
-                playHistory.removeLast();
-            }
+        playHistory.add(0, music); // 加到最前面
+        if (playHistory.size() > appProperties.getQueue().getHistorySize()) {
+            playHistory.removeLast();
         }
     }
 
@@ -365,7 +358,7 @@ public class MusicQueueManager {
     public synchronized void clearAll() {
         queue.clear();
         playHistory.clear();
-        lastPlayedUserToken.set("");
+        lastPlayedUserToken = "";
     }
 
     public synchronized void clearPendingQueue() {
@@ -428,10 +421,8 @@ public class MusicQueueManager {
         return new ArrayList<>(queue);
     }
 
-    public List<Music> getHistorySnapshot() {
-        synchronized (playHistory) {
-            return new ArrayList<>(playHistory);
-        }
+    public synchronized List<Music> getHistorySnapshot() {
+        return new ArrayList<>(playHistory);
     }
 
     /**
@@ -441,7 +432,7 @@ public class MusicQueueManager {
         // Clear current
         queue.clear();
         playHistory.clear();
-        lastPlayedUserToken.set("");
+        lastPlayedUserToken = "";
 
         // Restore Queue
         if (loadedQueue != null) {
@@ -475,22 +466,20 @@ public class MusicQueueManager {
      * 当队列为空时，从历史记录随机取一首作为 AutoDJ
      */
     private MusicQueueItem pollFromHistory() {
-        synchronized (playHistory) {
-            if (playHistory.isEmpty()) {
-                return null;
-            }
-            Music randomSong = playHistory.get(new Random().nextInt(playHistory.size()));
-
-            UserSummary systemUser = new UserSummary("SYSTEM", "AutoDJ", false);
-
-            // 注意：历史记录出来的歌需要重新判断状态
-            return new MusicQueueItem(
-                    UUID.randomUUID().toString(),
-                    randomSong,
-                    systemUser,
-                    QueueItemStatus.PENDING
-            );
+        if (playHistory.isEmpty()) {
+            return null;
         }
+        Music randomSong = playHistory.get(new Random().nextInt(playHistory.size()));
+
+        UserSummary systemUser = new UserSummary("SYSTEM", "AutoDJ", false);
+
+        // 注意：历史记录出来的歌需要重新判断状态
+        return new MusicQueueItem(
+                UUID.randomUUID().toString(),
+                randomSong,
+                systemUser,
+                QueueItemStatus.PENDING
+        );
     }
 }
 
