@@ -10,6 +10,7 @@ import org.thornex.musicparty.service.ChatService;
 import org.thornex.musicparty.service.MusicPlayerService;
 import org.thornex.musicparty.service.MusicSocketSessionFacade;
 import org.thornex.musicparty.service.RoomLifecycleService;
+import org.thornex.musicparty.service.RoomCommandCoordinator;
 import org.thornex.musicparty.service.RoomPlaylistService;
 import org.thornex.musicparty.service.RoomService;
 import org.thornex.musicparty.service.SocketRateLimiter;
@@ -77,6 +78,7 @@ class MusicSocketControllerTests {
         private final SocketRateLimiter socketRateLimiter = mock(SocketRateLimiter.class);
         private final RoomPlaylistService roomPlaylistService = mock(RoomPlaylistService.class);
         private final AccountService accountService = mock(AccountService.class);
+        private final RoomCommandCoordinator roomCommandCoordinator = mock(RoomCommandCoordinator.class);
         private final MusicSocketController controller = new MusicSocketController(
                 musicPlayerService,
                 userService,
@@ -87,7 +89,8 @@ class MusicSocketControllerTests {
                 socketRateLimiter,
                 roomPlaylistService,
                 accountService,
-                new ObjectMapper()
+                new ObjectMapper(),
+                roomCommandCoordinator
         );
     }
 }

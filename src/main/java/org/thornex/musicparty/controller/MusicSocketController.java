@@ -19,6 +19,7 @@ import org.thornex.musicparty.service.UserService;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 @Component
 @Slf4j
@@ -61,14 +62,18 @@ public class MusicSocketController {
     }
 
     public void dispatch(String type, JsonNode payload, String sessionId) {
+        dispatchAsync(type, payload, sessionId).join();
+    }
+
+    public CompletableFuture<Void> dispatchAsync(String type, JsonNode payload, String sessionId) {
         if (isRoomMutation(type)) {
-            roomCommandCoordinator.execute(userService.getRoomIdForSession(sessionId), () -> {
+            return roomCommandCoordinator.executeAsync(userService.getRoomIdForSession(sessionId), () -> {
                 dispatchNow(type, payload, sessionId);
                 return null;
             });
-            return;
         }
         dispatchNow(type, payload, sessionId);
+        return CompletableFuture.completedFuture(null);
     }
 
     private void dispatchNow(String type, JsonNode payload, String sessionId) {
@@ -236,13 +241,22 @@ public class MusicSocketController {
     }
 
     public void reorderQueue(QueueReorderRequest request, String sessionId) {
-        if (denyRateLimited(sessionId, "queue")) return;
-        if (denyGuest(sessionId, "CONTROL_DENIED", "请先设置昵称再操作队列")) return;
-        if (request.queueId() != null && request.targetQueueId() != null) {
-            musicPlayerService.reorderQueue(request.queueId(), request.targetQueueId(), request.position(), sessionId);
+        if (denyQueueReorderRateLimited(sessionId, request.mutationId())) return;
+        if (denyGuest(sessionId, "CONTROL_DENIED", "请先设置昵称再操作队列")) {
+            musicSocketSessionFacade.sendQueueReorderNack(sessionId, request.mutationId(), "GUEST");
             return;
         }
-        musicPlayerService.reorderQueue(request.oldIndex(), request.newIndex(), sessionId);
+        boolean changed;
+        if (request.queueId() != null && request.targetQueueId() != null) {
+            changed = musicPlayerService.reorderQueue(request.queueId(), request.targetQueueId(), request.position(), sessionId);
+        } else {
+            changed = musicPlayerService.reorderQueue(request.oldIndex(), request.newIndex(), sessionId);
+        }
+        if (changed) {
+            musicSocketSessionFacade.sendQueueReorderAck(sessionId, request.mutationId());
+        } else {
+            musicSocketSessionFacade.sendQueueReorderNack(sessionId, request.mutationId(), "STALE_QUEUE");
+        }
     }
 
     // 点赞接口
@@ -378,6 +392,15 @@ public class MusicSocketController {
         }
         log.info("Socket action from session {} rejected by rate limiter: action={}", sessionId, action);
         musicSocketSessionFacade.sendControlDenied(sessionId, "CONTROL_DENIED", "操作太快了，稍等一下再试");
+        return true;
+    }
+
+    private boolean denyQueueReorderRateLimited(String sessionId, String mutationId) {
+        if (socketRateLimiter.allow(sessionId, "queue.reorder")) {
+            return false;
+        }
+        log.info("Socket queue reorder from session {} rejected by rate limiter", sessionId);
+        musicSocketSessionFacade.sendQueueReorderNack(sessionId, mutationId, "RATE_LIMITED");
         return true;
     }
 }
