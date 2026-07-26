@@ -4,6 +4,7 @@ import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
@@ -35,18 +36,29 @@ public class NeteaseMusicApiService implements CachedMusicApiService {
     private final String quality;
     private final SiteSettingService siteSettingService;
     private final LocalCacheService localCacheService;
+    private final UpstreamResilienceService resilience;
     private volatile String currentCookie;
     private static final String PLATFORM = "netease";
 
     public NeteaseMusicApiService(WebClient webClient, AppProperties appProperties,
                                   SiteSettingService siteSettingService,
                                   LocalCacheService localCacheService) {
+        this(webClient, appProperties, siteSettingService, localCacheService,
+                new UpstreamResilienceService(appProperties, new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
+    }
+
+    @Autowired
+    public NeteaseMusicApiService(WebClient webClient, AppProperties appProperties,
+                                  SiteSettingService siteSettingService,
+                                  LocalCacheService localCacheService,
+                                  UpstreamResilienceService resilience) {
         this.webClient = webClient;
         this.baseUrl = appProperties.getNetease().getBaseUrl();
         this.initialCookieFromConfig = appProperties.getNetease().getCookie();
         this.quality = appProperties.getNetease().getQuality();
         this.siteSettingService = siteSettingService;
         this.localCacheService = localCacheService;
+        this.resilience = resilience;
         this.siteSettingService.importSecretIfMissing(SiteSettingService.NETEASE_COOKIE, initialCookieFromConfig);
         this.currentCookie = siteSettingService.secretOrDefault(SiteSettingService.NETEASE_COOKIE, initialCookieFromConfig);
     }
@@ -194,7 +206,7 @@ public class NeteaseMusicApiService implements CachedMusicApiService {
     @Override
     public Mono<List<Music>> searchMusic(String keyword, int offset, int limit) {
         ensureConfigured();
-        return webClient.get()
+        return resilience.cached(PLATFORM, "search:" + keyword + ":" + offset + ":" + limit, Duration.ofSeconds(30), () -> webClient.get()
                 .uri(baseUrl + "/cloudsearch?keywords={keyword}&limit={limit}&offset={offset}&cookie={cookie}", keyword, limit, offset, getCookie())
                 .retrieve()
                 .onStatus(HttpStatusCode::isError, response -> handleApiError("cloudsearch", response))
@@ -208,13 +220,13 @@ public class NeteaseMusicApiService implements CachedMusicApiService {
                         }
                     }
                     return musicList;
-                });
+                }));
     }
 
     @Override
     public Mono<List<Album>> searchAlbums(String keyword) {
         ensureConfigured();
-        return webClient.get()
+        return resilience.cached(PLATFORM, "albums:" + keyword, Duration.ofSeconds(30), () -> webClient.get()
                 .uri(baseUrl + "/cloudsearch?keywords={keyword}&type=10&cookie={cookie}", keyword, getCookie())
                 .retrieve()
                 .onStatus(HttpStatusCode::isError, response -> handleApiError("search albums", response))
@@ -233,7 +245,7 @@ public class NeteaseMusicApiService implements CachedMusicApiService {
                         )));
                     }
                     return albums;
-                });
+                }));
     }
 
     @Override
@@ -301,14 +313,14 @@ public class NeteaseMusicApiService implements CachedMusicApiService {
      */
     public Mono<String> resolveCdnUrl(String musicId) {
         ensureConfigured();
-        return webClient.get()
+        return resilience.call(PLATFORM, "stream-url:" + musicId, () -> webClient.get()
                 .uri(baseUrl + "/song/url/v1?id={musicId}&level={quality}&cookie={cookie}", musicId, quality, getCookie())
                 .retrieve()
                 .onStatus(HttpStatusCode::isError, response -> handleApiError("get song URL", response))
                 .bodyToMono(JsonNode.class)
                 .timeout(Duration.ofSeconds(8))
                 .map(jsonNode -> parseCdnUrl(jsonNode, musicId))
-                .onErrorMap(this::classifyResolveError);
+                .onErrorMap(this::classifyResolveError));
     }
 
     private String parseCdnUrl(JsonNode jsonNode, String musicId) {

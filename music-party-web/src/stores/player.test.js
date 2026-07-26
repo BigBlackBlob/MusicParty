@@ -147,6 +147,20 @@ describe('player controls', () => {
     expect(socketService.send).toHaveBeenCalledWith(WS_DEST.RESYNC, { reason: 'queue-version-gap' });
   });
 
+  it('applies status and clear patches without replacing unchanged queue items', () => {
+    const player = usePlayerStore();
+    const first = { queueId: 'a', status: 'PENDING' };
+    const second = { queueId: 'b', status: 'READY' };
+    player.setQueue([first, second], 1, { snapshot: true });
+    const unchangedItem = player.queue[1];
+
+    expect(player.applyQueuePatch({ operation: 'status', queueVersion: 2, queueId: 'a', status: 'DOWNLOADING' })).toBe(true);
+    expect(player.queue[0]).toMatchObject({ queueId: 'a', status: 'DOWNLOADING' });
+    expect(player.queue[1]).toBe(unchangedItem);
+    expect(player.applyQueuePatch({ operation: 'clear', queueVersion: 3 })).toBe(true);
+    expect(player.queue).toEqual([]);
+  });
+
   it('switches public rooms without room access verification', async () => {
     const roomStore = useRoomStore();
     const player = usePlayerStore();

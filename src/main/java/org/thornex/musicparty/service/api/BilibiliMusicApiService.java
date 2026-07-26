@@ -2,6 +2,7 @@ package org.thornex.musicparty.service.api;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.util.UriComponentsBuilder;
 import org.thornex.musicparty.config.AppProperties;
@@ -33,15 +34,25 @@ public class BilibiliMusicApiService implements CachedMusicApiService {
     private static final String PLATFORM = "bilibili";
     private final BilibiliWbiService wbiService;
     private final SiteSettingService siteSettingService;
+    private final UpstreamResilienceService resilience;
 
     private static class WbiSignatureException extends RuntimeException {
         public WbiSignatureException(String message) { super(message); }
     }
 
     public BilibiliMusicApiService(WebClient webClient, AppProperties appProperties, LocalCacheService localCacheService, BilibiliWbiService wbiService, SiteSettingService siteSettingService) {
+        this(webClient, appProperties, localCacheService, wbiService, siteSettingService,
+                new UpstreamResilienceService(appProperties, new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
+    }
+
+    @Autowired
+    public BilibiliMusicApiService(WebClient webClient, AppProperties appProperties, LocalCacheService localCacheService,
+                                   BilibiliWbiService wbiService, SiteSettingService siteSettingService,
+                                   UpstreamResilienceService resilience) {
         this.webClient = webClient;
         this.baseUrl = appProperties.getBilibili().getBaseUrl();
         this.siteSettingService = siteSettingService;
+        this.resilience = resilience;
         this.siteSettingService.importSecretIfMissing(SiteSettingService.BILIBILI_SESSDATA, appProperties.getBilibili().getSessdata());
         this.sessdata = siteSettingService.secretOrDefault(SiteSettingService.BILIBILI_SESSDATA, appProperties.getBilibili().getSessdata());
         this.localCacheService = localCacheService;
@@ -156,7 +167,7 @@ public class BilibiliMusicApiService implements CachedMusicApiService {
                 });
 
         // 添加重试机制
-        return requestMono.retryWhen(Retry.max(1) // 最多重试 1 次
+        return resilience.cached(PLATFORM, "search:" + keyword + ":" + offset + ":" + limit, java.time.Duration.ofSeconds(30), () -> requestMono.retryWhen(Retry.max(1) // 最多重试 1 次
                         .filter(throwable -> throwable instanceof WbiSignatureException) // 只针对签名异常重试
                         .doBeforeRetry(retrySignal -> {
                             log.warn("Detected WBI signature error, refreshing key and retrying...");
@@ -166,7 +177,7 @@ public class BilibiliMusicApiService implements CachedMusicApiService {
                 .onErrorResume(WbiSignatureException.class, e -> {
                     log.error("Bilibili search failed after retry: {}", e.getMessage());
                     return Mono.just(new ArrayList<>());
-                });
+                }));
     }
 
     @Override

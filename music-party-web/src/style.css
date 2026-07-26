@@ -372,3 +372,8 @@ input[type="range"]::-moz-range-thumb {
     animation: none;
   }
 }
+html[data-page-hidden] .animate-pulse,
+html[data-page-hidden] .animate-spin,
+html[data-page-hidden] .animate-bounce {
+  animation-play-state: paused !important;
+}

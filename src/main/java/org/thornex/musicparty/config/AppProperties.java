@@ -105,6 +105,12 @@ public class AppProperties {
         private int subprocessQueueCapacity = 20;
         private int imageCpuThreads = Math.max(1, Runtime.getRuntime().availableProcessors());
         private int imageCpuQueueCapacity = 100;
+        private int upstreamMaxConcurrent = 4;
+        private int upstreamFailureThreshold = 5;
+        private long upstreamCircuitOpenMs = 30000;
+        private int webClientMaxConnections = 20;
+        private int webClientPendingAcquireMax = 50;
+        private long webClientPendingAcquireTimeoutMs = 5000;
     }
 
     @Data

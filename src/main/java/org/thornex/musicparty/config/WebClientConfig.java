@@ -9,6 +9,7 @@ import io.netty.channel.ChannelOption;
 import io.netty.handler.timeout.ReadTimeoutHandler;
 import io.netty.handler.timeout.WriteTimeoutHandler;
 import reactor.netty.http.client.HttpClient;
+import reactor.netty.resources.ConnectionProvider;
 
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
@@ -20,14 +21,26 @@ public class WebClientConfig {
     private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(10);
     private static final int IO_TIMEOUT_SECONDS = 10;
 
+    @Bean(destroyMethod = "dispose")
+    ConnectionProvider musicPartyConnectionProvider(AppProperties appProperties) {
+        return ConnectionProvider.builder("musicparty-upstream")
+                .maxConnections(appProperties.getPerformance().getWebClientMaxConnections())
+                .pendingAcquireMaxCount(appProperties.getPerformance().getWebClientPendingAcquireMax())
+                .pendingAcquireTimeout(Duration.ofMillis(appProperties.getPerformance().getWebClientPendingAcquireTimeoutMs()))
+                .maxIdleTime(Duration.ofSeconds(30))
+                .maxLifeTime(Duration.ofMinutes(5))
+                .metrics(true)
+                .build();
+    }
+
     @Bean
-    public WebClient webClient() {
+    public WebClient webClient(ConnectionProvider musicPartyConnectionProvider) {
         // 配置 ExchangeStrategies 来增加缓冲区大小
         ExchangeStrategies strategies = ExchangeStrategies.builder()
                 .codecs(codecs -> codecs.defaultCodecs().maxInMemorySize(10 * 1024 * 1024)) // 设置为 10MB
                 .build();
 
-        HttpClient httpClient = HttpClient.create()
+        HttpClient httpClient = HttpClient.create(musicPartyConnectionProvider)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) CONNECT_TIMEOUT.toMillis())
                 .responseTimeout(RESPONSE_TIMEOUT)
                 .doOnConnected(connection -> connection

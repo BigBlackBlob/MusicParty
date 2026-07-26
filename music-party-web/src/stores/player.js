@@ -64,6 +64,10 @@ export const usePlayerStore = defineStore('player', () => {
     let deferredQueueUpdate = null;
     let reconnectTimer = null;
     let pingTimer = null;
+    let queuedState = null;
+    let stateFrame = null;
+    let queuedPatches = [];
+    let patchFrame = null;
 
     const userStore = useUserStore();
     const roomStore = useRoomStore();
@@ -137,11 +141,55 @@ export const usePlayerStore = defineStore('player', () => {
             nextQueue = queue.value.filter(item => !removedIds.has(item.queueId));
         } else if (patch.operation === 'move') {
             nextQueue = applyQueueReorder(queue.value, patch);
+        } else if (patch.operation === 'status') {
+            if (!patch.queueId) {
+                requestResync('queue-patch-invalid', true);
+                return false;
+            }
+            let changed = false;
+            nextQueue = queue.value.map(item => {
+                if (item.queueId !== patch.queueId) return item;
+                changed = true;
+                return { ...item, ...patch.item, status: patch.status ?? patch.item?.status ?? item.status };
+            });
+            if (!changed) {
+                requestResync('queue-patch-missing-item', true);
+                return false;
+            }
+        } else if (patch.operation === 'clear') {
+            nextQueue = [];
         } else {
             requestResync('queue-patch-unknown', true);
             return false;
         }
         return setQueue(nextQueue, patch.queueVersion);
+    };
+
+    const scheduleFrame = (callback) => typeof requestAnimationFrame === 'function'
+        ? requestAnimationFrame(callback) : setTimeout(callback, 0);
+
+    // State packets are lossy by design: one frame only needs the latest state.
+    const scheduleSyncState = (state) => {
+        queuedState = state;
+        if (stateFrame !== null) return;
+        stateFrame = scheduleFrame(() => {
+            stateFrame = null;
+            const latest = queuedState;
+            queuedState = null;
+            syncState(latest);
+        });
+    };
+
+    // Queue patches stay ordered, but commit their Pinia changes together once per frame.
+    const scheduleQueuePatch = (patch) => {
+        queuedPatches.push(patch);
+        if (patchFrame !== null) return;
+        patchFrame = scheduleFrame(() => {
+            patchFrame = null;
+            const patches = queuedPatches;
+            queuedPatches = [];
+            patches.forEach(applyQueuePatch);
+        });
     };
 
     const applyDeferredQueueUpdate = () => {
@@ -226,7 +274,8 @@ export const usePlayerStore = defineStore('player', () => {
 
     const startHeartbeat = () => {
         if (pingTimer) return;
-        pingTimer = setInterval(() => requestPing('interval'), 10000);
+        const interval = typeof document !== 'undefined' && document.hidden ? 60000 : 10000;
+        pingTimer = setInterval(() => requestPing('interval'), interval);
     };
 
     const stopHeartbeat = () => {
@@ -334,6 +383,18 @@ export const usePlayerStore = defineStore('player', () => {
         }
     };
 
+    const handleVisibilityChange = () => {
+        document.documentElement.toggleAttribute('data-page-hidden', document.hidden);
+        if (!connected.value) return;
+        stopHeartbeat();
+        startHeartbeat();
+        if (!document.hidden) requestSyncRefresh('visibility-restored', true);
+    };
+    if (typeof document !== 'undefined') {
+        document.documentElement.toggleAttribute('data-page-hidden', document.hidden);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+    }
+
     const connect = () => {
         resetSyncGate();
         const authHeaders = { 'room-id': roomStore.currentRoomId };
@@ -342,10 +403,12 @@ export const usePlayerStore = defineStore('player', () => {
         const handlers = createSocketHandlers({
             player: {
                 syncState,
+                scheduleSyncState,
                 handleSyncPong,
                 switchRoom,
                 setQueue,
-                applyQueuePatch
+                applyQueuePatch,
+                scheduleQueuePatch
             },
             userStore,
             chatStore: useChatStore(),
@@ -714,7 +777,7 @@ remotePosition.value = 0;
         localProgress, playbackPositionMs, isBuffering, bufferedMs, isErrorState, streamListenerCount, lastSyncTime, lastRttMs,
         isSeekingPreview, forceNextSyncSeek, setSeekingPreview,
         setPlaybackPosition,
-        connect, tryReconnect, reconnectToCurrentRoom, switchRoom, resetRoomState, resetSyncGate, getCurrentProgress, syncState, handleSyncPong, requestPing, requestResync, requestSyncRefresh, setQueue, applyQueuePatch, settleQueueReorder,
+        connect, tryReconnect, reconnectToCurrentRoom, switchRoom, resetRoomState, resetSyncGate, getCurrentProgress, syncState, scheduleSyncState, handleSyncPong, requestPing, requestResync, requestSyncRefresh, setQueue, applyQueuePatch, scheduleQueuePatch, settleQueueReorder,
         playNext, togglePause, toggleShuffle,
         seek,
         enqueue, enqueuePlaylist, enqueueAlbum, topSong, removeSong, topSongs, removeSongs, topSongsCompat, removeSongsCompat,

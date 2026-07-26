@@ -45,16 +45,17 @@
     </header>
 
     <!-- Main Content Area -->
-    <main class="flex-1 overflow-y-auto px-md py-4" :class="{ 'pb-[100px]': selectionMode }">
+    <main ref="queueScrollerRef" class="flex-1 overflow-y-auto px-md py-4" :class="{ 'pb-[100px]': selectionMode }" @scroll.passive="onScroll">
       <template v-if="activeView === 'queue'">
         <div v-if="player.queue.length === 0" class="flex flex-col items-center justify-center py-20 text-center opacity-40">
           <span class="material-symbols-outlined text-[48px] mb-2">queue_music</span>
           <p class="font-compact text-compact uppercase tracking-widest">{{ t('queue.empty') }}</p>
         </div>
 
-        <div v-else ref="queueListRef" class="flex flex-col gap-xs">
+        <div v-else class="flex flex-col gap-xs">
+          <div ref="queueListRef" class="flex flex-col gap-xs">
           <div
-            v-for="(item, index) in player.queue"
+            v-for="(item, index) in interactiveQueue"
             :key="item.queueId || `${item.music?.platform}:${item.music?.id}:${index}`"
             :data-queue-id="item.queueId"
             class="flex items-center p-sm rounded-xl transition-colors group cursor-pointer"
@@ -101,6 +102,21 @@
               </button>
             </div>
           </div>
+          </div>
+          <template v-if="virtualized">
+            <div aria-hidden="true" :style="{ height: `${topPadding}px` }"></div>
+            <div
+              v-for="(item, index) in visibleQueue"
+              :key="item.queueId || `${item.music?.platform}:${item.music?.id}:${index}`"
+              class="flex items-center p-sm rounded-xl transition-colors group cursor-pointer"
+              :class="[isSelected(item.queueId) ? 'bg-accent-subtle' : 'hover:bg-surface-raised', player.nowPlaying?.music?.id === item.music?.id ? 'border border-primary/20' : '']"
+              @click="handleQueueItemClick(item.queueId)"
+            >
+              <div class="relative w-[44px] h-[44px] rounded-md overflow-hidden flex-shrink-0 mr-sm"><CoverImage :src="item.music?.coverUrl" class="w-full h-full object-cover" /></div>
+              <div class="flex-1 min-w-0"><p class="font-compact text-compact truncate font-semibold text-text-primary">{{ item.music?.name }}</p><p class="font-caption text-caption truncate text-text-secondary">{{ formatArtists(item.music?.artists) }}</p></div>
+            </div>
+            <div aria-hidden="true" :style="{ height: `${bottomPadding}px` }"></div>
+          </template>
         </div>
       </template>
 
@@ -176,6 +192,7 @@ import { useRoomStore } from '../../stores/room';
 import { createLikedSongsFilename, createLikedSongsText } from '../../utils/likedSongs';
 import { buildQueueReorderPayload, buildQueueReorderPayloadFromDom, isQueueReorderSourceCurrent } from '../../utils/queueReorder';
 import { useQueueSelection } from '../../composables/useQueueSelection';
+import { useVirtualQueue } from '../../composables/useVirtualQueue';
 import CoverImage from '../CoverImage.vue';
 
 const { t } = useI18n();
@@ -190,7 +207,10 @@ const longPressTriggered = ref(false);
 const LONG_PRESS_MS = 450;
 
 const queueListRef = ref(null);
+const queueScrollerRef = ref(null);
 let sortableInstance = null;
+let dragStartedInInteractiveZone = false;
+const { virtualized, interactiveQueue, visibleQueue, topPadding, bottomPadding, onScroll, observeScroller } = useVirtualQueue(queue);
 
 const {
   selectionMode,
@@ -206,6 +226,7 @@ const {
 } = useQueueSelection(queue);
 
 onMounted(() => {
+  observeScroller(queueScrollerRef.value);
   initSortable();
 });
 
@@ -236,13 +257,17 @@ const initSortable = () => {
     delay: 100,
     delayOnTouchOnly: true,
     disabled: selectionMode.value || user.isGuest,
+    onStart: (evt) => { dragStartedInInteractiveZone = evt.oldIndex < 50; },
+    onMove: (evt) => dragStartedInInteractiveZone && [...queueListRef.value.children].indexOf(evt.related) < 50,
     onEnd: (evt) => {
+      if (!dragStartedInInteractiveZone) return;
       const payload = buildQueueReorderPayloadFromDom(evt)
         || (isQueueReorderSourceCurrent(queue.value, evt)
           ? buildQueueReorderPayload(queue.value, evt.oldIndex, evt.newIndex)
           : null);
-      if (payload) player.reorderQueue(payload.oldIndex, payload.newIndex, payload.queueId, payload.targetQueueId, payload.position);
+      if (payload && payload.oldIndex < 50 && payload.newIndex < 50) player.reorderQueue(payload.oldIndex, payload.newIndex, payload.queueId, payload.targetQueueId, payload.position);
       else if (evt.oldIndex !== evt.newIndex) player.requestResync('queue-reorder-stale-dom', true);
+      dragStartedInInteractiveZone = false;
     }
   });
 };

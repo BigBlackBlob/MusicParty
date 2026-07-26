@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.thornex.musicparty.config.AppProperties;
@@ -34,15 +35,27 @@ public class YoutubeMusicApiService implements CachedMusicApiService {
     private final LocalCacheService localCacheService;
     private final AppProperties.YoutubeApiConfig config;
     private final boolean ytDlpAvailable;
+    private final UpstreamResilienceService resilience;
 
     public YoutubeMusicApiService(WebClient webClient,
                                   LocalCacheService localCacheService,
+                                   ObjectMapper objectMapper,
+                                   AppProperties appProperties) {
+        this(webClient, localCacheService, objectMapper, appProperties,
+                new UpstreamResilienceService(appProperties, new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
+    }
+
+    @Autowired
+    public YoutubeMusicApiService(WebClient webClient,
+                                  LocalCacheService localCacheService,
                                   ObjectMapper objectMapper,
-                                  AppProperties appProperties) {
+                                  AppProperties appProperties,
+                                  UpstreamResilienceService resilience) {
         this.webClient = webClient;
         this.localCacheService = localCacheService;
         this.config = appProperties.getYoutube();
         this.ytDlpAvailable = isExecutableAvailable(config.getYtDlpPath());
+        this.resilience = resilience;
     }
 
     @Override
@@ -77,7 +90,8 @@ public class YoutubeMusicApiService implements CachedMusicApiService {
     }
 
     private Mono<List<Music>> searchPage(String keyword, int limit, int targetPage, String pageToken) {
-        return webClient.get()
+        return resilience.cached(PLATFORM, "search:" + keyword + ":" + limit + ":" + targetPage + ":" + pageToken,
+                java.time.Duration.ofSeconds(30), () -> webClient.get()
                 .uri(builder -> builder
                         .scheme("https")
                         .host("www.googleapis.com")
@@ -108,11 +122,11 @@ public class YoutubeMusicApiService implements CachedMusicApiService {
                     return fetchDurations(ids).map(durations -> ids.stream()
                             .map(id -> toMusic(id, snippets.get(id), durations.getOrDefault(id, 0L)))
                             .toList());
-                });
+                }));
     }
 
     private Mono<Map<String, Long>> fetchDurations(List<String> ids) {
-        return webClient.get()
+        return resilience.cached(PLATFORM, "durations:" + String.join(",", ids), java.time.Duration.ofMinutes(5), () -> webClient.get()
                 .uri(BASE_URL + "/videos?part=contentDetails&id={ids}&key={key}", String.join(",", ids), config.getApiKey())
                 .retrieve()
                 .bodyToMono(JsonNode.class)
@@ -122,7 +136,7 @@ public class YoutubeMusicApiService implements CachedMusicApiService {
                             item.path("id").asText(),
                             parseIsoDurationMillis(item.path("contentDetails").path("duration").asText())));
                     return durations;
-                });
+                }));
     }
 
     private Music toMusic(String id, JsonNode snippet, long duration) {

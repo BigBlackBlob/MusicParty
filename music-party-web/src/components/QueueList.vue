@@ -39,7 +39,7 @@
       <button class="h-8 rounded-md px-2 text-xs text-error hover:bg-[var(--surface-control-hover)] disabled:opacity-40" :disabled="!hasSelection" @click="batchRemove">{{ t('queue.remove') }}</button>
     </div>
 
-    <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
+    <div ref="queueScrollerRef" class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1" @scroll.passive="onScroll">
 
       <!-- Liked View -->
       <div v-if="activeView === 'liked'" class="flex flex-col gap-2">
@@ -73,10 +73,10 @@
           <div class="mt-1 text-xs text-text-muted">{{ t('queue.emptyDesc') }}</div>
         </div>
 
-        <div v-else class="flex min-h-0 flex-1 flex-col gap-2">
-          <div ref="queueListRef" class="flex flex-col gap-2">
-            <QueueItem
-              v-for="(item, index) in queue"
+          <div v-else class="flex min-h-0 flex-1 flex-col gap-2">
+            <div ref="queueListRef" class="flex flex-col gap-2">
+              <QueueItem
+              v-for="(item, index) in interactiveQueue"
               :key="item.queueId || `${item.music?.platform || 'track'}:${item.music?.id || index}`"
               :data-queue-id="item.queueId"
               :item="item"
@@ -84,8 +84,21 @@
               :selection-mode="selectionMode"
               :selected="isSelected(item.queueId)"
               @toggle-select="toggleSelected(item.queueId)"
-            />
-          </div>
+              />
+            </div>
+            <template v-if="virtualized">
+              <div aria-hidden="true" :style="{ height: `${topPadding}px` }"></div>
+              <QueueItem
+                v-for="(item, index) in visibleQueue"
+                :key="item.queueId || `${item.music?.platform || 'track'}:${item.music?.id || index}`"
+                :item="item"
+                :index="50 + Math.floor(topPadding / 72) + index"
+                :selection-mode="selectionMode"
+                :selected="isSelected(item.queueId)"
+                @toggle-select="toggleSelected(item.queueId)"
+              />
+              <div aria-hidden="true" :style="{ height: `${bottomPadding}px` }"></div>
+            </template>
         </div>
       </div>
 
@@ -102,6 +115,7 @@ import QueueItem from './QueueItem.vue';
 import TrackListItem from './ui/TrackListItem.vue';
 import { createLikedSongsFilename, createLikedSongsText } from '../utils/likedSongs';
 import { useQueueSelection } from '../composables/useQueueSelection';
+import { useVirtualQueue } from '../composables/useVirtualQueue';
 import { buildQueueReorderPayload, buildQueueReorderPayloadFromDom, isQueueReorderSourceCurrent } from '../utils/queueReorder';
 
 const player = usePlayerStore();
@@ -109,7 +123,10 @@ const { t } = useI18n();
 const queue = computed(() => player.queue);
 const activeView = ref('queue');
 const queueListRef = ref(null);
+const queueScrollerRef = ref(null);
 let sortableInstance = null;
+let dragStartedInInteractiveZone = false;
+const { virtualized, interactiveQueue, visibleQueue, topPadding, bottomPadding, onScroll, observeScroller } = useVirtualQueue(queue);
 
 const {
   selectionMode,
@@ -124,6 +141,7 @@ const {
 } = useQueueSelection(queue);
 
 onMounted(() => {
+  observeScroller(queueScrollerRef.value);
   initSortable();
 });
 
@@ -152,13 +170,17 @@ const initSortable = () => {
     animation: 150,
     ghostClass: 'opacity-40',
     disabled: selectionMode.value,
+    onStart: (evt) => { dragStartedInInteractiveZone = evt.oldIndex < 50; },
+    onMove: (evt) => dragStartedInInteractiveZone && [...queueListRef.value.children].indexOf(evt.related) < 50,
     onEnd: (evt) => {
+      if (!dragStartedInInteractiveZone) return;
       const payload = buildQueueReorderPayloadFromDom(evt)
         || (isQueueReorderSourceCurrent(queue.value, evt)
           ? buildQueueReorderPayload(queue.value, evt.oldIndex, evt.newIndex)
           : null);
-      if (payload) player.reorderQueue(payload.oldIndex, payload.newIndex, payload.queueId, payload.targetQueueId, payload.position);
+      if (payload && payload.oldIndex < 50 && payload.newIndex < 50) player.reorderQueue(payload.oldIndex, payload.newIndex, payload.queueId, payload.targetQueueId, payload.position);
       else if (evt.oldIndex !== evt.newIndex) player.requestResync('queue-reorder-stale-dom', true);
+      dragStartedInInteractiveZone = false;
     }
   });
 };

@@ -109,6 +109,12 @@ app:
       subprocess-queue-capacity: ${SUBPROCESS_QUEUE_CAPACITY:20}
       image-cpu-threads: ${IMAGE_CPU_THREADS:2}
       image-cpu-queue-capacity: ${IMAGE_CPU_QUEUE_CAPACITY:100}
+      upstream-max-concurrent: ${UPSTREAM_MAX_CONCURRENT:4}
+      upstream-failure-threshold: ${UPSTREAM_FAILURE_THRESHOLD:5}
+      upstream-circuit-open-ms: ${UPSTREAM_CIRCUIT_OPEN_MS:30000}
+      web-client-max-connections: ${WEB_CLIENT_MAX_CONNECTIONS:20}
+      web-client-pending-acquire-max: ${WEB_CLIENT_PENDING_ACQUIRE_MAX:50}
+      web-client-pending-acquire-timeout-ms: ${WEB_CLIENT_PENDING_ACQUIRE_TIMEOUT_MS:5000}
     desktop:
       profile-dir: ${MUSICPARTY_PROFILE_DIR:data/desktop-profile}
       lan-base-url: ${DESKTOP_LAN_BASE_URL:}

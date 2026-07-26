@@ -113,7 +113,7 @@ export const createSocketHandlers = (stores = {}) => {
     return {
         // 1. 状态同步
         [WS_DEST.PLAYER_STATE]: (state, envelope) => {
-            if (!envelope?.roomId || envelope.roomId === roomStore?.currentRoomId) player?.syncState?.(state);
+            if (!envelope?.roomId || envelope.roomId === roomStore?.currentRoomId) (player?.scheduleSyncState || player?.syncState)?.(state);
         },
         [WS_DEST.SYNC_PONG]: (pong) => player?.handleSyncPong?.(pong),
 
@@ -128,7 +128,7 @@ export const createSocketHandlers = (stores = {}) => {
         },
         [WS_DEST.QUEUE_PATCH]: (patch, envelope) => {
             if (envelope?.roomId && envelope.roomId !== roomStore?.currentRoomId) return;
-            player?.applyQueuePatch?.(patch);
+            (player?.scheduleQueuePatch || player?.applyQueuePatch)?.(patch);
         },
         [WS_DEST.QUEUE_REORDER_ACK]: (data) => player?.settleQueueReorder?.(data?.mutationId, true),
         [WS_DEST.QUEUE_REORDER_NACK]: (data) => player?.settleQueueReorder?.(data?.mutationId, false, data?.reason),
