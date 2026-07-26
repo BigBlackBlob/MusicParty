@@ -9,7 +9,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.sqlite.SQLiteDataSource;
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
 import org.sqlite.SQLiteConfig;
 
 import javax.sql.DataSource;
@@ -32,14 +33,20 @@ public class SqlitePersistenceConfig {
             Files.createDirectories(parent);
         }
 
-        SQLiteDataSource dataSource = new SQLiteDataSource();
-        dataSource.setUrl("jdbc:sqlite:" + dbPath);
         SQLiteConfig config = new SQLiteConfig();
         config.setJournalMode(SQLiteConfig.JournalMode.WAL);
         config.setSynchronous(SQLiteConfig.SynchronousMode.NORMAL);
-        config.setBusyTimeout(5000);
-        dataSource.setConfig(config);
-        return dataSource;
+        config.setBusyTimeout((int) appProperties.getDatabase().getBusyTimeoutMs());
+        config.enforceForeignKeys(true);
+
+        HikariConfig hikari = new HikariConfig();
+        hikari.setJdbcUrl("jdbc:sqlite:" + dbPath);
+        hikari.setDataSourceProperties(config.toProperties());
+        hikari.setMaximumPoolSize(Math.max(1, appProperties.getDatabase().getMaxPoolSize()));
+        hikari.setMinimumIdle(Math.min(hikari.getMaximumPoolSize(), Math.max(1, appProperties.getDatabase().getMinIdle())));
+        hikari.setConnectionTimeout(appProperties.getDatabase().getConnectionTimeoutMs());
+        hikari.setPoolName("musicparty-sqlite");
+        return new HikariDataSource(hikari);
     }
 
     @Bean

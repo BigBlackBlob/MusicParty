@@ -1,19 +1,28 @@
 package org.thornex.musicparty.service.api;
 
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.thornex.musicparty.dto.*;
 import org.thornex.musicparty.service.LocalLibraryService;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
+import reactor.core.scheduler.Scheduler;
 
 import java.util.List;
 
 @Service
 public class LocalMusicApiService implements IMusicApiService {
     private final LocalLibraryService localLibraryService;
+    private final Scheduler dbReadScheduler;
 
     public LocalMusicApiService(LocalLibraryService localLibraryService) {
+        this(localLibraryService, reactor.core.scheduler.Schedulers.boundedElastic());
+    }
+
+    @Autowired
+    public LocalMusicApiService(LocalLibraryService localLibraryService, @Qualifier("dbReadScheduler") Scheduler dbReadScheduler) {
         this.localLibraryService = localLibraryService;
+        this.dbReadScheduler = dbReadScheduler;
     }
 
     @Override
@@ -29,13 +38,13 @@ public class LocalMusicApiService implements IMusicApiService {
     @Override
     public Mono<List<Music>> searchMusic(String keyword, int offset, int limit) {
         return Mono.fromSupplier(() -> localLibraryService.search(keyword, offset, limit).stream().map(LocalTrack::toMusic).toList())
-                .subscribeOn(Schedulers.boundedElastic());
+                .subscribeOn(dbReadScheduler);
     }
 
     @Override
     public Mono<PlayableMusic> getPlayableMusic(String musicId) {
         return Mono.fromSupplier(() -> localLibraryService.getPlayableTrack(musicId).toPlayableMusic())
-                .subscribeOn(Schedulers.boundedElastic());
+                .subscribeOn(dbReadScheduler);
     }
 
     @Override

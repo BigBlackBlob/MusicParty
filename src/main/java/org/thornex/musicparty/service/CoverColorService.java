@@ -4,12 +4,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.CoverColorResponse;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import reactor.core.scheduler.Scheduler;
 
 import javax.imageio.ImageIO;
 import java.awt.*;
@@ -32,6 +35,7 @@ public class CoverColorService {
 
     private final WebClient webClient;
     private final AppProperties appProperties;
+    private final Scheduler imageCpuScheduler;
     private final Map<String, CoverColorResponse> responseCache;
     private final Semaphore concurrentExtracts;
     private final Map<String, Mono<CoverColorResponse>> inflightExtractions = new ConcurrentHashMap<>();
@@ -40,8 +44,14 @@ public class CoverColorService {
     private static final Set<String> ALLOWED_SCHEMES = Set.of("http", "https");
 
     public CoverColorService(WebClient webClient, AppProperties appProperties) {
+        this(webClient, appProperties, Schedulers.boundedElastic());
+    }
+
+    @Autowired
+    public CoverColorService(WebClient webClient, AppProperties appProperties, @Qualifier("imageCpuScheduler") Scheduler imageCpuScheduler) {
         this.webClient = webClient;
         this.appProperties = appProperties;
+        this.imageCpuScheduler = imageCpuScheduler;
         int maxCacheSize = Math.max(0, appProperties.getPerformance().getCoverColorCacheSize());
         this.responseCache = java.util.Collections.synchronizedMap(new LinkedHashMap<>(16, 0.75f, true) {
             @Override
@@ -93,8 +103,7 @@ public class CoverColorService {
                                 return Mono.empty();
                             })
                             .doFinally(ignored -> concurrentExtracts.release());
-                })
-                .subscribeOn(Schedulers.boundedElastic());
+                });
     }
 
     private Mono<byte[]> fetchCoverBytes(String resolvedUrl) {
@@ -139,7 +148,7 @@ public class CoverColorService {
                     }
                     return response;
                 })
-                .subscribeOn(Schedulers.boundedElastic())
+                .subscribeOn(imageCpuScheduler)
                 .onErrorResume(error -> {
                     log.warn("Failed to extract cover color from {}", resolvedUrl, error);
                     return Mono.empty();

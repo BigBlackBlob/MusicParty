@@ -88,12 +88,27 @@ app:
       stream-client-queue-capacity: ${STREAM_CLIENT_QUEUE_CAPACITY:32}
       stream-writer-threads: ${STREAM_WRITER_THREADS:8}
       download-max-queued-tasks: ${DOWNLOAD_MAX_QUEUED_TASKS:100}
+      download-max-active-tasks: ${DOWNLOAD_MAX_ACTIVE_TASKS:3}
+      download-reservation-bytes: ${DOWNLOAD_RESERVATION_BYTES:33554432}
+      netease-download-concurrency: ${NETEASE_DOWNLOAD_CONCURRENCY:2}
+      bilibili-download-concurrency: ${BILIBILI_DOWNLOAD_CONCURRENCY:1}
+      youtube-download-concurrency: ${YOUTUBE_DOWNLOAD_CONCURRENCY:1}
+      local-download-concurrency: ${LOCAL_DOWNLOAD_CONCURRENCY:2}
       download-task-ttl-ms: ${DOWNLOAD_TASK_TTL_MS:1800000}
       cover-color-cache-size: ${COVER_COLOR_CACHE_SIZE:256}
       cover-color-max-concurrent: ${COVER_COLOR_MAX_CONCURRENT:4}
       websocket-client-queue-capacity: ${WEBSOCKET_CLIENT_QUEUE_CAPACITY:256}
       room-command-queue-capacity: ${ROOM_COMMAND_QUEUE_CAPACITY:100}
       room-command-queue-timeout-ms: ${ROOM_COMMAND_QUEUE_TIMEOUT_MS:5000}
+      db-write-queue-capacity: ${DB_WRITE_QUEUE_CAPACITY:100}
+      db-read-threads: ${DB_READ_THREADS:2}
+      db-read-queue-capacity: ${DB_READ_QUEUE_CAPACITY:100}
+      file-io-threads: ${FILE_IO_THREADS:4}
+      file-io-queue-capacity: ${FILE_IO_QUEUE_CAPACITY:200}
+      subprocess-threads: ${SUBPROCESS_THREADS:2}
+      subprocess-queue-capacity: ${SUBPROCESS_QUEUE_CAPACITY:20}
+      image-cpu-threads: ${IMAGE_CPU_THREADS:2}
+      image-cpu-queue-capacity: ${IMAGE_CPU_QUEUE_CAPACITY:100}
     desktop:
       profile-dir: ${MUSICPARTY_PROFILE_DIR:data/desktop-profile}
       lan-base-url: ${DESKTOP_LAN_BASE_URL:}
@@ -109,6 +124,10 @@ app:
       enabled: ${DB_ENABLED:true}
       path: ${DB_PATH:data/musicparty.db}
       init-schema: ${DB_INIT_SCHEMA:true}
+      max-pool-size: ${DB_MAX_POOL_SIZE:3}
+      min-idle: ${DB_MIN_IDLE:1}
+      connection-timeout-ms: ${DB_CONNECTION_TIMEOUT_MS:5000}
+      busy-timeout-ms: ${SQLITE_BUSY_TIMEOUT_MS:5000}
     auth:
       rate-limit-enabled: ${AUTH_RATE_LIMIT_ENABLED:true}
       max-attempts: ${AUTH_MAX_ATTEMPTS:5}

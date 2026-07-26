@@ -5,6 +5,7 @@ import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.thornex.musicparty.config.AppProperties;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Qualifier;
 
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -22,14 +23,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Component
 public class RoomCommandCoordinator {
     private final Map<String, QueueState> queues = new ConcurrentHashMap<>();
-    private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    private final ExecutorService executor;
     private final ScheduledExecutorService timeoutExecutor = Executors.newSingleThreadScheduledExecutor();
     private final MeterRegistry meterRegistry;
     private final int maxPendingCommands;
     private final long commandQueueTimeoutMs;
 
-    public RoomCommandCoordinator(AppProperties appProperties, MeterRegistry meterRegistry) {
+    public RoomCommandCoordinator(AppProperties appProperties, MeterRegistry meterRegistry,
+                                  @Qualifier("dbWriteExecutor") ExecutorService executor) {
         this.meterRegistry = meterRegistry;
+        this.executor = executor;
         this.maxPendingCommands = appProperties.getPerformance().getRoomCommandQueueCapacity();
         this.commandQueueTimeoutMs = appProperties.getPerformance().getRoomCommandQueueTimeoutMs();
         Gauge.builder("musicparty.room_command_queue.depth", queues,
@@ -105,7 +108,6 @@ public class RoomCommandCoordinator {
     void shutdown() {
         queues.keySet().forEach(this::closeRoom);
         timeoutExecutor.shutdownNow();
-        executor.shutdownNow();
     }
 
     private static final class QueueState {

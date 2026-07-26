@@ -9,7 +9,11 @@ import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.reactive.function.client.WebClient;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Gauge;
 import org.thornex.musicparty.config.LocalResourceConfig;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.enums.CacheStatus;
@@ -17,7 +21,7 @@ import org.thornex.musicparty.event.DownloadStatusEvent;
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
-import reactor.core.scheduler.Schedulers;
+import reactor.core.scheduler.Scheduler;
 
 import java.io.File;
 import java.io.IOException;
@@ -36,6 +40,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.Semaphore;
 
 @Service
 @Slf4j
@@ -49,15 +56,28 @@ public class LocalCacheService {
     private final AtomicLong currentTotalSize = new AtomicLong(0);
     private final ApplicationEventPublisher eventPublisher;
     private final AppProperties appProperties;
-    private final Sinks.Many<DownloadTask> downloadQueue = Sinks.many().unicast().onBackpressureBuffer();
+    private final Scheduler fileIoScheduler;
+    private final Scheduler subprocessScheduler;
+    private final java.util.concurrent.Executor subprocessExecutor;
+    private final MeterRegistry meterRegistry;
+    private final Sinks.Many<DownloadTask> downloadQueue;
     private final AtomicInteger pendingDownloadTasks = new AtomicInteger(0);
+    private final AtomicLong reservedDownloadBytes = new AtomicLong(0);
+    private final AtomicInteger activeDownloadTasks = new AtomicInteger(0);
+    private final Map<String, Semaphore> platformPermits = new ConcurrentHashMap<>();
+    private final Map<String, Process> runningProcesses = new ConcurrentHashMap<>();
+    private final Object capacityLock = new Object();
     private Disposable queueSubscription;
     private static final int COMMAND_OUTPUT_LIMIT = 16 * 1024;
 
     private record DownloadTask(
             String musicId,
-            Mono<DownloadSource> sourceProvider
+            String platform,
+            Mono<DownloadSource> sourceProvider,
+            AtomicBoolean started
     ) {}
+
+    public enum DownloadSubmission { QUEUED, ALREADY_PRESENT, REJECTED_QUEUE_FULL, REJECTED_CAPACITY, REJECTED_EMIT }
 
     public record DownloadSource(
             String url,
@@ -79,9 +99,29 @@ public class LocalCacheService {
     }
 
     public LocalCacheService(WebClient webClient, ApplicationEventPublisher eventPublisher, AppProperties appProperties) {
+        this(webClient, eventPublisher, appProperties, reactor.core.scheduler.Schedulers.boundedElastic(),
+                reactor.core.scheduler.Schedulers.boundedElastic(), CompletableFuture.delayedExecutor(0, TimeUnit.MILLISECONDS),
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+    }
+
+    @Autowired
+    public LocalCacheService(WebClient webClient, ApplicationEventPublisher eventPublisher, AppProperties appProperties,
+                             @Qualifier("fileIoScheduler") Scheduler fileIoScheduler,
+                             @Qualifier("subprocessScheduler") Scheduler subprocessScheduler,
+                             @Qualifier("subprocessExecutor") java.util.concurrent.Executor subprocessExecutor,
+                             MeterRegistry meterRegistry) {
         this.webClient = webClient;
         this.eventPublisher = eventPublisher;
         this.appProperties = appProperties;
+        this.fileIoScheduler = fileIoScheduler;
+        this.subprocessScheduler = subprocessScheduler;
+        this.subprocessExecutor = subprocessExecutor;
+        this.meterRegistry = meterRegistry;
+        this.downloadQueue = Sinks.many().unicast().onBackpressureBuffer(
+                new ArrayBlockingQueue<>(Math.max(1, appProperties.getPerformance().getDownloadMaxQueuedTasks())));
+        Gauge.builder("musicparty.download.queued", pendingDownloadTasks, AtomicInteger::get).register(meterRegistry);
+        Gauge.builder("musicparty.download.active", activeDownloadTasks, AtomicInteger::get).register(meterRegistry);
+        Gauge.builder("musicparty.download.reserved_bytes", reservedDownloadBytes, AtomicLong::get).register(meterRegistry);
     }
 
     @Data
@@ -92,6 +132,7 @@ public class LocalCacheService {
         private volatile long size;
         private volatile long lastAccessTime;
         private volatile String originalUrl; // 用于重试或记录
+        private volatile long reservedBytes;
     }
 
     @PostConstruct
@@ -126,15 +167,12 @@ public class LocalCacheService {
         log.info("LocalCacheService initialized. Current cache size: {} bytes", currentTotalSize.get());
 
         this.queueSubscription = downloadQueue.asFlux()
-                .concatMap(task ->
+                .flatMap(task ->
                         processTask(task)
                                 .onErrorResume(e -> {
                                     log.error("Unexpected error in download queue processing", e);
-                                    return Mono.empty(); // 吞掉异常，防止队列崩溃
-                                })
-                                // 🟢 关键：强制冷却时间，防止风控
-                                .then(Mono.delay(Duration.ofSeconds(DOWNLOAD_COOLDOWN_SECONDS)))
-                )
+                                    return Mono.empty();
+                                }), appProperties.getPerformance().getDownloadMaxActiveTasks())
                 .subscribe();
     }
 
@@ -143,6 +181,8 @@ public class LocalCacheService {
         if (queueSubscription != null && !queueSubscription.isDisposed()) {
             queueSubscription.dispose();
         }
+        runningProcesses.values().forEach(process -> process.destroyForcibly());
+        runningProcesses.clear();
     }
 
     /**
@@ -153,66 +193,81 @@ public class LocalCacheService {
      * @param extension 文件扩展名 (如 .m4a, .mp3)
      */
     public void submitDownload(String musicId, Mono<String> urlProvider, Map<String, String> headers, String extension) {
-        submitDynamicDownload(musicId, urlProvider.map(url -> new DownloadSource(url, headers, extension)));
+        submitDownload("unknown", musicId, urlProvider, headers, extension);
+    }
+
+    public DownloadSubmission submitDownload(String platform, String musicId, Mono<String> urlProvider, Map<String, String> headers, String extension) {
+        return submitDynamicDownload(platform, musicId, urlProvider.map(url -> new DownloadSource(url, headers, extension)));
     }
 
     public void submitDynamicDownload(String musicId, Mono<DownloadSource> sourceProvider) {
-        if (cacheIndex.containsKey(musicId) && cacheIndex.get(musicId).getStatus() == CacheStatus.COMPLETED) {
-            log.info("Music {} already cached.", musicId);
-            touch(musicId); // 更新访问时间
-            return;
-        }
+        submitDynamicDownload("unknown", musicId, sourceProvider);
+    }
 
-        // 2. 检查是否正在处理或排队 (关键去重)
-        if (cacheIndex.containsKey(musicId)) {
-            CacheStatus status = cacheIndex.get(musicId).getStatus();
-            if (status == CacheStatus.DOWNLOADING || status == CacheStatus.PENDING) {
-                log.debug("Task {} is already pending or downloading, skip enqueue.", musicId);
-                return; // 直接返回，不要重复 emit
+    public DownloadSubmission submitDynamicDownload(String platform, String musicId, Mono<DownloadSource> sourceProvider) {
+        CacheEntry entry;
+        long reservation = appProperties.getPerformance().getDownloadReservationBytes();
+        synchronized (capacityLock) {
+            CacheEntry existing = cacheIndex.get(musicId);
+            if (existing != null && (existing.getStatus() == CacheStatus.COMPLETED || isInFlight(existing.getStatus()))) {
+                if (existing.getStatus() == CacheStatus.COMPLETED) touch(musicId);
+                meterRegistry.counter("musicparty.download.submissions", "result", "deduplicated").increment();
+                return DownloadSubmission.ALREADY_PRESENT;
             }
+            if (!reserveSlotAndCapacity(reservation)) {
+                meterRegistry.counter("musicparty.download.submissions", "result", "rejected").increment();
+                return pendingDownloadTasks.get() >= appProperties.getPerformance().getDownloadMaxQueuedTasks()
+                        ? DownloadSubmission.REJECTED_QUEUE_FULL : DownloadSubmission.REJECTED_CAPACITY;
+            }
+            entry = new CacheEntry();
+            entry.setId(musicId);
+            entry.setStatus(CacheStatus.PENDING);
+            entry.setLastAccessTime(System.currentTimeMillis());
+            entry.setReservedBytes(reservation);
+            cacheIndex.put(musicId, entry);
         }
-        if (pendingDownloadTasks.get() >= appProperties.getPerformance().getDownloadMaxQueuedTasks()) {
-            log.warn("Download queue limit reached; rejecting task {}", musicId);
-            return;
-        }
-
-        // 初始化条目
-        CacheEntry entry = new CacheEntry();
-        entry.setId(musicId);
-        entry.setStatus(CacheStatus.PENDING); // 🟢 状态：排队中
-        entry.setLastAccessTime(System.currentTimeMillis());
-        cacheIndex.put(musicId, entry);
 
         eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
-        pendingDownloadTasks.incrementAndGet();
-
-        Sinks.EmitResult result = downloadQueue.tryEmitNext(new DownloadTask(musicId, sourceProvider));
-
+        Sinks.EmitResult result = downloadQueue.tryEmitNext(new DownloadTask(musicId, platform, sourceProvider, new AtomicBoolean()));
         if (result.isFailure()) {
-            pendingDownloadTasks.decrementAndGet();
-            log.error("Failed to enqueue download task for {}", musicId);
-            entry.setStatus(CacheStatus.FAILED);
+            synchronized (capacityLock) {
+                pendingDownloadTasks.decrementAndGet();
+                releaseReservation(entry);
+                entry.setStatus(CacheStatus.REJECTED);
+            }
             eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
-        } else {
-            log.info("Download enqueued: {}", musicId);
+            meterRegistry.counter("musicparty.download.submissions", "result", "emit_failed").increment();
+            return DownloadSubmission.REJECTED_EMIT;
         }
+        meterRegistry.counter("musicparty.download.submissions", "result", "queued", "platform", platform).increment();
+        return DownloadSubmission.QUEUED;
     }
 
     private Mono<Void> processTask(DownloadTask task) {
-        pendingDownloadTasks.updateAndGet(value -> Math.max(0, value - 1));
+        if (task.started().compareAndSet(false, true)) {
+            pendingDownloadTasks.updateAndGet(value -> Math.max(0, value - 1));
+        }
         String musicId = task.musicId();
         CacheEntry entry = cacheIndex.get(musicId);
 
         // 双重检查：如果任务在排队期间被移除了，就跳过
         if (entry == null) return Mono.empty();
 
-        // 🟢 状态变更：PENDING -> DOWNLOADING
-        entry.setStatus(CacheStatus.DOWNLOADING);
+        Semaphore platformPermit = platformPermits.computeIfAbsent(task.platform(), this::platformPermit);
+        if (!platformPermit.tryAcquire()) {
+            entry.setStatus(CacheStatus.RETRY_WAIT);
+            eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
+            return Mono.delay(Duration.ofMillis(100)).then(processTask(task));
+        }
+        activeDownloadTasks.incrementAndGet();
+        entry.setStatus(CacheStatus.RESOLVING);
         eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
         log.info("Processing download: {}", musicId);
 
         return task.sourceProvider()
                 .flatMap(source -> {
+                    entry.setStatus(CacheStatus.DOWNLOADING);
+                    eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
                     entry.setOriginalUrl(source.url());
                     String fileName = musicId + source.extension();
                     entry.setFileName(fileName);
@@ -220,10 +275,10 @@ public class LocalCacheService {
                     Path partPath = Paths.get(LocalResourceConfig.CACHE_DIR, fileName + ".part");
 
                     Mono<Void> download = source.usesCommand()
-                            ? runDownloadCommand(source.command(), partPath)
+                            ? runDownloadCommand(musicId, source.command(), partPath)
                             : downloadWithWebClient(source, partPath);
 
-                    return download.publishOn(Schedulers.boundedElastic())
+                    return download.publishOn(fileIoScheduler)
                             .doOnSuccess(unused -> completeDownload(entry, musicId, fileName, partPath, destPath));
                 })
                 // 错误处理
@@ -237,11 +292,16 @@ public class LocalCacheService {
                         log.warn("Failed to delete partial cache for {}", musicId, cleanupError);
                     }
                     entry.setStatus(CacheStatus.FAILED);
+                    releaseReservation(entry);
                     eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
                 })
                 // 这里的 onErrorResume 保证即使这个任务失败，Flux 链也不会断，会继续执行 delay 和下一个任务
                 .onErrorResume(e -> Mono.empty())
-                .then(); // 转为 Mono<Void>
+                .doFinally(ignored -> {
+                    activeDownloadTasks.decrementAndGet();
+                    platformPermit.release();
+                })
+                .then();
     }
 
     private Mono<Void> downloadWithWebClient(DownloadSource source, Path partPath) {
@@ -260,7 +320,7 @@ public class LocalCacheService {
         );
     }
 
-    private Mono<Void> runDownloadCommand(List<String> command, Path outputPath) {
+    private Mono<Void> runDownloadCommand(String musicId, List<String> command, Path outputPath) {
         return Mono.fromRunnable(() -> {
                     List<String> resolvedCommand = command.stream()
                             .map(arg -> arg.replace("{output}", outputPath.toString()))
@@ -269,13 +329,14 @@ public class LocalCacheService {
                     pb.redirectErrorStream(true);
                     try {
                         Process process = pb.start();
+                        runningProcesses.put(musicId, process);
                         CompletableFuture<String> outputFuture = CompletableFuture.supplyAsync(() -> {
                             try {
                                 return readProcessOutput(process.getInputStream());
                             } catch (IOException e) {
                                 return "Failed to read command output: " + e.getMessage();
                             }
-                        });
+                        }, subprocessExecutor);
                         boolean finished = process.waitFor(15, TimeUnit.MINUTES);
                         if (!finished) {
                             process.destroyForcibly();
@@ -285,6 +346,7 @@ public class LocalCacheService {
                         if (process.exitValue() != 0) {
                             throw new RuntimeException("Download command failed: " + output);
                         }
+                        runningProcesses.remove(musicId, process);
                     } catch (IOException e) {
                         throw new RuntimeException("Download command failed", e);
                     } catch (InterruptedException e) {
@@ -292,9 +354,11 @@ public class LocalCacheService {
                         throw new RuntimeException("Download command interrupted", e);
                     } catch (Exception e) {
                         throw new RuntimeException("Download command failed", e);
+                    } finally {
+                        runningProcesses.remove(musicId);
                     }
                 })
-                .subscribeOn(Schedulers.boundedElastic())
+                .subscribeOn(subprocessScheduler)
                 .then();
     }
 
@@ -328,6 +392,7 @@ public class LocalCacheService {
             long size = Files.size(destPath);
             entry.setSize(size);
             entry.setStatus(CacheStatus.COMPLETED);
+            releaseReservation(entry);
             currentTotalSize.addAndGet(size);
             log.info("Download completed: {}", fileName);
             eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
@@ -392,6 +457,42 @@ public class LocalCacheService {
                 });
     }
 
+    private boolean reserveSlotAndCapacity(long reservation) {
+        if (pendingDownloadTasks.get() >= appProperties.getPerformance().getDownloadMaxQueuedTasks()) return false;
+        long maxSize = appProperties.getCache().getMaxSize().toBytes();
+        if (currentTotalSize.get() + reservedDownloadBytes.get() + reservation > maxSize) {
+            ensureCapacity();
+        }
+        if (currentTotalSize.get() + reservedDownloadBytes.get() + reservation > maxSize) return false;
+        pendingDownloadTasks.incrementAndGet();
+        reservedDownloadBytes.addAndGet(reservation);
+        return true;
+    }
+
+    private void releaseReservation(CacheEntry entry) {
+        long reservation = entry.getReservedBytes();
+        if (reservation > 0) {
+            entry.setReservedBytes(0);
+            reservedDownloadBytes.addAndGet(-reservation);
+        }
+    }
+
+    private boolean isInFlight(CacheStatus status) {
+        return status == CacheStatus.PENDING || status == CacheStatus.RESOLVING || status == CacheStatus.DOWNLOADING
+                || status == CacheStatus.TRANSCODING || status == CacheStatus.RETRY_WAIT;
+    }
+
+    private Semaphore platformPermit(String platform) {
+        int permits = switch (platform) {
+            case "netease" -> appProperties.getPerformance().getNeteaseDownloadConcurrency();
+            case "bilibili" -> appProperties.getPerformance().getBilibiliDownloadConcurrency();
+            case "youtube" -> appProperties.getPerformance().getYoutubeDownloadConcurrency();
+            case "local", "navidrome" -> appProperties.getPerformance().getLocalDownloadConcurrency();
+            default -> 1;
+        };
+        return new Semaphore(Math.max(1, permits));
+    }
+
     /**
      * 获取文件访问 URL
      * 返回: /media/id.ext
@@ -433,7 +534,8 @@ public class LocalCacheService {
         long ttl = appProperties.getPerformance().getDownloadTaskTtlMs();
         cacheIndex.entrySet().removeIf(entry -> {
             CacheStatus status = entry.getValue().getStatus();
-            boolean staleStatus = status == CacheStatus.PENDING || status == CacheStatus.FAILED;
+            boolean staleStatus = status == CacheStatus.PENDING || status == CacheStatus.RESOLVING
+                    || status == CacheStatus.RETRY_WAIT || status == CacheStatus.FAILED || status == CacheStatus.REJECTED;
             if (!staleStatus || now - entry.getValue().getLastAccessTime() <= ttl) {
                 return false;
             }
@@ -447,6 +549,7 @@ public class LocalCacheService {
                     log.warn("Failed to delete stale .part file for {}", entry.getValue().getId(), e);
                 }
             }
+            releaseReservation(entry.getValue());
             return true;
         });
     }
@@ -457,6 +560,10 @@ public class LocalCacheService {
 
     public int getPendingDownloadTaskCount() {
         return pendingDownloadTasks.get();
+    }
+
+    public int getActiveDownloadTaskCount() {
+        return activeDownloadTasks.get();
     }
 
     void trackForTest(String musicId, CacheStatus status, long lastAccessTime) {

@@ -147,7 +147,7 @@ public class YoutubeMusicApiService implements CachedMusicApiService {
         if (status == CacheStatus.COMPLETED || status == CacheStatus.DOWNLOADING || status == CacheStatus.PENDING) {
             return;
         }
-        localCacheService.submitDynamicDownload(key, resolveDownloadSource(videoId));
+        localCacheService.submitDynamicDownload(PLATFORM, key, resolveDownloadSource(videoId));
     }
 
     @Override

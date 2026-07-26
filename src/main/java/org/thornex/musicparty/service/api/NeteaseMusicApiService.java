@@ -293,7 +293,7 @@ public class NeteaseMusicApiService implements CachedMusicApiService {
         // 扩展名根据音质决定：exhigh 默认 mp3；lossless/hires 可能是 .flac
         String extension = ".mp3";
 
-        localCacheService.submitDownload(musicId, urlProvider, headers, extension);
+        localCacheService.submitDownload(PLATFORM, musicId, urlProvider, headers, extension);
     }
 
     /**

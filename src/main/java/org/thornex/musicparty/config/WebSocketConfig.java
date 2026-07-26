@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.HandlerMapping;
 import org.springframework.web.reactive.handler.SimpleUrlHandlerMapping;
@@ -20,7 +21,7 @@ import org.thornex.musicparty.service.WebSocketSessionCoordinator;
 import org.thornex.musicparty.security.SessionCookieService;
 import org.thornex.musicparty.websocket.ReactiveSocketBroker;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
+import reactor.core.scheduler.Scheduler;
 
 import java.net.URI;
 import java.util.Arrays;
@@ -40,6 +41,8 @@ public class WebSocketConfig {
     private final RoomAccessService roomAccessService;
     private final SessionCookieService sessionCookieService;
     private final AppProperties appProperties;
+    @Qualifier("dbReadScheduler")
+    private final Scheduler dbReadScheduler;
 
     @Bean
     HandlerMapping webSocketHandlerMapping() {
@@ -78,7 +81,7 @@ public class WebSocketConfig {
             }
             return StringUtils.hasText(accountSession.publicId())
                     && roomAccessService.hasActiveGrant(metadata.roomId(), accountSession.publicId());
-        }).subscribeOn(Schedulers.boundedElastic());
+        }).subscribeOn(dbReadScheduler);
     }
 
     private Mono<Void> handleAuthorized(WebSocketSession session) {
@@ -116,7 +119,7 @@ public class WebSocketConfig {
                 log.warn("WebSocket message rejected for session {}: {}", sessionId, ex.getMessage());
                 return Mono.empty();
             }
-        }).subscribeOn(Schedulers.boundedElastic()).then();
+        }).subscribeOn(dbReadScheduler).then();
     }
 
     private String firstQuery(WebSocketSession session, String... names) {

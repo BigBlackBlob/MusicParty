@@ -63,6 +63,10 @@ public class AppProperties {
         private boolean enabled = true;
         private String path = "data/musicparty.db";
         private boolean initSchema = true;
+        private int maxPoolSize = 3;
+        private int minIdle = 1;
+        private long connectionTimeoutMs = 5000;
+        private long busyTimeoutMs = 5000;
     }
 
     @Data
@@ -80,12 +84,27 @@ public class AppProperties {
         private int streamClientQueueCapacity = 32;
         private int streamWriterThreads = 8;
         private int downloadMaxQueuedTasks = 100;
+        private int downloadMaxActiveTasks = 3;
+        private long downloadReservationBytes = 32L * 1024L * 1024L;
+        private int neteaseDownloadConcurrency = 2;
+        private int bilibiliDownloadConcurrency = 1;
+        private int youtubeDownloadConcurrency = 1;
+        private int localDownloadConcurrency = 2;
         private long downloadTaskTtlMs = 30 * 60 * 1000L;
         private int coverColorCacheSize = 256;
         private int coverColorMaxConcurrent = 4;
         private int websocketClientQueueCapacity = 256;
         private int roomCommandQueueCapacity = 100;
         private long roomCommandQueueTimeoutMs = 5000;
+        private int dbWriteQueueCapacity = 100;
+        private int dbReadThreads = 2;
+        private int dbReadQueueCapacity = 100;
+        private int fileIoThreads = 4;
+        private int fileIoQueueCapacity = 200;
+        private int subprocessThreads = 2;
+        private int subprocessQueueCapacity = 20;
+        private int imageCpuThreads = Math.max(1, Runtime.getRuntime().availableProcessors());
+        private int imageCpuQueueCapacity = 100;
     }
 
     @Data

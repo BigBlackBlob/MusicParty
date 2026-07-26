@@ -189,7 +189,7 @@ public class BilibiliMusicApiService implements CachedMusicApiService {
         headers.put("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
 
         // 提交异步下载任务 (.m4a 是 B站 dash 音频的常用格式)
-        localCacheService.submitDownload(bvid, urlProvider, headers, ".m4a");
+        localCacheService.submitDownload(PLATFORM, bvid, urlProvider, headers, ".m4a");
     }
 
     @Override

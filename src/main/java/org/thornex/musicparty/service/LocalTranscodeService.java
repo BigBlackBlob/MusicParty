@@ -3,6 +3,7 @@ package org.thornex.musicparty.service;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.enums.LocalTrackStatus;
 import org.thornex.musicparty.persistence.LocalTrackRepository;
@@ -11,7 +12,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -20,12 +20,14 @@ import java.util.regex.Pattern;
 public class LocalTranscodeService {
     private final AppProperties appProperties;
     private final LocalTrackRepository repository;
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final ExecutorService executor;
     private static final Pattern TIME_PATTERN = Pattern.compile("time=(\\d+):(\\d+):(\\d+(?:\\.\\d+)?)");
 
-    public LocalTranscodeService(AppProperties appProperties, LocalTrackRepository repository) {
+    public LocalTranscodeService(AppProperties appProperties, LocalTrackRepository repository,
+                                 @Qualifier("subprocessExecutor") ExecutorService executor) {
         this.appProperties = appProperties;
         this.repository = repository;
+        this.executor = executor;
     }
 
     public void enqueue(String trackId, Path input) {
@@ -97,8 +99,4 @@ public class LocalTranscodeService {
         return (int) Math.max(0, Math.min(99, seconds * 1000 * 100 / durationMs));
     }
 
-    @PreDestroy
-    public void shutdown() {
-        executor.shutdownNow();
-    }
 }
