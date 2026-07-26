@@ -65,7 +65,9 @@ public class AccountService {
             throw new IllegalArgumentException("username already exists");
         }
         long now = System.currentTimeMillis();
-        return createAccount(normalizedUsername, password, "USER", now);
+        // First registered user becomes admin
+        String role = accountRepository.hasAdminAccount() ? "USER" : "ADMIN";
+        return createAccount(normalizedUsername, password, role, now);
     }
 
     private AccountSession createAccount(String normalizedUsername, String password, String role, long now) {

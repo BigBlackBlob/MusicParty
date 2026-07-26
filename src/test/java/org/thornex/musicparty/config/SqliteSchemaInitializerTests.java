@@ -52,6 +52,7 @@ class SqliteSchemaInitializerTests {
                 .isEqualTo("lounge");
         assertThat(jdbcTemplate.queryForList("select migration_key from migration_state order by migration_key", String.class))
                 .containsExactly(
+                        "schema.admin_bootstrap_claim.table",
                         "schema.local_track.original_hash_unique",
                         "schema.local_track.product_fields",
                         "schema.local_track.table",
@@ -82,7 +83,7 @@ class SqliteSchemaInitializerTests {
         initializer.initialize();
         initializer.initialize();
 
-        assertThat(jdbcTemplate.queryForObject("select count(1) from migration_state", Integer.class)).isEqualTo(17);
+        assertThat(jdbcTemplate.queryForObject("select count(1) from migration_state", Integer.class)).isEqualTo(18);
         assertThat(jdbcTemplate.queryForObject("select display_name from user_profile where public_id = 'u_legacy'", String.class))
                 .isEqualTo("Legacy User");
     }
