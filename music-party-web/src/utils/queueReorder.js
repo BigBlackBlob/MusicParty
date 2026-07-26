@@ -19,6 +19,11 @@ export const buildQueueReorderPayload = (queue, oldIndex, newIndex) => {
 
 const queueIdOf = (element) => element?.dataset?.queueId || '';
 
+export const isQueueReorderSourceCurrent = (queue, evt) => {
+  const movedId = queueIdOf(evt?.item);
+  return Boolean(movedId && Array.isArray(queue) && queue[evt.oldIndex]?.queueId === movedId);
+};
+
 export const buildQueueReorderPayloadFromDom = (evt) => {
   if (!evt || evt.oldIndex === evt.newIndex) return null;
   const movedId = queueIdOf(evt.item);
