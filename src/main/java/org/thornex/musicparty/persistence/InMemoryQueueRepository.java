@@ -31,6 +31,11 @@ public class InMemoryQueueRepository implements QueueRepository {
     }
 
     @Override
+    public void synchronizeQueue(String roomId, List<MusicQueueItem> queueItems) {
+        replaceQueue(roomId, queueItems);
+    }
+
+    @Override
     public List<PersistedHistoryEntry> loadHistory(String roomId, int limit) {
         List<PersistedHistoryEntry> entries = histories.getOrDefault(roomId, Collections.emptyList());
         return new ArrayList<>(entries.subList(0, Math.min(limit, entries.size())));

@@ -134,6 +134,19 @@ describe('player controls', () => {
     expect(player.queue.map(item => item.queueId)).toEqual(['a', 'b', 'c']);
   });
 
+  it('applies ordered queue patches and resyncs on a version gap', () => {
+    const player = usePlayerStore();
+    player.setQueue([{ queueId: 'a' }], 1, { snapshot: true });
+
+    expect(player.applyQueuePatch({ operation: 'append', queueVersion: 2, items: [{ queueId: 'b' }] })).toBe(true);
+    expect(player.queue.map(item => item.queueId)).toEqual(['a', 'b']);
+    expect(player.applyQueuePatch({ operation: 'remove', queueVersion: 3, queueIds: ['a'] })).toBe(true);
+    expect(player.queue.map(item => item.queueId)).toEqual(['b']);
+
+    expect(player.applyQueuePatch({ operation: 'append', queueVersion: 5, items: [{ queueId: 'c' }] })).toBe(false);
+    expect(socketService.send).toHaveBeenCalledWith(WS_DEST.RESYNC, { reason: 'queue-version-gap' });
+  });
+
   it('switches public rooms without room access verification', async () => {
     const roomStore = useRoomStore();
     const player = usePlayerStore();

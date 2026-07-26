@@ -83,6 +83,9 @@ public class AppProperties {
         private long downloadTaskTtlMs = 30 * 60 * 1000L;
         private int coverColorCacheSize = 256;
         private int coverColorMaxConcurrent = 4;
+        private int websocketClientQueueCapacity = 256;
+        private int roomCommandQueueCapacity = 100;
+        private long roomCommandQueueTimeoutMs = 5000;
     }
 
     @Data

@@ -69,6 +69,7 @@ create table if not exists room_queue (
 );
 
 create index if not exists idx_room_queue_room_sort on room_queue(room_id, sort_order);
+create unique index if not exists uq_room_queue_room_id on room_queue(room_id, id);
 
 create table if not exists room_playlist (
     id text primary key,

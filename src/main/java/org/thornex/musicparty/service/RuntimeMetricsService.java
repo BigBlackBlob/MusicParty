@@ -1,6 +1,7 @@
 package org.thornex.musicparty.service;
 
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.service.stream.LiveStreamService;
 import org.thornex.musicparty.websocket.ReactiveSocketBroker;
@@ -16,14 +17,27 @@ public class RuntimeMetricsService {
     private final LiveStreamService liveStreamService;
     private final ReactiveSocketBroker broker;
     private final AppProperties appProperties;
+    private final RoomService roomService;
 
+    public RuntimeMetricsService(MusicPlayerService musicPlayerService,
+                                 LocalCacheService localCacheService,
+                                 ChatService chatService,
+                                 SocketRateLimiter socketRateLimiter,
+                                  LiveStreamService liveStreamService,
+                                  ReactiveSocketBroker broker,
+                                  AppProperties appProperties) {
+        this(musicPlayerService, localCacheService, chatService, socketRateLimiter, liveStreamService, broker, appProperties, null);
+    }
+
+    @Autowired
     public RuntimeMetricsService(MusicPlayerService musicPlayerService,
                                  LocalCacheService localCacheService,
                                  ChatService chatService,
                                  SocketRateLimiter socketRateLimiter,
                                  LiveStreamService liveStreamService,
                                  ReactiveSocketBroker broker,
-                                 AppProperties appProperties) {
+                                 AppProperties appProperties,
+                                 RoomService roomService) {
         this.musicPlayerService = musicPlayerService;
         this.localCacheService = localCacheService;
         this.chatService = chatService;
@@ -31,6 +45,7 @@ public class RuntimeMetricsService {
         this.liveStreamService = liveStreamService;
         this.broker = broker;
         this.appProperties = appProperties;
+        this.roomService = roomService;
     }
 
     public Snapshot snapshot() {
@@ -40,8 +55,9 @@ public class RuntimeMetricsService {
                 runtime.totalMemory(),
                 runtime.maxMemory(),
                 ManagementFactory.getThreadMXBean().getThreadCount(),
-                musicPlayerService.getActiveRoomIds().size(),
+                roomService == null ? musicPlayerService.getActiveRoomIds().size() : roomService.getPersistedRoomCount(),
                 musicPlayerService.getLoadedRoomIds().size(),
+                musicPlayerService.getActivePlaybackRoomIds().size(),
                 broker.getSessionCount(),
                 broker.getSubscribedRoomCount(),
                 liveStreamService.getStreamListenerCount(),
@@ -60,8 +76,9 @@ public class RuntimeMetricsService {
             long heapCommittedBytes,
             long heapMaxBytes,
             int threadCount,
-            int activeRoomCount,
+            int persistedRoomCount,
             int loadedRoomSessionCount,
+            int activePlaybackRoomCount,
             int websocketSessionCount,
             int subscribedRoomCount,
             int streamListenerCount,

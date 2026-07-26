@@ -72,11 +72,21 @@ public class MusicSocketSessionFacade {
     }
 
     public void sendQueueReorderAck(String sessionId, String mutationId) {
-        broker.sendToSession(sessionId, "queue.reorder.ack", new QueueReorderResult(mutationId, null));
+        broker.sendToSession(sessionId, "queue.reorder.ack", new QueueReorderResult(mutationId, null, musicPlayerService.getQueueVersionForSession(sessionId)));
     }
 
     public void sendQueueReorderNack(String sessionId, String mutationId, String reason) {
-        broker.sendToSession(sessionId, "queue.reorder.nack", new QueueReorderResult(mutationId, reason));
+        broker.sendToSession(sessionId, "queue.reorder.nack", new QueueReorderResult(mutationId, reason, null));
+    }
+
+    public void sendQueueMutationAck(String sessionId, String mutationId) {
+        if (mutationId == null || mutationId.isBlank()) return;
+        broker.sendToSession(sessionId, "queue.mutation.ack", new QueueMutationResult(mutationId, null, musicPlayerService.getQueueVersionForSession(sessionId)));
+    }
+
+    public void sendQueueMutationNack(String sessionId, String mutationId, String reason) {
+        if (mutationId == null || mutationId.isBlank()) return;
+        broker.sendToSession(sessionId, "queue.mutation.nack", new QueueMutationResult(mutationId, reason, null));
     }
 
     public boolean renameAndBroadcast(String sessionId, String newName) {
@@ -121,5 +131,6 @@ public class MusicSocketSessionFacade {
         broker.sendToSession(sessionId, "public-chat.history", history);
     }
 
-    private record QueueReorderResult(String mutationId, String reason) {}
+    private record QueueReorderResult(String mutationId, String reason, Long queueVersion) {}
+    private record QueueMutationResult(String mutationId, String reason, Long queueVersion) {}
 }

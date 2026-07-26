@@ -20,6 +20,7 @@ import org.thornex.musicparty.service.UserService;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 
 @Component
 @Slf4j
@@ -67,13 +68,28 @@ public class MusicSocketController {
 
     public CompletableFuture<Void> dispatchAsync(String type, JsonNode payload, String sessionId) {
         if (isRoomMutation(type)) {
-            return roomCommandCoordinator.executeAsync(userService.getRoomIdForSession(sessionId), () -> {
+            return roomCommandCoordinator.<Void>executeAsync(userService.getRoomIdForSession(sessionId), () -> {
                 dispatchNow(type, payload, sessionId);
                 return null;
+            }).exceptionally(error -> {
+                Throwable cause = error instanceof CompletionException && error.getCause() != null ? error.getCause() : error;
+                if (cause instanceof RoomCommandCoordinator.CommandRejectedException || cause instanceof java.util.concurrent.TimeoutException) {
+                    rejectRoomCommand(type, payload, sessionId, cause.getMessage());
+                    return null;
+                }
+                throw new CompletionException(cause);
             });
         }
         dispatchNow(type, payload, sessionId);
         return CompletableFuture.completedFuture(null);
+    }
+
+    private void rejectRoomCommand(String type, JsonNode payload, String sessionId, String reason) {
+        if ("queue.reorder".equals(type) || "/queue/reorder".equals(type)) {
+            musicSocketSessionFacade.sendQueueReorderNack(sessionId, payload.path("mutationId").asText(null), reason);
+            return;
+        }
+        musicSocketSessionFacade.sendControlDenied(sessionId, "COMMAND_REJECTED", "房间操作队列繁忙，请稍后重试");
     }
 
     private void dispatchNow(String type, JsonNode payload, String sessionId) {
@@ -219,25 +235,25 @@ public class MusicSocketController {
     public void topSong(QueueActionRequest request, String sessionId) {
         if (denyRateLimited(sessionId, "queue")) return;
         if (denyGuest(sessionId, "CONTROL_DENIED", "请先设置昵称再操作队列")) return;
-        musicPlayerService.topSong(request.queueId(), sessionId);
+        executeQueueMutation(sessionId, request.mutationId(), () -> musicPlayerService.topSong(request.queueId(), sessionId));
     }
 
     public void topSongs(QueueBatchActionRequest request, String sessionId) {
         if (denyRateLimited(sessionId, "queue")) return;
         if (denyGuest(sessionId, "CONTROL_DENIED", "请先设置昵称再操作队列")) return;
-        musicPlayerService.topSongs(request.queueIds(), sessionId);
+        executeQueueMutation(sessionId, request.mutationId(), () -> musicPlayerService.topSongs(request.queueIds(), sessionId));
     }
 
     public void removeSong(QueueActionRequest request, String sessionId) {
         if (denyRateLimited(sessionId, "queue")) return;
         if (denyGuest(sessionId, "CONTROL_DENIED", "请先设置昵称再操作队列")) return;
-        musicPlayerService.removeSongFromQueue(request.queueId(), sessionId);
+        executeQueueMutation(sessionId, request.mutationId(), () -> musicPlayerService.removeSongFromQueue(request.queueId(), sessionId));
     }
 
     public void removeSongs(QueueBatchActionRequest request, String sessionId) {
         if (denyRateLimited(sessionId, "queue")) return;
         if (denyGuest(sessionId, "CONTROL_DENIED", "请先设置昵称再操作队列")) return;
-        musicPlayerService.removeSongsFromQueue(request.queueIds(), sessionId);
+        executeQueueMutation(sessionId, request.mutationId(), () -> musicPlayerService.removeSongsFromQueue(request.queueIds(), sessionId));
     }
 
     public void reorderQueue(QueueReorderRequest request, String sessionId) {
@@ -328,6 +344,16 @@ public class MusicSocketController {
 
     private boolean isGuest(String sessionId) {
         return userService.getUser(sessionId).map(User::isGuest).orElse(true);
+    }
+
+    private void executeQueueMutation(String sessionId, String mutationId, Runnable mutation) {
+        try {
+            mutation.run();
+            musicSocketSessionFacade.sendQueueMutationAck(sessionId, mutationId);
+        } catch (RuntimeException error) {
+            musicSocketSessionFacade.sendQueueMutationNack(sessionId, mutationId, "PERSISTENCE_FAILED");
+            throw error;
+        }
     }
 
     private boolean denyGuest(String sessionId, String action, String message) {

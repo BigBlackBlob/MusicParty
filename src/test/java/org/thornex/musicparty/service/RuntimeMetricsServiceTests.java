@@ -43,7 +43,7 @@ class RuntimeMetricsServiceTests {
 
         assertThat(snapshot.heapUsedBytes()).isPositive();
         assertThat(snapshot.threadCount()).isPositive();
-        assertThat(snapshot.activeRoomCount()).isEqualTo(2);
+        assertThat(snapshot.persistedRoomCount()).isEqualTo(2);
         assertThat(snapshot.loadedRoomSessionCount()).isEqualTo(1);
         assertThat(snapshot.cacheEntryCount()).isEqualTo(3);
         assertThat(snapshot.pendingDownloadTaskCount()).isEqualTo(2);

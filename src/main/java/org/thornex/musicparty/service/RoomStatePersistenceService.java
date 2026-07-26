@@ -44,7 +44,7 @@ public class RoomStatePersistenceService {
     }
 
     public void persistQueueSnapshot(String roomId, List<MusicQueueItem> queueItems) {
-        queueRepository.replaceQueue(roomId, queueItems);
+        queueRepository.synchronizeQueue(roomId, queueItems);
     }
 
     public void persistHistorySnapshot(String roomId, List<Music> historyItems) {

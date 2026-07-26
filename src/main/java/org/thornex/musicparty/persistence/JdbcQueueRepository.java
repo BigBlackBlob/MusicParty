@@ -4,7 +4,10 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -16,9 +19,11 @@ import org.thornex.musicparty.dto.RoomPlaylistTrack;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Repository
-@RequiredArgsConstructor
 @ConditionalOnProperty(prefix = "app.music-api.database", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class JdbcQueueRepository implements QueueRepository {
 
@@ -27,6 +32,18 @@ public class JdbcQueueRepository implements QueueRepository {
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final MeterRegistry meterRegistry;
+
+    public JdbcQueueRepository(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+        this(jdbcTemplate, objectMapper, new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+    }
+
+    @Autowired
+    public JdbcQueueRepository(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper, MeterRegistry meterRegistry) {
+        this.jdbcTemplate = jdbcTemplate;
+        this.objectMapper = objectMapper;
+        this.meterRegistry = meterRegistry;
+    }
 
     @Override
     public List<MusicQueueItem> loadQueue(String roomId) {
@@ -57,6 +74,72 @@ public class JdbcQueueRepository implements QueueRepository {
                     i,
                     System.currentTimeMillis());
         }
+    }
+
+    @Override
+    @Transactional
+    public void synchronizeQueue(String roomId, List<MusicQueueItem> queueItems) {
+        Timer.Sample sample = Timer.start(meterRegistry);
+        List<MusicQueueItem> desired = queueItems == null ? List.of() : queueItems;
+        Set<String> existingIds = Set.copyOf(jdbcTemplate.queryForList(
+                "select id from room_queue where room_id = ?", String.class, roomId));
+        Map<String, Integer> desiredPositions = java.util.stream.IntStream.range(0, desired.size())
+                .boxed()
+                .collect(Collectors.toMap(index -> desired.get(index).queueId(), index -> index));
+
+        List<String> removedIds = existingIds.stream()
+                .filter(id -> !desiredPositions.containsKey(id))
+                .toList();
+        if (!removedIds.isEmpty()) {
+            jdbcTemplate.batchUpdate("delete from room_queue where room_id = ? and id = ?", removedIds,
+                    removedIds.size(), (ps, id) -> {
+                        ps.setString(1, roomId);
+                        ps.setString(2, id);
+                    });
+        }
+
+        List<MusicQueueItem> inserted = desired.stream()
+                .filter(item -> !existingIds.contains(item.queueId()))
+                .toList();
+        if (!inserted.isEmpty()) {
+            jdbcTemplate.batchUpdate("""
+                    insert into room_queue(id, room_id, music_json, enqueuer_public_id, enqueuer_name_snapshot, status, sort_order, created_at)
+                    values (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, inserted, inserted.size(), (ps, item) -> {
+                        ps.setString(1, item.queueId());
+                        ps.setString(2, roomId);
+                        ps.setString(3, writeJson(item));
+                        ps.setString(4, item.enqueuedBy().publicId());
+                        ps.setString(5, item.enqueuedBy().name());
+                        ps.setString(6, item.status().name());
+                        ps.setInt(7, desiredPositions.get(item.queueId()));
+                        ps.setLong(8, System.currentTimeMillis());
+                    });
+        }
+
+        List<MusicQueueItem> updated = desired.stream()
+                .filter(item -> existingIds.contains(item.queueId()))
+                .toList();
+        if (!updated.isEmpty()) {
+            jdbcTemplate.batchUpdate("""
+                    update room_queue
+                    set music_json = ?, enqueuer_public_id = ?, enqueuer_name_snapshot = ?, status = ?, sort_order = ?
+                    where room_id = ? and id = ?
+                    """, updated, updated.size(), (ps, item) -> {
+                        ps.setString(1, writeJson(item));
+                        ps.setString(2, item.enqueuedBy().publicId());
+                        ps.setString(3, item.enqueuedBy().name());
+                        ps.setString(4, item.status().name());
+                        ps.setInt(5, desiredPositions.get(item.queueId()));
+                        ps.setString(6, roomId);
+                        ps.setString(7, item.queueId());
+                    });
+        }
+        meterRegistry.counter("musicparty.queue.persistence.rows", "operation", "delete").increment(removedIds.size());
+        meterRegistry.counter("musicparty.queue.persistence.rows", "operation", "insert").increment(inserted.size());
+        meterRegistry.counter("musicparty.queue.persistence.rows", "operation", "update").increment(updated.size());
+        meterRegistry.summary("musicparty.queue.length").record(desired.size());
+        sample.stop(meterRegistry.timer("musicparty.queue.persistence.transaction"));
     }
 
     @Override

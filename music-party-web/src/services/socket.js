@@ -11,6 +11,14 @@ class SocketService {
         this.maxReconnectDelay = 10000;
         this.intentionalClose = false;
         this.requestSeq = 0;
+        this.onOnline = () => {
+            if (!this.intentionalClose && this.socketConfig && !this.connected) this.reconnectNow();
+        };
+        this.onOffline = () => this.clearReconnectTimer();
+        if (typeof window !== 'undefined') {
+            window.addEventListener('online', this.onOnline);
+            window.addEventListener('offline', this.onOffline);
+        }
     }
 
     connect(authParams = {}, callbacks = {}, handlers = {}) {
@@ -141,11 +149,13 @@ class SocketService {
 
     scheduleReconnect() {
         if (this.reconnectTimer || !this.socketConfig) return;
+        if (typeof navigator !== 'undefined' && !navigator.onLine) return;
         const config = this.socketConfig;
+        const delay = Math.round(this.reconnectDelay * (0.8 + Math.random() * 0.4));
         this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = null;
             this.connect(config.authParams, config.callbacks, config.handlers);
-        }, this.reconnectDelay);
+        }, delay);
         this.reconnectDelay = Math.min(this.reconnectDelay * 2, this.maxReconnectDelay);
     }
 

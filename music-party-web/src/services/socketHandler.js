@@ -126,6 +126,10 @@ export const createSocketHandlers = (stores = {}) => {
             const queue = Array.isArray(data) ? data : data?.queue;
             player?.setQueue?.(queue, data?.queueVersion);
         },
+        [WS_DEST.QUEUE_PATCH]: (patch, envelope) => {
+            if (envelope?.roomId && envelope.roomId !== roomStore?.currentRoomId) return;
+            player?.applyQueuePatch?.(patch);
+        },
         [WS_DEST.QUEUE_REORDER_ACK]: (data) => player?.settleQueueReorder?.(data?.mutationId, true),
         [WS_DEST.QUEUE_REORDER_NACK]: (data) => player?.settleQueueReorder?.(data?.mutationId, false, data?.reason),
 
@@ -192,14 +196,14 @@ export const createSocketCallbacks = (stores = {}) => {
         // 连接成功
         onConnect: () => {
             setConnected?.(true);
-            startHeartbeat?.();
             resetSyncGate?.();
+            requestResync?.('connect', true);
+            startHeartbeat?.();
             socketService.send(WS_DEST.USER_ME);
             socketService.send(WS_DEST.USERS_ONLINE);
             requestPing?.('connect', true);
             // 发起同步
             setTimeout(() => {
-                requestResync?.('connect', true);
                 requestChatHistory?.(true);
                 requestPublicChatHistory?.(true);
             }, 300);

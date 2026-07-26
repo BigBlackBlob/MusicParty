@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "test": "node ./scripts/run-vitest.mjs",
-    "test:run": "node ./scripts/run-vitest.mjs run"
+    "test:run": "node ./scripts/run-vitest.mjs run",
+    "benchmark:queue-state": "node ./scripts/queue-state-benchmark.mjs"
   },
   "dependencies": {
     "@vueuse/core": "^14.1.0",

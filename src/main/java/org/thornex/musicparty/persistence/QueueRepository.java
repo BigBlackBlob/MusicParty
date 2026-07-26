@@ -9,6 +9,7 @@ import java.util.List;
 public interface QueueRepository {
     List<MusicQueueItem> loadQueue(String roomId);
     void replaceQueue(String roomId, List<MusicQueueItem> queueItems);
+    void synchronizeQueue(String roomId, List<MusicQueueItem> queueItems);
     List<PersistedHistoryEntry> loadHistory(String roomId, int limit);
     int countHistoryTracks(String roomId);
     List<RoomPlaylistTrack> listHistoryTracks(String roomId, int offset, int limit);

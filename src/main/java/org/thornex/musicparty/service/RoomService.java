@@ -71,6 +71,10 @@ public class RoomService {
                 .toList();
     }
 
+    public int getPersistedRoomCount() {
+        return listRooms().size();
+    }
+
     public List<RoomInfo> listLobbyRooms(String requesterPublicId) {
         ensureDefaultRoom();
         return roomRepository.findLobbyRooms(requesterPublicId).stream()

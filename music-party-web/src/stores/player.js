@@ -96,9 +96,13 @@ export const usePlayerStore = defineStore('player', () => {
         deferredQueueUpdate = null;
     };
 
-    const setQueue = (nextQueue, queueVersion = null) => {
+    const setQueue = (nextQueue, queueVersion = null, { snapshot = false } = {}) => {
         const version = Number.isFinite(queueVersion) ? queueVersion : null;
         if (version !== null && version <= lastQueueVersion.value) return false;
+        if (!snapshot && version !== null && lastQueueVersion.value > 0 && version > lastQueueVersion.value + 1) {
+            requestResync('queue-version-gap', true);
+            return false;
+        }
         if (version !== null) lastQueueVersion.value = version;
 
         const update = { queue: Array.isArray(nextQueue) ? nextQueue : [], version };
@@ -108,6 +112,36 @@ export const usePlayerStore = defineStore('player', () => {
         }
         queue.value = update.queue;
         return true;
+    };
+
+    const applyQueuePatch = (patch) => {
+        if (!patch || !Number.isFinite(patch.queueVersion)) {
+            requestResync('queue-patch-invalid', true);
+            return false;
+        }
+        if (patch.operation === 'snapshot') {
+            return setQueue(patch.queue, patch.queueVersion, { snapshot: true });
+        }
+        if (patch.queueVersion !== lastQueueVersion.value + 1) {
+            requestResync('queue-version-gap', true);
+            return false;
+        }
+
+        let nextQueue = queue.value;
+        if (patch.operation === 'append') {
+            const incoming = Array.isArray(patch.items) ? patch.items : [];
+            const existingIds = new Set(queue.value.map(item => item.queueId));
+            nextQueue = [...queue.value, ...incoming.filter(item => item?.queueId && !existingIds.has(item.queueId))];
+        } else if (patch.operation === 'remove') {
+            const removedIds = new Set(Array.isArray(patch.queueIds) ? patch.queueIds : []);
+            nextQueue = queue.value.filter(item => !removedIds.has(item.queueId));
+        } else if (patch.operation === 'move') {
+            nextQueue = applyQueueReorder(queue.value, patch);
+        } else {
+            requestResync('queue-patch-unknown', true);
+            return false;
+        }
+        return setQueue(nextQueue, patch.queueVersion);
     };
 
     const applyDeferredQueueUpdate = () => {
@@ -266,7 +300,11 @@ export const usePlayerStore = defineStore('player', () => {
         }
 
         nowPlaying.value = state.nowPlaying;
-        setQueue(state.queue || []);
+        const incomingQueueVersion = Number.isFinite(state.queueVersion) ? state.queueVersion : null;
+        // A legacy state payload has no queue version and must not overwrite a newer queue event.
+        if (incomingQueueVersion !== null || lastQueueVersion.value === 0) {
+            setQueue(state.queue || [], incomingQueueVersion);
+        }
         isPaused.value = state.isPaused;
         isShuffle.value = state.isShuffle;
         isPauseLocked.value = state.isPauseLocked || false;
@@ -306,7 +344,8 @@ export const usePlayerStore = defineStore('player', () => {
                 syncState,
                 handleSyncPong,
                 switchRoom,
-                setQueue
+                setQueue,
+                applyQueuePatch
             },
             userStore,
             chatStore: useChatStore(),
@@ -419,18 +458,19 @@ remotePosition.value = 0;
     const enqueue = (platform, musicId) => requireAuth() && socketService.send(WS_DEST.ENQUEUE, { platform, musicId });
     const enqueuePlaylist = (platform, playlistId) => requireAuth() && socketService.send(WS_DEST.ENQUEUE_PLAYLIST, { platform, playlistId });
     const enqueueAlbum = (platform, albumId) => requireAuth() && socketService.send(WS_DEST.ENQUEUE_ALBUM, { platform, albumId });
-    const topSong = (queueId) => requireAuth() && socketService.send(WS_DEST.QUEUE_TOP, { queueId });
-    const removeSong = (queueId) => requireAuth() && socketService.send(WS_DEST.QUEUE_REMOVE, { queueId });
+    const queueMutationId = (operation) => `queue-${operation}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const topSong = (queueId) => requireAuth() && socketService.send(WS_DEST.QUEUE_TOP, { queueId, mutationId: queueMutationId('top') });
+    const removeSong = (queueId) => requireAuth() && socketService.send(WS_DEST.QUEUE_REMOVE, { queueId, mutationId: queueMutationId('remove') });
     const topSongs = (queueIds) => {
         if (!Array.isArray(queueIds) || queueIds.length === 0) return;
         if (!requireAuth()) return false;
-        socketService.send(WS_DEST.QUEUE_BATCH_TOP, { queueIds });
+        socketService.send(WS_DEST.QUEUE_BATCH_TOP, { queueIds, mutationId: queueMutationId('batch-top') });
         return true;
     };
     const removeSongs = (queueIds) => {
         if (!Array.isArray(queueIds) || queueIds.length === 0) return;
         if (!requireAuth()) return false;
-        socketService.send(WS_DEST.QUEUE_BATCH_REMOVE, { queueIds });
+        socketService.send(WS_DEST.QUEUE_BATCH_REMOVE, { queueIds, mutationId: queueMutationId('batch-remove') });
         setTimeout(() => requestResync('batch-remove', true), 250);
         return true;
     };
@@ -674,7 +714,7 @@ remotePosition.value = 0;
         localProgress, playbackPositionMs, isBuffering, bufferedMs, isErrorState, streamListenerCount, lastSyncTime, lastRttMs,
         isSeekingPreview, forceNextSyncSeek, setSeekingPreview,
         setPlaybackPosition,
-        connect, tryReconnect, reconnectToCurrentRoom, switchRoom, resetRoomState, resetSyncGate, getCurrentProgress, syncState, handleSyncPong, requestPing, requestResync, requestSyncRefresh, setQueue, settleQueueReorder,
+        connect, tryReconnect, reconnectToCurrentRoom, switchRoom, resetRoomState, resetSyncGate, getCurrentProgress, syncState, handleSyncPong, requestPing, requestResync, requestSyncRefresh, setQueue, applyQueuePatch, settleQueueReorder,
         playNext, togglePause, toggleShuffle,
         seek,
         enqueue, enqueuePlaylist, enqueueAlbum, topSong, removeSong, topSongs, removeSongs, topSongsCompat, removeSongsCompat,

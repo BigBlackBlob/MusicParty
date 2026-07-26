@@ -37,10 +37,15 @@ public class WebSocketBroadcaster {
     @EventListener
     public void onQueueChanged(QueueUpdateEvent event) {
         afterCommitExecutor.run(() ->
-                broker.broadcastRoom(event.getRoomId(), "player.queue", new QueuePayload(event.getQueue(), event.getQueueVersion())));
+                broker.broadcastRoom(event.getRoomId(), "queue.patch", new QueuePatchPayload(
+                        event.getPatch().operation(), event.getQueueVersion(), event.getQueue(), event.getPatch().items(),
+                        event.getPatch().queueIds(), event.getPatch().queueId(), event.getPatch().targetQueueId(), event.getPatch().position())));
     }
 
-    private record QueuePayload(java.util.List<org.thornex.musicparty.dto.MusicQueueItem> queue, long queueVersion) {}
+    private record QueuePatchPayload(String operation, long queueVersion,
+                                     java.util.List<org.thornex.musicparty.dto.MusicQueueItem> queue,
+                                     java.util.List<org.thornex.musicparty.dto.MusicQueueItem> items,
+                                     java.util.List<String> queueIds, String queueId, String targetQueueId, String position) {}
 
     /**
      * 监听系统消息事件（用于 Toast 通知等）
