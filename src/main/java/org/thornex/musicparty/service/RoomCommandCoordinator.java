@@ -17,7 +17,7 @@ public class RoomCommandCoordinator {
     private final Map<String, QueueState> queues = new ConcurrentHashMap<>();
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
-    public <T> T execute(String roomId, Callable<T> command) {
+    public <T> CompletableFuture<T> executeAsync(String roomId, Callable<T> command) {
         QueueState state = queues.computeIfAbsent(roomId, ignored -> new QueueState());
         CompletableFuture<T> result = new CompletableFuture<>();
         state.pending.add(() -> {
@@ -25,7 +25,11 @@ public class RoomCommandCoordinator {
             catch (Throwable error) { result.completeExceptionally(error); }
         });
         drain(state);
-        return result.join();
+        return result;
+    }
+
+    public <T> T execute(String roomId, Callable<T> command) {
+        return executeAsync(roomId, command).join();
     }
 
     public void closeRoom(String roomId) {

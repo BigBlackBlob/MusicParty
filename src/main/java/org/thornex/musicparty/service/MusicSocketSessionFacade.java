@@ -71,6 +71,14 @@ public class MusicSocketSessionFacade {
         });
     }
 
+    public void sendQueueReorderAck(String sessionId, String mutationId) {
+        broker.sendToSession(sessionId, "queue.reorder.ack", new QueueReorderResult(mutationId, null));
+    }
+
+    public void sendQueueReorderNack(String sessionId, String mutationId, String reason) {
+        broker.sendToSession(sessionId, "queue.reorder.nack", new QueueReorderResult(mutationId, reason));
+    }
+
     public boolean renameAndBroadcast(String sessionId, String newName) {
         if (!userService.renameUser(sessionId, newName)) {
             return false;
@@ -112,4 +120,6 @@ public class MusicSocketSessionFacade {
     public void sendPublicChatHistory(String sessionId, List<ChatMessage> history) {
         broker.sendToSession(sessionId, "public-chat.history", history);
     }
+
+    private record QueueReorderResult(String mutationId, String reason) {}
 }

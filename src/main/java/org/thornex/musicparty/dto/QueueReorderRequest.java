@@ -5,5 +5,6 @@ public record QueueReorderRequest(
         int newIndex,
         String queueId,
         String targetQueueId,
-        String position
+        String position,
+        String mutationId
 ) {}
