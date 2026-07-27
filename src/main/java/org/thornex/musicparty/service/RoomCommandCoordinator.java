@@ -30,7 +30,7 @@ public class RoomCommandCoordinator {
     private final long commandQueueTimeoutMs;
 
     public RoomCommandCoordinator(AppProperties appProperties, MeterRegistry meterRegistry,
-                                  @Qualifier("dbWriteExecutor") ExecutorService executor) {
+                                  @Qualifier("dbReadExecutor") ExecutorService executor) {
         this.meterRegistry = meterRegistry;
         this.executor = executor;
         this.maxPendingCommands = appProperties.getPerformance().getRoomCommandQueueCapacity();

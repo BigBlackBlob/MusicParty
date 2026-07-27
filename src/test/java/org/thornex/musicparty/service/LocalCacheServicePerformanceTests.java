@@ -2,12 +2,18 @@ package org.thornex.musicparty.service;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.enums.CacheStatus;
 import reactor.core.publisher.Mono;
 
 import java.lang.reflect.Modifier;
+import java.lang.reflect.Method;
+import java.time.Duration;
+import java.util.concurrent.TimeoutException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -87,6 +93,31 @@ class LocalCacheServicePerformanceTests {
 
         // 清理测试目录
         java.nio.file.Files.deleteIfExists(partFile);
+    }
+
+    @Test
+    void downloadRetryClassificationHonorsRetryAfterAndDoesNotRetryAuthFailures() throws Exception {
+        AppProperties properties = new AppProperties();
+        properties.getPerformance().setDownloadMaxRetries(2);
+        properties.getPerformance().setDownloadRetryInitialDelayMs(10);
+        properties.getPerformance().setDownloadRetryMaxDelayMs(100);
+        LocalCacheService service = newService(properties);
+        Method retryDelay = LocalCacheService.class.getDeclaredMethod("retryDelay", Throwable.class, int.class);
+        retryDelay.setAccessible(true);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Retry-After", "1");
+        WebClientResponseException rateLimited = WebClientResponseException.create(429, "Too Many Requests", headers,
+                new byte[0], null);
+        WebClientResponseException serverError = WebClientResponseException.create(500, "Server Error", HttpHeaders.EMPTY,
+                new byte[0], null);
+        WebClientResponseException unauthorized = WebClientResponseException.create(401, "Unauthorized", HttpHeaders.EMPTY,
+                new byte[0], null);
+
+        assertThat((Duration) retryDelay.invoke(service, rateLimited, 0)).isEqualTo(Duration.ofMillis(100));
+        assertThat((Duration) retryDelay.invoke(service, serverError, 0)).isNotNull();
+        assertThat((Duration) retryDelay.invoke(service, new TimeoutException("fixture"), 0)).isNotNull();
+        assertThat(retryDelay.invoke(service, unauthorized, 0)).isNull();
     }
 
     private LocalCacheService newService(AppProperties properties) {

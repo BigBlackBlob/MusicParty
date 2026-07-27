@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import org.junit.jupiter.api.Test;
 import org.thornex.musicparty.dto.SeekRequest;
+import org.thornex.musicparty.dto.QueueReorderRequest;
 import org.thornex.musicparty.dto.User;
 import org.thornex.musicparty.service.AccountService;
 import org.thornex.musicparty.service.ChatService;
@@ -21,6 +22,7 @@ import java.util.Optional;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.never;
 
 class MusicSocketControllerTests {
 
@@ -66,6 +68,21 @@ class MusicSocketControllerTests {
         context.controller.dispatch("users.online", JsonNodeFactory.instance.objectNode(), "ws-user");
 
         verify(context.musicSocketSessionFacade).sendOnlineUsers("ws-user");
+    }
+
+    @Test
+    void reorderSendsNackInsteadOfAckWhenPersistenceFails() {
+        TestContext context = new TestContext();
+        User user = new User("user-token", "u-user", "ws-user", "User");
+        when(context.socketRateLimiter.allow("ws-user", "queue.reorder")).thenReturn(true);
+        when(context.userService.getUser("ws-user")).thenReturn(Optional.of(user));
+        when(context.musicPlayerService.reorderQueue("queue-a", "queue-b", "after", "ws-user"))
+                .thenThrow(new IllegalStateException("SQLITE_BUSY"));
+
+        context.controller.reorderQueue(new QueueReorderRequest(0, 1, "queue-a", "queue-b", "after", "mutation-1"), "ws-user");
+
+        verify(context.musicSocketSessionFacade).sendQueueReorderNack("ws-user", "mutation-1", "PERSISTENCE_FAILED");
+        verify(context.musicSocketSessionFacade, never()).sendQueueReorderAck("ws-user", "mutation-1");
     }
 
     private static final class TestContext {

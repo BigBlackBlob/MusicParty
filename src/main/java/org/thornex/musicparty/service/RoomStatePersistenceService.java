@@ -1,6 +1,5 @@
 package org.thornex.musicparty.service;
 
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.thornex.musicparty.dto.ChatMessage;
@@ -25,59 +24,72 @@ public class RoomStatePersistenceService {
     private final ChatRepository chatRepository;
     private final PlaybackStateRepository playbackStateRepository;
     private final RoomPlaylistRepository roomPlaylistRepository;
+    private final DatabaseWriteExecutor databaseWriteExecutor;
+    private final RoomStateWriteTransactionService roomStateWriteTransactionService;
 
     public RoomStatePersistenceService(QueueRepository queueRepository,
                                        ChatRepository chatRepository,
                                        PlaybackStateRepository playbackStateRepository) {
-        this(queueRepository, chatRepository, playbackStateRepository, new InMemoryRoomPlaylistRepository());
+        this(queueRepository, chatRepository, playbackStateRepository, new InMemoryRoomPlaylistRepository(), null, null);
     }
 
     @Autowired
     public RoomStatePersistenceService(QueueRepository queueRepository,
                                        ChatRepository chatRepository,
                                        PlaybackStateRepository playbackStateRepository,
-                                       RoomPlaylistRepository roomPlaylistRepository) {
+                                       RoomPlaylistRepository roomPlaylistRepository,
+                                       DatabaseWriteExecutor databaseWriteExecutor,
+                                       RoomStateWriteTransactionService roomStateWriteTransactionService) {
         this.queueRepository = queueRepository;
         this.chatRepository = chatRepository;
         this.playbackStateRepository = playbackStateRepository;
         this.roomPlaylistRepository = roomPlaylistRepository;
+        this.databaseWriteExecutor = databaseWriteExecutor;
+        this.roomStateWriteTransactionService = roomStateWriteTransactionService;
+    }
+
+    public RoomStatePersistenceService(QueueRepository queueRepository,
+                                       ChatRepository chatRepository,
+                                       PlaybackStateRepository playbackStateRepository,
+                                       RoomPlaylistRepository roomPlaylistRepository) {
+        this(queueRepository, chatRepository, playbackStateRepository, roomPlaylistRepository, null, null);
     }
 
     public void persistQueueSnapshot(String roomId, List<MusicQueueItem> queueItems) {
-        queueRepository.synchronizeQueue(roomId, queueItems);
+        write(() -> queueRepository.synchronizeQueue(roomId, queueItems));
     }
 
     public void persistHistorySnapshot(String roomId, List<Music> historyItems) {
-        queueRepository.replaceHistory(roomId, historyItems);
+        write(() -> queueRepository.replaceHistory(roomId, historyItems));
     }
 
     public void appendHistoryEntry(String roomId, Music music, String enqueuerPublicId) {
         if (music == null) {
             return;
         }
-        queueRepository.appendHistory(new PersistedHistoryEntry(
+        write(() -> queueRepository.appendHistory(new PersistedHistoryEntry(
                 UUID.randomUUID().toString(),
                 roomId,
                 music,
                 enqueuerPublicId,
                 System.currentTimeMillis()
-        ));
+        )));
     }
 
     public void persistRoomMessage(String roomId, ChatMessage message) {
-        chatRepository.appendMessage(roomId, message);
+        write(() -> chatRepository.appendMessage(roomId, message));
     }
 
     public void persistPublicMessage(ChatMessage message) {
-        chatRepository.appendMessage(null, message);
+        write(() -> chatRepository.appendMessage(null, message));
     }
 
     public void replaceRoomMessages(String roomId, List<ChatMessage> messages) {
-        chatRepository.replaceMessages(roomId, messages);
+        write(() -> chatRepository.replaceMessages(roomId, messages));
     }
 
     public void replacePublicMessages(List<ChatMessage> messages) {
-        chatRepository.replaceMessages(null, messages);
+        write(() -> chatRepository.replaceMessages(null, messages));
     }
 
     public List<ChatMessage> loadRoomMessages(String roomId, int limit) {
@@ -89,10 +101,12 @@ public class RoomStatePersistenceService {
     }
 
     public void deleteRoomData(String roomId) {
-        queueRepository.deleteRoomData(roomId);
-        chatRepository.deleteRoomHistory(roomId);
-        playbackStateRepository.delete(roomId);
-        roomPlaylistRepository.deleteRoomData(roomId);
+        write(() -> {
+            queueRepository.deleteRoomData(roomId);
+            chatRepository.deleteRoomHistory(roomId);
+            playbackStateRepository.delete(roomId);
+            roomPlaylistRepository.deleteRoomData(roomId);
+        });
     }
 
     public List<MusicQueueItem> loadQueue(String roomId) {
@@ -110,26 +124,39 @@ public class RoomStatePersistenceService {
     }
 
     public void persistPlaybackState(PersistedPlaybackState state) {
-        playbackStateRepository.upsert(state);
+        write(() -> playbackStateRepository.upsert(state));
     }
 
-    @Transactional
     public void flushPlayerState(String roomId,
                                 List<MusicQueueItem> queueItems,
                                 List<Music> historyItems,
                                 PersistedPlaybackState playbackState) {
-        queueRepository.replaceQueue(roomId, queueItems);
-        queueRepository.replaceHistory(roomId, historyItems);
-        playbackStateRepository.upsert(playbackState);
+        if (roomStateWriteTransactionService != null) {
+            write(() -> roomStateWriteTransactionService.flush(roomId, queueItems, historyItems, playbackState));
+            return;
+        }
+        write(() -> {
+            queueRepository.synchronizeQueue(roomId, queueItems);
+            queueRepository.replaceHistory(roomId, historyItems);
+            playbackStateRepository.upsert(playbackState);
+        });
     }
 
     public void deletePlaybackState(String roomId) {
-        playbackStateRepository.delete(roomId);
+        write(() -> playbackStateRepository.delete(roomId));
     }
 
     private List<ChatMessage> restoreChronological(List<ChatMessage> reverseChronological) {
         java.util.ArrayList<ChatMessage> chronological = new java.util.ArrayList<>(reverseChronological);
         java.util.Collections.reverse(chronological);
         return chronological;
+    }
+
+    private void write(Runnable operation) {
+        if (databaseWriteExecutor == null) {
+            operation.run();
+        } else {
+            databaseWriteExecutor.execute(operation);
+        }
     }
 }

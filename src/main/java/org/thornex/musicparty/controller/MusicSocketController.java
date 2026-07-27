@@ -3,6 +3,7 @@ package org.thornex.musicparty.controller;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
 import lombok.extern.slf4j.Slf4j;
 import org.thornex.musicparty.dto.*;
 import org.thornex.musicparty.service.ChatService;
@@ -16,6 +17,8 @@ import org.thornex.musicparty.service.RoomPlaylistService;
 import org.thornex.musicparty.service.RoomService;
 import org.thornex.musicparty.service.SocketRateLimiter;
 import org.thornex.musicparty.service.UserService;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 
 import java.util.List;
 import java.util.UUID;
@@ -37,7 +40,25 @@ public class MusicSocketController {
     private final AccountService accountService;
     private final ObjectMapper objectMapper;
     private final RoomCommandCoordinator roomCommandCoordinator;
+    private final MeterRegistry meterRegistry;
 
+    public MusicSocketController(MusicPlayerService musicPlayerService,
+                                 UserService userService,
+                                 ChatService chatService,
+                                 RoomService roomService,
+                                 RoomLifecycleService roomLifecycleService,
+                                 MusicSocketSessionFacade musicSocketSessionFacade,
+                                 SocketRateLimiter socketRateLimiter,
+                                 RoomPlaylistService roomPlaylistService,
+                                 AccountService accountService,
+                                 ObjectMapper objectMapper,
+                                 RoomCommandCoordinator roomCommandCoordinator) {
+        this(musicPlayerService, userService, chatService, roomService, roomLifecycleService, musicSocketSessionFacade,
+                socketRateLimiter, roomPlaylistService, accountService, objectMapper, roomCommandCoordinator,
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
+    }
+
+    @Autowired
     public MusicSocketController(MusicPlayerService musicPlayerService,
                                  UserService userService,
                                  ChatService chatService,
@@ -48,7 +69,8 @@ public class MusicSocketController {
                                  RoomPlaylistService roomPlaylistService,
                                   AccountService accountService,
                                   ObjectMapper objectMapper,
-                                  RoomCommandCoordinator roomCommandCoordinator) {
+                                  RoomCommandCoordinator roomCommandCoordinator,
+                                  MeterRegistry meterRegistry) {
         this.musicPlayerService = musicPlayerService;
         this.userService = userService;
         this.chatService = chatService;
@@ -60,6 +82,7 @@ public class MusicSocketController {
         this.accountService = accountService;
         this.objectMapper = objectMapper;
         this.roomCommandCoordinator = roomCommandCoordinator;
+        this.meterRegistry = meterRegistry;
     }
 
     public void dispatch(String type, JsonNode payload, String sessionId) {
@@ -262,16 +285,22 @@ public class MusicSocketController {
             musicSocketSessionFacade.sendQueueReorderNack(sessionId, request.mutationId(), "GUEST");
             return;
         }
-        boolean changed;
-        if (request.queueId() != null && request.targetQueueId() != null) {
-            changed = musicPlayerService.reorderQueue(request.queueId(), request.targetQueueId(), request.position(), sessionId);
-        } else {
-            changed = musicPlayerService.reorderQueue(request.oldIndex(), request.newIndex(), sessionId);
-        }
-        if (changed) {
-            musicSocketSessionFacade.sendQueueReorderAck(sessionId, request.mutationId());
-        } else {
-            musicSocketSessionFacade.sendQueueReorderNack(sessionId, request.mutationId(), "STALE_QUEUE");
+        try {
+            boolean changed;
+            if (request.queueId() != null && request.targetQueueId() != null) {
+                changed = musicPlayerService.reorderQueue(request.queueId(), request.targetQueueId(), request.position(), sessionId);
+            } else {
+                changed = musicPlayerService.reorderQueue(request.oldIndex(), request.newIndex(), sessionId);
+            }
+            if (changed) {
+                musicSocketSessionFacade.sendQueueReorderAck(sessionId, request.mutationId());
+            } else {
+                musicSocketSessionFacade.sendQueueReorderNack(sessionId, request.mutationId(), "STALE_QUEUE");
+            }
+        } catch (RuntimeException error) {
+            log.warn("Queue reorder persistence failed: sessionId={}, mutationId={}, error={}",
+                    sessionId, request.mutationId(), error.toString());
+            musicSocketSessionFacade.sendQueueReorderNack(sessionId, request.mutationId(), "PERSISTENCE_FAILED");
         }
     }
 
@@ -347,12 +376,17 @@ public class MusicSocketController {
     }
 
     private void executeQueueMutation(String sessionId, String mutationId, Runnable mutation) {
+        Timer.Sample sample = Timer.start(meterRegistry);
         try {
             mutation.run();
             musicSocketSessionFacade.sendQueueMutationAck(sessionId, mutationId);
+            meterRegistry.counter("musicparty.queue.ack", "result", "ack").increment();
         } catch (RuntimeException error) {
             musicSocketSessionFacade.sendQueueMutationNack(sessionId, mutationId, "PERSISTENCE_FAILED");
+            meterRegistry.counter("musicparty.queue.ack", "result", "nack", "reason", "persistence_failed").increment();
             throw error;
+        } finally {
+            sample.stop(meterRegistry.timer("musicparty.queue.ack.latency"));
         }
     }
 

@@ -67,7 +67,7 @@ public class UpstreamResilienceService {
         }
 
         Timer.Sample sample = Timer.start(meterRegistry);
-        return request.get()
+        return Mono.defer(request)
                 .retryWhen(Retry.backoff(2, Duration.ofMillis(200)).jitter(0.3).filter(this::isTransient))
                 .doOnSuccess(ignored -> state.failures.set(0))
                 .doOnError(error -> recordFailure(platform, state, error))
