@@ -95,6 +95,9 @@ app:
       youtube-download-concurrency: ${YOUTUBE_DOWNLOAD_CONCURRENCY:1}
       local-download-concurrency: ${LOCAL_DOWNLOAD_CONCURRENCY:2}
       download-task-ttl-ms: ${DOWNLOAD_TASK_TTL_MS:1800000}
+      download-max-retries: ${DOWNLOAD_MAX_RETRIES:3}
+      download-retry-initial-delay-ms: ${DOWNLOAD_RETRY_INITIAL_DELAY_MS:1000}
+      download-retry-max-delay-ms: ${DOWNLOAD_RETRY_MAX_DELAY_MS:30000}
       cover-color-cache-size: ${COVER_COLOR_CACHE_SIZE:256}
       cover-color-max-concurrent: ${COVER_COLOR_MAX_CONCURRENT:4}
       websocket-client-queue-capacity: ${WEBSOCKET_CLIENT_QUEUE_CAPACITY:256}

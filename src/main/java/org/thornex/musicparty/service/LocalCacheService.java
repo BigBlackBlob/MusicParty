@@ -12,6 +12,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Gauge;
 import org.thornex.musicparty.config.LocalResourceConfig;
@@ -32,6 +34,8 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -170,7 +174,7 @@ public class LocalCacheService {
                 .flatMap(task ->
                         processTask(task)
                                 .onErrorResume(e -> {
-                                    log.error("Unexpected error in download queue processing", e);
+                                    log.error("Download queue processor failed: phase=dispatch", e);
                                     return Mono.empty();
                                 }), appProperties.getPerformance().getDownloadMaxActiveTasks())
                 .subscribe();
@@ -262,7 +266,7 @@ public class LocalCacheService {
         activeDownloadTasks.incrementAndGet();
         entry.setStatus(CacheStatus.RESOLVING);
         eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
-        log.info("Processing download: {}", musicId);
+        log.info("Processing download: platform={}, musicId={}, phase=resolving", task.platform(), musicId);
 
         return task.sourceProvider()
                 .flatMap(source -> {
@@ -274,16 +278,19 @@ public class LocalCacheService {
                     Path destPath = Paths.get(LocalResourceConfig.CACHE_DIR, fileName);
                     Path partPath = Paths.get(LocalResourceConfig.CACHE_DIR, fileName + ".part");
 
+                    log.info("Processing download: platform={}, musicId={}, phase={}", task.platform(), musicId,
+                            source.usesCommand() ? "subprocess" : "downloading");
                     Mono<Void> download = source.usesCommand()
                             ? runDownloadCommand(musicId, source.command(), partPath)
-                            : downloadWithWebClient(source, partPath);
+                            : downloadWithRetries(source, partPath, task.platform(), musicId, entry, 0);
 
                     return download.publishOn(fileIoScheduler)
                             .doOnSuccess(unused -> completeDownload(entry, musicId, fileName, partPath, destPath));
                 })
                 // 错误处理
                 .doOnError(error -> {
-                    log.error("Download Task failed for {}: {}", musicId, error.getMessage(), error);
+                    log.error("Download failed: platform={}, musicId={}, phase=download, error={}",
+                            task.platform(), musicId, error.getClass().getSimpleName(), error);
                     try {
                         if (entry.getFileName() != null) {
                             Files.deleteIfExists(Paths.get(LocalResourceConfig.CACHE_DIR, entry.getFileName() + ".part"));
@@ -318,6 +325,76 @@ public class LocalCacheService {
                 StandardOpenOption.TRUNCATE_EXISTING,
                 StandardOpenOption.WRITE
         );
+    }
+
+    private Mono<Void> downloadWithRetries(DownloadSource source, Path partPath, String platform,
+                                           String musicId, CacheEntry entry, int retryCount) {
+        return downloadWithWebClient(source, partPath)
+                .onErrorResume(error -> {
+                    Duration delay = retryDelay(error, retryCount);
+                    if (delay == null) return Mono.error(error);
+                    entry.setStatus(CacheStatus.RETRY_WAIT);
+                    eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
+                    meterRegistry.counter("musicparty.download.retries", "platform", platform,
+                            "reason", retryReason(error)).increment();
+                    log.warn("Retrying download: platform={}, musicId={}, retry={}, delayMs={}, reason={}",
+                            platform, musicId, retryCount + 1, delay.toMillis(), retryReason(error));
+                    return Mono.delay(delay)
+                            .then(Mono.fromRunnable(() -> {
+                                entry.setStatus(CacheStatus.DOWNLOADING);
+                                eventPublisher.publishEvent(new DownloadStatusEvent(this, musicId));
+                            }))
+                            .then(downloadWithRetries(source, partPath, platform, musicId, entry, retryCount + 1));
+                });
+    }
+
+    private Duration retryDelay(Throwable error, int retryCount) {
+        if (retryCount >= appProperties.getPerformance().getDownloadMaxRetries()) return null;
+        if (error instanceof WebClientResponseException response) {
+            if (response.getStatusCode().value() == 429) return retryAfter(response, retryCount);
+            if (!response.getStatusCode().is5xxServerError()) return null;
+        } else if (!(error instanceof WebClientRequestException)
+                && !(error instanceof java.util.concurrent.TimeoutException)
+                && !(error.getCause() instanceof java.util.concurrent.TimeoutException)) {
+            return null;
+        }
+        long initial = Math.max(1, appProperties.getPerformance().getDownloadRetryInitialDelayMs());
+        long capped = Math.min(appProperties.getPerformance().getDownloadRetryMaxDelayMs(),
+                initial * (1L << Math.min(retryCount, 20)));
+        return Duration.ofMillis(Math.max(1, (long) (capped * (0.8d + Math.random() * 0.4d))));
+    }
+
+    private Duration retryAfter(WebClientResponseException response, int retryCount) {
+        String value = response.getHeaders().getFirst("Retry-After");
+        if (value != null) {
+            try {
+                return boundedRetryDelay(Duration.ofSeconds(Math.max(0, Long.parseLong(value.trim()))));
+            } catch (NumberFormatException ignored) {
+                try {
+                    long milliseconds = Duration.between(ZonedDateTime.now(),
+                            ZonedDateTime.parse(value, DateTimeFormatter.RFC_1123_DATE_TIME)).toMillis();
+                    return boundedRetryDelay(Duration.ofMillis(Math.max(0, milliseconds)));
+                } catch (RuntimeException invalidDate) {
+                    log.debug("Ignoring invalid Retry-After header: {}", value);
+                }
+            }
+        }
+        long initial = Math.max(1, appProperties.getPerformance().getDownloadRetryInitialDelayMs());
+        long capped = Math.min(appProperties.getPerformance().getDownloadRetryMaxDelayMs(),
+                initial * (1L << Math.min(retryCount, 20)));
+        return Duration.ofMillis(Math.max(1, (long) (capped * (0.8d + Math.random() * 0.4d))));
+    }
+
+    private Duration boundedRetryDelay(Duration delay) {
+        return delay.compareTo(Duration.ofMillis(appProperties.getPerformance().getDownloadRetryMaxDelayMs())) > 0
+                ? Duration.ofMillis(appProperties.getPerformance().getDownloadRetryMaxDelayMs())
+                : delay;
+    }
+
+    private String retryReason(Throwable error) {
+        if (error instanceof WebClientResponseException response) return "http_" + response.getStatusCode().value();
+        if (error instanceof WebClientRequestException) return "network";
+        return "timeout";
     }
 
     private Mono<Void> runDownloadCommand(String musicId, List<String> command, Path outputPath) {

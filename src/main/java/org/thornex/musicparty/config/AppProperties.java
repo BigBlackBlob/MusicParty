@@ -91,6 +91,9 @@ public class AppProperties {
         private int youtubeDownloadConcurrency = 1;
         private int localDownloadConcurrency = 2;
         private long downloadTaskTtlMs = 30 * 60 * 1000L;
+        private int downloadMaxRetries = 3;
+        private long downloadRetryInitialDelayMs = 1000;
+        private long downloadRetryMaxDelayMs = 30_000;
         private int coverColorCacheSize = 256;
         private int coverColorMaxConcurrent = 4;
         private int websocketClientQueueCapacity = 256;
