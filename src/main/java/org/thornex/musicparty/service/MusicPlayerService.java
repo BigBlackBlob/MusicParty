@@ -567,6 +567,10 @@ public class MusicPlayerService {
             ).withQueueVersion(queueVersion.get());
         }
 
+        public void enqueue(EnqueueRequest request, String sessionId) {
+            enqueueAsync(request, sessionId).subscribe();
+        }
+
         public Mono<EnqueueResult> enqueueAsync(EnqueueRequest request, String sessionId) {
             Optional<User> userOpt = userService.getUser(sessionId);
             if (userOpt.isEmpty()) return Mono.just(EnqueueResult.failed(request.platform(), request.musicId(), "会话已失效，请重新连接"));
