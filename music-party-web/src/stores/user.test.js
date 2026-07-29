@@ -73,6 +73,19 @@ describe('user store account actions', () => {
     expect(user.isAdmin).toBe(true);
   });
 
+  it('keeps the WebSocket session token for authenticated stream URLs', () => {
+    const user = useUserStore();
+
+    user.initUser('stream-token', 'u_listener', 'Listener', false, 'MEMBER', false);
+
+    expect(user.sessionToken).toBe('stream-token');
+    expect(localStorage.getItem(STORAGE_KEYS.SESSION_TOKEN)).toBeNull();
+
+    user.initUser('', 'u_listener', 'Listener', false, 'MEMBER', false);
+
+    expect(user.sessionToken).toBe('stream-token');
+  });
+
   it('logs out and clears persisted account identity', async () => {
     const user = useUserStore();
     user.initAccount({

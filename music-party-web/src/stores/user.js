@@ -47,7 +47,7 @@ export const useUserStore = defineStore('user', () => {
      * serverIsGuest: 后端返回的当前是否为游客状态
      */
     const initUser = (serverSessionToken, serverPublicId, serverName, serverIsGuest, serverRole = 'GUEST', serverIsAdmin = false) => {
-        sessionToken.value = '';
+        sessionToken.value = serverSessionToken || sessionToken.value || '';
         if (serverPublicId) {
             publicId.value = serverPublicId;
         }
