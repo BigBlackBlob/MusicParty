@@ -32,15 +32,17 @@ public class SessionCookieService {
     }
 
     public void establish(ServerWebExchange exchange, String sessionToken) {
+        boolean secure = shouldUseSecureCookie(exchange);
         exchange.getResponse().addCookie(ResponseCookie.from(SESSION_COOKIE, sessionToken).httpOnly(true)
-                .secure(appProperties.getAuth().isSecureCookies()).sameSite("Strict").path("/").build());
+                .secure(secure).sameSite("Strict").path("/").build());
         exchange.getResponse().addCookie(ResponseCookie.from(CSRF_COOKIE, randomToken()).httpOnly(false)
-                .secure(appProperties.getAuth().isSecureCookies()).sameSite("Strict").path("/").build());
+                .secure(secure).sameSite("Strict").path("/").build());
     }
 
     public void clear(ServerWebExchange exchange) {
-        exchange.getResponse().addCookie(expired(SESSION_COOKIE, true));
-        exchange.getResponse().addCookie(expired(CSRF_COOKIE, false));
+        boolean secure = shouldUseSecureCookie(exchange);
+        exchange.getResponse().addCookie(expired(SESSION_COOKIE, true, secure));
+        exchange.getResponse().addCookie(expired(CSRF_COOKIE, false, secure));
     }
 
     public boolean csrfMatches(ServerWebExchange exchange) {
@@ -49,8 +51,17 @@ public class SessionCookieService {
         return cookie != null && StringUtils.hasText(header) && SecureCompare.equals(cookie.getValue(), header);
     }
 
-    private ResponseCookie expired(String name, boolean httpOnly) {
-        return ResponseCookie.from(name, "").httpOnly(httpOnly).secure(appProperties.getAuth().isSecureCookies())
+    private boolean shouldUseSecureCookie(ServerWebExchange exchange) {
+        if (!appProperties.getAuth().isSecureCookies()) return false;
+        String forwardedProto = exchange.getRequest().getHeaders().getFirst("X-Forwarded-Proto");
+        if (StringUtils.hasText(forwardedProto)) {
+            return "https".equalsIgnoreCase(forwardedProto.split(",", 2)[0].trim());
+        }
+        return "https".equalsIgnoreCase(exchange.getRequest().getURI().getScheme());
+    }
+
+    private ResponseCookie expired(String name, boolean httpOnly, boolean secure) {
+        return ResponseCookie.from(name, "").httpOnly(httpOnly).secure(secure)
                 .sameSite("Strict").path("/").maxAge(0).build();
     }
 

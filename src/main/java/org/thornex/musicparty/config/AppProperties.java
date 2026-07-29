@@ -63,7 +63,9 @@ public class AppProperties {
         private boolean enabled = true;
         private String path = "data/musicparty.db";
         private boolean initSchema = true;
-        private int maxPoolSize = 3;
+        // SQLite has a single writer. Multiple pooled JDBC connections turn
+        // concurrent application writes into SQLITE_BUSY failures.
+        private int maxPoolSize = 1;
         private int minIdle = 1;
         private long connectionTimeoutMs = 5000;
         private long busyTimeoutMs = 5000;
@@ -101,7 +103,9 @@ public class AppProperties {
         private long roomCommandQueueTimeoutMs = 5000;
         private int dbWriteQueueCapacity = 100;
         private int dbReadThreads = 2;
-        private int dbReadQueueCapacity = 100;
+        // WebSocket authorization uses this scheduler.  It must absorb a
+        // reconnect burst without rejecting otherwise valid handshakes.
+        private int dbReadQueueCapacity = 512;
         private int fileIoThreads = 4;
         private int fileIoQueueCapacity = 200;
         private int subprocessThreads = 2;

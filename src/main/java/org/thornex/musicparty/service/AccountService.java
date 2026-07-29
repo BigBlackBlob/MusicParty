@@ -2,7 +2,7 @@ package org.thornex.musicparty.service;
 
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.util.StringUtils;
 import org.thornex.musicparty.persistence.PersistedSession;
 import org.thornex.musicparty.persistence.PersistedUserAccount;
@@ -24,11 +24,20 @@ public class AccountService {
 
     private final UserAccountRepository accountRepository;
     private final UserProfileRepository userProfileRepository;
+    private final DatabaseWriteExecutor databaseWriteExecutor;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     public AccountService(UserAccountRepository accountRepository, UserProfileRepository userProfileRepository) {
+        this(accountRepository, userProfileRepository, null);
+    }
+
+    @Autowired
+    public AccountService(UserAccountRepository accountRepository,
+                          UserProfileRepository userProfileRepository,
+                          DatabaseWriteExecutor databaseWriteExecutor) {
         this.accountRepository = accountRepository;
         this.userProfileRepository = userProfileRepository;
+        this.databaseWriteExecutor = databaseWriteExecutor;
     }
 
     public AuthStatus status() {
@@ -39,35 +48,38 @@ public class AccountService {
         return accountRepository.hasAdminAccount();
     }
 
-    @Transactional
     public void bootstrapAdmin(String username, String password) {
         String normalizedUsername = normalizeUsername(username);
         validatePassword(password);
-        if (accountRepository.hasAdminAccount()) {
-            return;
-        }
-        if (!accountRepository.claimAdminBootstrap(System.currentTimeMillis())) {
-            if (!accountRepository.hasAdminAccount()) {
-                throw new IllegalStateException("Administrator bootstrap is being completed by another instance");
+        write(() -> {
+            if (accountRepository.hasAdminAccount()) {
+                return null;
             }
-            return;
-        }
-        if (accountRepository.usernameExists(normalizedUsername)) {
-            throw new IllegalStateException("Bootstrap administrator username already exists");
-        }
-        createAccount(normalizedUsername, password, "ADMIN", System.currentTimeMillis());
+            if (!accountRepository.claimAdminBootstrap(System.currentTimeMillis())) {
+                if (!accountRepository.hasAdminAccount()) {
+                    throw new IllegalStateException("Administrator bootstrap is being completed by another instance");
+                }
+                return null;
+            }
+            if (accountRepository.usernameExists(normalizedUsername)) {
+                throw new IllegalStateException("Bootstrap administrator username already exists");
+            }
+            createAccount(normalizedUsername, password, "ADMIN", System.currentTimeMillis());
+            return null;
+        });
     }
 
     public AccountSession register(String username, String password) {
         String normalizedUsername = normalizeUsername(username);
         validatePassword(password);
-        if (accountRepository.usernameExists(normalizedUsername)) {
-            throw new IllegalArgumentException("username already exists");
-        }
-        long now = System.currentTimeMillis();
-        // First registered user becomes admin
-        String role = accountRepository.hasAdminAccount() ? "USER" : "ADMIN";
-        return createAccount(normalizedUsername, password, role, now);
+        return write(() -> {
+            if (accountRepository.usernameExists(normalizedUsername)) {
+                throw new IllegalArgumentException("username already exists");
+            }
+            long now = System.currentTimeMillis();
+            String role = accountRepository.hasAdminAccount() ? "USER" : "ADMIN";
+            return createAccount(normalizedUsername, password, role, now);
+        });
     }
 
     private AccountSession createAccount(String normalizedUsername, String password, String role, long now) {
@@ -96,6 +108,10 @@ public class AccountService {
 
     public AccountSession login(String username, String password) {
         String normalizedUsername = normalizeUsername(username);
+        return write(() -> loginInternal(normalizedUsername, password));
+    }
+
+    private AccountSession loginInternal(String normalizedUsername, String password) {
         PersistedUserAccount account = accountRepository.findByUsername(normalizedUsername)
                 .filter(PersistedUserAccount::enabled)
                 .filter(candidate -> passwordEncoder.matches(password == null ? "" : password, candidate.passwordHash()))
@@ -114,6 +130,24 @@ public class AccountService {
         );
         String sessionToken = issueSession(account.publicId(), now);
         return toSession(account, sessionToken, false);
+    }
+
+    /*
+     * All account writes must use the same SQLite writer as queue/chat state.
+     * Otherwise a successful password check can still fail while updating the
+     * login timestamp, making the browser appear to be immediately logged out.
+     */
+    private <T> T write(java.util.concurrent.Callable<T> operation) {
+        if (databaseWriteExecutor == null) {
+            try {
+                return operation.call();
+            } catch (RuntimeException error) {
+                throw error;
+            } catch (Exception error) {
+                throw new IllegalStateException("Account persistence failed", error);
+            }
+        }
+        return databaseWriteExecutor.call(operation);
     }
 
     public Optional<AccountSession> resolveSession(String sessionToken) {
@@ -149,39 +183,47 @@ public class AccountService {
     }
 
     public void changePassword(String sessionToken, String currentPassword, String newPassword) {
-        AccountSession session = requireSession(sessionToken);
-        PersistedUserAccount account = accountRepository.findByPublicId(session.publicId())
-                .filter(PersistedUserAccount::enabled)
-                .orElseThrow(() -> new IllegalArgumentException("Unknown session token"));
-        if (!passwordEncoder.matches(currentPassword == null ? "" : currentPassword, account.passwordHash())) {
-            throw new IllegalArgumentException("Current password is incorrect");
-        }
         validatePassword(newPassword);
-        accountRepository.updatePasswordHash(account.username(), passwordEncoder.encode(newPassword), System.currentTimeMillis());
+        write(() -> {
+            AccountSession session = requireSession(sessionToken);
+            PersistedUserAccount account = accountRepository.findByPublicId(session.publicId())
+                    .filter(PersistedUserAccount::enabled)
+                    .orElseThrow(() -> new IllegalArgumentException("Unknown session token"));
+            if (!passwordEncoder.matches(currentPassword == null ? "" : currentPassword, account.passwordHash())) {
+                throw new IllegalArgumentException("Current password is incorrect");
+            }
+            accountRepository.updatePasswordHash(account.username(), passwordEncoder.encode(newPassword), System.currentTimeMillis());
+            return null;
+        });
     }
 
     public AccountSession updateProfile(String sessionToken, String displayName) {
-        AccountSession session = requireSession(sessionToken);
-        PersistedUserProfile profile = userProfileRepository.findByPublicId(session.publicId())
-                .orElseThrow(() -> new IllegalArgumentException("Unknown session token"));
         String normalizedDisplayName = normalizeDisplayName(displayName);
-        long now = System.currentTimeMillis();
-        userProfileRepository.upsertProfile(new PersistedUserProfile(
-                profile.publicId(),
-                normalizedDisplayName,
-                false,
-                profile.currentRoomId(),
-                profile.createdAt(),
-                now
-        ));
-        return resolveSession(sessionToken).orElseThrow(() -> new IllegalArgumentException("Unknown session token"));
+        return write(() -> {
+            AccountSession session = requireSession(sessionToken);
+            PersistedUserProfile profile = userProfileRepository.findByPublicId(session.publicId())
+                    .orElseThrow(() -> new IllegalArgumentException("Unknown session token"));
+            long now = System.currentTimeMillis();
+            userProfileRepository.upsertProfile(new PersistedUserProfile(
+                    profile.publicId(),
+                    normalizedDisplayName,
+                    false,
+                    profile.currentRoomId(),
+                    profile.createdAt(),
+                    now
+            ));
+            return resolveSession(sessionToken).orElseThrow(() -> new IllegalArgumentException("Unknown session token"));
+        });
     }
 
     public void logout(String sessionToken) {
         if (!StringUtils.hasText(sessionToken)) {
             return;
         }
-        userProfileRepository.deleteSessionByHash(hashSessionToken(sessionToken));
+        write(() -> {
+            userProfileRepository.deleteSessionByHash(hashSessionToken(sessionToken));
+            return null;
+        });
     }
 
     private AccountSession toSession(PersistedUserAccount account, String sessionToken, boolean guest) {

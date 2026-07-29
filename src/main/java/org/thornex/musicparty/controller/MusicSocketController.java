@@ -384,7 +384,8 @@ public class MusicSocketController {
         } catch (RuntimeException error) {
             musicSocketSessionFacade.sendQueueMutationNack(sessionId, mutationId, "PERSISTENCE_FAILED");
             meterRegistry.counter("musicparty.queue.ack", "result", "nack", "reason", "persistence_failed").increment();
-            throw error;
+            log.warn("Queue mutation persistence failed: sessionId={}, mutationId={}, error={}",
+                    sessionId, mutationId, error.toString());
         } finally {
             sample.stop(meterRegistry.timer("musicparty.queue.ack.latency"));
         }

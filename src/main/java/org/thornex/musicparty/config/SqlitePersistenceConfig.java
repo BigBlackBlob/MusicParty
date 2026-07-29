@@ -18,8 +18,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import lombok.extern.slf4j.Slf4j;
+
 @Configuration
 @RequiredArgsConstructor
+@Slf4j
 @ConditionalOnProperty(prefix = "app.music-api.database", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class SqlitePersistenceConfig {
 
@@ -42,8 +45,12 @@ public class SqlitePersistenceConfig {
         HikariConfig hikari = new HikariConfig();
         hikari.setJdbcUrl("jdbc:sqlite:" + dbPath);
         hikari.setDataSourceProperties(config.toProperties());
-        hikari.setMaximumPoolSize(Math.max(1, appProperties.getDatabase().getMaxPoolSize()));
-        hikari.setMinimumIdle(Math.min(hikari.getMaximumPoolSize(), Math.max(1, appProperties.getDatabase().getMinIdle())));
+        if (appProperties.getDatabase().getMaxPoolSize() > 1) {
+            log.warn("Ignoring DB_MAX_POOL_SIZE={} for SQLite; using one connection to serialize writes",
+                    appProperties.getDatabase().getMaxPoolSize());
+        }
+        hikari.setMaximumPoolSize(1);
+        hikari.setMinimumIdle(1);
         hikari.setConnectionTimeout(appProperties.getDatabase().getConnectionTimeoutMs());
         hikari.setPoolName("musicparty-sqlite");
         return new HikariDataSource(hikari);

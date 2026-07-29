@@ -26,6 +26,7 @@ import reactor.core.scheduler.Scheduler;
 import java.net.URI;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.concurrent.RejectedExecutionException;
 
 @Configuration
 @RequiredArgsConstructor
@@ -94,11 +95,14 @@ public class WebSocketConfig {
         Mono<Void> inbound = session.receive()
                 .map(message -> message.getPayloadAsText())
                 .concatMap(text -> dispatch(sessionId, text))
+                .doOnError(error -> log.warn("WebSocket inbound failed: sessionId={}, error={}", sessionId, error.toString()))
                 .then();
-        Mono<Void> outbound = session.send(broker.register(sessionId, roomId).map(session::textMessage));
+        Mono<Void> outbound = session.send(broker.register(sessionId, roomId).map(session::textMessage))
+                .doOnError(error -> log.warn("WebSocket outbound failed: sessionId={}, error={}", sessionId, error.toString()));
 
         return Mono.when(inbound, outbound)
                 .doFinally(signal -> {
+                    log.debug("WebSocket session finished: sessionId={}, signal={}", sessionId, signal);
                     broker.unregister(sessionId);
                     coordinator.handleDisconnect(sessionId);
                 });
@@ -109,17 +113,44 @@ public class WebSocketConfig {
     }
 
     private Mono<Void> dispatch(String sessionId, String text) {
-        return Mono.defer(() -> {
+        Mono<Void> command = Mono.defer(() -> {
             try {
                 JsonNode root = objectMapper.readTree(text);
                 String type = root.path("type").asText("");
                 JsonNode payload = root.path("payload");
-                return Mono.fromFuture(controller.dispatchAsync(type, payload, sessionId));
+                Mono<Void> dispatch = Mono.fromFuture(controller.dispatchAsync(type, payload, sessionId));
+                // Resync and presence requests only inspect in-memory room/session state.
+                // Scheduling each of them on the small blocking DB pool turns a reconnect
+                // burst into rejected work and closes otherwise healthy sockets.
+                return isInMemorySocketCommand(type) ? dispatch : dispatch.subscribeOn(dbReadScheduler);
             } catch (Exception ex) {
                 log.warn("WebSocket message rejected for session {}: {}", sessionId, ex.getMessage());
                 return Mono.empty();
             }
-        }).subscribeOn(dbReadScheduler).then();
+        }).onErrorResume(this::isSchedulerRejection, error -> {
+            log.warn("WebSocket command deferred because the DB read scheduler is saturated: sessionId={}", sessionId);
+            return Mono.empty();
+        });
+        return command.then();
+    }
+
+    private boolean isInMemorySocketCommand(String type) {
+        return switch (type) {
+            case "player.resync", "/player/resync", "sync.ping", "/sync/ping",
+                    "user.me", "/user/me", "users.online", "/users/online" -> true;
+            default -> false;
+        };
+    }
+
+    private boolean isSchedulerRejection(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof RejectedExecutionException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private String firstQuery(WebSocketSession session, String... names) {

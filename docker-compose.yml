@@ -25,8 +25,11 @@ services:
       - NETEASE_API_URL=http://netease-api:3000
       
       # [基础配置]
-      - BASE_URL=http://localhost:8848    #你的基础url，用于直播流链接的拼接
-      - ALLOWED_ORIGINS=http://localhost:8848 # 逗号分隔；生产环境填写实际访问 Origin
+      # Must be the public URL that browsers use (for example http://203.0.113.8:8848
+      # or https://music.example.com).  localhost here makes the in-container
+      # transcoder call an address on itself and prevents queued songs from playing.
+      - BASE_URL=${BASE_URL:?set BASE_URL in .env to the public URL}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:?set ALLOWED_ORIGINS in .env to the public browser origin}
       # Set these in the untracked .env file before the first production start.
       - BOOTSTRAP_ADMIN_USERNAME=${BOOTSTRAP_ADMIN_USERNAME:?set in .env before first start}
       - BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD:?set in .env before first start}
