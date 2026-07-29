@@ -34,6 +34,8 @@ export const WS_DEST = {
     QUEUE_REORDER_NACK: 'queue.reorder.nack',
     QUEUE_MUTATION_ACK: 'queue.mutation.ack',
     QUEUE_MUTATION_NACK: 'queue.mutation.nack',
+    ENQUEUE_ACK: 'enqueue.ack',
+    ENQUEUE_NACK: 'enqueue.nack',
     PLAYER_EVENTS: 'player.events',
     SYNC_PONG: 'sync.pong',
     CHAT_MESSAGE: 'chat.message',

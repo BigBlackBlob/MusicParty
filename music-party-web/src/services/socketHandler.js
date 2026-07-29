@@ -132,6 +132,8 @@ export const createSocketHandlers = (stores = {}) => {
         },
         [WS_DEST.QUEUE_REORDER_ACK]: (data) => player?.settleQueueReorder?.(data?.mutationId, true),
         [WS_DEST.QUEUE_REORDER_NACK]: (data) => player?.settleQueueReorder?.(data?.mutationId, false, data?.reason),
+        [WS_DEST.ENQUEUE_ACK]: (data) => console.info('Enqueue confirmed:', data),
+        [WS_DEST.ENQUEUE_NACK]: (data) => player?.handleEnqueueNack?.(data),
 
         // 4. 事件通知 (Toast)
         [WS_DEST.PLAYER_EVENTS]: (event) => handleGameEvent(event, {

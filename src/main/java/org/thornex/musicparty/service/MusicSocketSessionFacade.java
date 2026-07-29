@@ -79,6 +79,14 @@ public class MusicSocketSessionFacade {
         broker.sendToSession(sessionId, "queue.reorder.nack", new QueueReorderResult(mutationId, reason, null));
     }
 
+    public void sendEnqueueAck(String sessionId, MusicPlayerService.EnqueueResult result) {
+        broker.sendToSession(sessionId, "enqueue.ack", result);
+    }
+
+    public void sendEnqueueNack(String sessionId, MusicPlayerService.EnqueueResult result) {
+        broker.sendToSession(sessionId, "enqueue.nack", result);
+    }
+
     public void sendQueueMutationAck(String sessionId, String mutationId) {
         if (mutationId == null || mutationId.isBlank()) return;
         broker.sendToSession(sessionId, "queue.mutation.ack", new QueueMutationResult(mutationId, null, musicPlayerService.getQueueVersionForSession(sessionId)));

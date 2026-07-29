@@ -90,6 +90,14 @@ public class MusicSocketController {
     }
 
     public CompletableFuture<Void> dispatchAsync(String type, JsonNode payload, String sessionId) {
+        if ("enqueue".equals(type) || "/enqueue".equals(type)) {
+            musicPlayerService.enqueueAsync(read(payload, EnqueueRequest.class), sessionId)
+                    .subscribe(result -> {
+                        if (result.accepted()) musicSocketSessionFacade.sendEnqueueAck(sessionId, result);
+                        else musicSocketSessionFacade.sendEnqueueNack(sessionId, result);
+                    });
+            return CompletableFuture.completedFuture(null);
+        }
         if (isRoomMutation(type)) {
             return roomCommandCoordinator.<Void>executeAsync(userService.getRoomIdForSession(sessionId), () -> {
                 dispatchNow(type, payload, sessionId);

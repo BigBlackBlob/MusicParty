@@ -20,6 +20,7 @@ import org.thornex.musicparty.service.api.IMusicApiService;
 import org.thornex.musicparty.service.api.SubsonicMusicApiService;
 import org.thornex.musicparty.service.stream.LiveStreamService;
 import reactor.core.scheduler.Schedulers;
+import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.util.*;
@@ -226,7 +227,11 @@ public class MusicPlayerService {
     }
 
     public void enqueue(EnqueueRequest request, String sessionId) {
-        sessionForUser(sessionId).enqueue(request, sessionId);
+        enqueueAsync(request, sessionId).subscribe();
+    }
+
+    public Mono<EnqueueResult> enqueueAsync(EnqueueRequest request, String sessionId) {
+        return sessionForUser(sessionId).enqueueAsync(request, sessionId);
     }
 
     public void enqueuePlaylist(EnqueuePlaylistRequest request, String sessionId) {
@@ -562,25 +567,34 @@ public class MusicPlayerService {
             ).withQueueVersion(queueVersion.get());
         }
 
-        public synchronized void enqueue(EnqueueRequest request, String sessionId) {
+        public Mono<EnqueueResult> enqueueAsync(EnqueueRequest request, String sessionId) {
             Optional<User> userOpt = userService.getUser(sessionId);
-            if (userOpt.isEmpty()) return;
+            if (userOpt.isEmpty()) return Mono.just(EnqueueResult.failed(request.platform(), request.musicId(), "会话已失效，请重新连接"));
             User enqueuer = userOpt.get();
+            log.info("Enqueue received: sessionId={}, roomId={}, platform={}, musicId={}", sessionId, roomId, request.platform(), request.musicId());
             if ("navidrome".equals(request.platform()) && !navidromeAccessService.canUseBySession(sessionId)) {
                 eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "添加失败: 无权使用 Navidrome", roomId));
-                return;
+                return Mono.just(EnqueueResult.failed(request.platform(), request.musicId(), "无权使用 Navidrome"));
             }
             if (isSubsonicPlatform(request.platform()) && !canUseSubsonicInRoom(request.platform(), sessionId)) {
                 eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "添加失败: 无权使用 Subsonic", roomId));
-                return;
+                return Mono.just(EnqueueResult.failed(request.platform(), request.musicId(), "无权使用 Subsonic"));
             }
-            IMusicApiService service = getApiService(request.platform());
-            service.getPlayableMusic(request.musicId()).publishOn(Schedulers.boundedElastic()).subscribe(playable -> {
+            final IMusicApiService service;
+            try {
+                service = getApiService(request.platform());
+            } catch (Exception error) {
+                log.warn("Enqueue rejected before resolution: sessionId={}, platform={}, musicId={}", sessionId, request.platform(), request.musicId(), error);
+                return Mono.just(EnqueueResult.failed(request.platform(), request.musicId(), "不支持的音乐来源"));
+            }
+            return service.getPlayableMusic(request.musicId())
+                    .doOnSuccess(playable -> log.info("Enqueue resolved: sessionId={}, platform={}, musicId={}, title={}", sessionId, request.platform(), request.musicId(), playable.name()))
+                    .publishOn(Schedulers.boundedElastic()).map(playable -> {
                 synchronized (RoomPlayerSession.this) {
                     long count = queueManager.getQueueSnapshot().stream()
                             .filter(i -> i.enqueuedBy().publicId().equals(enqueuer.getPublicId()))
                             .count();
-                    if (count >= appProperties.getQueue().getMaxUserSongs()) return;
+                    if (count >= appProperties.getQueue().getMaxUserSongs()) return EnqueueResult.failed(request.platform(), request.musicId(), "已达到个人点歌上限");
                     Music music = new Music(playable.id(), playable.name(), playable.artists(), playable.duration(), playable.platform(), playable.coverUrl());
                     QueueItemStatus initialStatus = isCachedPlatform(request.platform()) ? QueueItemStatus.PENDING : QueueItemStatus.READY;
                     if (isCachedPlatform(request.platform())) service.prefetchMusic(music.id());
@@ -588,10 +602,17 @@ public class MusicPlayerService {
                     if (item != null) {
                         playbackState.touchHotActivity();
                         persistQueueMutation(new SystemMessageEvent(this, SystemMessageEvent.Level.SUCCESS, PlayerAction.ADD, enqueuer.getPublicId(), music.name(), roomId), false, QueuePatch.append(List.of(item)));
+                        log.info("Enqueue persisted: sessionId={}, roomId={}, platform={}, musicId={}, queueId={}", sessionId, roomId, request.platform(), request.musicId(), item.queueId());
                         if (playbackState.currentMusic() == null) playNextInQueue();
+                        return EnqueueResult.accepted(request.platform(), request.musicId(), item.queueId());
                     }
+                    return EnqueueResult.failed(request.platform(), request.musicId(), "队列已满或歌曲重复");
                 }
-            }, error -> eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "添加失败: " + error.getMessage(), roomId)));
+            }).onErrorResume(error -> {
+                log.warn("Enqueue failed: sessionId={}, roomId={}, platform={}, musicId={}", sessionId, roomId, request.platform(), request.musicId(), error);
+                eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.ERROR, PlayerAction.ERROR_LOAD, enqueuer.getPublicId(), "添加失败", roomId));
+                return Mono.just(EnqueueResult.failed(request.platform(), request.musicId(), "歌曲解析或队列写入失败"));
+            });
         }
 
         public synchronized void enqueuePlaylist(EnqueuePlaylistRequest request, String sessionId) {
@@ -1266,5 +1287,10 @@ public class MusicPlayerService {
 
     private String getUserPublicId(String sessionId) {
         return userService.getUser(sessionId).map(User::getPublicId).orElse("UNKNOWN_USER");
+    }
+    public record EnqueueResult(String platform, String musicId, String queueId, String reason) {
+        static EnqueueResult accepted(String platform, String musicId, String queueId) { return new EnqueueResult(platform, musicId, queueId, null); }
+        static EnqueueResult failed(String platform, String musicId, String reason) { return new EnqueueResult(platform, musicId, null, reason); }
+        public boolean accepted() { return reason == null; }
     }
 }

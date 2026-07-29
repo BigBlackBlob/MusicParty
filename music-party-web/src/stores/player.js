@@ -408,7 +408,8 @@ export const usePlayerStore = defineStore('player', () => {
                 switchRoom,
                 setQueue,
                 applyQueuePatch,
-                scheduleQueuePatch
+                scheduleQueuePatch,
+                handleEnqueueNack: (result) => notifyControlFailure(result?.reason || '点歌失败，请重试', 'error')
             },
             userStore,
             chatStore: useChatStore(),
@@ -518,7 +519,18 @@ remotePosition.value = 0;
         isSeekingPreview.value = val;
     };
 
-    const enqueue = (platform, musicId) => requireAuth() && socketService.send(WS_DEST.ENQUEUE, { platform, musicId });
+    const enqueue = (platform, musicId) => {
+        if (!requireAuth()) return false;
+        if (!connected.value) {
+            notifyControlFailure('连接已断开，请等待连接恢复后再点歌', 'error');
+            return false;
+        }
+        if (!socketService.send(WS_DEST.ENQUEUE, { platform, musicId })) {
+            notifyControlFailure('点歌指令未发送，请等待连接恢复后再试', 'error');
+            return false;
+        }
+        return true;
+    };
     const enqueuePlaylist = (platform, playlistId) => requireAuth() && socketService.send(WS_DEST.ENQUEUE_PLAYLIST, { platform, playlistId });
     const enqueueAlbum = (platform, albumId) => requireAuth() && socketService.send(WS_DEST.ENQUEUE_ALBUM, { platform, albumId });
     const queueMutationId = (operation) => `queue-${operation}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
