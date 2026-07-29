@@ -17,8 +17,10 @@ import org.thornex.musicparty.persistence.UserProfileRepository;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 @Service
@@ -38,12 +40,13 @@ public class UserService {
     private final UserProfileRepository userProfileRepository;
 
     // 延迟任务调度器，用于处理断连抖动
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-        Thread t = new Thread(r, "user-leave-scheduler");
-        t.setDaemon(true);
-        return t;
-    });
+    private final ScheduledExecutorService scheduler;
     private final Map<String, ScheduledFuture<?>> pendingLeaveEvents = new ConcurrentHashMap<>();
+    // Incremented before every reconnect. A leave task captures the version from its disconnect.
+    private final Map<String, Long> connectionGenerations = new ConcurrentHashMap<>();
+    private final long leaveDelayMillis;
+    private final String jvmInstanceId = UUID.randomUUID().toString().substring(0, 12);
+    private final long startedAt = System.currentTimeMillis();
 
     private static final long USER_EXPIRATION_MS = 1 * 60 * 60 * 1000L;
     private static final long LEAVE_DELAY_SEC = 10; // 10秒延迟判定真正离开
@@ -52,11 +55,28 @@ public class UserService {
                        RoomService roomService,
                        RoomSessionCoordinator roomSessionCoordinator,
                        UserProfileRepository userProfileRepository) {
+        this(eventPublisher, roomService, roomSessionCoordinator, userProfileRepository,
+                Executors.newSingleThreadScheduledExecutor(r -> {
+                    Thread t = new Thread(r, "user-leave-scheduler");
+                    t.setDaemon(true);
+                    return t;
+                }), Duration.ofSeconds(LEAVE_DELAY_SEC));
+    }
+
+    UserService(ApplicationEventPublisher eventPublisher,
+                RoomService roomService,
+                RoomSessionCoordinator roomSessionCoordinator,
+                UserProfileRepository userProfileRepository,
+                ScheduledExecutorService scheduler,
+                Duration leaveDelay) {
         this.eventPublisher = eventPublisher;
         this.roomService = roomService;
         this.roomSessionCoordinator = roomSessionCoordinator;
         this.userProfileRepository = userProfileRepository;
+        this.scheduler = scheduler;
+        this.leaveDelayMillis = leaveDelay.toMillis();
         this.roomService.setOnlineCountProvider(this::getOnlineCount);
+        log.info("User session memory initialized: instanceId={}, startedAt={}", jvmInstanceId, startedAt);
     }
 
     /**
@@ -68,16 +88,24 @@ public class UserService {
      */
     public User handleConnect(String sessionId, String sessionTokenFront, String nameFront, String requestedRoomId) {
         User user;
+        String identityPath;
         long now = System.currentTimeMillis();
 
-        // 1. 尝试找回老用户
-        if (StringUtils.hasText(sessionTokenFront) && usersBySessionToken.containsKey(sessionTokenFront)) {
-            user = usersBySessionToken.get(sessionTokenFront);
+        User inMemoryUser = StringUtils.hasText(sessionTokenFront) ? usersBySessionToken.get(sessionTokenFront) : null;
+        log.info("WebSocket identity handshake: instanceId={}, startedAt={}, sessionId={}, tokenFingerprint={}, memoryTokenHit={}, memoryPublicId={}, memorySessionId={}, publicMapHit={}, publicMapSessionId={}",
+                jvmInstanceId, startedAt, sessionId, tokenFingerprint(sessionTokenFront), inMemoryUser != null,
+                inMemoryUser == null ? null : inMemoryUser.getPublicId(), inMemoryUser == null ? null : inMemoryUser.getSessionId(),
+                inMemoryUser != null && usersByPublicId.containsKey(inMemoryUser.getPublicId()),
+                inMemoryUser == null ? null : Optional.ofNullable(usersByPublicId.get(inMemoryUser.getPublicId())).map(User::getSessionId).orElse(null));
 
-            // 🟢 检查是否有待执行的“离开”任务，如果有，说明是快速重连，直接取消
-            ScheduledFuture<?> pendingLeave = pendingLeaveEvents.remove(user.getSessionToken());
-            if (pendingLeave != null) {
-                pendingLeave.cancel(false);
+        // 1. 尝试找回老用户
+        if (inMemoryUser != null) {
+            user = inMemoryUser;
+            identityPath = "memory";
+            advanceConnectionGeneration(user.getSessionToken());
+
+            // cancel(false) cannot stop a task that has begun; the task validates the generation and user state too.
+            if (cancelPendingLeave(user.getSessionToken())) {
                 log.info("User {} reconnected quickly, suppressed leave/join logs.", user.getName());
             } else {
                 // 如果没有待执行任务，且用户之前是离线状态，且不是游客，则发布加入日志
@@ -96,15 +124,27 @@ public class UserService {
         else if (StringUtils.hasText(sessionTokenFront)) {
             user = restorePersistedUser(sessionTokenFront, sessionId).orElse(null);
             if (user != null) {
+                identityPath = "persisted";
+                advanceConnectionGeneration(user.getSessionToken());
+                cancelPendingLeave(user.getSessionToken());
                 log.info("Persisted User Restored: {} (PublicId: {}) -> Session: {}", user.getName(), user.getPublicId(), sessionId);
             } else {
                 user = registerNewUser(sessionId, nameFront);
+                identityPath = "new-after-token-miss";
+                advanceConnectionGeneration(user.getSessionToken());
             }
         }
         // 2. 新用户注册
         else {
             user = registerNewUser(sessionId, nameFront);
+            identityPath = "new-without-token";
+            advanceConnectionGeneration(user.getSessionToken());
         }
+
+        User publicIdUser = usersByPublicId.get(user.getPublicId());
+        log.info("WebSocket identity resolved: instanceId={}, sessionId={}, tokenFingerprint={}, path={}, publicId={}, publicMapHit={}, publicMapSameObject={}, publicMapSessionId={}",
+                jvmInstanceId, sessionId, tokenFingerprint(user.getSessionToken()), identityPath, user.getPublicId(),
+                publicIdUser != null, publicIdUser == user, publicIdUser == null ? null : publicIdUser.getSessionId());
 
         String previousRoomId = roomService.normalizeRoomId(user.getRoomId());
         String roomId = StringUtils.hasText(requestedRoomId)
@@ -150,11 +190,11 @@ public class UserService {
                 // 延迟发送离开日志
                 if (!user.isGuest()) {
                     String sessionToken = user.getSessionToken();
-                    ScheduledFuture<?> future = scheduler.schedule(() -> {
-                        pendingLeaveEvents.remove(sessionToken);
-                        log.info("User Leave Confirmed: {}", user.getName());
-                        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO, PlayerAction.USER_LEAVE, user.getPublicId(), null, roomId));
-                    }, LEAVE_DELAY_SEC, TimeUnit.SECONDS);
+                    long disconnectGeneration = connectionGenerations.getOrDefault(sessionToken, 0L);
+                    AtomicReference<ScheduledFuture<?>> futureReference = new AtomicReference<>();
+                    ScheduledFuture<?> future = scheduler.schedule(() -> confirmLeave(
+                            sessionToken, futureReference.get(), user, roomId, disconnectGeneration), leaveDelayMillis, TimeUnit.MILLISECONDS);
+                    futureReference.set(future);
                     pendingLeaveEvents.put(sessionToken, future);
                 }
                 roomSessionCoordinator.onUserDisconnected(roomId, getOnlineUserSummaries(roomId).size());
@@ -380,6 +420,45 @@ public class UserService {
         return user;
     }
 
+    private long advanceConnectionGeneration(String sessionToken) {
+        return connectionGenerations.merge(sessionToken, 1L, Long::sum);
+    }
+
+    /**
+     * Both reconnect paths use this entry point. The cancellation is only an optimization;
+     * confirmLeave performs the authoritative checks in case the scheduler has already started.
+     */
+    private boolean cancelPendingLeave(String sessionToken) {
+        ScheduledFuture<?> pendingLeave = pendingLeaveEvents.remove(sessionToken);
+        if (pendingLeave == null) {
+            return false;
+        }
+        pendingLeave.cancel(false);
+        return true;
+    }
+
+    private void confirmLeave(String sessionToken, ScheduledFuture<?> future, User disconnectedUser,
+                              String roomId, long disconnectGeneration) {
+        if (future == null || !pendingLeaveEvents.remove(sessionToken, future)) {
+            return;
+        }
+        if (usersBySessionToken.get(sessionToken) != disconnectedUser) {
+            log.debug("Ignoring obsolete leave task: tokenFingerprint={}, reason=user-replaced", tokenFingerprint(sessionToken));
+            return;
+        }
+        if (disconnectedUser.getSessionId() != null) {
+            log.debug("Ignoring obsolete leave task: tokenFingerprint={}, reason=user-reconnected", tokenFingerprint(sessionToken));
+            return;
+        }
+        if (connectionGenerations.getOrDefault(sessionToken, 0L) != disconnectGeneration) {
+            log.debug("Ignoring obsolete leave task: tokenFingerprint={}, reason=newer-connection", tokenFingerprint(sessionToken));
+            return;
+        }
+        log.info("User Leave Confirmed: {}", disconnectedUser.getName());
+        eventPublisher.publishEvent(new SystemMessageEvent(this, SystemMessageEvent.Level.INFO,
+                PlayerAction.USER_LEAVE, disconnectedUser.getPublicId(), null, roomId));
+    }
+
     private Optional<User> restorePersistedUser(String sessionToken, String sessionId) {
         return userProfileRepository.findSessionByHash(hashSessionToken(sessionToken))
                 .flatMap(session -> userProfileRepository.findByPublicId(session.publicId())
@@ -432,6 +511,13 @@ public class UserService {
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 is unavailable", e);
         }
+    }
+
+    private String tokenFingerprint(String sessionToken) {
+        if (!StringUtils.hasText(sessionToken)) {
+            return "none";
+        }
+        return hashSessionToken(sessionToken).substring(0, 12);
     }
 
     @PreDestroy

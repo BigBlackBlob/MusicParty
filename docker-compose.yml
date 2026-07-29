@@ -12,9 +12,10 @@ services:
 
   # 2. Music Party 主应用
   music-party:
-    # VPS 部署默认从 GHCR 拉取 NRT-Base 分支镜像；如需走阿里云 ACR，可改为：
-    # ${MUSIC_PARTY_IMAGE:-crpi-533x5q1t88ew0x21.cn-hangzhou.personal.cr.aliyuncs.com/nrt-base/nrt-music-party:latest}
-    image: ${MUSIC_PARTY_IMAGE:-ghcr.io/bigblackblob/musicparty:nrt-base}
+    # Set MUSIC_PARTY_IMAGE in .env to the custom image digest, e.g.
+    # ghcr.io/bigblackblob/musicparty@sha256:<published-image-digest>
+    # Do not deploy the moving nrt-base tag.
+    image: ${MUSIC_PARTY_IMAGE:?set MUSIC_PARTY_IMAGE in .env to a custom image digest}
     pull_policy: ${MUSIC_PARTY_PULL_POLICY:-missing}
     container_name: music-party-app
     restart: always

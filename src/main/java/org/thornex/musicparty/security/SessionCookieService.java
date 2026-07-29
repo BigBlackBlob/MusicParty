@@ -8,6 +8,8 @@ import org.springframework.web.reactive.socket.WebSocketSession;
 import org.thornex.musicparty.config.AppProperties;
 
 import java.security.SecureRandom;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
 
 @Component
@@ -29,6 +31,20 @@ public class SessionCookieService {
     public String sessionToken(WebSocketSession session) {
         var cookie = session.getHandshakeInfo().getCookies().getFirst(SESSION_COOKIE);
         return cookie == null ? null : cookie.getValue();
+    }
+
+    /** Logs can correlate a handshake without exposing the MP_SESSION credential. */
+    public String sessionTokenFingerprint(WebSocketSession session) {
+        String token = sessionToken(session);
+        if (!StringUtils.hasText(token)) {
+            return "none";
+        }
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(token.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest, 0, 6);
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is unavailable", ex);
+        }
     }
 
     public void establish(ServerWebExchange exchange, String sessionToken) {

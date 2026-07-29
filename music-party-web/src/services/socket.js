@@ -57,6 +57,12 @@ class SocketService {
         socket.onclose = (event) => {
             if (this.client !== socket) return;
             this.connected = false;
+            console.info('WebSocket closed:', {
+                code: event?.code,
+                reason: event?.reason || '',
+                wasClean: event?.wasClean === true,
+                intentional: this.intentionalClose
+            });
             callbacks.onDisconnect?.(event);
             if (event?.code === 1008) {
                 callbacks.onAuthError?.(event);

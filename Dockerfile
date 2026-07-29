@@ -1,7 +1,7 @@
 # ============================
 # Stage 1: Build Frontend (Vue)
 # ============================
-FROM node:22-alpine AS frontend-builder
+FROM node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2 AS frontend-builder
 WORKDIR /app/frontend
 
 ARG APP_AUTHOR_NAME="ThorNex"
@@ -23,7 +23,7 @@ RUN npm run build
 # ============================
 # Stage 2: Build Backend (Spring Boot)
 # ============================
-FROM maven:3.9-eclipse-temurin-21-alpine AS backend-builder
+FROM maven:3.9-eclipse-temurin-21-alpine@sha256:d88e5b38297858f65f97bc7e7964c760ab988fd18ace41589176f1468c49a489 AS backend-builder
 WORKDIR /app/backend
 
 # 复制 Maven 依赖定义
@@ -43,7 +43,7 @@ RUN mvn clean package -DskipTests
 # ============================
 # Stage 3: Runtime Image
 # ============================
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:21-jre-alpine@sha256:3f08b13888f595cc49edabea7250ba69499ba25602b267da591720769400e08c
 WORKDIR /app
 
 # 安装 FFmpeg 和 Java AWT 运行所需的图形库/字体

@@ -27,6 +27,7 @@ import java.net.URI;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Configuration
 @RequiredArgsConstructor
@@ -90,19 +91,28 @@ public class WebSocketConfig {
         String initialName = null;
         String sessionToken = sessionCookieService.sessionToken(session);
         String roomId = firstQuery(session, "room-id", "roomId");
+        String tokenFingerprint = sessionCookieService.sessionTokenFingerprint(session);
         coordinator.handleConnect(sessionId, sessionToken, initialName, roomId);
+        AtomicReference<String> terminalError = new AtomicReference<>();
 
         Mono<Void> inbound = session.receive()
                 .map(message -> message.getPayloadAsText())
                 .concatMap(text -> dispatch(sessionId, text))
-                .doOnError(error -> log.warn("WebSocket inbound failed: sessionId={}, error={}", sessionId, error.toString()))
+                .doOnError(error -> {
+                    terminalError.compareAndSet(null, "inbound:" + error.getClass().getSimpleName());
+                    log.warn("WebSocket inbound failed: sessionId={}, error={}", sessionId, error.toString());
+                })
                 .then();
         Mono<Void> outbound = session.send(broker.register(sessionId, roomId).map(session::textMessage))
-                .doOnError(error -> log.warn("WebSocket outbound failed: sessionId={}, error={}", sessionId, error.toString()));
+                .doOnError(error -> {
+                    terminalError.compareAndSet(null, "outbound:" + error.getClass().getSimpleName());
+                    log.warn("WebSocket outbound failed: sessionId={}, error={}", sessionId, error.toString());
+                });
 
         return Mono.when(inbound, outbound)
                 .doFinally(signal -> {
-                    log.debug("WebSocket session finished: sessionId={}, signal={}", sessionId, signal);
+                    log.info("WebSocket session finished: sessionId={}, tokenFingerprint={}, signal={}, terminalError={}",
+                            sessionId, tokenFingerprint, signal, terminalError.get());
                     broker.unregister(sessionId);
                     coordinator.handleDisconnect(sessionId);
                 });
