@@ -2,6 +2,7 @@ package org.thornex.musicparty.service;
 
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -51,6 +52,7 @@ public class UserService {
     private static final long USER_EXPIRATION_MS = 1 * 60 * 60 * 1000L;
     private static final long LEAVE_DELAY_SEC = 10; // 10秒延迟判定真正离开
 
+    @Autowired
     public UserService(ApplicationEventPublisher eventPublisher,
                        RoomService roomService,
                        RoomSessionCoordinator roomSessionCoordinator,
