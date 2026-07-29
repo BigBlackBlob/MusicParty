@@ -11,24 +11,46 @@ import java.util.function.Supplier;
 public class RoomStateMutationService {
 
     private final TransactionTemplate transactionTemplate;
+    private final DatabaseWriteExecutor databaseWriteExecutor;
+
+    public RoomStateMutationService(@Autowired(required = false) PlatformTransactionManager transactionManager) {
+        this(transactionManager, null);
+    }
 
     @Autowired
-    public RoomStateMutationService(@Autowired(required = false) PlatformTransactionManager transactionManager) {
+    public RoomStateMutationService(@Autowired(required = false) PlatformTransactionManager transactionManager,
+                                    DatabaseWriteExecutor databaseWriteExecutor) {
         this.transactionTemplate = transactionManager == null ? null : new TransactionTemplate(transactionManager);
+        this.databaseWriteExecutor = databaseWriteExecutor;
     }
 
     public void runInTransaction(Runnable mutation) {
-        if (transactionTemplate == null) {
-            mutation.run();
-            return;
-        }
-        transactionTemplate.executeWithoutResult(status -> mutation.run());
+        runWrite(() -> {
+            if (transactionTemplate == null) {
+                mutation.run();
+            } else {
+                transactionTemplate.executeWithoutResult(status -> mutation.run());
+            }
+            return null;
+        });
     }
 
     public <T> T supplyInTransaction(Supplier<T> mutation) {
-        if (transactionTemplate == null) {
-            return mutation.get();
+        return runWrite(() -> transactionTemplate == null ? mutation.get() : transactionTemplate.execute(status -> mutation.get()));
+    }
+
+    private <T> T runWrite(java.util.concurrent.Callable<T> operation) {
+        return databaseWriteExecutor == null ? callDirectly(operation) : databaseWriteExecutor.call(operation);
+    }
+
+    private <T> T callDirectly(java.util.concurrent.Callable<T> operation) {
+        try {
+            return operation.call();
+        } catch (Exception ex) {
+            if (ex instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new IllegalStateException("Room state mutation failed", ex);
         }
-        return transactionTemplate.execute(status -> mutation.get());
     }
 }

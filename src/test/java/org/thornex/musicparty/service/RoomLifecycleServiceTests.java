@@ -57,7 +57,9 @@ class RoomLifecycleServiceTests {
                 persistenceService,
                 musicPlayerService,
                 chatService,
-                new RoomSessionCoordinator(roomService, publishedEvents::add)
+                new RoomSessionCoordinator(roomService, publishedEvents::add),
+                new RoomStateMutationService(new TestTransactionManager()),
+                new AfterCommitExecutor()
         );
 
         boolean deleted = lifecycleService.deleteRoom(roomId, owner.getPublicId(), false);
