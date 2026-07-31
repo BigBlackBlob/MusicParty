@@ -1,2 +1,5 @@
 /mvnw text eol=lf
 *.cmd text eol=crlf
+/contracts/** text eol=lf
+/backend-go/** text eol=lf
+/.github/workflows/go-backend*.yml text eol=lf
