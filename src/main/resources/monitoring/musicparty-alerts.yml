@@ -1,0 +1,48 @@
+groups:
+  - name: musicparty
+    rules:
+      - alert: MusicPartyWebSocketSendFailures
+        expr: increase(musicparty_websocket_send_failures_total[5m]) > 10
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "MusicParty WebSocket send failures are increasing" }
+      - alert: MusicPartySlowClients
+        expr: increase(musicparty_websocket_slow_client_disconnects_total[10m]) > 5
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "MusicParty is disconnecting slow WebSocket clients" }
+      - alert: MusicPartyRoomCommandQueueNearCapacity
+        expr: musicparty_room_command_queue_depth / 100 > 0.8
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "MusicParty room command queue is near capacity" }
+      - alert: MusicPartySqliteBusy
+        expr: increase(musicparty_sqlite_busy_total[5m]) > 0
+        for: 2m
+        labels: { severity: warning }
+        annotations: { summary: "MusicParty SQLite is busy or locked" }
+      - alert: MusicPartyQueueAckLatency
+        expr: histogram_quantile(0.95, sum(rate(musicparty_queue_ack_latency_seconds_bucket[5m])) by (le)) > 0.25
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "MusicParty queue ACK P95 exceeds 250ms" }
+      - alert: MusicPartyDownloadFailures
+        expr: increase(musicparty_download_submissions_total{result=~"rejected|emit_failed"}[10m]) > 5
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "MusicParty downloads are being rejected" }
+      - alert: MusicPartyUpstreamCircuitOpen
+        expr: increase(musicparty_upstream_circuit_opened_total[5m]) > 0
+        for: 1m
+        labels: { severity: warning }
+        annotations: { summary: "MusicParty upstream circuit opened" }
+      - alert: MusicPartyHeapHigh
+        expr: jvm_memory_used_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"} > 0.8
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: "MusicParty JVM heap exceeds 80 percent" }
+      - alert: MusicPartyExecutorQueueNearCapacity
+        expr: musicparty_executor_queued_tasks / (musicparty_executor_queued_tasks + musicparty_executor_active_threads + 1) > 0.8
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "MusicParty executor queue is saturated" }

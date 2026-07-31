@@ -1,161 +1,79 @@
 <template>
   <div v-if="!passed" class="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-[var(--surface-0)]/90 p-4 backdrop-blur-xl">
-    <div class="relative w-full max-w-md overflow-hidden rounded-2xl border border-[var(--border-default)] bg-[var(--surface-4)] p-8 shadow-2xl">
-      <div class="absolute inset-x-0 top-0 h-1 bg-[var(--accent)]"></div>
-
-      <div class="mb-6">
-        <h2 class="text-2xl font-bold tracking-tight text-[var(--text-primary)]">
-          {{ authTitle }}
-        </h2>
-        <p class="mt-1 font-mono text-xs tracking-[0.2em] text-[var(--text-tertiary)]">
-          {{ authKicker }}
-        </p>
-      </div>
-
-      <div
-        v-if="!requiresSetup"
-        data-testid="auth-mode-toggle"
-        class="mb-5 grid grid-cols-2 rounded-xl border border-[var(--border-default)] bg-[var(--surface-2)] p-1"
-      >
-        <button
-          type="button"
-          class="min-h-[36px] rounded-lg text-sm font-semibold transition-colors"
-          :class="authMode === 'login' ? 'bg-[var(--accent)] text-[var(--text-inverse)] shadow-sm' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'"
-          @click="setAuthMode('login')"
-        >
-          {{ t('auth.loginAccount') }}
+    <main class="w-full max-w-md rounded-xl bg-[var(--surface-4)] p-8 shadow-xl">
+      <h1 class="text-xl font-semibold text-[var(--text-primary)]">{{ title }}</h1>
+      <p class="mt-2 text-sm text-[var(--text-secondary)]">{{ description }}</p>
+      <form v-if="inviteSecret" class="mt-6 space-y-3" @submit.prevent="redeem">
+        <label class="block text-sm text-[var(--text-secondary)]" for="invite-display-name">显示名</label>
+        <input id="invite-display-name" v-model.trim="displayName" autofocus maxlength="32" autocomplete="nickname"
+          class="w-full rounded-md bg-[var(--surface-2)] px-3 py-2 text-[var(--text-primary)] outline-none focus:ring-2 focus:ring-[var(--accent-muted)]" placeholder="你想被怎样称呼" />
+        <button class="min-h-[40px] w-full rounded-md bg-[var(--accent)] font-semibold text-[var(--text-inverse)] disabled:opacity-50" :disabled="loading || !displayName">
+          {{ loading ? '正在加入…' : '加入房间' }}
         </button>
-        <button
-          type="button"
-          class="min-h-[36px] rounded-lg text-sm font-semibold transition-colors"
-          :class="authMode === 'register' ? 'bg-[var(--accent)] text-[var(--text-inverse)] shadow-sm' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'"
-          @click="setAuthMode('register')"
-        >
-          {{ t('auth.createAccount') }}
+      </form>
+      <form v-else class="mt-6 space-y-3" @submit.prevent="loginAdmin">
+        <label class="block text-sm text-[var(--text-secondary)]" for="admin-username">管理员账号</label>
+        <input id="admin-username" v-model.trim="adminUsername" autocomplete="username"
+          class="w-full rounded-md bg-[var(--surface-2)] px-3 py-2 text-[var(--text-primary)] outline-none focus:ring-2 focus:ring-[var(--accent-muted)]" />
+        <label class="block text-sm text-[var(--text-secondary)]" for="admin-password">管理员密码</label>
+        <input id="admin-password" v-model="adminPassword" type="password" autocomplete="current-password"
+          class="w-full rounded-md bg-[var(--surface-2)] px-3 py-2 text-[var(--text-primary)] outline-none focus:ring-2 focus:ring-[var(--accent-muted)]" />
+        <button class="min-h-[40px] w-full rounded-md bg-[var(--surface-control-active)] font-semibold text-[var(--text-primary)] disabled:opacity-50"
+          :disabled="loading || !adminUsername || !adminPassword">
+          {{ loading ? '正在登录…' : '平台管理员登录' }}
         </button>
-      </div>
-
-      <div class="space-y-4">
-        <input
-          v-model="username"
-          type="text"
-          autocomplete="username"
-          placeholder="username"
-          class="w-full rounded-xl border border-[var(--border-default)] bg-[var(--surface-2)] p-3 text-center font-mono text-base tracking-widest text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-muted)]"
-          autofocus
-          @keyup.enter="handleAction"
-        />
-        <input
-          v-model="password"
-          type="password"
-          :autocomplete="isRegisterMode ? 'new-password' : 'current-password'"
-          :placeholder="isRegisterMode ? 'set account password' : 'password'"
-          class="w-full rounded-xl border border-[var(--border-default)] bg-[var(--surface-2)] p-3 text-center font-mono text-base tracking-widest text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)] focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-muted)]"
-          @keyup.enter="handleAction"
-        />
-
-        <button
-          class="min-h-[44px] w-full rounded-xl bg-[var(--accent)] py-3 font-semibold text-[var(--text-inverse)] transition-colors hover:bg-[var(--accent-hover)] active:scale-[0.98] disabled:opacity-50"
-          :disabled="loading"
-          @click="handleAction"
-        >
-          {{ actionLabel }}
-        </button>
-      </div>
-
-      <div v-if="errorMessage" class="mt-4 animate-pulse text-center font-mono text-xs text-[var(--error-soft-text)]">
-        > {{ t('common.error') }}: {{ errorMessage }}
-      </div>
-    </div>
+      </form>
+      <p v-if="errorMessage" class="mt-4 text-sm text-[var(--error-soft-text)]">{{ errorMessage }}</p>
+    </main>
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, ref } from 'vue';
-import { useI18n } from 'vue-i18n';
 import { authApi } from '../api/auth';
-import { STORAGE_KEYS } from '../constants/keys';
 import { useUserStore } from '../stores/user';
 
 const emit = defineEmits(['unlocked']);
-const { t } = useI18n();
 const userStore = useUserStore();
-
 const passed = ref(false);
-const requiresSetup = ref(false);
-const authMode = ref('login');
-const username = ref(localStorage.getItem(STORAGE_KEYS.ACCOUNT_USERNAME) || '');
-const password = ref('');
-const errorMessage = ref('');
+const inviteSecret = ref('');
+const roomName = ref('');
+const displayName = ref('');
+const adminUsername = ref('');
+const adminPassword = ref('');
 const loading = ref(false);
+const errorMessage = ref('');
+const title = computed(() => inviteSecret.value ? `加入 ${roomName.value || 'MusicParty'}` : '需要邀请才能加入');
+const description = computed(() => inviteSecret.value ? '填写显示名即可在这台设备上加入。' : '请向房主索取一次性邀请链接。');
 
-const isRegisterMode = computed(() => requiresSetup.value || authMode.value === 'register');
-const authTitle = computed(() => {
-  if (requiresSetup.value) return t('auth.initializeTitle');
-  return authMode.value === 'register' ? t('auth.registerTitle') : t('auth.accessTitle');
-});
-const authKicker = computed(() => {
-  if (requiresSetup.value) return 'CREATE ADMIN ACCOUNT';
-  return authMode.value === 'register' ? 'CREATE ACCOUNT' : 'ACCOUNT LOGIN';
-});
-const actionLabel = computed(() => {
-  if (loading.value) return t('auth.verifying');
-  if (requiresSetup.value) return t('auth.createAdmin');
-  return authMode.value === 'register' ? t('auth.createAccount') : t('auth.unlock');
-});
-
-const finish = (session) => {
-  userStore.initAccount(session);
-  passed.value = true;
-  emit('unlocked');
+const finish = (session) => { userStore.initAccount(session); passed.value = true; emit('unlocked'); };
+const secretFromLocation = () => {
+  const match = window.location.pathname.match(/^\/join\/([^/]+)$/);
+  return match ? decodeURIComponent(match[1]) : '';
 };
-
-const checkStatus = async () => {
-  loading.value = true;
+const load = async () => {
+  try { const existing = await authApi.getAccountMe(); finish(existing); return; } catch { /* invitation required */ }
+  inviteSecret.value = secretFromLocation();
+  if (!inviteSecret.value) return;
+  try { const metadata = await authApi.inviteMetadata(inviteSecret.value); roomName.value = metadata.roomName || ''; }
+  catch { errorMessage.value = '这个邀请无效或已失效。'; inviteSecret.value = ''; }
+};
+const redeem = async () => {
+  if (!displayName.value || loading.value) return;
+  loading.value = true; errorMessage.value = '';
   try {
-    const status = await authApi.getAccountStatus();
-    requiresSetup.value = Boolean(status.requiresSetup);
-    authMode.value = requiresSetup.value ? 'register' : 'login';
-    const cachedToken = localStorage.getItem(STORAGE_KEYS.SESSION_TOKEN);
-    if (cachedToken && !requiresSetup.value) {
-      const session = await authApi.getAccountMe(cachedToken);
-      finish(session);
-    }
-  } catch {
-    localStorage.removeItem(STORAGE_KEYS.SESSION_TOKEN);
-  } finally {
-    loading.value = false;
-  }
-};
-
-const setAuthMode = (mode) => {
-  authMode.value = mode;
-  password.value = '';
-  errorMessage.value = '';
-};
-
-const handleAction = async () => {
-  if (loading.value) return;
-  errorMessage.value = '';
-  if (!username.value.trim() || password.value.length < 8) {
-    errorMessage.value = '用户名不能为空，密码至少 8 位';
-    return;
-  }
-  loading.value = true;
-  try {
-    const session = isRegisterMode.value
-      ? await authApi.registerAccount(username.value.trim(), password.value)
-      : await authApi.loginAccount(username.value.trim(), password.value);
+    const session = await authApi.redeemInvite(inviteSecret.value, displayName.value);
+    window.history.replaceState({}, '', '/');
     finish(session);
-  } catch (error) {
-    errorMessage.value = error?.code === 'ECONNABORTED'
-      ? '请求超时，服务器可能仍在处理，请稍后尝试登录'
-      : (error?.response?.data?.message || (isRegisterMode.value ? '注册失败' : '登录失败'));
-  } finally {
-    loading.value = false;
-    password.value = '';
-  }
+  } catch { errorMessage.value = '这个邀请无效、已失效，或已被使用。'; }
+  finally { loading.value = false; }
 };
-
-onMounted(checkStatus);
+const loginAdmin = async () => {
+  if (!adminUsername.value || !adminPassword.value || loading.value) return;
+  loading.value = true; errorMessage.value = '';
+  try { finish(await authApi.loginAccount(adminUsername.value, adminPassword.value)); }
+  catch { errorMessage.value = '管理员账号或密码无效。'; }
+  finally { loading.value = false; }
+};
+onMounted(load);
 </script>

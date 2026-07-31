@@ -230,7 +230,7 @@ onMounted(() => {
   initSortable();
 });
 
-watch([activeView, selectionMode, queueListRef], async () => {
+watch([activeView, selectionMode, queueListRef, () => user.isGuest], async () => {
   await nextTick();
   if (activeView.value === 'queue') {
     if (!sortableInstance) {

@@ -1,6 +1,7 @@
 package org.thornex.musicparty.websocket;
 
 import lombok.RequiredArgsConstructor;
+import jakarta.annotation.PreDestroy;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import org.thornex.musicparty.dto.PlayerEvent;
@@ -14,6 +15,14 @@ import org.thornex.musicparty.service.AfterCommitExecutor;
 import org.thornex.musicparty.service.UserService;
 import org.thornex.musicparty.util.MessageFormatter;
 
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+
 @Component
 @RequiredArgsConstructor
 public class WebSocketBroadcaster {
@@ -21,14 +30,24 @@ public class WebSocketBroadcaster {
     private final ReactiveSocketBroker broker;
     private final UserService userService;
     private final AfterCommitExecutor afterCommitExecutor;
+    private final Map<String, PlayerStateEvent> pendingPlayerStates = new ConcurrentHashMap<>();
+    private volatile List<org.thornex.musicparty.dto.RoomInfo> pendingRoomList;
+    private final AtomicBoolean stateFlushScheduled = new AtomicBoolean();
+    private final ScheduledExecutorService stateFlushExecutor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "mp-websocket-state-flush");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     /**
      * 监听播放器完整状态变更事件
      */
     @EventListener
     public void onPlayerStateChanged(PlayerStateEvent event) {
-        afterCommitExecutor.run(() ->
-                broker.broadcastRoom(event.getRoomId(), "player.state", event.getState()));
+        afterCommitExecutor.run(() -> {
+            pendingPlayerStates.put(event.getRoomId(), event);
+            scheduleStateFlush();
+        });
     }
 
     /**
@@ -84,8 +103,39 @@ public class WebSocketBroadcaster {
 
     @EventListener
     public void onRoomListChanged(RoomListUpdateEvent event) {
-        afterCommitExecutor.run(() ->
-                broker.broadcastAll("rooms.list", event.getRooms()));
+        afterCommitExecutor.run(() -> {
+            pendingRoomList = event.getRooms();
+            scheduleStateFlush();
+        });
+    }
+
+    @PreDestroy
+    void shutdown() {
+        stateFlushExecutor.shutdownNow();
+    }
+
+    private void scheduleStateFlush() {
+        if (stateFlushScheduled.compareAndSet(false, true)) {
+            stateFlushExecutor.schedule(this::flushLatestState, 200, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    private void flushLatestState() {
+        try {
+            Map<String, PlayerStateEvent> states = Map.copyOf(pendingPlayerStates);
+            states.forEach(pendingPlayerStates::remove);
+            states.forEach((roomId, event) -> broker.broadcastRoom(roomId, "player.state", event.getState()));
+            List<org.thornex.musicparty.dto.RoomInfo> rooms = pendingRoomList;
+            pendingRoomList = null;
+            if (rooms != null) {
+                broker.broadcastAll("rooms.list", rooms);
+            }
+        } finally {
+            stateFlushScheduled.set(false);
+            if (!pendingPlayerStates.isEmpty() || pendingRoomList != null) {
+                scheduleStateFlush();
+            }
+        }
     }
 
     @EventListener

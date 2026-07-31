@@ -15,7 +15,7 @@ import org.springframework.web.reactive.socket.WebSocketSession;
 import org.springframework.web.reactive.socket.server.support.WebSocketHandlerAdapter;
 import org.thornex.musicparty.controller.MusicSocketController;
 import org.thornex.musicparty.service.AccountService;
-import org.thornex.musicparty.service.RoomAccessService;
+import org.thornex.musicparty.service.RoomAuthorizationService;
 import org.thornex.musicparty.service.RoomService;
 import org.thornex.musicparty.service.WebSocketSessionCoordinator;
 import org.thornex.musicparty.security.SessionCookieService;
@@ -40,7 +40,7 @@ public class WebSocketConfig {
     private final ObjectMapper objectMapper;
     private final AccountService accountService;
     private final RoomService roomService;
-    private final RoomAccessService roomAccessService;
+    private final RoomAuthorizationService roomAuthorizationService;
     private final SessionCookieService sessionCookieService;
     private final AppProperties appProperties;
     @Qualifier("dbReadScheduler")
@@ -69,20 +69,14 @@ public class WebSocketConfig {
             if (!isAllowedOrigin(session)) {
                 return false;
             }
-            var metadata = roomService.getRoomAccessMetadata(roomId).orElse(null);
-            if (metadata == null) {
-                return false;
-            }
+            String normalizedRoomId = roomService.normalizeRoomId(roomId);
             String sessionToken = sessionCookieService.sessionToken(session);
             var accountSession = accountService.resolveSession(sessionToken).orElse(null);
             if (accountSession == null) {
                 return false;
             }
-            if (!metadata.privateRoom()) {
-                return true;
-            }
             return StringUtils.hasText(accountSession.publicId())
-                    && roomAccessService.hasActiveGrant(metadata.roomId(), accountSession.publicId());
+                    && roomAuthorizationService.canAccessRoom(normalizedRoomId, accountSession.publicId(), sessionToken);
         }).subscribeOn(dbReadScheduler);
     }
 

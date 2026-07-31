@@ -47,6 +47,34 @@ public class SqliteSchemaInitializer {
     private List<SchemaMigration> migrations() {
         return List.of(
                 new SchemaMigration(
+                        "schema.room_membership.table",
+                        jdbc -> !hasTable(jdbc, "room_membership"),
+                        jdbc -> jdbc.execute("""
+                                create table room_membership (
+                                  room_id text not null, public_id text not null, role text not null,
+                                  created_at integer not null, updated_at integer not null,
+                                  primary key (room_id, public_id)
+                                )
+                                """)
+                ),
+                new SchemaMigration(
+                        "schema.room_invite.table",
+                        jdbc -> !hasTable(jdbc, "room_invite"),
+                        jdbc -> jdbc.execute("""
+                                create table room_invite (
+                                  id text primary key, room_id text not null, created_by_public_id text not null,
+                                  secret_hash text not null unique, label text, expires_at integer not null,
+                                  max_uses integer not null default 1, used_at integer, used_by_public_id text,
+                                  revoked_at integer, created_at integer not null
+                                )
+                                """)
+                ),
+                new SchemaMigration(
+                        "schema.user_account.platform_admin_role",
+                        jdbc -> hasTable(jdbc, "user_account"),
+                        jdbc -> jdbc.execute("update user_account set role = 'PLATFORM_ADMIN' where role = 'ADMIN'")
+                ),
+                new SchemaMigration(
                         "schema.user_profile.current_room_id",
                         jdbc -> !hasColumn(jdbc, "user_profile", "current_room_id"),
                         jdbc -> jdbc.execute("alter table user_profile add column current_room_id text not null default 'lounge'")

@@ -17,6 +17,10 @@ public class SessionCookieService {
     public static final String SESSION_COOKIE = "MP_SESSION";
     public static final String CSRF_COOKIE = "MP_CSRF";
     public static final String CSRF_HEADER = "X-CSRF-Token";
+    public static final String ADMIN_ELEVATION_COOKIE = "MP_ADMIN_ELEVATION";
+    private static final long MEMBER_SESSION_SECONDS = 90L * 24 * 60 * 60;
+    private static final long ADMIN_SESSION_SECONDS = 12L * 60 * 60;
+    private static final long ELEVATION_SECONDS = 10L * 60;
 
     private final AppProperties appProperties;
     private final SecureRandom random = new SecureRandom();
@@ -49,16 +53,32 @@ public class SessionCookieService {
 
     public void establish(ServerWebExchange exchange, String sessionToken) {
         boolean secure = shouldUseSecureCookie(exchange);
+        long maxAge =  MEMBER_SESSION_SECONDS;
         exchange.getResponse().addCookie(ResponseCookie.from(SESSION_COOKIE, sessionToken).httpOnly(true)
-                .secure(secure).sameSite("Strict").path("/").build());
+                .secure(secure).sameSite("Lax").path("/").maxAge(maxAge).build());
         exchange.getResponse().addCookie(ResponseCookie.from(CSRF_COOKIE, randomToken()).httpOnly(false)
-                .secure(secure).sameSite("Strict").path("/").build());
+                .secure(secure).sameSite("Lax").path("/").maxAge(maxAge).build());
+    }
+
+    public void establishAdmin(ServerWebExchange exchange, String sessionToken) {
+        boolean secure = shouldUseSecureCookie(exchange);
+        exchange.getResponse().addCookie(ResponseCookie.from(SESSION_COOKIE, sessionToken).httpOnly(true)
+                .secure(secure).sameSite("Lax").path("/").maxAge(ADMIN_SESSION_SECONDS).build());
+        exchange.getResponse().addCookie(ResponseCookie.from(CSRF_COOKIE, randomToken()).httpOnly(false)
+                .secure(secure).sameSite("Lax").path("/").maxAge(ADMIN_SESSION_SECONDS).build());
+    }
+
+    public void establishElevation(ServerWebExchange exchange, String value) {
+        exchange.getResponse().addCookie(ResponseCookie.from(ADMIN_ELEVATION_COOKIE, value).httpOnly(true)
+                .secure(shouldUseSecureCookie(exchange)).sameSite("Strict").path("/api/admin").maxAge(ELEVATION_SECONDS).build());
     }
 
     public void clear(ServerWebExchange exchange) {
         boolean secure = shouldUseSecureCookie(exchange);
         exchange.getResponse().addCookie(expired(SESSION_COOKIE, true, secure));
         exchange.getResponse().addCookie(expired(CSRF_COOKIE, false, secure));
+        exchange.getResponse().addCookie(ResponseCookie.from(ADMIN_ELEVATION_COOKIE, "").httpOnly(true).secure(secure)
+                .sameSite("Strict").path("/api/admin").maxAge(0).build());
     }
 
     public boolean csrfMatches(ServerWebExchange exchange) {

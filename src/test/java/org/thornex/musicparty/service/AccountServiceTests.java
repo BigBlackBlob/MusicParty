@@ -17,7 +17,7 @@ class AccountServiceTests {
 
         AccountSession session = service.register("Alice", "correct-horse-battery-staple");
 
-        assertThat(session.role()).isEqualTo("ADMIN");
+        assertThat(session.role()).isEqualTo("PLATFORM_ADMIN");
         assertThat(session.guest()).isFalse();
         assertThat(service.status().requiresSetup()).isFalse();
         assertThat(service.isAdminSession(session.sessionToken())).isTrue();
@@ -32,7 +32,7 @@ class AccountServiceTests {
 
         assertThat(loggedIn.sessionToken()).isNotEqualTo(registered.sessionToken());
         assertThat(loggedIn.publicId()).isEqualTo(registered.publicId());
-        assertThat(loggedIn.role()).isEqualTo("ADMIN");
+        assertThat(loggedIn.role()).isEqualTo("PLATFORM_ADMIN");
         assertThat(service.resolveSession(loggedIn.sessionToken()).map(AccountSession::publicId))
                 .contains(registered.publicId());
     }
@@ -44,7 +44,7 @@ class AccountServiceTests {
 
         AccountSession bob = service.register("Bob", "another-correct-horse");
 
-        assertThat(bob.role()).isEqualTo("USER");
+        assertThat(bob.role()).isEqualTo("MEMBER");
         assertThat(service.isAdminSession(bob.sessionToken())).isFalse();
     }
 

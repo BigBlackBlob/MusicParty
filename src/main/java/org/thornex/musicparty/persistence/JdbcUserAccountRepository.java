@@ -31,7 +31,7 @@ public class JdbcUserAccountRepository implements UserAccountRepository {
         Integer count = jdbcTemplate.queryForObject("""
                 select count(1)
                 from user_account
-                where role = 'ADMIN' and enabled = 1
+                where role in ('PLATFORM_ADMIN', 'ADMIN') and enabled = 1
                 """, Integer.class);
         return count != null && count > 0;
     }

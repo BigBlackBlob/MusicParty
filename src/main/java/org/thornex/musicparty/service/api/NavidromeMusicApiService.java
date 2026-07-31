@@ -29,7 +29,7 @@ public class NavidromeMusicApiService implements IMusicApiService {
     public NavidromeMusicApiService(AppProperties appProperties, NavidromeSubsonicClient subsonicClient) {
         this.appProperties = appProperties;
         this.subsonicClient = subsonicClient;
-        log.info("NavidromeMusicApiService initialized with base-url: {}", appProperties.getNavidrome().getBaseUrl());
+        log.info("NavidromeMusicApiService initialized");
     }
 
     @Override

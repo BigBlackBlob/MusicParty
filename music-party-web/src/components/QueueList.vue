@@ -111,6 +111,7 @@ import { computed, ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n';
 import Sortable from 'sortablejs';
 import { usePlayerStore } from '../stores/player';
+import { useUserStore } from '../stores/user';
 import QueueItem from './QueueItem.vue';
 import TrackListItem from './ui/TrackListItem.vue';
 import { createLikedSongsFilename, createLikedSongsText } from '../utils/likedSongs';
@@ -119,6 +120,7 @@ import { useVirtualQueue } from '../composables/useVirtualQueue';
 import { buildQueueReorderPayload, buildQueueReorderPayloadFromDom, isQueueReorderSourceCurrent } from '../utils/queueReorder';
 
 const player = usePlayerStore();
+const user = useUserStore();
 const { t } = useI18n();
 const queue = computed(() => player.queue);
 const activeView = ref('queue');
@@ -145,13 +147,13 @@ onMounted(() => {
   initSortable();
 });
 
-watch([activeView, selectionMode, queueListRef], async () => {
+watch([activeView, selectionMode, queueListRef, () => user.isGuest], async () => {
   await nextTick();
   if (activeView.value === 'queue') {
     if (!sortableInstance) {
       initSortable();
     } else if (sortableInstance) {
-      sortableInstance.option('disabled', selectionMode.value);
+      sortableInstance.option('disabled', selectionMode.value || user.isGuest);
     }
   } else {
     destroySortable();
@@ -169,7 +171,7 @@ const initSortable = () => {
   sortableInstance = new Sortable(queueListRef.value, {
     animation: 150,
     ghostClass: 'opacity-40',
-    disabled: selectionMode.value,
+    disabled: selectionMode.value || user.isGuest,
     onStart: (evt) => { dragStartedInInteractiveZone = evt.oldIndex < 50; },
     onMove: (evt) => dragStartedInInteractiveZone && [...queueListRef.value.children].indexOf(evt.related) < 50,
     onEnd: (evt) => {

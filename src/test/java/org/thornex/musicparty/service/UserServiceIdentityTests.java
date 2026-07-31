@@ -9,6 +9,8 @@ import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.config.SqliteSchemaInitializer;
 import org.thornex.musicparty.dto.User;
 import org.thornex.musicparty.dto.UserSummary;
+import org.thornex.musicparty.enums.PlayerAction;
+import org.thornex.musicparty.event.SystemMessageEvent;
 import org.thornex.musicparty.event.UserCountChangeEvent;
 import org.thornex.musicparty.persistence.JdbcMigrationStateRepository;
 import org.thornex.musicparty.persistence.JdbcRoomRepository;
@@ -17,6 +19,7 @@ import org.thornex.musicparty.persistence.PersistedRoom;
 import org.thornex.musicparty.persistence.PersistedSession;
 import org.thornex.musicparty.persistence.PersistedUserProfile;
 import org.thornex.musicparty.persistence.InMemoryMigrationStateRepository;
+import org.thornex.musicparty.persistence.InMemoryRoomAccessRepository;
 import org.thornex.musicparty.persistence.RoomRepository;
 import org.thornex.musicparty.persistence.UserProfileRepository;
 
@@ -28,7 +31,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -177,6 +182,32 @@ class UserServiceIdentityTests {
                 .get()
                 .extracting(User::getSessionId)
                 .isEqualTo("session-2");
+    }
+
+    @Test
+    void reconnectWithinLeaveWindowDoesNotPublishUserLeaveAfterOriginalDelay() throws Exception {
+        List<Object> events = new java.util.concurrent.CopyOnWriteArrayList<>();
+        RoomService roomService = new RoomService(new ObjectMapper(), events::add, new AppProperties(),
+                new InMemoryRoomRepository(), new InMemoryRoomAccessRepository(), new InMemoryMigrationStateRepository());
+        roomService.init();
+        UserService service = new UserService(events::add, roomService, coordinator(roomService),
+                new InMemoryUserProfileRepository(), Executors.newSingleThreadScheduledExecutor(), Duration.ofSeconds(10));
+        try {
+            User user = service.handleConnect("session-1", null, "Alice");
+            events.clear();
+            service.disconnectUser("session-1");
+
+            Thread.sleep(5_000);
+            service.handleConnect("session-2", user.getSessionToken(), "Ignored");
+            Thread.sleep(6_000); // Wait past the original ten-second leave deadline.
+
+            assertThat(events).filteredOn(SystemMessageEvent.class::isInstance)
+                    .map(SystemMessageEvent.class::cast)
+                    .extracting(SystemMessageEvent::getAction)
+                    .doesNotContain(PlayerAction.USER_LEAVE);
+        } finally {
+            service.shutdown();
+        }
     }
 
     @Test

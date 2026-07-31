@@ -374,7 +374,8 @@ public class MusicSocketController {
         return userService.getUser(sessionId)
                 .map(u -> {
                     String role = accountService.roleForPublicId(u.getPublicId()).orElse("GUEST");
-                    return new CurrentUserResponse(u.getSessionToken(), u.getPublicId(), u.getName(), u.isGuest(), role, "ADMIN".equals(role));
+                    boolean admin = "PLATFORM_ADMIN".equals(role) || "ADMIN".equals(role);
+                    return new CurrentUserResponse(u.getSessionToken(), u.getPublicId(), u.getName(), u.isGuest(), role, admin);
                 })
                 .orElse(new CurrentUserResponse("", "", "Unknown", true, "GUEST", false));
     }

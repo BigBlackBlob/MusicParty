@@ -87,7 +87,7 @@ public class CoverColorService {
         return Mono.defer(() -> {
                     boolean trustedLocalPath = isTrustedLocalCoverPath(originalCoverUrl);
                     if (!trustedLocalPath && !isSafeCoverUrl(resolvedUrl)) {
-                        log.warn("Rejected unsafe cover URL for color extraction: {}", resolvedUrl);
+                        log.warn("Rejected unsafe cover URL for color extraction: {}", loggableUrl(resolvedUrl));
                         return Mono.empty();
                     }
                     if (!concurrentExtracts.tryAcquire()) {
@@ -99,7 +99,7 @@ public class CoverColorService {
                             .filter(bytes -> bytes.length <= MAX_COVER_BYTES)
                             .flatMap(bytes -> decodeCoverColor(resolvedUrl, bytes))
                             .onErrorResume(error -> {
-                                log.warn("Failed to fetch cover for color extraction: {}", resolvedUrl, error);
+                                log.warn("Failed to fetch cover for color extraction: {}", loggableUrl(resolvedUrl), error);
                                 return Mono.empty();
                             })
                             .doFinally(ignored -> concurrentExtracts.release());
@@ -114,7 +114,7 @@ public class CoverColorService {
                     if (status.is3xxRedirection()) {
                         String location = response.headers().header("Location").stream().findFirst().orElse("");
                         String redirectUrl = resolveRedirectUrl(resolvedUrl, location);
-                        log.warn("Rejected cover redirect for color extraction: from={}, to={}", resolvedUrl, redirectUrl);
+                        log.warn("Rejected cover redirect for color extraction: from={}, to={}", loggableUrl(resolvedUrl), loggableUrl(redirectUrl));
                         return Mono.empty();
                     }
                     if (response.statusCode().isError()) {
@@ -122,12 +122,12 @@ public class CoverColorService {
                     }
                     MediaType contentType = response.headers().contentType().orElse(null);
                     if (contentType == null || !"image".equalsIgnoreCase(contentType.getType())) {
-                        log.warn("Rejected non-image cover response: url={}, contentType={}", resolvedUrl, contentType);
+                        log.warn("Rejected non-image cover response: url={}, contentType={}", loggableUrl(resolvedUrl), contentType);
                         return Mono.empty();
                     }
                     long contentLength = response.headers().contentLength().orElse(-1);
                     if (contentLength > MAX_COVER_BYTES) {
-                        log.warn("Rejected oversized cover response: url={}, bytes={}", resolvedUrl, contentLength);
+                        log.warn("Rejected oversized cover response: url={}, bytes={}", loggableUrl(resolvedUrl), contentLength);
                         return Mono.empty();
                     }
                     return response.bodyToMono(byte[].class);
@@ -150,7 +150,7 @@ public class CoverColorService {
                 })
                 .subscribeOn(imageCpuScheduler)
                 .onErrorResume(error -> {
-                    log.warn("Failed to extract cover color from {}", resolvedUrl, error);
+                    log.warn("Failed to extract cover color from {}", loggableUrl(resolvedUrl), error);
                     return Mono.empty();
                 });
     }
@@ -211,6 +211,16 @@ public class CoverColorService {
             return URI.create(originalUrl).resolve(location).toString();
         } catch (IllegalArgumentException e) {
             return "";
+        }
+    }
+
+    private String loggableUrl(String url) {
+        try {
+            URI uri = URI.create(url);
+            String port = uri.getPort() < 0 ? "" : ":" + uri.getPort();
+            return uri.getScheme() + "://" + uri.getHost() + port + (uri.getPath() == null ? "" : uri.getPath());
+        } catch (IllegalArgumentException ignored) {
+            return "[invalid-url]";
         }
     }
 

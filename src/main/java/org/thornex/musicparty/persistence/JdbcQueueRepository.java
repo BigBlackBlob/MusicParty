@@ -10,6 +10,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 import org.thornex.musicparty.dto.Music;
@@ -19,6 +20,7 @@ import org.thornex.musicparty.dto.RoomPlaylistTrack;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -27,6 +29,7 @@ import java.util.stream.Collectors;
 @ConditionalOnProperty(prefix = "app.music-api.database", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class JdbcQueueRepository implements QueueRepository {
 
+    private static final long SORT_ORDER_STEP = 1024L;
     private static final TypeReference<MusicQueueItem> QUEUE_ITEM_TYPE = new TypeReference<>() {};
     private static final TypeReference<Music> MUSIC_TYPE = new TypeReference<>() {};
 
@@ -59,36 +62,43 @@ public class JdbcQueueRepository implements QueueRepository {
     @Transactional
     public void replaceQueue(String roomId, List<MusicQueueItem> queueItems) {
         jdbcTemplate.update("delete from room_queue where room_id = ?", roomId);
-        for (int i = 0; i < queueItems.size(); i++) {
-            MusicQueueItem item = queueItems.get(i);
-            jdbcTemplate.update("""
+        if (queueItems.isEmpty()) return;
+        List<IndexedQueueItem> rows = java.util.stream.IntStream.range(0, queueItems.size())
+                .mapToObj(index -> new IndexedQueueItem(queueItems.get(index), index))
+                .toList();
+        jdbcTemplate.batchUpdate("""
                     insert into room_queue(id, room_id, music_json, enqueuer_public_id, enqueuer_name_snapshot, status, sort_order, created_at)
                     values (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    item.queueId(),
-                    roomId,
-                    writeJson(item),
-                    item.enqueuedBy().publicId(),
-                    item.enqueuedBy().name(),
-                    item.status().name(),
-                    i,
-                    System.currentTimeMillis());
-        }
+                    """, rows, rows.size(), (ps, row) -> {
+            MusicQueueItem item = row.item();
+            ps.setString(1, item.queueId());
+            ps.setString(2, roomId);
+            ps.setString(3, writeJson(item));
+            ps.setString(4, item.enqueuedBy().publicId());
+            ps.setString(5, item.enqueuedBy().name());
+            ps.setString(6, item.status().name());
+            ps.setLong(7, (row.index() + 1L) * SORT_ORDER_STEP);
+            ps.setLong(8, System.currentTimeMillis());
+        });
     }
 
     @Override
     @Transactional
     public void synchronizeQueue(String roomId, List<MusicQueueItem> queueItems) {
         Timer.Sample sample = Timer.start(meterRegistry);
+        try {
         List<MusicQueueItem> desired = queueItems == null ? List.of() : queueItems;
-        Set<String> existingIds = Set.copyOf(jdbcTemplate.queryForList(
-                "select id from room_queue where room_id = ?", String.class, roomId));
-        Map<String, Integer> desiredPositions = java.util.stream.IntStream.range(0, desired.size())
-                .boxed()
-                .collect(Collectors.toMap(index -> desired.get(index).queueId(), index -> index));
+        Map<String, PersistedQueueRow> existing = jdbcTemplate.query("""
+                        select id, music_json, enqueuer_public_id, enqueuer_name_snapshot, status, sort_order
+                        from room_queue where room_id = ?
+                        """, (rs, rowNum) -> new PersistedQueueRow(
+                        rs.getString("id"), rs.getString("music_json"), rs.getString("enqueuer_public_id"),
+                        rs.getString("enqueuer_name_snapshot"), rs.getString("status"), rs.getLong("sort_order")), roomId)
+                .stream().collect(Collectors.toMap(PersistedQueueRow::id, row -> row));
+        Set<String> existingIds = existing.keySet();
 
         List<String> removedIds = existingIds.stream()
-                .filter(id -> !desiredPositions.containsKey(id))
+                .filter(id -> desired.stream().noneMatch(item -> item.queueId().equals(id)))
                 .toList();
         if (!removedIds.isEmpty()) {
             jdbcTemplate.batchUpdate("delete from room_queue where room_id = ? and id = ?", removedIds,
@@ -98,6 +108,7 @@ public class JdbcQueueRepository implements QueueRepository {
                     });
         }
 
+        Map<String, Long> desiredSortOrders = allocateSparseSortOrders(desired, existing);
         List<MusicQueueItem> inserted = desired.stream()
                 .filter(item -> !existingIds.contains(item.queueId()))
                 .toList();
@@ -112,13 +123,13 @@ public class JdbcQueueRepository implements QueueRepository {
                         ps.setString(4, item.enqueuedBy().publicId());
                         ps.setString(5, item.enqueuedBy().name());
                         ps.setString(6, item.status().name());
-                        ps.setInt(7, desiredPositions.get(item.queueId()));
+                        ps.setLong(7, desiredSortOrders.get(item.queueId()));
                         ps.setLong(8, System.currentTimeMillis());
                     });
         }
 
         List<MusicQueueItem> updated = desired.stream()
-                .filter(item -> existingIds.contains(item.queueId()))
+                .filter(item -> needsUpdate(item, existing.get(item.queueId()), desiredSortOrders.get(item.queueId())))
                 .toList();
         if (!updated.isEmpty()) {
             jdbcTemplate.batchUpdate("""
@@ -130,7 +141,7 @@ public class JdbcQueueRepository implements QueueRepository {
                         ps.setString(2, item.enqueuedBy().publicId());
                         ps.setString(3, item.enqueuedBy().name());
                         ps.setString(4, item.status().name());
-                        ps.setInt(5, desiredPositions.get(item.queueId()));
+                        ps.setLong(5, desiredSortOrders.get(item.queueId()));
                         ps.setString(6, roomId);
                         ps.setString(7, item.queueId());
                     });
@@ -139,8 +150,107 @@ public class JdbcQueueRepository implements QueueRepository {
         meterRegistry.counter("musicparty.queue.persistence.rows", "operation", "insert").increment(inserted.size());
         meterRegistry.counter("musicparty.queue.persistence.rows", "operation", "update").increment(updated.size());
         meterRegistry.summary("musicparty.queue.length").record(desired.size());
-        sample.stop(meterRegistry.timer("musicparty.queue.persistence.transaction"));
+        } catch (DataAccessException error) {
+            recordDatabaseFailure("synchronize_queue", roomId, error);
+            throw error;
+        } finally {
+            sample.stop(meterRegistry.timer("musicparty.queue.persistence.transaction"));
+        }
     }
+
+    /**
+     * Leaves rows that are already in the requested relative order untouched.  A move or
+     * insert receives a key between its unchanged neighbours, so normal mutations update
+     * one row instead of renumbering the tail of a room queue.  Old dense queues are
+     * upgraded once, and a local gap exhaustion falls back to a one-off renumbering.
+     */
+    private Map<String, Long> allocateSparseSortOrders(List<MusicQueueItem> desired,
+                                                        Map<String, PersistedQueueRow> existing) {
+        Map<String, Long> result = new HashMap<>();
+        if (desired.isEmpty()) return result;
+        if (!hasUsableSparseOrder(desired, existing)) {
+            for (int index = 0; index < desired.size(); index++) {
+                result.put(desired.get(index).queueId(), (index + 1L) * SORT_ORDER_STEP);
+            }
+            return result;
+        }
+
+        List<String> stableIds = longestIncreasingSubsequence(desired, existing);
+        Set<String> stable = Set.copyOf(stableIds);
+        for (String id : stable) result.put(id, existing.get(id).sortOrder());
+
+        int index = 0;
+        while (index < desired.size()) {
+            if (stable.contains(desired.get(index).queueId())) {
+                index++;
+                continue;
+            }
+            int start = index;
+            while (index < desired.size() && !stable.contains(desired.get(index).queueId())) index++;
+            int end = index;
+            Long left = start == 0 ? null : result.get(desired.get(start - 1).queueId());
+            Long right = end == desired.size() ? null : existing.get(desired.get(end).queueId()).sortOrder();
+            int count = end - start;
+            if (left != null && right != null && right - left <= count) {
+                for (int position = 0; position < desired.size(); position++) {
+                    result.put(desired.get(position).queueId(), (position + 1L) * SORT_ORDER_STEP);
+                }
+                return result;
+            }
+            for (int offset = 0; offset < count; offset++) {
+                long order = left == null
+                        ? right - (long) (count - offset) * SORT_ORDER_STEP
+                        : right == null
+                        ? left + (long) (offset + 1) * SORT_ORDER_STEP
+                        : left + (right - left) * (offset + 1L) / (count + 1L);
+                result.put(desired.get(start + offset).queueId(), order);
+            }
+        }
+        return result;
+    }
+
+    private boolean hasUsableSparseOrder(List<MusicQueueItem> desired, Map<String, PersistedQueueRow> existing) {
+        if (existing.isEmpty()) return false;
+        return existing.values().stream().map(PersistedQueueRow::sortOrder).distinct().count() == existing.size();
+    }
+
+    private List<String> longestIncreasingSubsequence(List<MusicQueueItem> desired,
+                                                       Map<String, PersistedQueueRow> existing) {
+        List<String> ids = desired.stream().map(MusicQueueItem::queueId).filter(existing::containsKey).toList();
+        int[] tails = new int[ids.size()];
+        int[] previous = new int[ids.size()];
+        int length = 0;
+        java.util.Arrays.fill(previous, -1);
+        for (int i = 0; i < ids.size(); i++) {
+            long value = existing.get(ids.get(i)).sortOrder();
+            int low = 0, high = length;
+            while (low < high) {
+                int middle = (low + high) >>> 1;
+                if (existing.get(ids.get(tails[middle])).sortOrder() < value) low = middle + 1;
+                else high = middle;
+            }
+            if (low > 0) previous[i] = tails[low - 1];
+            tails[low] = i;
+            if (low == length) length++;
+        }
+        List<String> result = new java.util.ArrayList<>(length);
+        for (int current = tails[length - 1]; current >= 0; current = previous[current]) result.add(ids.get(current));
+        java.util.Collections.reverse(result);
+        return result;
+    }
+
+    private boolean needsUpdate(MusicQueueItem item, PersistedQueueRow existing, long sortOrder) {
+        return existing == null || existing.sortOrder() != sortOrder
+                || !existing.musicJson().equals(writeJson(item))
+                || !java.util.Objects.equals(existing.enqueuerPublicId(), item.enqueuedBy().publicId())
+                || !java.util.Objects.equals(existing.enqueuerNameSnapshot(), item.enqueuedBy().name())
+                || !java.util.Objects.equals(existing.status(), item.status().name());
+    }
+
+    private record PersistedQueueRow(String id, String musicJson, String enqueuerPublicId,
+                                     String enqueuerNameSnapshot, String status, long sortOrder) {}
+
+    private record IndexedQueueItem(MusicQueueItem item, int index) {}
 
     @Override
     public List<PersistedHistoryEntry> loadHistory(String roomId, int limit) {
@@ -273,6 +383,24 @@ public class JdbcQueueRepository implements QueueRepository {
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Failed to serialize value for SQLite persistence", e);
         }
+    }
+
+    private void recordDatabaseFailure(String operation, String roomId, DataAccessException error) {
+        boolean busy = hasSqliteBusyCause(error);
+        meterRegistry.counter("musicparty.sqlite.failures", "operation", operation,
+                "reason", busy ? "busy" : "database_error").increment();
+        if (busy) meterRegistry.counter("musicparty.sqlite.busy", "operation", operation).increment();
+        org.slf4j.LoggerFactory.getLogger(JdbcQueueRepository.class)
+                .error("SQLite operation failed: operation={}, roomId={}, reason={}", operation, roomId,
+                        busy ? "busy" : error.getClass().getSimpleName());
+    }
+
+    private boolean hasSqliteBusyCause(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            String message = cause.getMessage();
+            if (message != null && (message.contains("SQLITE_BUSY") || message.toLowerCase().contains("database is locked"))) return true;
+        }
+        return false;
     }
 
     private <T> T readJson(String json, TypeReference<T> typeReference) {

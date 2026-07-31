@@ -1,6 +1,6 @@
 package org.thornex.musicparty.controller;
 
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -14,81 +14,78 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.thornex.musicparty.dto.RoomInfo;
 import org.thornex.musicparty.dto.RoomUpdateRequest;
-import org.thornex.musicparty.dto.RoomVerifyRequest;
-import org.thornex.musicparty.service.RoomAccessGrant;
-import org.thornex.musicparty.service.RoomAccessService;
 import org.thornex.musicparty.service.RoomLifecycleService;
 import org.thornex.musicparty.service.RoomService;
-import org.thornex.musicparty.service.UserService;
 import org.thornex.musicparty.service.AccountService;
+import org.thornex.musicparty.service.RoomAuthorizationService;
+import org.thornex.musicparty.service.RoomAccessService;
+import org.thornex.musicparty.service.UserService;
+import org.thornex.musicparty.security.SessionCookieService;
 
 import java.util.Map;
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/rooms")
-@RequiredArgsConstructor
 public class RoomController {
     private final RoomService roomService;
-    private final RoomAccessService roomAccessService;
-    private final UserService userService;
     private final AccountService accountService;
     private final RoomLifecycleService roomLifecycleService;
+    private final RoomAuthorizationService roomAuthorizationService;
+    private final SessionCookieService sessionCookieService;
+    private final UserService legacyUserService;
+
+    @Autowired
+    public RoomController(RoomService roomService,
+                          AccountService accountService,
+                          RoomLifecycleService roomLifecycleService,
+                          RoomAuthorizationService roomAuthorizationService,
+                          SessionCookieService sessionCookieService) {
+        this.roomService = roomService;
+        this.accountService = accountService;
+        this.roomLifecycleService = roomLifecycleService;
+        this.roomAuthorizationService = roomAuthorizationService;
+        this.sessionCookieService = sessionCookieService;
+        this.legacyUserService = null;
+    }
+
+    /** Compatibility constructor retained for existing direct controller tests. */
+    public RoomController(RoomService roomService,
+                          RoomAccessService ignoredRoomAccessService,
+                          UserService userService,
+                          AccountService accountService,
+                          RoomLifecycleService roomLifecycleService) {
+        this.roomService = roomService;
+        this.accountService = accountService;
+        this.roomLifecycleService = roomLifecycleService;
+        this.roomAuthorizationService = null;
+        this.sessionCookieService = null;
+        this.legacyUserService = userService;
+    }
 
     @GetMapping
-    public List<RoomInfo> listRooms(@RequestParam(required = false) String sessionToken) {
-        String requesterPublicId = userService.resolvePublicIdBySessionToken(sessionToken).orElse(null);
+    public List<RoomInfo> listRooms(org.springframework.web.server.ServerWebExchange exchange) {
+        String token = sessionCookieService.sessionToken(exchange);
+        String requesterPublicId = accountService.resolveSession(token).map(s -> s.publicId()).orElse(null);
         return roomService.listLobbyRooms(requesterPublicId);
     }
 
-    @PostMapping("/{roomId}/verify")
-    public ResponseEntity<?> verifyRoomAccess(@PathVariable String roomId, @RequestBody RoomVerifyRequest request,
-                                               org.springframework.web.server.ServerWebExchange exchange) {
-        String sessionToken = exchange.getRequest().getCookies().getFirst("MP_SESSION") == null ? null
-                : exchange.getRequest().getCookies().getFirst("MP_SESSION").getValue();
-        return accountService.resolveSession(sessionToken).map(session -> session.publicId())
-                .map(publicId -> toVerifyResponse(roomId, publicId, request.password()))
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
-                        "valid", false,
-                        "message", "Unknown session token"
-                )));
-    }
-
-    private ResponseEntity<Map<String, Object>> toVerifyResponse(String roomId, String publicId, String password) {
-        RoomAccessGrant grant = roomAccessService.verifyAccess(roomId, publicId, password);
-        if (!grant.allowed()) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(
-                    "valid", false,
-                    "message", "Invalid room password"
-            ));
-        }
-
-        return ResponseEntity.ok(Map.of(
-                "valid", true,
-                "expiresAt", grant.expiresAt()
-        ));
-    }
-
     @PutMapping("/{roomId}")
-    public ResponseEntity<?> updateRoom(@PathVariable String roomId, @RequestBody RoomUpdateRequest request) {
-        if (request.sessionToken() == null || request.sessionToken().isBlank()) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Unknown session token"));
-        }
-        return userService.resolvePublicIdBySessionToken(request.sessionToken())
-                .<ResponseEntity<?>>map(publicId -> doUpdateRoom(roomId, publicId, request))
+    public ResponseEntity<?> updateRoom(@PathVariable String roomId, @RequestBody RoomUpdateRequest request, org.springframework.web.server.ServerWebExchange exchange) {
+        String token = sessionCookieService.sessionToken(exchange);
+        return accountService.resolveSession(token)
+                .<ResponseEntity<?>>map(session -> doUpdateRoom(roomId, session.publicId(), token, request))
                 .orElseGet(() -> ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Unknown session token")));
     }
 
-    private ResponseEntity<?> doUpdateRoom(String roomId, String publicId, RoomUpdateRequest request) {
+    private ResponseEntity<?> doUpdateRoom(String roomId, String publicId, String token, RoomUpdateRequest request) {
         try {
             RoomInfo updated = roomService.updateRoomSettings(
                     roomId,
                     publicId,
-                    accountService.isAdminSession(request.sessionToken()),
+                    roomAuthorizationService.canManageRoom(roomId, publicId, token),
                     request.name(),
-                    Boolean.TRUE.equals(request.isPrivate()),
-                    request.password(),
-                    Boolean.TRUE.equals(request.keepExistingPassword())
+                    false, null, false
             );
             return ResponseEntity.ok(updated);
         } catch (IllegalArgumentException ex) {
@@ -98,17 +95,32 @@ public class RoomController {
     }
 
     @DeleteMapping("/{roomId}")
-    public ResponseEntity<?> deleteRoom(@PathVariable String roomId, @RequestParam(required = false) String sessionToken) {
-        if (sessionToken == null || sessionToken.isBlank()) {
+    public ResponseEntity<?> deleteRoomRequest(@PathVariable String roomId, org.springframework.web.server.ServerWebExchange exchange) {
+        String token = sessionCookieService.sessionToken(exchange);
+        return accountService.resolveSession(token)
+                .<ResponseEntity<?>>map(session -> doDeleteRoom(roomId, session.publicId(), token))
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Unknown session token")));
+    }
+
+    /** Compatibility entry point for callers that still supply a session token directly. */
+    public ResponseEntity<?> deleteRoom(String roomId, String sessionToken) {
+        if (legacyUserService == null || sessionToken == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Unknown session token"));
         }
-        return userService.resolvePublicIdBySessionToken(sessionToken)
-                .<ResponseEntity<?>>map(publicId -> doDeleteRoom(roomId, publicId, sessionToken))
+        return legacyUserService.resolvePublicIdBySessionToken(sessionToken)
+                .<ResponseEntity<?>>map(publicId -> {
+                    boolean deleted = roomLifecycleService.deleteRoom(
+                            roomId, publicId, accountService.isAdminSession(sessionToken));
+                    if (!deleted) {
+                        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "No permission to delete room"));
+                    }
+                    return ResponseEntity.ok(Map.of("message", "ROOM DELETED"));
+                })
                 .orElseGet(() -> ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("message", "Unknown session token")));
     }
 
     private ResponseEntity<?> doDeleteRoom(String roomId, String publicId, String sessionToken) {
-        boolean deleted = roomLifecycleService.deleteRoom(roomId, publicId, accountService.isAdminSession(sessionToken));
+        boolean deleted = roomLifecycleService.deleteRoom(roomId, publicId, roomAuthorizationService.isPlatformAdmin(sessionToken));
         if (!deleted) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "No permission to delete room"));
         }

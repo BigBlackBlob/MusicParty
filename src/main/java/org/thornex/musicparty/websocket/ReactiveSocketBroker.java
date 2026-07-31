@@ -53,7 +53,9 @@ public class ReactiveSocketBroker {
     public void unregister(String sessionId) {
         Sinks.Many<OutboundMessage> sink = sessions.remove(sessionId);
         if (sink != null) {
-            sink.tryEmitComplete();
+            synchronized (sink) {
+                sink.tryEmitComplete();
+            }
             meterRegistry.counter("musicparty.websocket.connections", "event", "disconnected").increment();
         }
         roomSessions.values().forEach(sessions -> sessions.remove(sessionId));
@@ -74,7 +76,7 @@ public class ReactiveSocketBroker {
         if (sink == null) {
             return;
         }
-        emit(sink, type, new SocketEnvelope(type, null, roomId, payload));
+        emit(sessionId, sink, type, new SocketEnvelope(type, null, roomId, payload));
     }
 
     public void broadcastRoom(String roomId, String type, Object payload) {
@@ -88,7 +90,7 @@ public class ReactiveSocketBroker {
         subscribers.forEach(sessionId -> {
             Sinks.Many<OutboundMessage> sink = sessions.get(sessionId);
             if (sink != null) {
-                emitSerialized(sink, type, serialized);
+                emitSerialized(sessionId, sink, type, serialized);
             }
         });
     }
@@ -97,7 +99,7 @@ public class ReactiveSocketBroker {
         String serialized = serialize(type, new SocketEnvelope(type, null, null, payload));
         if (serialized == null) return;
         recordBroadcast(type, serialized);
-        sessions.values().forEach(sink -> emitSerialized(sink, type, serialized));
+        sessions.forEach((sessionId, sink) -> emitSerialized(sessionId, sink, type, serialized));
     }
 
     public int getSessionCount() {
@@ -108,9 +110,9 @@ public class ReactiveSocketBroker {
         return roomSessions.size();
     }
 
-    private void emit(Sinks.Many<OutboundMessage> sink, String type, SocketEnvelope envelope) {
+    private void emit(String sessionId, Sinks.Many<OutboundMessage> sink, String type, SocketEnvelope envelope) {
         String serialized = serialize(type, envelope);
-        if (serialized != null) emitSerialized(sink, type, serialized);
+        if (serialized != null) emitSerialized(sessionId, sink, type, serialized);
     }
 
     private String serialize(String type, SocketEnvelope envelope) {
@@ -128,13 +130,22 @@ public class ReactiveSocketBroker {
         }
     }
 
-    private void emitSerialized(Sinks.Many<OutboundMessage> sink, String type, String serialized) {
-        Sinks.EmitResult result = sink.tryEmitNext(new OutboundMessage(type, serialized));
+    private void emitSerialized(String sessionId, Sinks.Many<OutboundMessage> sink, String type, String serialized) {
+        // A room broadcast and a direct resync can arrive on different Netty threads.
+        // Unicast sinks reject concurrent producers with FAIL_NON_SERIALIZED; serialize
+        // only the tiny enqueue operation, never the actual socket write.
+        Sinks.EmitResult result;
+        synchronized (sink) {
+            result = sink.tryEmitNext(new OutboundMessage(type, serialized));
+        }
         if (result == Sinks.EmitResult.FAIL_OVERFLOW) {
             // A bounded sink prevents a stalled client from retaining an unbounded backlog.
-            log.info("Disconnecting slow websocket client: queue full, messageType={}", type);
+            log.info("Disconnecting slow websocket client: sessionId={}, queueDepth={}, messageType={}", sessionId,
+                    appProperties.getPerformance().getWebsocketClientQueueCapacity(), type);
             meterRegistry.counter("musicparty.websocket.slow_client_disconnects", "type", type).increment();
-            sink.tryEmitError(new IllegalStateException("WebSocket client queue is full"));
+            synchronized (sink) {
+                sink.tryEmitError(new IllegalStateException("WebSocket client queue is full"));
+            }
         } else if (result != Sinks.EmitResult.OK && result != Sinks.EmitResult.FAIL_ZERO_SUBSCRIBER) {
             meterRegistry.counter("musicparty.websocket.send_failures", "type", type, "result", result.name()).increment();
             log.debug("Websocket send failed: messageType={}, result={}", type, result);

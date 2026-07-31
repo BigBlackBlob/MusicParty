@@ -11,6 +11,6 @@ public record AccountSession(
         Long lastLoginAt
 ) {
     public boolean admin() {
-        return "ADMIN".equals(role);
+        return "PLATFORM_ADMIN".equals(role) || "ADMIN".equals(role);
     }
 }

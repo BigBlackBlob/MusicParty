@@ -58,12 +58,15 @@ class SqliteSchemaInitializerTests {
                         "schema.local_track.table",
                         "schema.local_upload_access.table",
                         "schema.room_history_track.table",
+                        "schema.room_invite.table",
+                        "schema.room_membership.table",
                         "schema.room_playback_state.like_markers_json",
                         "schema.room_playback_state.liked_user_ids_json",
                         "schema.room_subsonic_source.table",
                         "schema.site_setting.table",
                         "schema.subsonic_source.owner_room_id",
                         "schema.subsonic_source.table",
+                        "schema.user_account.platform_admin_role",
                         "schema.user_account.table",
                         "schema.user_binding.table",
                         "schema.user_playlist.system_key",
@@ -83,7 +86,7 @@ class SqliteSchemaInitializerTests {
         initializer.initialize();
         initializer.initialize();
 
-        assertThat(jdbcTemplate.queryForObject("select count(1) from migration_state", Integer.class)).isEqualTo(18);
+        assertThat(jdbcTemplate.queryForObject("select count(1) from migration_state", Integer.class)).isEqualTo(21);
         assertThat(jdbcTemplate.queryForObject("select display_name from user_profile where public_id = 'u_legacy'", String.class))
                 .isEqualTo("Legacy User");
     }

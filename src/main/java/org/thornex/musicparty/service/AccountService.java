@@ -64,7 +64,7 @@ public class AccountService {
             if (accountRepository.usernameExists(normalizedUsername)) {
                 throw new IllegalStateException("Bootstrap administrator username already exists");
             }
-            createAccount(normalizedUsername, password, "ADMIN", System.currentTimeMillis());
+            createAccount(normalizedUsername, password, "PLATFORM_ADMIN", System.currentTimeMillis());
             return null;
         });
     }
@@ -77,7 +77,7 @@ public class AccountService {
                 throw new IllegalArgumentException("username already exists");
             }
             long now = System.currentTimeMillis();
-            String role = accountRepository.hasAdminAccount() ? "USER" : "ADMIN";
+            String role = accountRepository.hasAdminAccount() ? "MEMBER" : "PLATFORM_ADMIN";
             return createAccount(normalizedUsername, password, role, now);
         });
     }

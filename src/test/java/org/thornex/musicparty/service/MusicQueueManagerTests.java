@@ -10,8 +10,12 @@ import org.thornex.musicparty.enums.QueueItemStatus;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class MusicQueueManagerTests {
 
@@ -137,6 +141,55 @@ class MusicQueueManagerTests {
         ), Set.of());
 
         assertThat(next.music()).isEqualTo(toppedMusic);
+    }
+
+    @Test
+    void snapshotsAreImmutableAndReusedUntilTheNextMutation() {
+        MusicQueueManager manager = new MusicQueueManager(new AppProperties());
+        UserSummary user = new UserSummary("public-id", "User", false);
+
+        List<MusicQueueItem> empty = manager.getQueueSnapshot();
+        assertThat(manager.getQueueSnapshot()).isSameAs(empty);
+        assertThatThrownBy(() -> empty.add(null)).isInstanceOf(UnsupportedOperationException.class);
+
+        manager.add(new Music("a", "A", List.of("A"), 1000, "netease", ""), user, QueueItemStatus.READY);
+        List<MusicQueueItem> afterAdd = manager.getQueueSnapshot();
+        assertThat(afterAdd).isNotSameAs(empty);
+        assertThat(manager.getQueueSnapshot()).isSameAs(afterAdd);
+    }
+
+    @Test
+    void prefixedQueueIdsRemainIndexedAfterTopAndRemoval() {
+        MusicQueueManager manager = new MusicQueueManager(new AppProperties());
+        UserSummary user = new UserSummary("public-id", "User", false);
+        MusicQueueItem item = manager.add(new Music("a", "A", List.of("A"), 1000, "netease", ""), user, QueueItemStatus.READY);
+
+        manager.top(item.queueId(), false);
+        assertThat(manager.remove(item.queueId())).isPresent();
+        assertThat(manager.getQueueSnapshot()).isEmpty();
+    }
+
+    @Test
+    void concurrentAddsKeepSnapshotAndDuplicateIndexConsistent() throws Exception {
+        MusicQueueManager manager = new MusicQueueManager(new AppProperties());
+        UserSummary user = new UserSummary("public-id", "User", false);
+        try (var executor = Executors.newFixedThreadPool(4)) {
+            List<Callable<MusicQueueItem>> tasks = java.util.stream.IntStream.range(0, 40)
+                    .<Callable<MusicQueueItem>>mapToObj(index -> () -> manager.add(
+                            new Music("id-" + (index % 20), "Song", List.of("A"), 1000, "netease", ""), user, QueueItemStatus.READY))
+                    .toList();
+            List<Future<MusicQueueItem>> futures = executor.invokeAll(tasks);
+
+            assertThat(futures.stream().filter(future -> {
+                try {
+                    return future.get() != null;
+                } catch (Exception exception) {
+                    throw new AssertionError(exception);
+                }
+            })).hasSize(20);
+            assertThat(manager.getQueueSnapshot()).hasSize(20);
+            assertThat(manager.getQueueSnapshot()).extracting(item -> MusicQueueManager.musicKey(item.music())).doesNotHaveDuplicates();
+        }
     }
 }
 

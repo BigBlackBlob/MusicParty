@@ -4,6 +4,8 @@ import { authApi } from '../api/auth';
 import { STORAGE_KEYS } from '../constants/keys';
 import { isPlainObject, safeJsonStorage } from '../utils/safeJsonStorage.js';
 
+// WebSocket-issued capability token used for stream/resource proxy requests.
+// Keep it memory-only; never persist it to browser storage.
 const sessionToken = ref('');
 const publicId = ref('');
 
@@ -51,7 +53,7 @@ export const useUserStore = defineStore('user', () => {
         if (serverPublicId) {
             publicId.value = serverPublicId;
         }
-        role.value = serverIsAdmin ? 'ADMIN' : (serverRole || 'USER');
+        role.value = serverIsAdmin ? 'PLATFORM_ADMIN' : (serverRole || 'MEMBER');
 
         // 1. 同步名字
         if (serverName) {
@@ -103,28 +105,20 @@ export const useUserStore = defineStore('user', () => {
             session.admin === true || session.role === 'ADMIN'
         );
         accountLastLoginAt.value = session.lastLoginAt || null;
-        if (session.username) {
-            localStorage.setItem(STORAGE_KEYS.ACCOUNT_USERNAME, session.username);
-        }
     };
 
     const refreshAccount = async () => {
-        if (!sessionToken.value) return null;
         const session = await authApi.getAccountMe();
         initAccount(session);
         return session;
     };
 
     const updateProfile = async (displayName) => {
-        const session = await authApi.updateAccountProfile(sessionToken.value, displayName);
+        const session = await authApi.updateAccountProfile(displayName);
         initAccount(session);
         return session;
     };
 
-    const changePassword = async (currentPassword, newPassword) => {
-        await authApi.changeAccountPassword(sessionToken.value, currentPassword, newPassword);
-        clearAccountIdentity();
-    };
 
     const logout = async () => {
         try {
@@ -154,7 +148,6 @@ export const useUserStore = defineStore('user', () => {
 
     const resetAuthentication = () => {
         isAuthPassed.value = false;
-        localStorage.removeItem(STORAGE_KEYS.ROOM_ACCESS_TOKENS);
     };
 
     const clearAccountIdentity = () => {
@@ -166,10 +159,8 @@ export const useUserStore = defineStore('user', () => {
         isAuthPassed.value = false;
         currentUser.value = { name: '游客', sessionId: '' };
         bindings.value = {};
-        localStorage.removeItem(STORAGE_KEYS.ACCOUNT_USERNAME);
         localStorage.removeItem(STORAGE_KEYS.USERNAME);
         localStorage.removeItem(STORAGE_KEYS.BINDINGS);
-        localStorage.removeItem(STORAGE_KEYS.ROOM_ACCESS_TOKENS);
     };
 
     return {
@@ -187,11 +178,10 @@ export const useUserStore = defineStore('user', () => {
         publicId,
         role,
         accountLastLoginAt,
-        isAdmin: computed(() => role.value === 'ADMIN'),
+        isAdmin: computed(() => role.value === 'PLATFORM_ADMIN'),
         initAccount,
         refreshAccount,
         updateProfile,
-        changePassword,
         logout,
         setPostNameAction,
         isAuthPassed,

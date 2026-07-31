@@ -33,6 +33,34 @@ create table if not exists user_session (
 
 create index if not exists idx_user_session_public_id on user_session(public_id);
 
+create table if not exists room_membership (
+    room_id text not null,
+    public_id text not null,
+    role text not null,
+    created_at integer not null,
+    updated_at integer not null,
+    primary key (room_id, public_id),
+    foreign key (room_id) references room(id),
+    foreign key (public_id) references user_profile(public_id)
+);
+create index if not exists idx_room_membership_public on room_membership(public_id);
+
+create table if not exists room_invite (
+    id text primary key,
+    room_id text not null,
+    created_by_public_id text not null,
+    secret_hash text not null unique,
+    label text,
+    expires_at integer not null,
+    max_uses integer not null default 1,
+    used_at integer,
+    used_by_public_id text,
+    revoked_at integer,
+    created_at integer not null,
+    foreign key (room_id) references room(id)
+);
+create index if not exists idx_room_invite_room on room_invite(room_id, created_at desc);
+
 create table if not exists user_account (
     username text primary key,
     public_id text not null unique,

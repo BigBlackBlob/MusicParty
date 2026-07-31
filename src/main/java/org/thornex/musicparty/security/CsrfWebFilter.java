@@ -21,7 +21,8 @@ public class CsrfWebFilter implements WebFilter {
         HttpMethod method = exchange.getRequest().getMethod();
         String path = exchange.getRequest().getPath().value();
         if (method == null || method == HttpMethod.GET || method == HttpMethod.HEAD || method == HttpMethod.OPTIONS
-                || path.equals("/api/account/login") || path.equals("/api/account/register")) return chain.filter(exchange);
+                || path.equals("/api/invites/redeem") || path.equals("/api/account/login")
+                || path.equals("/api/admin/auth/login")) return chain.filter(exchange);
         if (cookies.sessionToken(exchange) == null || !cookies.csrfMatches(exchange)) {
             exchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN);
             return exchange.getResponse().setComplete();

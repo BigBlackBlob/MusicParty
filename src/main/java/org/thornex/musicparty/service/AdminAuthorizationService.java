@@ -10,7 +10,7 @@ public class AdminAuthorizationService {
     }
 
     public boolean isAdminSession(String sessionToken) {
-        return accountService.isAdminSession(sessionToken);
+        return accountService.resolveSession(sessionToken).map(AccountSession::admin).orElse(false);
     }
 
     public boolean isAuthorized(String sessionToken, String legacyAdminPassword) {

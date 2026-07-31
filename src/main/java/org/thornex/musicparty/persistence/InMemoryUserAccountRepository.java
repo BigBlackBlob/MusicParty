@@ -16,7 +16,8 @@ public class InMemoryUserAccountRepository implements UserAccountRepository {
 
     @Override
     public boolean hasAdminAccount() {
-        return accounts.values().stream().anyMatch(account -> "ADMIN".equals(account.role()) && account.enabled());
+        return accounts.values().stream().anyMatch(account ->
+                ("PLATFORM_ADMIN".equals(account.role()) || "ADMIN".equals(account.role())) && account.enabled());
     }
 
     @Override

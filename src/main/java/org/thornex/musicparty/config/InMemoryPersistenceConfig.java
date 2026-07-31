@@ -21,6 +21,8 @@ import org.thornex.musicparty.persistence.InMemoryRoomPlaylistRepository;
 import org.thornex.musicparty.persistence.SubsonicSourceRepository;
 import org.thornex.musicparty.persistence.UserProfileRepository;
 import org.thornex.musicparty.persistence.UserPlaylistRepository;
+import org.thornex.musicparty.persistence.RoomAccessRepository;
+import org.thornex.musicparty.persistence.InMemoryRoomAccessRepository;
 
 @Configuration
 @ConditionalOnProperty(prefix = "app.music-api.database", name = "enabled", havingValue = "false")
@@ -69,5 +71,10 @@ public class InMemoryPersistenceConfig {
     @Bean
     public UserPlaylistRepository userPlaylistRepository() {
         return new InMemoryUserPlaylistRepository();
+    }
+
+    @Bean
+    public RoomAccessRepository roomAccessRepository() {
+        return new InMemoryRoomAccessRepository();
     }
 }

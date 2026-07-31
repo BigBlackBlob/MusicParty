@@ -8,61 +8,51 @@ const accountTokenOptions = () => accountRequestOptions;
 
 export const authApi = {
     getAccountStatus: () => client.get('/api/account/status'),
-    registerAccount: (username, password) => client.post('/api/account/register', { username, password }, accountRequestOptions),
     loginAccount: (username, password) => client.post('/api/account/login', { username, password }, accountRequestOptions),
     getAccountMe: () => client.get('/api/account/me', accountTokenOptions()),
-    updateAccountProfile: (_sessionToken, displayName) => client.put('/api/account/profile', { displayName }, accountTokenOptions()),
-    changeAccountPassword: (_sessionToken, currentPassword, newPassword) => client.post('/api/account/change-password', {
-        currentPassword,
-        newPassword
-    }, accountTokenOptions()),
+    updateAccountProfile: (displayName) => client.put('/api/account/profile', { displayName }, accountTokenOptions()),
     logoutAccount: () => client.post('/api/account/logout', null, accountTokenOptions()),
-    adminCommand: (sessionToken, command, roomId) => client.post('/api/admin/command', { sessionToken, command, roomId }),
-    grantNavidrome: (sessionToken, userName, roomId) => client.post('/api/admin/navidrome-access/grant', {
-        sessionToken,
-        userName,
-        roomId
+    inviteMetadata: (secret) => client.get(`/api/join/${encodeURIComponent(secret)}/metadata`),
+    redeemInvite: (secret, displayName) => client.post('/api/invites/redeem', { secret, displayName }, accountRequestOptions),
+    createInvite: (roomId, label = '') => client.post(`/api/rooms/${encodeURIComponent(roomId)}/invites`, { label }),
+    listInvites: (roomId) => client.get(`/api/rooms/${encodeURIComponent(roomId)}/invites`),
+    revokeInvite: (roomId, inviteId) => client.delete(`/api/rooms/${encodeURIComponent(roomId)}/invites/${encodeURIComponent(inviteId)}`),
+    listRoomMembers: (roomId) => client.get(`/api/rooms/${encodeURIComponent(roomId)}/members`),
+    removeRoomMember: (roomId, publicId) => client.delete(`/api/rooms/${encodeURIComponent(roomId)}/members/${encodeURIComponent(publicId)}`),
+    grantNavidrome: (_sessionToken, userName, roomId) => client.post('/api/admin/navidrome-access/grant', {
+        userName, roomId
     }),
-    revokeNavidrome: (sessionToken, userName, roomId) => client.post('/api/admin/navidrome-access/revoke', {
-        sessionToken,
-        userName,
-        roomId
+    revokeNavidrome: (_sessionToken, userName, roomId) => client.post('/api/admin/navidrome-access/revoke', {
+        userName, roomId
     }),
-    setStreamEnabled: (sessionToken, enabled, roomId) => client.post('/api/admin/command', {
-        sessionToken,
+    setStreamEnabled: (_sessionToken, enabled, roomId) => client.post('/api/admin/command', {
         command: `//STREAM ${enabled ? 'ON' : 'OFF'}`,
         roomId
     }),
-    clearQueue: (sessionToken, roomId) => client.post('/api/admin/command', { sessionToken, command: '//CLEAR QUEUE', roomId }),
-    clearChat: (sessionToken, roomId) => client.post('/api/admin/command', { sessionToken, command: '//CLEAR CHAT', roomId }),
-    listSubsonicSources: (sessionToken, roomId) => client.get('/api/admin/subsonic-sources', {
-        params: { sessionToken, roomId }
+    clearQueue: (_sessionToken, roomId) => client.post('/api/admin/command', { command: '//CLEAR QUEUE', roomId }),
+    clearChat: (_sessionToken, roomId) => client.post('/api/admin/command', { command: '//CLEAR CHAT', roomId }),
+    listSubsonicSources: (_sessionToken, roomId) => client.get('/api/admin/subsonic-sources', {
+        params: { roomId }
     }),
-    saveSubsonicSource: (sessionToken, roomId, source) => client.post('/api/admin/subsonic-source', {
-        sessionToken,
+    saveSubsonicSource: (_sessionToken, roomId, source) => client.post('/api/admin/subsonic-source', {
         roomId,
         ...source
     }),
-    removeSubsonicSource: (sessionToken, roomId, id) => client.post('/api/admin/subsonic-source/remove', {
-        sessionToken,
+    removeSubsonicSource: (_sessionToken, roomId, id) => client.post('/api/admin/subsonic-source/remove', {
         roomId,
         id
     }),
-    testSubsonicSource: (sessionToken, roomId, id) => client.post('/api/admin/subsonic-source/test', {
-        sessionToken,
+    testSubsonicSource: (_sessionToken, roomId, id) => client.post('/api/admin/subsonic-source/test', {
         roomId,
         id
     }),
-    reorderSubsonicSource: (sessionToken, roomId, id, sortOrder) => client.post('/api/admin/subsonic-source/order', {
-        sessionToken,
+    reorderSubsonicSource: (_sessionToken, roomId, id, sortOrder) => client.post('/api/admin/subsonic-source/order', {
         roomId,
         id,
         sortOrder
     }),
-    listLocalTracks: (sessionToken) => client.get('/api/local/tracks', {
-        params: { sessionToken }
-    }),
-    uploadLocalTrack: (sessionToken, file, metadata = {}) => {
+    listLocalTracks: () => client.get('/api/local/tracks'),
+    uploadLocalTrack: (_sessionToken, file, metadata = {}) => {
         const formData = new FormData();
         formData.append('file', file);
         Object.entries(metadata).forEach(([key, value]) => {
@@ -71,27 +61,13 @@ export const authApi = {
             }
         });
         return client.post('/api/local/tracks/upload', formData, {
-            params: { token: sessionToken },
             headers: { 'Content-Type': 'multipart/form-data' },
             timeout: 120000
         });
     },
-    updateLocalTrack: (sessionToken, id, track) => client.patch(`/api/local/tracks/${id}`, {
-        ...track,
-        token: sessionToken
-    }),
-    deleteLocalTrack: (sessionToken, id) => client.delete(`/api/local/tracks/${id}`, {
-        params: { token: sessionToken }
-    }),
-    listLocalUploadAccess: (sessionToken) => client.get('/api/local/upload-access', {
-        params: { sessionToken }
-    }),
-    grantLocalUploadAccess: (sessionToken, userName) => client.post('/api/local/upload-access/grant', {
-        sessionToken,
-        userName
-    }),
-    revokeLocalUploadAccess: (sessionToken, userName) => client.post('/api/local/upload-access/revoke', {
-        sessionToken,
-        userName
-    }),
+    updateLocalTrack: (_sessionToken, id, track) => client.patch(`/api/local/tracks/${id}`, track),
+    deleteLocalTrack: (_sessionToken, id) => client.delete(`/api/local/tracks/${id}`),
+    listLocalUploadAccess: () => client.get('/api/local/upload-access'),
+    grantLocalUploadAccess: (_sessionToken, userName) => client.post('/api/local/upload-access/grant', { userName }),
+    revokeLocalUploadAccess: (_sessionToken, userName) => client.post('/api/local/upload-access/revoke', { userName }),
 };

@@ -3,16 +3,20 @@ package org.thornex.musicparty.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.thornex.musicparty.config.AppProperties;
 import org.thornex.musicparty.dto.RoomInfo;
 import org.thornex.musicparty.event.RoomListUpdateEvent;
 import org.thornex.musicparty.persistence.MigrationStateRepository;
+import org.thornex.musicparty.persistence.InMemoryRoomAccessRepository;
 import org.thornex.musicparty.persistence.PersistedRoom;
 import org.thornex.musicparty.persistence.RoomRepository;
+import org.thornex.musicparty.persistence.RoomAccessRepository;
+import org.thornex.musicparty.persistence.PersistedRoomMembership;
 import org.thornex.musicparty.security.SecureCompare;
 
 import java.io.File;
@@ -25,7 +29,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.ToIntFunction;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class RoomService {
     public static final String DEFAULT_ROOM_ID = "lounge";
@@ -39,10 +42,40 @@ public class RoomService {
     private final ApplicationEventPublisher eventPublisher;
     private final AppProperties appProperties;
     private final RoomRepository roomRepository;
+    private final RoomAccessRepository roomAccessRepository;
     private final MigrationStateRepository migrationStateRepository;
     private final Map<String, StoredRoom> rooms = new ConcurrentHashMap<>();
     private final Object roomMutationLock = new Object();
     private volatile ToIntFunction<String> onlineCountProvider = roomId -> 0;
+
+    @Autowired
+    public RoomService(ObjectMapper objectMapper,
+                       ApplicationEventPublisher eventPublisher,
+                       AppProperties appProperties,
+                       RoomRepository roomRepository,
+                       RoomAccessRepository roomAccessRepository,
+                       MigrationStateRepository migrationStateRepository) {
+        this.objectMapper = objectMapper;
+        this.eventPublisher = eventPublisher;
+        this.appProperties = appProperties;
+        this.roomRepository = roomRepository;
+        this.roomAccessRepository = roomAccessRepository;
+        this.migrationStateRepository = migrationStateRepository;
+    }
+
+    /**
+     * Compatibility constructor for tests and integrations created before room
+     * membership persistence was introduced. Production injection uses the
+     * generated constructor that accepts an explicit RoomAccessRepository.
+     */
+    public RoomService(ObjectMapper objectMapper,
+                       ApplicationEventPublisher eventPublisher,
+                       AppProperties appProperties,
+                       RoomRepository roomRepository,
+                       MigrationStateRepository migrationStateRepository) {
+        this(objectMapper, eventPublisher, appProperties, roomRepository,
+                new InMemoryRoomAccessRepository(), migrationStateRepository);
+    }
 
     @PostConstruct
     public void init() {
@@ -77,9 +110,15 @@ public class RoomService {
 
     public List<RoomInfo> listLobbyRooms(String requesterPublicId) {
         ensureDefaultRoom();
-        return roomRepository.findLobbyRooms(requesterPublicId).stream()
+        return roomRepository.findAllActive().stream()
                 .map(this::fromPersistedRoom)
+                .filter(room -> room.system()
+                        || !VISIBILITY_PRIVATE.equals(room.visibility())
+                        || (StringUtils.hasText(requesterPublicId)
+                        && (requesterPublicId.equals(room.creatorPublicId())
+                        || roomAccessRepository.findMembership(room.roomId(), requesterPublicId).isPresent())))
                 .peek(room -> rooms.put(room.roomId(), room))
+                .sorted(Comparator.comparing(StoredRoom::system).reversed().thenComparing(StoredRoom::createdAt))
                 .map(this::toInfo)
                 .toList();
     }
@@ -114,6 +153,9 @@ public class RoomService {
             StoredRoom room = new StoredRoom(roomId, name, creatorPublicId, now, now, false, visibility, passwordHash, passwordVersion);
             rooms.put(roomId, room);
             roomRepository.upsert(toPersistedRoom(room, null));
+            if (StringUtils.hasText(creatorPublicId)) {
+                roomAccessRepository.upsertMembership(new PersistedRoomMembership(roomId, creatorPublicId, "OWNER", now, now));
+            }
             publishRoomList();
             return toInfo(room);
         }
@@ -122,7 +164,9 @@ public class RoomService {
     public boolean canDelete(String roomId, String requesterPublicId, boolean admin) {
         StoredRoom room = rooms.get(roomId);
         if (room == null || room.system()) return false;
-        return admin || (requesterPublicId != null && requesterPublicId.equals(room.creatorPublicId()));
+        return admin
+                || roomAccessRepository.findMembership(roomId, requesterPublicId).map(PersistedRoomMembership::owner).orElse(false)
+                || (StringUtils.hasText(requesterPublicId) && requesterPublicId.equals(room.creatorPublicId()));
     }
 
     public boolean canManage(String roomId, String requesterPublicId, boolean admin) {

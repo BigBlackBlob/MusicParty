@@ -47,18 +47,16 @@ public class AccountAuthController {
     }
 
     @PostMapping("/register")
-    public ResponseEntity<?> register(@RequestBody RegisterRequest request, org.springframework.web.server.ServerWebExchange exchange) {
-        try {
-            AccountSession session = accountService.register(request.username(), request.password());
-            sessionCookieService.establish(exchange, session.sessionToken());
-            return ResponseEntity.ok(withoutToken(session));
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
-        }
+    public ResponseEntity<?> retiredMemberRegistrationEndpoint() {
+        return ResponseEntity.status(HttpStatus.GONE).body(Map.of("message", "Member passwords were replaced by invitation links"));
     }
 
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody LoginRequest request, ServerHttpRequest httpRequest, org.springframework.web.server.ServerWebExchange exchange) {
+    public ResponseEntity<?> loginPlatformAdmin(
+            @RequestBody LoginRequest request,
+            ServerHttpRequest httpRequest,
+            org.springframework.web.server.ServerWebExchange exchange
+    ) {
         String ip = clientIpResolver.resolve(httpRequest);
         if (loginRateLimiter.isBlocked(ip)) {
             long retryAfter = Math.max(1L, (loginRateLimiter.retryAfterMillis(ip) + 999L) / 1000L);
@@ -68,8 +66,14 @@ public class AccountAuthController {
         }
         try {
             AccountSession session = accountService.login(request.username(), request.password());
+            if (!session.admin()) {
+                accountService.logout(session.sessionToken());
+                loginRateLimiter.recordFailure(ip);
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("message", "Platform administrator account required"));
+            }
             loginRateLimiter.recordSuccess(ip);
-            sessionCookieService.establish(exchange, session.sessionToken());
+            sessionCookieService.establishAdmin(exchange, session.sessionToken());
             return ResponseEntity.ok(withoutToken(session));
         } catch (IllegalArgumentException e) {
             loginRateLimiter.recordFailure(ip);
@@ -100,6 +104,9 @@ public class AccountAuthController {
     ) {
         try {
             String sessionToken = sessionCookieService.sessionToken(exchange);
+            if (!accountService.isAdminSession(sessionToken)) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of("message", "Member passwords are not supported"));
+            }
             accountService.changePassword(sessionToken, request.currentPassword(), request.newPassword());
             accountService.logout(sessionToken);
             sessionCookieService.clear(exchange);

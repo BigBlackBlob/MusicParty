@@ -19,6 +19,12 @@ public class MusicQueueManager {
 
     private final Deque<MusicQueueItem> queue = new ArrayDeque<>();
     private final List<Music> playHistory = new LinkedList<>();
+    // All mutations remain synchronized. These indexes make common identity lookups O(1),
+    // while the immutable snapshot lets readers/broadcasters reuse one consistent view.
+    private final Map<String, MusicQueueItem> queueByBaseId = new HashMap<>();
+    private final Map<String, Integer> queuePositionByBaseId = new HashMap<>();
+    private final Set<String> queuedMusicKeys = new HashSet<>();
+    private List<MusicQueueItem> queueSnapshot = List.of();
 
     // 用于实现“公平随机播放”：记录上一个播放的用户
     private String lastPlayedUserToken = "";
@@ -46,6 +52,7 @@ public class MusicQueueManager {
                 initialStatus // 存储枚举的名称
         );
         queue.addLast(newItem);
+        rebuildQueueDerivedState();
         return newItem;
     }
 
@@ -78,6 +85,7 @@ public class MusicQueueManager {
                         item.status()
                 );
                 queue.addFirst(newItem);
+                rebuildQueueDerivedState();
                 return TopResult.GLOBAL;
             }
             return TopResult.NONE;
@@ -100,6 +108,7 @@ public class MusicQueueManager {
                 snapshot.set(index, newItem);
                 queue.clear();
                 queue.addAll(snapshot);
+                rebuildQueueDerivedState();
                 return TopResult.PERSONAL;
             }
         } else {
@@ -112,6 +121,7 @@ public class MusicQueueManager {
                         item.status()
                 );
                 queue.addFirst(newItem);
+                rebuildQueueDerivedState();
                 return TopResult.GLOBAL;
             }
         }
@@ -162,6 +172,7 @@ public class MusicQueueManager {
         queue.clear();
         queue.addAll(topped);
         queue.addAll(remaining);
+        rebuildQueueDerivedState();
         return topped;
     }
 
@@ -175,6 +186,7 @@ public class MusicQueueManager {
                 .toList();
         
         toRemove.forEach(queue::remove);
+        if (!toRemove.isEmpty()) rebuildQueueDerivedState();
         return toRemove.size();
     }
 
@@ -186,7 +198,10 @@ public class MusicQueueManager {
         String idToFind = stripPrefix(queueId);
 
         Optional<MusicQueueItem> itemOpt = findByQueueId(idToFind);
-        itemOpt.ifPresent(queue::remove);
+        itemOpt.ifPresent(item -> {
+            queue.remove(item);
+            rebuildQueueDerivedState();
+        });
         return itemOpt;
     }
 
@@ -211,6 +226,7 @@ public class MusicQueueManager {
                 .toList();
 
         removed.forEach(queue::remove);
+        if (!removed.isEmpty()) rebuildQueueDerivedState();
         return removed;
     }
 
@@ -236,6 +252,7 @@ public class MusicQueueManager {
             }
             MusicQueueItem chosenItem = nextInPhysicalOrder.get();
             queue.remove(chosenItem);
+            rebuildQueueDerivedState();
             lastPlayedUserToken = chosenItem.enqueuedBy().publicId();
             return chosenItem;
         }
@@ -247,6 +264,7 @@ public class MusicQueueManager {
 
         if (topItem.isPresent()) {
             queue.remove(topItem.get());
+            rebuildQueueDerivedState();
             return topItem.get();
         }
 
@@ -263,6 +281,7 @@ public class MusicQueueManager {
         MusicQueueItem chosenItem = pollNextFairShuffle(availableItems, recentlyActivePublicIds);
 
         queue.remove(chosenItem);
+        rebuildQueueDerivedState();
         lastPlayedUserToken = chosenItem.enqueuedBy().publicId();
         return chosenItem;
     }
@@ -329,10 +348,7 @@ public class MusicQueueManager {
     }
     
     private Optional<MusicQueueItem> findByQueueId(String queueId) {
-        final String finalId = stripPrefix(queueId);
-        return queue.stream()
-                .filter(item -> stripPrefix(item.queueId()).equals(finalId))
-                .findFirst();
+        return Optional.ofNullable(queueByBaseId.get(stripPrefix(queueId)));
     }
     
     private String stripPrefix(String queueId) {
@@ -357,12 +373,14 @@ public class MusicQueueManager {
      */
     public synchronized void clearAll() {
         queue.clear();
+        rebuildQueueDerivedState();
         playHistory.clear();
         lastPlayedUserToken = "";
     }
 
     public synchronized void clearPendingQueue() {
         queue.clear();
+        rebuildQueueDerivedState();
     }
 
     public synchronized boolean reorder(int oldIndex, int newIndex) {
@@ -376,6 +394,7 @@ public class MusicQueueManager {
 
         queue.clear();
         queue.addAll(list);
+        rebuildQueueDerivedState();
         return true;
     }
 
@@ -385,8 +404,8 @@ public class MusicQueueManager {
         }
 
         List<MusicQueueItem> list = new ArrayList<>(queue);
-        int oldIndex = indexOfQueueId(list, queueId);
-        int targetIndex = indexOfQueueId(list, targetQueueId);
+        int oldIndex = indexOfQueueId(queueId);
+        int targetIndex = indexOfQueueId(targetQueueId);
         if (oldIndex < 0 || targetIndex < 0) {
             return false;
         }
@@ -405,20 +424,16 @@ public class MusicQueueManager {
 
         queue.clear();
         queue.addAll(list);
+        rebuildQueueDerivedState();
         return true;
     }
 
-    private int indexOfQueueId(List<MusicQueueItem> items, String queueId) {
-        for (int i = 0; i < items.size(); i++) {
-            if (queueId.equals(items.get(i).queueId())) {
-                return i;
-            }
-        }
-        return -1;
+    private int indexOfQueueId(String queueId) {
+        return queuePositionByBaseId.getOrDefault(stripPrefix(queueId), -1);
     }
 
     public synchronized List<MusicQueueItem> getQueueSnapshot() {
-        return new ArrayList<>(queue);
+        return queueSnapshot;
     }
 
     public synchronized List<Music> getHistorySnapshot() {
@@ -438,6 +453,7 @@ public class MusicQueueManager {
         if (loadedQueue != null) {
             queue.addAll(loadedQueue);
         }
+        rebuildQueueDerivedState();
 
         // Restore History
         if (loadedHistory != null) {
@@ -446,8 +462,21 @@ public class MusicQueueManager {
     }
 
     private boolean isMusicInQueue(Music music) {
-        String key = musicKey(music);
-        return queue.stream().anyMatch(item -> musicKey(item.music()).equals(key));
+        return queuedMusicKeys.contains(musicKey(music));
+    }
+
+    private void rebuildQueueDerivedState() {
+        queueByBaseId.clear();
+        queuePositionByBaseId.clear();
+        queuedMusicKeys.clear();
+        int position = 0;
+        for (MusicQueueItem item : queue) {
+            String baseId = stripPrefix(item.queueId());
+            queueByBaseId.put(baseId, item);
+            queuePositionByBaseId.put(baseId, position++);
+            queuedMusicKeys.add(musicKey(item.music()));
+        }
+        queueSnapshot = List.copyOf(queue);
     }
 
     private boolean isReadyOrFailed(Map<String, QueueItemStatus> statusMap, MusicQueueItem item) {

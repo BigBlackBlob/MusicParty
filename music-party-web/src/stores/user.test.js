@@ -42,7 +42,7 @@ describe('user store account actions', () => {
 
     await user.updateProfile('Alice Cooper');
 
-    expect(authApi.updateAccountProfile).toHaveBeenCalledWith('token-a', 'Alice Cooper');
+    expect(authApi.updateAccountProfile).toHaveBeenCalledWith('Alice Cooper');
     expect(user.currentUser.name).toBe('Alice Cooper');
     expect(user.onlineUsers[0].name).toBe('Alice Cooper');
     expect(user.publicId).toBe('u_a');
@@ -69,7 +69,7 @@ describe('user store account actions', () => {
       guest: false
     });
 
-    expect(user.role).toBe('ADMIN');
+    expect(user.role).toBe('PLATFORM_ADMIN');
     expect(user.isAdmin).toBe(true);
   });
 
