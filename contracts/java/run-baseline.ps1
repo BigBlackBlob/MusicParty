@@ -55,8 +55,13 @@ function Restore-Environment {
 New-Item -ItemType Directory -Path $temporaryRoot | Out-Null
 try {
     if (-not $JarPath) {
-        & (Join-Path $repositoryRoot 'mvnw.cmd') -q -DskipTests package
-        if ($LASTEXITCODE -ne 0) { throw "Maven package failed with exit code $LASTEXITCODE" }
+        Push-Location $repositoryRoot
+        try {
+            & (Join-Path $repositoryRoot 'mvnw.cmd') -q -DskipTests package
+            if ($LASTEXITCODE -ne 0) { throw "Maven package failed with exit code $LASTEXITCODE" }
+        } finally {
+            Pop-Location
+        }
         $jar = Get-ChildItem (Join-Path $repositoryRoot 'target') -Filter '*.jar' -File |
             Where-Object { $_.Name -notmatch '\.original$' -and $_.Name -notmatch '^original-' } |
             Sort-Object LastWriteTime -Descending |
