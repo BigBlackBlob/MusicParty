@@ -84,7 +84,8 @@
 				<artifactId>maven-surefire-plugin</artifactId>
 				<configuration>
 					<systemPropertyVariables>
-						<java.io.tmpdir>${project.build.directory}/tmp</java.io.tmpdir>
+						<!-- target exists before Surefire starts; target/tmp does not on a clean checkout. -->
+						<java.io.tmpdir>${project.build.directory}</java.io.tmpdir>
 					</systemPropertyVariables>
 				</configuration>
 			</plugin>
