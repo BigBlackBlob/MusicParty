@@ -1,0 +1,188 @@
+{
+  "normalization": {
+    "cookies": [
+      "MP_SESSION",
+      "MP_CSRF",
+      "MP_ADMIN_ELEVATION"
+    ],
+    "fields": [
+      "publicId",
+      "userId",
+      "uuid-shaped id",
+      "inv_-prefixed id",
+      "lastLoginAt",
+      "createdAt",
+      "updatedAt",
+      "expiresAt",
+      "serverReceiveTime",
+      "serverSendTime",
+      "serverTimestamp",
+      "timestamp",
+      "joinedAt",
+      "lastSeenAt",
+      "usedAt",
+      "revokedAt",
+      "sessionToken"
+    ],
+    "headers": [
+      "date"
+    ]
+  },
+  "scenarios": [
+    {
+      "expectedStatus": 200,
+      "id": "health",
+      "method": "GET",
+      "path": "/actuator/health"
+    },
+    {
+      "expectedStatus": 200,
+      "id": "account-status",
+      "method": "GET",
+      "path": "/api/account/status"
+    },
+    {
+      "expectedStatus": 401,
+      "id": "account-me-unauthenticated",
+      "method": "GET",
+      "path": "/api/account/me"
+    },
+    {
+      "body": {},
+      "expectedStatus": 403,
+      "id": "registration-csrf-rejected",
+      "method": "POST",
+      "omitCsrf": true,
+      "path": "/api/account/register"
+    },
+    {
+      "body": {
+        "password": "wrong-password",
+        "username": "contract-admin"
+      },
+      "expectedStatus": 401,
+      "id": "admin-login-invalid",
+      "method": "POST",
+      "path": "/api/account/login"
+    },
+    {
+      "action": "login",
+      "expectedStatus": 200,
+      "id": "admin-login",
+      "method": "POST",
+      "path": "/api/account/login"
+    },
+    {
+      "body": {},
+      "expectedStatus": 410,
+      "id": "registration-retired",
+      "method": "POST",
+      "path": "/api/account/register"
+    },
+    {
+      "expectedStatus": 200,
+      "id": "account-me",
+      "method": "GET",
+      "path": "/api/account/me"
+    },
+    {
+      "body": {
+        "displayName": "Contract Admin"
+      },
+      "expectedStatus": 403,
+      "id": "csrf-missing",
+      "method": "PUT",
+      "omitCsrf": true,
+      "path": "/api/account/profile"
+    },
+    {
+      "body": {
+        "displayName": "契约管理员"
+      },
+      "expectedStatus": 200,
+      "id": "profile-update",
+      "method": "PUT",
+      "path": "/api/account/profile"
+    },
+    {
+      "expectedStatus": 200,
+      "id": "rooms-list",
+      "method": "GET",
+      "path": "/api/rooms"
+    },
+    {
+      "expectedStatus": 200,
+      "id": "config",
+      "method": "GET",
+      "path": "/api/config"
+    },
+    {
+      "expectedStatus": 200,
+      "id": "platforms",
+      "method": "GET",
+      "path": "/api/platforms"
+    },
+    {
+      "expectedStatus": 200,
+      "id": "search-empty",
+      "method": "GET",
+      "path": "/api/search/local/contract",
+      "query": {
+        "limit": "20",
+        "offset": "0"
+      }
+    },
+    {
+      "expectedStatus": 500,
+      "id": "search-invalid-parameters",
+      "method": "GET",
+      "path": "/api/search/local/contract",
+      "query": {
+        "limit": "20",
+        "offset": "-1"
+      }
+    },
+    {
+      "expectedStatus": 502,
+      "id": "search-upstream-failure",
+      "method": "GET",
+      "path": "/api/search/netease/contract",
+      "query": {
+        "limit": "20",
+        "offset": "0"
+      }
+    },
+    {
+      "expectedStatus": 404,
+      "id": "invite-not-found",
+      "method": "GET",
+      "path": "/api/join/not-a-real-invite/metadata"
+    },
+    {
+      "expectedStatus": 403,
+      "id": "local-media-forbidden",
+      "method": "GET",
+      "path": "/api/local/media/not-a-real-track"
+    },
+    {
+      "expectedStatus": 204,
+      "id": "logout",
+      "method": "POST",
+      "path": "/api/account/logout"
+    },
+    {
+      "expectedStatus": 401,
+      "id": "account-me-after-logout",
+      "method": "GET",
+      "path": "/api/account/me"
+    }
+  ],
+  "strict": {
+    "arrayOrder": true,
+    "errorBody": true,
+    "fieldPresence": true,
+    "headerPresence": true,
+    "status": true
+  },
+  "version": 1
+}

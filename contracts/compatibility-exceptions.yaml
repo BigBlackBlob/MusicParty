@@ -1,0 +1,39 @@
+version: 1
+baseline:
+  tag: go-rewrite-baseline-v1
+  commit: 95b9f8da32e2375b7183e9d6233d8c45d0d1dfcd
+
+exceptions:
+  - id: legacy-http-radio
+    status: approved-scope-removal
+    approvedAt: 2026-08-01
+    rationale: >-
+      Legacy HTTP Radio usage is too limited to justify continuous FFmpeg
+      production, per-listener buffering, fan-out, and ongoing maintenance.
+    excluded:
+      httpOperations:
+        - method: GET
+          path: /radio/stream
+          operationId: StreamController.streamAudio
+      websocketBehaviors:
+        - command: //stream
+      environmentVariables:
+        - STREAM_MAX_LISTENERS
+        - STREAM_CLIENT_QUEUE_CAPACITY
+        - STREAM_WRITER_THREADS
+      runtimeBehaviors:
+        - Radio stream token issuance and validation
+        - Radio listener accounting
+        - FFmpeg Radio audio production
+        - Encoded audio fan-out to Radio clients
+    retained:
+      - payload: player.state
+        field: streamListenerCount
+        behavior: Always present with the numeric value 0
+    acceptance:
+      mustNotBlockStages:
+        - 7
+        - 8
+      finalCandidateRequirement: >-
+        Go Radio production and command code remains absent, while ordinary
+        playback and the retained payload field remain compatible.

@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "recordedAt": "2026-07-30",
+  "command": ".\\mvnw.cmd -q -Dtest=LocalTrackControllerTests,LocalLibraryServiceTests,BilibiliProxyControllerTest,NeteaseProxyControllerTest,RoomPlaylistServiceTests,UserPlaylistServiceTests,MusicSocketControllerTests,AccountAuthControllerTests,InvitationServiceTests test",
+  "summary": {
+    "tests": 35,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "suites": [
+    {"name": "LocalTrackControllerTests", "tests": 3},
+    {"name": "LocalLibraryServiceTests", "tests": 3},
+    {"name": "BilibiliProxyControllerTest", "tests": 4},
+    {"name": "NeteaseProxyControllerTest", "tests": 9},
+    {"name": "RoomPlaylistServiceTests", "tests": 2},
+    {"name": "UserPlaylistServiceTests", "tests": 5},
+    {"name": "MusicSocketControllerTests", "tests": 5},
+    {"name": "AccountAuthControllerTests", "tests": 2},
+    {"name": "InvitationServiceTests", "tests": 2}
+  ],
+  "scope": [
+    "local upload authorization, pending transcode, duplicate detection, and completed-track searchability",
+    "Netease and Bilibili Range/proxy/fallback behavior",
+    "room and user playlist ordering, ownership, duplicate handling, export, and liked songs",
+    "WebSocket queue ACK/NACK and SQLite BUSY behavior",
+    "account Cookie behavior and invitation expiry/redeem semantics"
+  ],
+  "boundary": "This supplements the black-box golden for media and service paths that require binary or upstream fixtures. It does not replace later real-upstream smoke tests or the stage 7 media regression matrix."
+}

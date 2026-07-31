@@ -1,0 +1,520 @@
+{
+  "variables": [
+    {
+      "default": "",
+      "name": "ADMIN_PASSWORD",
+      "source": "src/main/resources/application.yml:37"
+    },
+    {
+      "default": "",
+      "name": "ALLOWED_ORIGINS",
+      "source": "src/main/resources/application.yml:42"
+    },
+    {
+      "default": "ThorNex",
+      "name": "APP_AUTHOR_NAME",
+      "source": "src/main/resources/application.yml:43"
+    },
+    {
+      "default": "THORNEX",
+      "name": "APP_BACK_WORDS",
+      "source": "src/main/resources/application.yml:44"
+    },
+    {
+      "default": "server",
+      "name": "APP_MODE",
+      "source": "src/main/resources/application.yml:40"
+    },
+    {
+      "default": "300",
+      "name": "AUTH_BLOCK_DURATION",
+      "source": "src/main/resources/application.yml:148"
+    },
+    {
+      "default": "5",
+      "name": "AUTH_MAX_ATTEMPTS",
+      "source": "src/main/resources/application.yml:146"
+    },
+    {
+      "default": "10000",
+      "name": "AUTH_MAX_TRACKED_IPS",
+      "source": "src/main/resources/application.yml:149"
+    },
+    {
+      "default": "true",
+      "name": "AUTH_RATE_LIMIT_ENABLED",
+      "source": "src/main/resources/application.yml:145"
+    },
+    {
+      "default": "true",
+      "name": "AUTH_SECURE_COOKIES",
+      "source": "src/main/resources/application.yml:153"
+    },
+    {
+      "default": "60",
+      "name": "AUTH_WINDOW_SECONDS",
+      "source": "src/main/resources/application.yml:147"
+    },
+    {
+      "default": "http://localhost:8080",
+      "name": "BASE_URL",
+      "source": "src/main/resources/application.yml:41"
+    },
+    {
+      "default": "1",
+      "name": "BILIBILI_DOWNLOAD_CONCURRENCY",
+      "source": "src/main/resources/application.yml:98"
+    },
+    {
+      "default": "",
+      "name": "BILIBILI_SESSDATA",
+      "source": "src/main/resources/application.yml:53"
+    },
+    {
+      "default": "",
+      "name": "BOOTSTRAP_ADMIN_PASSWORD",
+      "source": "src/main/resources/application.yml:39"
+    },
+    {
+      "default": "",
+      "name": "BOOTSTRAP_ADMIN_USERNAME",
+      "source": "src/main/resources/application.yml:38"
+    },
+    {
+      "default": "1GB",
+      "name": "CACHE_MAX_SIZE",
+      "source": "src/main/resources/application.yml:89"
+    },
+    {
+      "default": "1000",
+      "name": "CHAT_HISTORY_LIMIT",
+      "source": "src/main/resources/application.yml:85"
+    },
+    {
+      "default": "200",
+      "name": "CHAT_MAX_LENGTH",
+      "source": "src/main/resources/application.yml:87"
+    },
+    {
+      "default": "1000",
+      "name": "CHAT_MIN_INTERVAL",
+      "source": "src/main/resources/application.yml:86"
+    },
+    {
+      "default": "256",
+      "name": "COVER_COLOR_CACHE_SIZE",
+      "source": "src/main/resources/application.yml:105"
+    },
+    {
+      "default": "4",
+      "name": "COVER_COLOR_MAX_CONCURRENT",
+      "source": "src/main/resources/application.yml:106"
+    },
+    {
+      "default": "5000",
+      "name": "DB_CONNECTION_TIMEOUT_MS",
+      "source": "src/main/resources/application.yml:142"
+    },
+    {
+      "default": "true",
+      "name": "DB_ENABLED",
+      "source": "src/main/resources/application.yml:137"
+    },
+    {
+      "default": "true",
+      "name": "DB_INIT_SCHEMA",
+      "source": "src/main/resources/application.yml:139"
+    },
+    {
+      "default": "1",
+      "name": "DB_MAX_POOL_SIZE",
+      "source": "src/main/resources/application.yml:140"
+    },
+    {
+      "default": "1",
+      "name": "DB_MIN_IDLE",
+      "source": "src/main/resources/application.yml:141"
+    },
+    {
+      "default": "data/musicparty.db",
+      "name": "DB_PATH",
+      "source": "src/main/resources/application.yml:138"
+    },
+    {
+      "default": "512",
+      "name": "DB_READ_QUEUE_CAPACITY",
+      "source": "src/main/resources/application.yml:112"
+    },
+    {
+      "default": "2",
+      "name": "DB_READ_THREADS",
+      "source": "src/main/resources/application.yml:111"
+    },
+    {
+      "default": "100",
+      "name": "DB_WRITE_QUEUE_CAPACITY",
+      "source": "src/main/resources/application.yml:110"
+    },
+    {
+      "default": "false",
+      "name": "DESKTOP_ADMIN_INITIALIZED",
+      "source": "src/main/resources/application.yml:129"
+    },
+    {
+      "default": "",
+      "name": "DESKTOP_LAN_BASE_URL",
+      "source": "src/main/resources/application.yml:127"
+    },
+    {
+      "default": "3000",
+      "name": "DESKTOP_NETEASE_API_PORT",
+      "source": "src/main/resources/application.yml:128"
+    },
+    {
+      "default": "3",
+      "name": "DOWNLOAD_MAX_ACTIVE_TASKS",
+      "source": "src/main/resources/application.yml:95"
+    },
+    {
+      "default": "100",
+      "name": "DOWNLOAD_MAX_QUEUED_TASKS",
+      "source": "src/main/resources/application.yml:94"
+    },
+    {
+      "default": "3",
+      "name": "DOWNLOAD_MAX_RETRIES",
+      "source": "src/main/resources/application.yml:102"
+    },
+    {
+      "default": "33554432",
+      "name": "DOWNLOAD_RESERVATION_BYTES",
+      "source": "src/main/resources/application.yml:96"
+    },
+    {
+      "default": "1000",
+      "name": "DOWNLOAD_RETRY_INITIAL_DELAY_MS",
+      "source": "src/main/resources/application.yml:103"
+    },
+    {
+      "default": "30000",
+      "name": "DOWNLOAD_RETRY_MAX_DELAY_MS",
+      "source": "src/main/resources/application.yml:104"
+    },
+    {
+      "default": "1800000",
+      "name": "DOWNLOAD_TASK_TTL_MS",
+      "source": "src/main/resources/application.yml:101"
+    },
+    {
+      "default": "200",
+      "name": "FILE_IO_QUEUE_CAPACITY",
+      "source": "src/main/resources/application.yml:114"
+    },
+    {
+      "default": "4",
+      "name": "FILE_IO_THREADS",
+      "source": "src/main/resources/application.yml:113"
+    },
+    {
+      "default": "100",
+      "name": "IMAGE_CPU_QUEUE_CAPACITY",
+      "source": "src/main/resources/application.yml:118"
+    },
+    {
+      "default": "2",
+      "name": "IMAGE_CPU_THREADS",
+      "source": "src/main/resources/application.yml:117"
+    },
+    {
+      "default": "2",
+      "name": "LOCAL_DOWNLOAD_CONCURRENCY",
+      "source": "src/main/resources/application.yml:100"
+    },
+    {
+      "default": "",
+      "name": "LOCAL_LIBRARY_ALLOWED_USERS",
+      "source": "src/main/resources/application.yml:133"
+    },
+    {
+      "default": "true",
+      "name": "LOCAL_LIBRARY_ENABLED",
+      "source": "src/main/resources/application.yml:131"
+    },
+    {
+      "default": "1048576",
+      "name": "LOCAL_LIBRARY_MAX_EMBEDDED_COVER_BYTES",
+      "source": "src/main/resources/application.yml:135"
+    },
+    {
+      "default": "209715200",
+      "name": "LOCAL_LIBRARY_MAX_UPLOAD_BYTES",
+      "source": "src/main/resources/application.yml:134"
+    },
+    {
+      "default": "data/local-library",
+      "name": "LOCAL_LIBRARY_PATH",
+      "source": "src/main/resources/application.yml:132"
+    },
+    {
+      "default": "INFO",
+      "name": "LOG_LEVEL",
+      "source": "src/main/resources/application.yml:32"
+    },
+    {
+      "default": "200MB",
+      "name": "MULTIPART_MAX_FILE_SIZE",
+      "source": "src/main/resources/application.yml:23"
+    },
+    {
+      "default": "220MB",
+      "name": "MULTIPART_MAX_REQUEST_SIZE",
+      "source": "src/main/resources/application.yml:24"
+    },
+    {
+      "default": "data/desktop-profile",
+      "name": "MUSICPARTY_PROFILE_DIR",
+      "source": "src/main/resources/application.yml:126"
+    },
+    {
+      "default": "",
+      "name": "NAVIDROME_ALLOWED_USERS",
+      "source": "src/main/resources/application.yml:66"
+    },
+    {
+      "default": "1.16.1",
+      "name": "NAVIDROME_API_VERSION",
+      "source": "src/main/resources/application.yml:65"
+    },
+    {
+      "default": "http://navidrome:4533",
+      "name": "NAVIDROME_BASE_URL",
+      "source": "src/main/resources/application.yml:61"
+    },
+    {
+      "default": "musicparty",
+      "name": "NAVIDROME_CLIENT",
+      "source": "src/main/resources/application.yml:64"
+    },
+    {
+      "default": "false",
+      "name": "NAVIDROME_ENABLED",
+      "source": "src/main/resources/application.yml:60"
+    },
+    {
+      "default": "",
+      "name": "NAVIDROME_PASSWORD",
+      "source": "src/main/resources/application.yml:63"
+    },
+    {
+      "default": "",
+      "name": "NAVIDROME_USERNAME",
+      "source": "src/main/resources/application.yml:62"
+    },
+    {
+      "default": "http://netease-api:3000",
+      "name": "NETEASE_API_URL",
+      "source": "src/main/resources/application.yml:47"
+    },
+    {
+      "default": "",
+      "name": "NETEASE_COOKIE",
+      "source": "src/main/resources/application.yml:48"
+    },
+    {
+      "default": "2",
+      "name": "NETEASE_DOWNLOAD_CONCURRENCY",
+      "source": "src/main/resources/application.yml:97"
+    },
+    {
+      "default": "exhigh",
+      "name": "NETEASE_QUALITY",
+      "source": "src/main/resources/application.yml:49"
+    },
+    {
+      "default": "100",
+      "name": "PLAYLIST_IMPORT_LIMIT",
+      "source": "src/main/resources/application.yml:82"
+    },
+    {
+      "default": "50",
+      "name": "QUEUE_HISTORY_SIZE",
+      "source": "src/main/resources/application.yml:79"
+    },
+    {
+      "default": "1000",
+      "name": "QUEUE_MAX_SIZE",
+      "source": "src/main/resources/application.yml:78"
+    },
+    {
+      "default": "100",
+      "name": "QUEUE_MAX_USER_SONGS",
+      "source": "src/main/resources/application.yml:80"
+    },
+    {
+      "default": "",
+      "name": "ROOM_ACCESS_TOKEN_SECRET",
+      "source": "src/main/resources/application.yml:152"
+    },
+    {
+      "default": "300000",
+      "name": "ROOM_ACCESS_TOKEN_TTL_MS",
+      "source": "src/main/resources/application.yml:151"
+    },
+    {
+      "default": "100",
+      "name": "ROOM_COMMAND_QUEUE_CAPACITY",
+      "source": "src/main/resources/application.yml:108"
+    },
+    {
+      "default": "5000",
+      "name": "ROOM_COMMAND_QUEUE_TIMEOUT_MS",
+      "source": "src/main/resources/application.yml:109"
+    },
+    {
+      "default": "3600000",
+      "name": "ROOM_EVICTION_IDLE_MS",
+      "source": "src/main/resources/application.yml:83"
+    },
+    {
+      "default": "5000",
+      "name": "SQLITE_BUSY_TIMEOUT_MS",
+      "source": "src/main/resources/application.yml:143"
+    },
+    {
+      "default": "*",
+      "name": "SQUIDIFY_ALLOWED_USERS",
+      "source": "src/main/resources/application.yml:76"
+    },
+    {
+      "default": "1.16.1",
+      "name": "SQUIDIFY_API_VERSION",
+      "source": "src/main/resources/application.yml:75"
+    },
+    {
+      "default": "",
+      "name": "SQUIDIFY_BASE_URL",
+      "source": "src/main/resources/application.yml:71"
+    },
+    {
+      "default": "musicparty",
+      "name": "SQUIDIFY_CLIENT",
+      "source": "src/main/resources/application.yml:74"
+    },
+    {
+      "default": "true",
+      "name": "SQUIDIFY_ENABLED",
+      "source": "src/main/resources/application.yml:68"
+    },
+    {
+      "default": "squidify",
+      "name": "SQUIDIFY_ID",
+      "source": "src/main/resources/application.yml:69"
+    },
+    {
+      "default": "Squidify",
+      "name": "SQUIDIFY_LABEL",
+      "source": "src/main/resources/application.yml:70"
+    },
+    {
+      "default": "",
+      "name": "SQUIDIFY_PASSWORD",
+      "source": "src/main/resources/application.yml:73"
+    },
+    {
+      "default": "",
+      "name": "SQUIDIFY_USERNAME",
+      "source": "src/main/resources/application.yml:72"
+    },
+    {
+      "default": "32",
+      "name": "STREAM_CLIENT_QUEUE_CAPACITY",
+      "source": "src/main/resources/application.yml:92"
+    },
+    {
+      "default": "50",
+      "name": "STREAM_MAX_LISTENERS",
+      "source": "src/main/resources/application.yml:91"
+    },
+    {
+      "default": "8",
+      "name": "STREAM_WRITER_THREADS",
+      "source": "src/main/resources/application.yml:93"
+    },
+    {
+      "default": "20",
+      "name": "SUBPROCESS_QUEUE_CAPACITY",
+      "source": "src/main/resources/application.yml:116"
+    },
+    {
+      "default": "2",
+      "name": "SUBPROCESS_THREADS",
+      "source": "src/main/resources/application.yml:115"
+    },
+    {
+      "default": "",
+      "name": "TRUSTED_PROXY_CIDRS",
+      "source": "src/main/resources/application.yml:150"
+    },
+    {
+      "default": "30000",
+      "name": "UPSTREAM_CIRCUIT_OPEN_MS",
+      "source": "src/main/resources/application.yml:121"
+    },
+    {
+      "default": "5",
+      "name": "UPSTREAM_FAILURE_THRESHOLD",
+      "source": "src/main/resources/application.yml:120"
+    },
+    {
+      "default": "4",
+      "name": "UPSTREAM_MAX_CONCURRENT",
+      "source": "src/main/resources/application.yml:119"
+    },
+    {
+      "default": "256",
+      "name": "WEBSOCKET_CLIENT_QUEUE_CAPACITY",
+      "source": "src/main/resources/application.yml:107"
+    },
+    {
+      "default": "20",
+      "name": "WEB_CLIENT_MAX_CONNECTIONS",
+      "source": "src/main/resources/application.yml:122"
+    },
+    {
+      "default": "50",
+      "name": "WEB_CLIENT_PENDING_ACQUIRE_MAX",
+      "source": "src/main/resources/application.yml:123"
+    },
+    {
+      "default": "5000",
+      "name": "WEB_CLIENT_PENDING_ACQUIRE_TIMEOUT_MS",
+      "source": "src/main/resources/application.yml:124"
+    },
+    {
+      "default": "",
+      "name": "YOUTUBE_API_KEY",
+      "source": "src/main/resources/application.yml:56"
+    },
+    {
+      "default": "1",
+      "name": "YOUTUBE_DOWNLOAD_CONCURRENCY",
+      "source": "src/main/resources/application.yml:99"
+    },
+    {
+      "default": "true",
+      "name": "YOUTUBE_ENABLED",
+      "source": "src/main/resources/application.yml:55"
+    },
+    {
+      "default": "20",
+      "name": "YOUTUBE_SEARCH_LIMIT",
+      "source": "src/main/resources/application.yml:58"
+    },
+    {
+      "default": "yt-dlp",
+      "name": "YTDLP_PATH",
+      "source": "src/main/resources/application.yml:57"
+    }
+  ],
+  "version": 1
+}
