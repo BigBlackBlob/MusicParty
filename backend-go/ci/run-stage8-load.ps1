@@ -48,14 +48,19 @@ function Set-IsolatedEnvironment([int]$Port) {
         LOG_LEVEL = 'WARN'
     }
     foreach ($entry in $values.GetEnumerator()) {
-        $savedEnvironment[$entry.Key] = [Environment]::GetEnvironmentVariable($entry.Key, 'Process')
+        $previous = [Environment]::GetEnvironmentVariable($entry.Key, [EnvironmentVariableTarget]::Process)
+        $savedEnvironment[$entry.Key] = [pscustomobject]@{ Exists = $null -ne $previous; Value = $previous }
         [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, 'Process')
     }
 }
 
 function Restore-Environment {
     foreach ($entry in $savedEnvironment.GetEnumerator()) {
-        [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, 'Process')
+        if ($entry.Value.Exists) {
+            [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value.Value, [EnvironmentVariableTarget]::Process)
+        } else {
+            Remove-Item -LiteralPath ("Env:" + $entry.Key) -ErrorAction SilentlyContinue
+        }
     }
 }
 
