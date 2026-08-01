@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "recordedAtUtc": "2026-08-01T13:57:08Z",
+  "candidateSha": "96727c13434567152bed889798f1e4803e30b5cf",
+  "candidateImageId": "sha256:bbb8eb103050995e2f85157464bbef406eec8a1a206d52c59d01a18ca0ea002b",
+  "environment": "local-windows-host-isolated-processes-and-docker",
+  "result": "PASS",
+  "quality": {
+    "javaSuites": 49,
+    "javaTests": 176,
+    "javaFailuresErrorsSkipped": 0,
+    "frontendTestFiles": 30,
+    "frontendTests": 97,
+    "eslintErrors": 0,
+    "eslintExistingWarnings": 3,
+    "frontendBuild": "PASS",
+    "goTestVetBuildStaticcheck": "PASS",
+    "goRace": "PASS",
+    "linuxAmd64CgoFreeBuild": "PASS",
+    "generatedContractFilesChecked": 7,
+    "javaGoHttpWebSocketGolden": "PASS",
+    "govulncheckReachable": 0
+  },
+  "image": {
+    "cleanDockerfileBuild": "PASS",
+    "trivyCritical": 0,
+    "user": "10001:10001",
+    "readOnlyRootFilesystem": true,
+    "capDropAll": true,
+    "noNewPrivileges": true,
+    "health": "UP",
+    "staticFrontendHttpStatus": 200
+  },
+  "firstReleasePlatforms": {
+    "netease": "PASS_FULL_SOURCE",
+    "bilibili": "PASS",
+    "local": "PASS"
+  },
+  "loadReports": [
+    "load-10-rooms20-queue1000-30m.json",
+    "load-100-30m.json",
+    "load-300-30m.json"
+  ],
+  "browser": {
+    "result": "PASS",
+    "newVisualRun": true
+  },
+  "frontendAudit": {
+    "npmTotal": 0,
+    "pnpmTotal": 0,
+    "registry": "https://registry.npmjs.org"
+  },
+  "sqliteProductionCopyHandoff": "EXCLUDED_BY_AGREED_BOUNDARY",
+  "containsCredentials": false,
+  "containsDatabase": false,
+  "containsExecutables": false,
+  "containsAudio": false
+}

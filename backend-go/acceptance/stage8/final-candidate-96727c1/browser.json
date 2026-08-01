@@ -1,0 +1,22 @@
+{
+  "result": "PASS",
+  "candidateSha": "96727c13434567152bed889798f1e4803e30b5cf",
+  "newVisualRun": true,
+  "passedPaths": [
+    "administrator login",
+    "enter Lounge",
+    "WebSocket presence shows Lounge and one active user",
+    "real Bilibili current playback state",
+    "Netease search results render",
+    "enqueue updates the queue to one track"
+  ],
+  "nonBlockingObservations": [
+    "expected unauthenticated requests returned 401 before login",
+    "Wake Lock permission was denied by the browser environment",
+    "cover color extraction returned 400 for one upstream image",
+    "the browser aborted one media request; independent Range and seek checks passed",
+    "player.progress has no frontend handler and emitted a debug log"
+  ],
+  "containsCredential": false,
+  "containsScreenshot": false
+}

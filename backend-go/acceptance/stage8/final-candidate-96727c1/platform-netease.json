@@ -1,0 +1,29 @@
+{
+  "platform": "netease",
+  "result": "PASS",
+  "candidateSha": "96727c13434567152bed889798f1e4803e30b5cf",
+  "authenticatedSearch": {
+    "status": 200,
+    "resultCount": 10
+  },
+  "playback": {
+    "musicId": "28816031",
+    "durationMs": 257693,
+    "metadataComplete": true,
+    "webSocketEnqueue": "PASS"
+  },
+  "stream": {
+    "status": 206,
+    "contentType": "audio/mpeg; charset=UTF-8",
+    "contentRange": "bytes 0-65535/10310052",
+    "bytesRead": 65536,
+    "minimumFullSourceBytes": 1000000,
+    "fullSourceAccepted": true
+  },
+  "seek": {
+    "requestedPositionMs": 30000,
+    "observedPositionMs": 30000
+  },
+  "containsCredential": false,
+  "containsAccountIdentity": false
+}

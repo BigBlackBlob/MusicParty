@@ -1,0 +1,29 @@
+{
+  "platform": "local",
+  "result": "PASS",
+  "candidateSha": "96727c13434567152bed889798f1e4803e30b5cf",
+  "upload": "PASS",
+  "transcode": {
+    "status": "COMPLETED",
+    "durationMs": 4000,
+    "oggCreated": true
+  },
+  "search": "PASS",
+  "webSocketEnqueue": "PASS",
+  "stream": {
+    "status": 206,
+    "contentRange": "bytes 0-65535/89053",
+    "bytesRead": 65536
+  },
+  "seek": {
+    "requestedPositionMs": 2000,
+    "observedPositionMs": 2001
+  },
+  "deletion": {
+    "status": 200,
+    "activeRecordRemoved": true,
+    "mediaStatusAfterDelete": 410
+  },
+  "containsAudioFile": false,
+  "containsDatabase": false
+}

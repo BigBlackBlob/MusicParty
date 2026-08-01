@@ -9,8 +9,8 @@ const modeArgument = process.argv[4];
 const username = process.env.STAGE8_USERNAME ?? 'stage8-admin';
 const password = process.env.STAGE8_PASSWORD ?? 'Stage8-Password-2026!';
 
-if (!['bilibili', 'local'].includes(mode)) {
-  throw new Error('usage: stage8-final-platform.mjs <base-url> <bilibili|local> <user-id|audio-file>');
+if (!['netease', 'bilibili', 'local'].includes(mode)) {
+  throw new Error('usage: stage8-final-platform.mjs <base-url> <netease|bilibili|local> <music-id|user-id|audio-file>');
 }
 if (!modeArgument) throw new Error(`${mode} requires its mode-specific argument`);
 
@@ -107,6 +107,27 @@ const enqueueAndVerify = async ({ platform, musicId, roomId }) => {
     socket.close();
   }
 };
+
+if (mode === 'netease') {
+  const keyword = process.env.STAGE8_NETEASE_KEYWORD ?? 'Perfume';
+  const minimumSourceBytes = Number(process.env.STAGE8_NETEASE_MIN_SOURCE_BYTES ?? 1_000_000);
+  const search = await checkedFetch(`${baseUrl}/api/search/netease/${encodeURIComponent(keyword)}?offset=0&limit=10`);
+  const results = await search.json();
+  if (!Array.isArray(results) || results.length === 0) throw new Error('Netease real search returned no results');
+
+  const playback = await enqueueAndVerify({ platform: 'netease', musicId: modeArgument, roomId: 'lounge' });
+  const sourceBytes = Number(playback.stream.contentRange?.match(/\/(\d+)$/)?.[1] ?? 0);
+  if (!Number.isSafeInteger(sourceBytes) || sourceBytes < minimumSourceBytes) {
+    throw new Error(`Netease source is too small for full-source acceptance: ${sourceBytes} bytes`);
+  }
+
+  console.log(JSON.stringify({
+    platform: 'netease',
+    search: { status: search.status, resultCount: results.length },
+    playback,
+    fullSource: { minimumBytes: minimumSourceBytes, observedBytes: sourceBytes, accepted: true }
+  }, null, 2));
+}
 
 if (mode === 'bilibili') {
   const keyword = process.env.STAGE8_BILIBILI_KEYWORD ?? '音乐';

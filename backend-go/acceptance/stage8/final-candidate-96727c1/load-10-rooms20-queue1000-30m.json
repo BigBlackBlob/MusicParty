@@ -1,0 +1,34 @@
+{
+  "baseUrl": "http://127.0.0.1:39125",
+  "connections": 10,
+  "rooms": 20,
+  "queueSize": 1000,
+  "durationMs": 1800000,
+  "recoveryMs": 5000,
+  "openedMs": 15,
+  "messages": 59051,
+  "ackMs": {
+    "count": 1000,
+    "p50": 5.964399999999841,
+    "p95": 13.371599999999944,
+    "max": 20.29379999999992
+  },
+  "convergenceMs": 23.849200000000565,
+  "metrics": {
+    "before": {
+      "goroutines": 19,
+      "rssBytes": 22425600,
+      "heapBytes": 1030928
+    },
+    "during": {
+      "goroutines": 98,
+      "rssBytes": 32075776,
+      "heapBytes": 5141992
+    },
+    "after": {
+      "goroutines": 39,
+      "rssBytes": 33153024,
+      "heapBytes": 6045848
+    }
+  }
+}

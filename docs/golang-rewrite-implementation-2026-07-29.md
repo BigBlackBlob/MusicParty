@@ -55,7 +55,7 @@
 - 非 root Dockerfile，运行时保留 FFmpeg、Python 和 yt-dlp。
 - 正式 `.github/workflows/go-backend.yml`：Windows/Linux 验证、race、静态检查、Go 漏洞扫描、Docker build 和 Trivy。
 
-阶段 4 至阶段 7 的平台、业务、房间 actor、WebSocket Hub、媒体代理和静态前端服务已经实现。最终候选 `0c088a91d10a2a50badd8fa9c9727749acd246f1` 的阶段 8 系统验收已经收口：契约、质量门、首发真实平台、浏览器证据继承、负载、故障矩阵、同硬件比较和运行时镜像扫描均有证据。阶段 9 的离线切换准备已开始，干净 Dockerfile 重建已经恢复并通过；生产数据库副本交接验证和实际切换仍是后续门禁，当前没有触碰生产环境。
+阶段 4 至阶段 7 的平台、业务、房间 actor、WebSocket Hub、媒体代理和静态前端服务已经实现。移除 Radio 与 Tauri 后的最终运行时候选 `96727c13434567152bed889798f1e4803e30b5cf` 已完成阶段 8 系统验收：契约、质量门、首发真实平台、新浏览器流程、负载、故障矩阵、同硬件比较和运行时镜像扫描均有证据。阶段 9 的离线切换准备已开始，干净 Dockerfile 重建已经恢复并通过；生产数据库副本交接验证和实际切换仍是后续门禁，当前没有触碰生产环境。
 
 阶段 4 当前落地内容：
 
@@ -187,16 +187,16 @@ Trivy Critical: 0
 - Netease 实际歌曲 `28816031` 解析为 `Cling Cling`、`Perfume`、257693 ms，代理 Range 返回 `206 audio/mpeg`，浏览器 `readyState=4` 且 seek 状态从 30000 ms 收敛到 30001 ms。
 - 无 Cookie 上游只提供约 30 秒试听，因此未把完整 4:17 seek 当作已验证；试听片段内真实 seek 已通过。
 - 两个浏览器标签在后端快速重启后恢复 track 与音频 ready state；约 1000 首真实元信息队列可滚动到底，500/1000 阶段 ACK P95 分别为 18.81/36.15 ms。
-- 最终候选镜像使用授权运行时 Cookie 重新验证 Netease 完整音频源，Range 返回 `bytes 0-65535/10310052`；Bilibili 真实搜索返回 10 条、收藏夹返回 14 个非空集合，音频 Range 返回 `bytes 0-65535/17713611`，入队和 seek 均通过。凭据、账号和收藏夹名称未写入证据。
+- 候选 `96727c1` 使用一次性授权运行时 Cookie 重新验证 Netease 完整音频源，Range 返回 `bytes 0-65535/10310052`；验收脚本新增 1,000,000 字节最小源大小门槛，会拒绝约 481 KB 的试听片段。Bilibili 真实搜索返回 10 条、收藏夹返回 14 个非空集合，音频 Range 返回 `bytes 0-65535/17713611`，入队和 seek 均通过。凭据、账号和收藏夹名称未写入证据，一次性容器已删除。
 - 本地曲库使用临时 4 秒 WAV 完成上传、FFmpeg OGG 转码、搜索、入队、Range、seek、删除和引用清理；删除后媒体返回 410，临时音频和数据库未进入 Git。
-- 最终候选的 10 连接 + 20 房间 + 1000 队列、100 连接和 300 连接三组均运行 30 分钟。1000 队列 ACK P95 为 21.7991 ms，状态收敛为 0.0156 ms；100/300 连接关闭后 goroutine 均回落到 18。
-- 最终证据会话没有可用的可视化浏览器控制接口，因此没有声称重新点击 UI。浏览器结果从候选 `9b35fa7` 继承，并以 `9b35fa7..0c088a9` 在 `music-party-web/src`、`backend-go/internal` 和 `backend-go/cmd` 无差异作为边界证明；最终镜像静态首页返回 200。
+- 候选 `96727c1` 的 10 连接 + 20 房间 + 1000 队列、100 连接和 300 连接三组均运行 30 分钟且 stderr 为空。1000 队列 ACK P95 为 13.37 ms、最大 20.29 ms、状态收敛为 23.85 ms；100/300 连接关闭后 goroutine 均从 218/618 回落到 18。20 个保留房间使第一组恢复后 goroutine 为 39，符合房间 actor 生命周期设计。
+- 候选 `96727c1` 完成了新的可视化浏览器验收：管理员登录、进入 Lounge、WebSocket 在线状态、真实 Bilibili 当前播放、Netease 搜索渲染和入队后的队列更新均通过。登录前 401、Wake Lock 权限拒绝、单次封面提色 400、浏览器主动中止媒体请求及无 handler 的 `player.progress` debug 日志均按非阻塞现象记录；媒体字节正确性由独立 Range/seek 验收覆盖。
 - 有效媒体故障矩阵覆盖 Range、取消、Retry-After、缓存/LRU/去重/队列满、SQLite BUSY/异常回滚、FFmpeg 超时、`.part` 清理及路径限制。
 - 同硬件比较中，Java/Go 启动分别为 7073.81/348.43 ms，RSS 为 252723200/20766720 bytes，HTTP P95 为 25.03/2.83 ms，300 WS pong P95 为 374.39/148.21 ms；两端均建立全部连接且 0 error。
-- 当前 CGO-free 二进制在本地运行时镜像中以 UID 10001、只读 rootfs、cap-drop ALL、no-new-privileges 启动并通过 Trivy 0.72.0 CRITICAL=0。Docker Desktop 无 HTTPS proxy，导致干净 multi-stage Dockerfile 重建无法重新解析 Docker Hub manifest；该环境缺口与运行时扫描结果分开记录。
+- 候选镜像 `sha256:bbb8eb103050995e2f85157464bbef406eec8a1a206d52c59d01a18ca0ea002b` 已从干净 Dockerfile 构建，并以 UID/GID 10001、只读 rootfs、cap-drop ALL、no-new-privileges 启动；健康检查为 `UP`，静态首页返回 200，Trivy CRITICAL=0。
 - 阶段 9 准备期间 Docker Hub 访问恢复，`backend-go/Dockerfile` 已从头成功构建 `musicparty-go:stage9-prep`；正式镜像包含非 root 主进程以及 `/app/dbsnapshot`、`/app/dbcheck` 运维二进制，Compose 合并配置验证通过。该本地标签不是已发布的生产候选 digest。
 - 阶段 9 本机隔离候选 `669b6ef` 已通过新版 `dbcheck`、`cutover.sh preflight/snapshot/verify`、Go→Java→Go repository 往返、Go `DB_INIT_SCHEMA=false` 只读 rootfs 启动和 Java 容器回滚启动。演练同时确认 Go/Java 必须共用 Java 容器实测 UID/GID；Go Compose 和 preflight 已强制这一条件。证据清单位于 `backend-go/acceptance/stage9/final-candidate-669b6ef/manifest.json`，本机 registry digest 不是远端发布 digest，未触碰 VPS 或生产数据库。
-- 官方 npm registry 的 `npm audit` 报告前端安装/构建依赖树 2 个 MODERATE、7 个 HIGH、0 个 CRITICAL。最终运行镜像不包含 Node 且 Trivy CRITICAL=0，但浏览器 bundle 与构建期可达性仍需单独升级审查，不能表述为“前端依赖 0 漏洞”。
+- 候选更新 Axios、PostCSS 和 Vite 后，显式使用官方 npm registry 执行的 `npm audit` 与 `pnpm audit` 均报告 0 漏洞。本机默认 npmmirror 不实现 audit API，因此正式证据记录了带 `--registry=https://registry.npmjs.org` 的可复现命令。
 
 `govulncheck` 报告调用路径漏洞为 0；扫描同时识别出 1 个 required module 中的不可达漏洞，但 MusicParty 导入的包和调用路径均不受影响。
 
@@ -212,7 +212,7 @@ Trivy Critical: 0
 | 5 账号/房间/播放列表 | 已实现，系统差分通过 | HTTP/持久化和实时 enqueue 已接入，冻结 HTTP/WS golden 通过 |
 | 6 实时核心 | 已完成本地验收 | actor、权威元信息、原子持久化、Hub/背压、全部冻结命令、race/集成、浏览器重连及 10/100/300 WS 30 分钟矩阵通过 |
 | 7 缓存/下载/流媒体 | 已完成首发验收 | 代理 URL、Netease/Bilibili 真实 Range/音频/seek、本地上传转码、缓存和有效故障矩阵通过；真实磁盘满仍是非阻塞环境注入项 |
-| 8 系统验收 | 已完成，依赖整改跟进 | 最终候选的 Java/Go golden、Go 全质量门、前端 101 tests/lint/build、首发三类真实媒体、1000 队列、10/100/300 WS 30 分钟、媒体故障矩阵、同硬件比较、干净 Dockerfile 重建、只读非 root 运行和 Trivy 均通过；浏览器结果按无运行时代码差异继承。npm audit 的 2 MODERATE/7 HIGH 进入后续依赖升级审查 |
+| 8 系统验收 | 已完成 | 候选 `96727c1` 的 Java 176 tests、Go 全质量门、前端 30 files/97 tests/lint/build、npm/pnpm 0 漏洞、首发三类真实媒体、新浏览器流程、1000 队列、10/100/300 WS 30 分钟、媒体故障矩阵、同硬件比较、干净 Dockerfile 重建、只读非 root 运行和 Trivy 均通过 |
 | 9 生产切换 | 本机候选演练完成，未触碰生产 | 本地不可变 digest、发布质量门、冻结 schema 校验、停机快照、共享 UID/GID、Go 启动和 Java 回滚均已演练；仍等待 VPS 数据库隔离副本交接、正式远端 digest 和维护窗口审批 |
 | 10 Java 退役 | 未开始 | Go 稳定 30 天或两个版本后执行 |
 
