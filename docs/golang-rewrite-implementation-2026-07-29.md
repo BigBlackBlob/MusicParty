@@ -198,6 +198,7 @@ Trivy Critical: 0
 - 同硬件比较中，Java/Go 启动分别为 7073.81/348.43 ms，RSS 为 252723200/20766720 bytes，HTTP P95 为 25.03/2.83 ms，300 WS pong P95 为 374.39/148.21 ms；两端均建立全部连接且 0 error。
 - 当前 CGO-free 二进制在本地运行时镜像中以 UID 10001、只读 rootfs、cap-drop ALL、no-new-privileges 启动并通过 Trivy 0.72.0 CRITICAL=0。Docker Desktop 无 HTTPS proxy，导致干净 multi-stage Dockerfile 重建无法重新解析 Docker Hub manifest；该环境缺口与运行时扫描结果分开记录。
 - 阶段 9 准备期间 Docker Hub 访问恢复，`backend-go/Dockerfile` 已从头成功构建 `musicparty-go:stage9-prep`；正式镜像包含非 root 主进程以及 `/app/dbsnapshot`、`/app/dbcheck` 运维二进制，Compose 合并配置验证通过。该本地标签不是已发布的生产候选 digest。
+- 阶段 9 本机隔离候选 `669b6ef` 已通过新版 `dbcheck`、`cutover.sh preflight/snapshot/verify`、Go→Java→Go repository 往返、Go `DB_INIT_SCHEMA=false` 只读 rootfs 启动和 Java 容器回滚启动。演练同时确认 Go/Java 必须共用 Java 容器实测 UID/GID；Go Compose 和 preflight 已强制这一条件。证据清单位于 `backend-go/acceptance/stage9/final-candidate-669b6ef/manifest.json`，本机 registry digest 不是远端发布 digest，未触碰 VPS 或生产数据库。
 - 官方 npm registry 的 `npm audit` 报告前端安装/构建依赖树 2 个 MODERATE、7 个 HIGH、0 个 CRITICAL。最终运行镜像不包含 Node 且 Trivy CRITICAL=0，但浏览器 bundle 与构建期可达性仍需单独升级审查，不能表述为“前端依赖 0 漏洞”。
 
 `govulncheck` 报告调用路径漏洞为 0；扫描同时识别出 1 个 required module 中的不可达漏洞，但 MusicParty 导入的包和调用路径均不受影响。
@@ -215,7 +216,7 @@ Trivy Critical: 0
 | 6 实时核心 | 已完成本地验收 | actor、权威元信息、原子持久化、Hub/背压、全部冻结命令、race/集成、浏览器重连及 10/100/300 WS 30 分钟矩阵通过 |
 | 7 缓存/下载/流媒体 | 已完成首发验收 | 代理 URL、Netease/Bilibili 真实 Range/音频/seek、本地上传转码、缓存和有效故障矩阵通过；Radio 生产实现已按批准范围删除，真实磁盘满仍是非阻塞环境注入项 |
 | 8 系统验收 | 已完成，依赖整改跟进 | 最终候选的 Java/Go golden、Go 全质量门、前端 101 tests/lint/build、首发三类真实媒体、1000 队列、10/100/300 WS 30 分钟、媒体故障矩阵、同硬件比较、干净 Dockerfile 重建、只读非 root 运行和 Trivy 均通过；浏览器结果按无运行时代码差异继承。npm audit 的 2 MODERATE/7 HIGH 进入后续依赖升级审查 |
-| 9 生产切换 | 准备中，未触碰生产 | 已落地手动不可变镜像发布、Go Compose 覆盖、停机快照/完整性校验和回滚手册；实际切换仍等待全部硬门槛证据与维护窗口审批 |
+| 9 生产切换 | 本机候选演练完成，未触碰生产 | 本地不可变 digest、发布质量门、冻结 schema 校验、停机快照、共享 UID/GID、Go 启动和 Java 回滚均已演练；仍等待 VPS 数据库隔离副本交接、正式远端 digest 和维护窗口审批 |
 | 10 Java 退役 | 未开始 | Go 稳定 30 天或两个版本后执行 |
 
 ## 恢复 Java 基线时的顺序
