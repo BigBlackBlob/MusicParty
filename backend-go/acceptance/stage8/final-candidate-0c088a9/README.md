@@ -10,8 +10,6 @@ Execution window: 2026-07-31 to 2026-08-01, local Windows host with isolated Go 
 
 Stage 8 core acceptance passed for the final candidate. The required first-release sources Netease, Bilibili, and the local library passed real playback flows on the same candidate image. The 10, 100, and 300 WebSocket scenarios completed 30 minutes, including a combined 10-connection, 20-room, 1000-item queue run.
 
-Radio is intentionally outside the Go product scope. `/radio/stream` returning 404 is the expected result.
-
 No account Cookie, session token, favorite name, response body, database, executable, audio file, or runner log is part of this evidence.
 
 ## Quality and image gates

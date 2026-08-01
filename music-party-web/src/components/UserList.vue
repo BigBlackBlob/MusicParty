@@ -99,18 +99,6 @@
       </div>
     </div>
 
-    <!-- 直播流人数 -->
-    <div v-if="playerStore.streamListenerCount > 0" class="mt-4 pt-3 border-t border-[var(--border-default)]">
-      <div class="flex min-w-0 items-center gap-3 rounded-2xl bg-[var(--surface-2)] px-3 py-2 opacity-70">
-        <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--surface-3)] text-[10px] font-semibold text-[var(--text-secondary)]" :aria-label="t('userList.live')">
-          LIVE
-        </div>
-        <div class="min-w-0 flex-1 truncate text-xs font-semibold text-[var(--text-primary)]">
-          {{ t('userList.streamListeners', { count: playerStore.streamListenerCount }) }}
-        </div>
-        <div class="h-2 w-2 shrink-0 rounded-full bg-[var(--accent)] animate-pulse"></div>
-      </div>
-    </div>
   </div>
 </template>
 

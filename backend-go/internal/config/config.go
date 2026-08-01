@@ -21,7 +21,6 @@ type Config struct {
 	Chat         Chat
 	Cache        Cache
 	Performance  Performance
-	Desktop      Desktop
 	LocalLibrary LocalLibrary
 	Database     Database
 	Auth         Auth
@@ -142,13 +141,6 @@ type Performance struct {
 	WebClientPendingAcquireTimeout time.Duration
 }
 
-type Desktop struct {
-	ProfileDir       string
-	LANBaseURL       string
-	NeteaseAPIPort   int
-	AdminInitialized bool
-}
-
 type LocalLibrary struct {
 	Enabled               bool
 	Path                  string
@@ -249,7 +241,6 @@ func Load(lookup LookupEnv) (Config, error) {
 			WebClientMaxConnections: r.int("WEB_CLIENT_MAX_CONNECTIONS", 20), WebClientPendingAcquireMax: r.int("WEB_CLIENT_PENDING_ACQUIRE_MAX", 50),
 			WebClientPendingAcquireTimeout: r.durationMS("WEB_CLIENT_PENDING_ACQUIRE_TIMEOUT_MS", 5000),
 		},
-		Desktop:      Desktop{ProfileDir: r.string("MUSICPARTY_PROFILE_DIR", "data/desktop-profile"), LANBaseURL: r.string("DESKTOP_LAN_BASE_URL", ""), NeteaseAPIPort: r.int("DESKTOP_NETEASE_API_PORT", 3000), AdminInitialized: r.bool("DESKTOP_ADMIN_INITIALIZED", false)},
 		LocalLibrary: LocalLibrary{Enabled: r.bool("LOCAL_LIBRARY_ENABLED", true), Path: r.string("LOCAL_LIBRARY_PATH", "data/local-library"), AllowedUsers: r.string("LOCAL_LIBRARY_ALLOWED_USERS", ""), MaxUploadBytes: r.int64("LOCAL_LIBRARY_MAX_UPLOAD_BYTES", 209_715_200), MaxEmbeddedCoverBytes: r.int64("LOCAL_LIBRARY_MAX_EMBEDDED_COVER_BYTES", 1_048_576)},
 		Database:     Database{Enabled: r.bool("DB_ENABLED", true), Path: r.string("DB_PATH", "data/musicparty.db"), InitSchema: r.bool("DB_INIT_SCHEMA", true), MaxPoolSize: r.int("DB_MAX_POOL_SIZE", 1), MinIdle: r.int("DB_MIN_IDLE", 1), ConnectionTimeout: r.durationMS("DB_CONNECTION_TIMEOUT_MS", 5000), BusyTimeout: r.durationMS("SQLITE_BUSY_TIMEOUT_MS", 5000)},
 		Auth:         Auth{RateLimitEnabled: r.bool("AUTH_RATE_LIMIT_ENABLED", true), MaxAttempts: r.int("AUTH_MAX_ATTEMPTS", 5), Window: r.durationSeconds("AUTH_WINDOW_SECONDS", 60), BlockDuration: r.durationSeconds("AUTH_BLOCK_DURATION", 300), MaxTrackedIPs: r.int("AUTH_MAX_TRACKED_IPS", 10_000), TrustedProxyCIDRs: r.list("TRUSTED_PROXY_CIDRS"), RoomAccessTokenTTL: r.durationMS("ROOM_ACCESS_TOKEN_TTL_MS", 300_000), RoomAccessTokenSecret: r.string("ROOM_ACCESS_TOKEN_SECRET", ""), SecureCookies: r.bool("AUTH_SECURE_COOKIES", true)},

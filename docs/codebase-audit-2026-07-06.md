@@ -83,12 +83,6 @@ Comprehensive audit of the MusicParty codebase. Findings are organized by severi
 - **Description**: `cacheIndex` is `ConcurrentHashMap<String, CacheEntry>`, but `CacheEntry` is a `@Data` POJO with plain (non-volatile) fields. `setStatus(DOWNLOADING)` from the download worker may not be visible to `getStatus` on the player-loop thread.
 - **Impact**: `getPlayableMusic` may return `PENDING_DOWNLOAD` for a track that already completed; `cleanupStaleTasks` may delete `.part` files for entries still downloading.
 
-### B-C8 — One `boundedElastic` thread blocked per radio listener for stream lifetime (up to 24h)
-- **File**: `StreamController.java:47-79`
-- **Category**: Reactive / resource-leak / Schedulers.boundedElastic misuse
-- **Description**: `Flux.create(...)` schedules `boundedElastic().schedule(() -> { closed.await(); })`. `await()` blocks the thread until the listener is removed (24h timeout). `boundedElastic` defaults to 10×CPU cores.
-- **Impact**: A few dozen radio listeners exhaust the shared `boundedElastic` pool used by every proxy controller — whole site's blocking-call capacity collapses.
-
 ### B-C9 — `CoverColorService` semaphore acquired at assembly time, no timeout on `webClient`, DNS + image decode on reactor thread
 - **File**: `CoverColorService.java:50-129`
 - **Category**: Reactive / resource-leak / blocking-in-reactor
@@ -247,18 +241,6 @@ Comprehensive audit of the MusicParty codebase. Findings are organized by severi
 - **Category**: Performance
 - **Description**: `RoomService.toInfo` calls `onlineCountProvider.applyAsInt(room.roomId())` for each room. `UserService.getOnlineCount` iterates all in-memory users. `listRooms()` is O(rooms × users).
 - **Impact**: Quadratic cost per reconnect burst; 50 rooms × 200 users = 10k scans per `publishRoomList`.
-
-### B-H7 — `LiveStreamService` stdout reader lambda reads non-volatile `transcoderProcess` field instead of captured local; NPE risk
-- **File**: `LiveStreamService.java:289-302`
-- **Category**: Thread-safety / resource-leak
-- **Description**: Line 285 captures `Process activeProcess = transcoderProcess;` but the stdout reader lambda (line 290) does `transcoderProcess.getInputStream()` — reading the **field** again. If `stopTranscoding()` sets `transcoderProcess = null` between, NPE.
-- **Impact**: Stream stdout reader crashes silently; ffmpeg process may keep running orphaned.
-
-### B-H8 — `LiveStreamService` listener-limit check is a TOCTOU
-- **File**: `LiveStreamService.java:129-152`
-- **Category**: Concurrency
-- **Description**: `addListener` checks `getStreamListenerCount() >= maxListeners` then later registers. Two concurrent calls both pass the check.
-- **Impact**: Stream listener cap exceeds configured max under burst.
 
 ### B-H9 — `downloadQueue` is unbounded; `pendingDownloadTasks` decremented before completion
 - **File**: `LocalCacheService.java:128-138, 52, 174-199`
@@ -610,14 +592,6 @@ Comprehensive audit of the MusicParty codebase. Findings are organized by severi
 - **File**: `MusicPlayerService.java:775-788`
 - **Impact**: Download-complete event may fail to trigger playback when queue is being mutated.
 
-### B-M25 — `StreamBroadcaster.sendSilence()` is empty (no-op)
-- **File**: `LiveStreamService.java:184-197`; `StreamBroadcaster.java:88-94`
-- **Impact**: Stream clients drop when playback pauses because no silence/keepalive frames are sent.
-
-### B-M26 — `StreamBroadcaster.broadcast` removes client while iterating `clients.values()`
-- **File**: `StreamBroadcaster.java:69-79`
-- **Impact**: Re-entrant modification mid-iteration; fragile.
-
 ### B-M27 — `BilibiliProxyController.cdnUrlCache` ConcurrentHashMap unbounded; stale entries only removed on re-resolve
 - **File**: `BilibiliProxyController.java:51`
 - **Impact**: Slow growth proportional to distinct BVIDs ever streamed.
@@ -804,7 +778,6 @@ Comprehensive audit of the MusicParty codebase. Findings are organized by severi
 - **F-L10**: `App.vue` `ACTIVITY_EVENTS` listeners fire `recordInteraction` on `pointermove` with no throttle
 - **F-L11**: `ChatOverlay`/`ChatModule` define `tabLabel`/`chatTabs` with `'PUBLIC'` literal and `t()` mix
 - **F-L12**: `player.reorderQueue` schedules untracked fallback resync
-- **F-L13**: `main.js` uses top-level `await initializeDesktopHost()` — app never mounts if Tauri invoke hangs
 - **F-L14**: `useExternalPlaylist` and `useSearchLogic` create module-scoped cache keys but instance-scoped refs — cross-component interference
 - **F-L15**: `layout.js` `swapColumns` mutates `order` but doesn't re-normalize array order
 - **F-L16**: `socketService.reconnectNow` setTimeout not cleared on subsequent `disconnect`
@@ -826,12 +799,11 @@ Comprehensive audit of the MusicParty codebase. Findings are organized by severi
 
 - **T-L1**: `ApiControllerTests` passes `null` for several constructor collaborators — brittle to refactor
 - **T-L2**: ESLint disables many rules; `no-unused-vars` is warn-only; no Prettier — lint effectively non-blocking
-- **T-L3**: `.dockerignore` is minimal — `cookies.json`, `.env.local`, `*.png`, `docs/`, `src-tauri/` not excluded
+- **T-L3**: `.dockerignore` is minimal — `cookies.json`, `.env.local`, `*.png`, and `docs/` are not excluded
 - **T-L4**: Frontend composables with no tests: `useAudio`, `useChatViewModel`, `usePlatforms`, `usePlaylistLogic`, `useQueueSelection`, `useShortcuts`, `useToast`
 - **T-L5**: `docker-compose.yml` binds `8848:8080` to `0.0.0.0` — reachable on all host interfaces
 - **T-L6**: No `healthcheck` in Dockerfile or compose; no graceful-shutdown tuning
 - **T-L7**: `SocketRateLimiter` window boundary edge case — untested
-- **T-L8**: `StreamTokenService` removes old tokens for same user — multi-tab streaming silently breaks; undocumented
 
 ---
 

@@ -35,7 +35,6 @@ const child = spawn('java', ['-jar', jar], {
     BASE_URL: baseUrl,
     ALLOWED_ORIGINS: origin,
     LOCAL_LIBRARY_PATH: join(runtimeRoot, 'local-library'),
-    MUSICPARTY_PROFILE_DIR: join(runtimeRoot, 'desktop-profile'),
     SQUIDIFY_ENABLED: 'false',
     YOUTUBE_ENABLED: 'false'
   },

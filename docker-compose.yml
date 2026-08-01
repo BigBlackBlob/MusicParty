@@ -60,9 +60,6 @@ services:
       - PLAYLIST_IMPORT_LIMIT=100    # 导入歌单时的最大歌曲数限制
       - CHAT_HISTORY_LIMIT=1000      # 聊天历史记录保留数量
       - CACHE_MAX_SIZE=1GB           # 本地音乐缓存上限 (例如 512MB, 1GB, 2GB)
-      - STREAM_MAX_LISTENERS=50      # HTTP 直播最大监听连接数
-      - STREAM_CLIENT_QUEUE_CAPACITY=32 # 单个直播客户端待发送音频块队列容量
-      - STREAM_WRITER_THREADS=8      # 直播客户端写出线程数
       - DOWNLOAD_MAX_QUEUED_TASKS=100 # YouTube/远程缓存下载最大排队数
       - DOWNLOAD_TASK_TTL_MS=1800000 # 失败或长期挂起下载任务保留时间
       - COVER_COLOR_CACHE_SIZE=256   # 封面取色 URL 结果缓存数量

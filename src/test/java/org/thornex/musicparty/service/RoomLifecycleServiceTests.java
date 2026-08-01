@@ -96,7 +96,6 @@ class RoomLifecycleServiceTests {
                     List.of(),
                     null,
                     null,
-                    null,
                     event -> {},
                     new AppProperties(),
                     null,

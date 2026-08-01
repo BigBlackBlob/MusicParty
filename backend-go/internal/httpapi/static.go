@@ -49,7 +49,7 @@ func (api *StaticAPI) serve(w http.ResponseWriter, r *http.Request) {
 }
 
 func reservedStaticPath(path string) bool {
-	for _, prefix := range []string{"/api/", "/actuator/", "/ws", "/radio/", "/media/", "/proxy/"} {
+	for _, prefix := range []string{"/api/", "/actuator/", "/ws", "/media/", "/proxy/"} {
 		if path == strings.TrimSuffix(prefix, "/") || strings.HasPrefix(path, prefix) {
 			return true
 		}

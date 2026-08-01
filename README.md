@@ -30,8 +30,7 @@
 - **桌面模块化 UI**：桌面主界面采用可配置模块布局，支持 Now Playing、歌词、队列、聊天、在线成员、房间歌单等模块，提供编辑模式、列宽调整、模块选择、全局缩放和主舞台比例调节。
 - **移动端体验**：移动端使用独立 shell、底部导航和播放/队列/搜索/聊天页面，支持移动预览、播放页密度设置、安全区适配、迷你歌词和完整歌词浮层。
 - **歌词体验**：支持歌词与翻译歌词展示、自动滚动、字号调整、对齐切换和翻译开关；桌面和移动端共用 Apple 风格歌词面板。
-- **实时互动**：聊天室、系统消息、在线成员、活跃成员弹层、点赞反馈、房间人数变化和直播流听众计数实时同步。
-- **可选 HTTP 直播流**：通过 FFmpeg 输出 `/radio/stream`，带访问 key 和服务端广播管理，适合在 VRChat 等外部场景收听。
+- **实时互动**：聊天室、系统消息、在线成员、活跃成员弹层、点赞反馈和房间人数变化实时同步。
 - **可访问性与国际化**：前端接入 `vue-i18n`，中英文文案覆盖主要界面；桌面壳、播放控制、队列/歌单图标按钮和可点击曲目行提供 accessible name、键盘焦点状态与按钮语义。
 - **本地字体与构建分包**：Material Symbols 字体已本地化；Vite 生产构建会拆分 Vue、网络、UI、拖拽和工具依赖，降低入口 chunk 体积。
 - **发布与质量门禁**：提供 Docker Compose、可选 Navidrome Compose、GitHub Actions 质量检查、Docker 发布和 Aliyun ACR 镜像工作流；前端包含 Vitest/ESLint 覆盖关键队列、音频、布局、a11y 和 payload 行为。
@@ -119,9 +118,6 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 | `CHAT_MIN_INTERVAL` | 否 | `1000` | 聊天发送间隔，单位毫秒。 |
 | `CHAT_MAX_LENGTH` | 否 | `200` | 单条聊天消息最大字符数。 |
 | `CACHE_MAX_SIZE` | 否 | `1GB` | 本地媒体缓存上限，例如 `512MB`、`2GB`。 |
-| `STREAM_MAX_LISTENERS` | 否 | `50` | HTTP 直播最大监听连接数，超过后会拒绝新连接。 |
-| `STREAM_CLIENT_QUEUE_CAPACITY` | 否 | `32` | 单个直播客户端待发送音频块队列容量，慢客户端会更快断开。 |
-| `STREAM_WRITER_THREADS` | 否 | `8` | 直播客户端写出线程池大小，避免无限创建线程。 |
 | `DOWNLOAD_MAX_QUEUED_TASKS` | 否 | `100` | 本地缓存下载最大排队任务数，防止下载风暴放大内存和进程压力。 |
 | `DOWNLOAD_TASK_TTL_MS` | 否 | `1800000` | 失败或长期挂起下载任务保留时间，单位毫秒。 |
 | `COVER_COLOR_CACHE_SIZE` | 否 | `256` | 封面主题色 URL 结果缓存数量。 |
@@ -141,9 +137,9 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 
 ### 低内存部署建议
 
-1GB 左右内存的 VPS 建议先把 `JAVA_TOOL_OPTIONS` 调整为 `-XX:MaxRAMPercentage=55 -XX:+UseG1GC`，并把 `CACHE_MAX_SIZE=512MB`、`QUEUE_MAX_SIZE=300`、`CHAT_HISTORY_LIMIT=300`、`STREAM_MAX_LISTENERS=10`、`DOWNLOAD_MAX_QUEUED_TASKS=20`。如果同时启用直播和 YouTube 下载，建议至少保留 1.5GB 以上容器内存。
+1GB 左右内存的 VPS 建议先把 `JAVA_TOOL_OPTIONS` 调整为 `-XX:MaxRAMPercentage=55 -XX:+UseG1GC`，并把 `CACHE_MAX_SIZE=512MB`、`QUEUE_MAX_SIZE=300`、`CHAT_HISTORY_LIMIT=300`、`DOWNLOAD_MAX_QUEUED_TASKS=20`。如果同时启用 YouTube 下载，建议至少保留 1.5GB 以上容器内存。
 
-管理员可通过 `GET /api/admin/runtime-metrics` 查看当前 JVM heap、线程数、WebSocket session、直播 listener、缓存索引、下载排队数、聊天历史加载量和限流桶数量，用于压测和空闲回落验证。
+管理员可通过 `GET /api/admin/runtime-metrics` 查看当前 JVM heap、线程数、WebSocket session、缓存索引、下载排队数、聊天历史加载量和限流桶数量，用于压测和空闲回落验证。
 
 ## 数据与持久化
 
@@ -164,20 +160,8 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 | `//SHUFFLE` | 管理员强制切换随机模式。 |
 | `//RESET` | 重置播放状态、队列和聊天记录，谨慎使用。 |
 | `//CLEAR <QUEUE/CHAT>` | 清空队列或聊天历史。 |
-| `//STREAM ON` | 开启 HTTP 直播流。 |
-| `//STREAM OFF` | 关闭 HTTP 直播流。 |
 | `//COOKIE netease <cookie>` | 动态更新网易云 Cookie，并持久化到数据库。 |
 | `//COOKIE bilibili <sessdata>` | 动态更新 Bilibili SESSDATA，并持久化到数据库。 |
-
-聊天框命令：
-
-```text
-//stream
-```
-
-当直播流已开启时，用户可在系统消息中获得自己的 `/radio/stream?key=...` 收听链接。
-
-> 直播流依赖 FFmpeg，会增加 CPU、内存和公网流量消耗。Bilibili 音频会经过本地缓存和服务端转发，也会消耗 VPS 流量。
 
 ## Navidrome 可选实验功能
 
@@ -192,7 +176,6 @@ docker compose -f docker-compose.yml -f docker-compose.navidrome.yml --env-file 
 - 只对白名单中的账号开放；推荐使用账号用户名或稳定 `publicId`，改昵称不会影响授权。
 - 用户名白名单是轻量房间信任模型，不是强身份认证。
 - Navidrome 音频通过 MusicParty 后端代理给浏览器，Navidrome 凭据不会直接暴露给前端。
-- 当前版本的 HTTP 直播流不支持 Navidrome 曲目，Navidrome 主要用于浏览器播放。
 
 详细部署和 rclone 挂载说明见 [docs/navidrome-rclone.md](docs/navidrome-rclone.md)。
 
@@ -317,39 +300,11 @@ npm run test:run
 npm run build
 ```
 
-## Windows 桌面自托管模式
-
-桌面版以 Tauri 作为外壳，启动本机 Spring Boot 后端和本机 NeteaseCloudMusicApi 伴随服务。这个模式面向 Windows 优先的自托管房主场景：房主电脑承载房间、队列、WebSocket 同步、SQLite 数据、Navidrome/Subsonic 凭据、本地媒体库和音频代理，访客通过局域网邀请链接加入。
-
-核心运行参数：
-
-| 变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `APP_MODE` | `server` | 桌面房主模式使用 `desktop-host`。 |
-| `MUSICPARTY_PROFILE_DIR` | `data/desktop-profile` | 桌面 profile 根目录，存放 SQLite、日志、缓存和本地媒体库。 |
-| `DESKTOP_LAN_BASE_URL` | 空 | 可选局域网访问地址；为空时邀请链接回退到 `BASE_URL`。 |
-| `DESKTOP_NETEASE_API_PORT` | `3000` | Tauri 管理的网易云 API 本机端口。 |
-| `NETEASE_API_URL` | `http://netease-api:3000` | 桌面壳启动后会指向本机 NeteaseCloudMusicApi。 |
-
-后端新增 `GET /api/desktop/status`，用于让桌面壳或前端读取当前运行模式、profile 目录、网易云 API 地址和邀请链接。前端新增 connection profile：浏览器部署默认使用当前 origin，桌面房主模式可切换到本机后端，加入模式可切换到邀请链接中的远端后端。
-
-开发检查：
-
-```powershell
-cmd /c mvnw.cmd "-Dtest=PerformanceConfigTests,DesktopControllerTests" test
-cd music-party-web
-npm test -- connectionProfile.test.js desktopHost.test.js socket.test.js
-cd ..\src-tauri
-cargo check
-```
-
-当前桌面 scaffold 会打包 `target/MusicParty-0.0.1-SNAPSHOT.jar`，因此执行 Tauri 打包前需先运行 `cmd /c mvnw.cmd -DskipTests package`。`src-tauri/icons/icon.ico` 是占位图标，正式发布前应替换为产品图标。
-
 ## 技术栈
 
 - 后端：Java 21、Spring Boot 3.2、WebSocket/STOMP、WebFlux、FFmpeg
 - 前端：Vue 3、Vite 7、Pinia、Tailwind CSS、vue-i18n、lucide-vue-next、Material Symbols 本地字体
-- 部署：Docker、Docker Compose、Tauri Windows 桌面壳，可选 Cloudflare Tunnel、Navidrome、rclone
+- 部署：Docker、Docker Compose，可选 Cloudflare Tunnel、Navidrome、rclone
 
 ## 免责声明
 

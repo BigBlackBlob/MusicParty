@@ -1,5 +1,5 @@
 {
-  "routeCount": 93,
+  "routeCount": 91,
   "routes": [
     {
       "method": "GET",
@@ -143,7 +143,7 @@
       "operationId": "AdminController.handleAdminCommand",
       "controller": "AdminController",
       "source": "src/main/java/org/thornex/musicparty/controller/AdminController.java",
-      "line": 69,
+      "line": 66,
       "requestBody": true,
       "requestBodyRequired": true
     },
@@ -153,7 +153,7 @@
       "operationId": "AdminController.grantNavidromeAccess",
       "controller": "AdminController",
       "source": "src/main/java/org/thornex/musicparty/controller/AdminController.java",
-      "line": 213,
+      "line": 195,
       "requestBody": true,
       "requestBodyRequired": true
     },
@@ -163,7 +163,7 @@
       "operationId": "AdminController.revokeNavidromeAccess",
       "controller": "AdminController",
       "source": "src/main/java/org/thornex/musicparty/controller/AdminController.java",
-      "line": 221,
+      "line": 203,
       "requestBody": true,
       "requestBodyRequired": true
     },
@@ -173,7 +173,7 @@
       "operationId": "AdminController.runtimeMetrics",
       "controller": "AdminController",
       "source": "src/main/java/org/thornex/musicparty/controller/AdminController.java",
-      "line": 181
+      "line": 163
     },
     {
       "method": "POST",
@@ -181,7 +181,7 @@
       "operationId": "AdminController.upsertSubsonicSource",
       "controller": "AdminController",
       "source": "src/main/java/org/thornex/musicparty/controller/AdminController.java",
-      "line": 189,
+      "line": 171,
       "requestBody": true,
       "requestBodyRequired": true
     },
@@ -191,7 +191,7 @@
       "operationId": "AdminController.reorderSubsonicSource",
       "controller": "AdminController",
       "source": "src/main/java/org/thornex/musicparty/controller/AdminController.java",
-      "line": 258,
+      "line": 240,
       "requestBody": true,
       "requestBodyRequired": true
     },
@@ -201,7 +201,7 @@
       "operationId": "AdminController.removeSubsonicSource",
       "controller": "AdminController",
       "source": "src/main/java/org/thornex/musicparty/controller/AdminController.java",
-      "line": 278,
+      "line": 260,
       "requestBody": true,
       "requestBodyRequired": true
     },
@@ -211,7 +211,7 @@
       "operationId": "AdminController.testSubsonicSource",
       "controller": "AdminController",
       "source": "src/main/java/org/thornex/musicparty/controller/AdminController.java",
-      "line": 240,
+      "line": 222,
       "requestBody": true,
       "requestBodyRequired": true
     },
@@ -221,7 +221,7 @@
       "operationId": "AdminController.listSubsonicSources",
       "controller": "AdminController",
       "source": "src/main/java/org/thornex/musicparty/controller/AdminController.java",
-      "line": 229
+      "line": 211
     },
     {
       "method": "GET",
@@ -284,14 +284,6 @@
       "controller": "ApiController",
       "source": "src/main/java/org/thornex/musicparty/controller/ApiController.java",
       "line": 57
-    },
-    {
-      "method": "GET",
-      "path": "/api/desktop/status",
-      "operationId": "DesktopController.status",
-      "controller": "DesktopController",
-      "source": "src/main/java/org/thornex/musicparty/controller/DesktopController.java",
-      "line": 17
     },
     {
       "method": "POST",
@@ -1192,21 +1184,6 @@
       "controller": "ApiController",
       "source": "src/main/java/org/thornex/musicparty/controller/ApiController.java",
       "line": 207
-    },
-    {
-      "method": "GET",
-      "path": "/radio/stream",
-      "operationId": "StreamController.streamAudio",
-      "controller": "StreamController",
-      "source": "src/main/java/org/thornex/musicparty/controller/StreamController.java",
-      "line": 34,
-      "produces": "/stream",
-      "queryParameters": [
-        {
-          "name": "key",
-          "required": false
-        }
-      ]
     },
     {
       "method": "GET",

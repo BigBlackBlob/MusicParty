@@ -144,13 +144,11 @@ export default {
       userPlaceholder: 'Target name (current user by default)',
       grantNavidrome: 'Enable Navidrome',
       revokeNavidrome: 'Disable Navidrome',
-      streamOn: 'Stream on',
-      streamOff: 'Stream off',
       clearQueue: 'Clear queue',
       clearChat: 'Clear chat',
       localLibraryDesc: 'Upload, transcode, edit, and delete local library tracks. Completed tracks appear in search and playback.',
       sourceManagerDesc: 'Manage Navidrome / Subsonic remote sources. Search only shows playable platforms.',
-      adminToolsDesc: 'Manage user access, live stream switches, room cleanup, and advanced commands.',
+      adminToolsDesc: 'Manage user access, room cleanup, and advanced commands.',
       userAccessAndLive: 'User access and room tools',
       advancedCommand: 'Advanced command',
       localTracks: 'Track list',
@@ -162,8 +160,6 @@ export default {
       commandFailed: 'Access denied or command failed',
       navidromeGranted: 'Navidrome enabled for this user',
       navidromeRevoked: 'Navidrome disabled for this user',
-      streamEnabled: 'Stream enabled',
-      streamDisabled: 'Stream disabled',
       queueCleared: 'Queue cleared',
       chatCleared: 'Chat cleared'
       ,
@@ -352,9 +348,7 @@ export default {
     dj: 'DJ',
     rename: 'Rename',
     statusDJ: 'DJ Status',
-    statusOnline: 'Online',
-    live: 'LIVE',
-    streamListeners: 'Stream listeners {count}'
+    statusOnline: 'Online'
   },
   namePrompt: {
     title: 'Identification Required',

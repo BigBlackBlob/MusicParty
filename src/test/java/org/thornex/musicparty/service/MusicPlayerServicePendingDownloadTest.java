@@ -157,7 +157,7 @@ class MusicPlayerServicePendingDownloadTest {
         // 用 FakeLocalCacheService 包装 cacheStatuses
         LocalCacheService fakeCache = new FakeLocalCacheService(cacheStatuses);
         MusicPlayerService musicPlayerService = new MusicPlayerService(
-                apiServices, userService, fakeCache, null, eventPublisher, properties,
+                apiServices, userService, fakeCache, eventPublisher, properties,
                 null, roomService, roomSessionCoordinator, persistenceService, mutationService,
                 playbackTransitionService, null, null
         );

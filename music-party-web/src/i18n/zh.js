@@ -144,13 +144,11 @@ export default {
       userPlaceholder: '目标昵称（默认当前用户）',
       grantNavidrome: '开启 Navidrome',
       revokeNavidrome: '关闭 Navidrome',
-      streamOn: '直播开启',
-      streamOff: '直播关闭',
       clearQueue: '清空队列',
       clearChat: '清空聊天',
       localLibraryDesc: '上传、转码、编辑和删除本地曲库曲目；完成状态的曲目会进入搜索和点播。',
       sourceManagerDesc: '管理 Navidrome / Subsonic 远端音源，搜索页只展示可点播平台。',
-      adminToolsDesc: '管理用户授权、直播开关、清空房间数据和高级命令。',
+      adminToolsDesc: '管理用户授权、清空房间数据和高级命令。',
       userAccessAndLive: '用户授权与房间工具',
       advancedCommand: '高级命令',
       localTracks: '曲目列表',
@@ -162,8 +160,6 @@ export default {
       commandFailed: '权限不足或指令执行失败',
       navidromeGranted: '已为该用户开启 Navidrome',
       navidromeRevoked: '已为该用户关闭 Navidrome',
-      streamEnabled: '直播已开启',
-      streamDisabled: '直播已关闭',
       queueCleared: '队列已清空',
       chatCleared: '聊天已清空'
       ,
@@ -351,9 +347,7 @@ export default {
     dj: '点歌者',
     rename: '修改昵称',
     statusDJ: '点歌者状态',
-    statusOnline: '在线',
-    live: '直播',
-    streamListeners: '在线收听 {count}'
+    statusOnline: '在线'
   },
   namePrompt: {
     title: '需要设置身份',

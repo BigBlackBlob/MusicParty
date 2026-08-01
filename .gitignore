@@ -51,10 +51,8 @@ build/
 /music_party/cached_media/
 /music_party/backups/
 /backend-go/data/
-/src-tauri/target/
-/src-tauri/gen/
-
 ### Go rewrite acceptance runtime artifacts ###
+/backend-go/acceptance/stage8/*.*
 /backend-go/acceptance/**/*.exe
 /backend-go/acceptance/**/*-linux-amd64
 /backend-go/acceptance/**/*.db

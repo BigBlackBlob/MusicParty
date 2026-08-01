@@ -667,7 +667,7 @@ func (r *RoomRuntime) snapshot() map[string]any {
 	if r.online != nil {
 		online = r.online(r.roomID)
 	}
-	return map[string]any{"nowPlaying": nowPlaying, "queue": r.queue, "isShuffle": r.state.Shuffle, "onlineUsers": online, "isPaused": r.state.Paused, "isPauseLocked": r.state.PauseLocked, "isSkipLocked": r.state.SkipLocked, "isShuffleLocked": r.state.ShuffleLocked, "isLoading": r.state.Loading, "streamListenerCount": 0, "serverTimestamp": time.Now().UnixMilli(), "stateVersion": r.state.StateVersion, "playEpoch": r.state.PlayEpoch, "queueVersion": r.queueVersion}
+	return map[string]any{"nowPlaying": nowPlaying, "queue": r.queue, "isShuffle": r.state.Shuffle, "onlineUsers": online, "isPaused": r.state.Paused, "isPauseLocked": r.state.PauseLocked, "isSkipLocked": r.state.SkipLocked, "isShuffleLocked": r.state.ShuffleLocked, "isLoading": r.state.Loading, "serverTimestamp": time.Now().UnixMilli(), "stateVersion": r.state.StateVersion, "playEpoch": r.state.PlayEpoch, "queueVersion": r.queueVersion}
 }
 func (r *RoomRuntime) broadcastState() {
 	r.broadcast("player.state", r.snapshot())

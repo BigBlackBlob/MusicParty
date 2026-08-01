@@ -70,32 +70,6 @@
           ]
         },
         "type": {
-          "const": "chat.private"
-        }
-      },
-      "required": [
-        "type",
-        "payload"
-      ],
-      "type": "object"
-    },
-    {
-      "additionalProperties": false,
-      "properties": {
-        "payload": {},
-        "requestId": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "roomId": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "type": {
           "const": "enqueue.ack"
         }
       },
@@ -500,7 +474,6 @@
   "x-message-types": [
     "chat.history",
     "chat.message",
-    "chat.private",
     "enqueue.ack",
     "enqueue.nack",
     "player.events",

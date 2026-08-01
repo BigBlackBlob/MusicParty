@@ -27,7 +27,6 @@ public class SpaRedirectController {
         String normalized = path.startsWith("/") ? path.substring(1) : path;
         return !normalized.isBlank()
                 && !normalized.contains(".")
-                && !normalized.equals("radio")
                 && !normalized.startsWith("api/")
                 && !normalized.startsWith("ws/")
                 && !normalized.startsWith("proxy/")

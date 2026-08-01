@@ -65,15 +65,4 @@ class StartupSecurityValidatorTests {
         assertThatCode(() -> validator.run(null)).doesNotThrowAnyException();
     }
 
-    @Test
-    void exemptsDesktopHostLocalhostDeployment() {
-        AppProperties properties = new AppProperties();
-        properties.setMode("desktop-host");
-        properties.setBaseUrl("http://localhost:8848");
-        properties.setAllowedOrigins("");
-        StartupSecurityValidator validator = new StartupSecurityValidator(properties);
-
-        assertThatCode(() -> validator.run(null)).doesNotThrowAnyException();
-    }
-
 }

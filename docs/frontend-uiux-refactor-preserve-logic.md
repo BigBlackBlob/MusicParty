@@ -434,4 +434,3 @@ player.sendChatMessage(content)
 - 不要提交或引用 `NAVIDROME_HANDOFF_2026-05-13.md` 里的本地凭据。
 - 本文档只描述前端 UI/UX 重构边界，不包含后端 Navidrome 修补计划。
 - Navidrome 相关前端逻辑应通过现有 `musicApi.getPlatforms()`、`musicApi.search()` 和 `withPlaybackToken()` 继续接入。
-- HTTP Radio Stream 不支持 Navidrome，这不是前端 UI 重构目标。

@@ -30,7 +30,7 @@ Current implemented slice:
 - Streaming proxies for Netease, Bilibili, YouTube/yt-dlp, Navidrome, and room-bound Subsonic sources with Range forwarding, cancellation propagation, bounded background caching, atomic `.part` promotion, restart discovery, and LRU space reclamation.
 - Static Vue distribution serving with SPA fallback, including a multi-stage Docker build that packages the frontend with the Go process.
 
-The live WebSocket state machine and playlist enqueue are implemented through the stage 6 room runtime. The legacy Java HTTP Radio feature is intentionally outside the Go product scope; ordinary player-state payloads retain `streamListenerCount` with the constant value `0`. Passkeys, administrator elevation, and offline recovery are not implemented because the frozen Java baseline does not yet provide those guarantees.
+The live WebSocket state machine and playlist enqueue are implemented through the stage 6 room runtime. Passkeys, administrator elevation, and offline recovery are not implemented because the frozen Java baseline does not yet provide those guarantees.
 
 The first-release external platform gates are Netease and Bilibili. The local library is also a required release gate. YouTube, Navidrome, Squidify, and dynamically configured Subsonic sources are conditional capabilities and become release gates only when the target deployment explicitly enables them. The detailed acceptance boundary is recorded in `docs/go-rewrite-launch-platform-scope-2026-08-01.md`.
 

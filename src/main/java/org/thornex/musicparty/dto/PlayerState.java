@@ -12,7 +12,6 @@ public record PlayerState(
         boolean isSkipLocked,
         boolean isShuffleLocked,
         boolean isLoading,
-        int streamListenerCount,
         long serverTimestamp,
         long stateVersion,
         long playEpoch,
@@ -21,13 +20,13 @@ public record PlayerState(
     public PlayerState(NowPlayingInfo nowPlaying, List<MusicQueueItem> queue, boolean isShuffle,
                        List<UserSummary> onlineUsers, boolean isPaused, boolean isPauseLocked,
                        boolean isSkipLocked, boolean isShuffleLocked, boolean isLoading,
-                       int streamListenerCount, long serverTimestamp, long stateVersion, long playEpoch) {
+                       long serverTimestamp, long stateVersion, long playEpoch) {
         this(nowPlaying, queue, isShuffle, onlineUsers, isPaused, isPauseLocked, isSkipLocked, isShuffleLocked,
-                isLoading, streamListenerCount, serverTimestamp, stateVersion, playEpoch, 0);
+                isLoading, serverTimestamp, stateVersion, playEpoch, 0);
     }
 
     public PlayerState withQueueVersion(long queueVersion) {
         return new PlayerState(nowPlaying, queue, isShuffle, onlineUsers, isPaused, isPauseLocked, isSkipLocked,
-                isShuffleLocked, isLoading, streamListenerCount, serverTimestamp, stateVersion, playEpoch, queueVersion);
+                isShuffleLocked, isLoading, serverTimestamp, stateVersion, playEpoch, queueVersion);
     }
 }

@@ -18,7 +18,6 @@ import org.thornex.musicparty.persistence.PersistedPlaybackState;
 import org.thornex.musicparty.service.api.CachedMusicApiService;
 import org.thornex.musicparty.service.api.IMusicApiService;
 import org.thornex.musicparty.service.api.SubsonicMusicApiService;
-import org.thornex.musicparty.service.stream.LiveStreamService;
 import reactor.core.scheduler.Schedulers;
 import reactor.core.publisher.Mono;
 
@@ -48,7 +47,6 @@ public class MusicPlayerService {
     private final Map<String, IMusicApiService> apiServiceMap;
     private final UserService userService;
     private final LocalCacheService localCacheService;
-    private final LiveStreamService liveStreamService;
     private final ApplicationEventPublisher eventPublisher;
     private final AppProperties appProperties;
     private final NavidromeAccessService navidromeAccessService;
@@ -75,7 +73,6 @@ public class MusicPlayerService {
     public MusicPlayerService(List<IMusicApiService> apiServices,
                               UserService userService,
                               LocalCacheService localCacheService,
-                              LiveStreamService liveStreamService,
                               ApplicationEventPublisher eventPublisher,
                               AppProperties appProperties,
                               NavidromeAccessService navidromeAccessService,
@@ -89,7 +86,6 @@ public class MusicPlayerService {
         this.apiServiceMap = apiServices.stream().collect(Collectors.toMap(IMusicApiService::getPlatformName, Function.identity()));
         this.userService = userService;
         this.localCacheService = localCacheService;
-        this.liveStreamService = liveStreamService;
         this.eventPublisher = eventPublisher;
         this.appProperties = appProperties;
         this.navidromeAccessService = navidromeAccessService;
@@ -328,11 +324,6 @@ public class MusicPlayerService {
         session(event.getRoomId()).onUserCountChanged(event);
     }
 
-    @EventListener
-    public void onStreamStatusChanged(StreamStatusEvent event) {
-        session(RoomService.DEFAULT_ROOM_ID).onStreamStatusChanged(event);
-    }
-
     private RoomPlayerSession sessionForUser(String sessionId) {
         return session(userService.getRoomIdForSession(sessionId));
     }
@@ -353,7 +344,6 @@ public class MusicPlayerService {
         private final String roomId;
         private final MusicQueueManager queueManager;
         private final RoomPlaybackState playbackState = new RoomPlaybackState();
-        private final AtomicBoolean isStreamActive = new AtomicBoolean(false);
         private final AtomicBoolean idlePaused = new AtomicBoolean(false);
         private final AtomicInteger onlineUserCount = new AtomicInteger(0);
         private final Map<String, AtomicLong> lastControlTimestamps = new ConcurrentHashMap<>();
@@ -399,7 +389,7 @@ public class MusicPlayerService {
                 }
                 return;
             }
-            if (userService.getOnlineUserSummaries(roomId).isEmpty() && !isStreamActive.get()) return;
+            if (userService.getOnlineUserSummaries(roomId).isEmpty()) return;
             if (!queueManager.getQueueSnapshot().isEmpty()) playNextInQueue();
         }
 
@@ -558,12 +548,10 @@ public class MusicPlayerService {
         }
 
         public PlayerState getCurrentPlayerState() {
-            long streamListenerCount = liveStreamService == null ? 0 : liveStreamService.getStreamListenerCount();
             return playbackState.toPlayerState(
                     roomId,
                     getQueueWithUpdatedStatus(),
-                    userService.getOnlineUserSummaries(roomId),
-                    streamListenerCount
+                    userService.getOnlineUserSummaries(roomId)
             ).withQueueVersion(queueVersion.get());
         }
 
@@ -898,25 +886,13 @@ public class MusicPlayerService {
             if (event.getOnlineUserCount() > 0) {
                 playbackState.touchHotActivity();
                 resumeFromIdlePauseIfNeeded(previousOnlineCount == 0);
-            } else if (!isStreamActive.get()) {
+            } else {
                 if (userService.hasPendingReconnectUsers(roomId)) {
                     broadcastFullPlayerState();
                     return;
                 }
                 enterIdleMode();
             }
-            broadcastFullPlayerState();
-        }
-
-        public void onStreamStatusChanged(StreamStatusEvent event) {
-            isStreamActive.set(event.isHasListeners());
-            if (event.isHasListeners()) {
-                playbackState.touchHotActivity();
-                resumeFromIdlePauseIfNeeded(false);
-                if (playbackState.currentMusic() == null) playNextInQueue();
-            }
-            else if (!event.isHasListeners() && userService.getOnlineUserSummaries(roomId).isEmpty()) enterIdleMode();
-            playbackState.bumpStateVersion();
             broadcastFullPlayerState();
         }
 
@@ -985,8 +961,7 @@ public class MusicPlayerService {
             playbackState.applySnapshot(state);
             idlePaused.set(state.currentMusic() != null
                     && state.paused()
-                    && userService.getOnlineUserSummaries(roomId).isEmpty()
-                    && !isStreamActive.get());
+                    && userService.getOnlineUserSummaries(roomId).isEmpty());
             refreshRestoredPlayableUrl(state.currentMusic());
         }
 
@@ -1118,7 +1093,6 @@ public class MusicPlayerService {
 
         public boolean isEvictable(long now, long idleThresholdMs) {
             return userService.getOnlineCount(roomId) == 0
-                    && !isStreamActive.get()
                     && !playbackState.isLoading()
                     && (now - playbackState.lastHotActivityAt()) >= idleThresholdMs;
         }

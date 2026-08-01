@@ -1,6 +1,6 @@
 # Navidrome + Rclone optional deployment
 
-This module adds a private Navidrome library to MusicParty without changing the default deployment. Navidrome is only used by the web and mobile browser player. The MusicParty HTTP radio stream is not adapted for Navidrome in this version.
+This module adds a private Navidrome library to MusicParty without changing the default deployment. Navidrome is used by the web and mobile browser player.
 
 ## Start
 
@@ -43,7 +43,6 @@ This integration is intentionally lightweight:
 - MusicParty usernames are used as a trusted-room whitelist. They are not a strong identity or permission system.
 - Navidrome stream proxy requests require the MusicParty user token.
 - Navidrome cover proxy requests are not token-checked in this version. They do not expose Subsonic credentials, but cover art should not be treated as strongly private.
-- The MusicParty HTTP radio stream does not support Navidrome tracks in this version. Browser playback is the supported playback path.
 
 ## VPS checks
 

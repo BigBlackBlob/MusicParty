@@ -742,7 +742,7 @@
         "tags": [
           "AdminController"
         ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AdminController.java:69"
+        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AdminController.java:66"
       }
     },
     "/api/admin/navidrome-access/grant": {
@@ -786,7 +786,7 @@
         "tags": [
           "AdminController"
         ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AdminController.java:213"
+        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AdminController.java:195"
       }
     },
     "/api/admin/navidrome-access/revoke": {
@@ -830,7 +830,7 @@
         "tags": [
           "AdminController"
         ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AdminController.java:221"
+        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AdminController.java:203"
       }
     },
     "/api/admin/runtime-metrics": {
@@ -866,7 +866,7 @@
         "tags": [
           "AdminController"
         ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AdminController.java:181"
+        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AdminController.java:163"
       }
     },
     "/api/admin/subsonic-source": {
@@ -910,7 +910,7 @@
         "tags": [
           "AdminController"
         ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AdminController.java:189"
+        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AdminController.java:171"
       }
     },
     "/api/admin/subsonic-source/order": {
@@ -954,7 +954,7 @@
         "tags": [
           "AdminController"
         ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AdminController.java:258"
+        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AdminController.java:240"
       }
     },
     "/api/admin/subsonic-source/remove": {
@@ -998,7 +998,7 @@
         "tags": [
           "AdminController"
         ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AdminController.java:278"
+        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AdminController.java:260"
       }
     },
     "/api/admin/subsonic-source/test": {
@@ -1042,7 +1042,7 @@
         "tags": [
           "AdminController"
         ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AdminController.java:240"
+        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AdminController.java:222"
       }
     },
     "/api/admin/subsonic-sources": {
@@ -1078,7 +1078,7 @@
         "tags": [
           "AdminController"
         ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AdminController.java:229"
+        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AdminController.java:211"
       }
     },
     "/api/album/search/{platform}": {
@@ -1306,42 +1306,6 @@
           "ApiController"
         ],
         "x-java-source": "src/main/java/org/thornex/musicparty/controller/ApiController.java:57"
-      }
-    },
-    "/api/desktop/status": {
-      "get": {
-        "operationId": "DesktopController_status",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "Java baseline success response"
-          },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
-          }
-        },
-        "tags": [
-          "DesktopController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/DesktopController.java:17"
       }
     },
     "/api/invites/redeem": {
@@ -4925,54 +4889,9 @@
         "x-java-source": "src/main/java/org/thornex/musicparty/controller/ApiController.java:207"
       }
     },
-    "/radio/stream": {
-      "get": {
-        "operationId": "StreamController_streamAudio",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "key",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Java baseline success response"
-          },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
-          }
-        },
-        "tags": [
-          "StreamController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/StreamController.java:34"
-      }
-    },
     "/{path}": {
       "get": {
-        "description": "SPA fallback for extensionless non-api, non-ws, non-radio paths",
+        "description": "SPA fallback for extensionless non-api, non-ws paths",
         "operationId": "SpaRedirectController_fallback",
         "parameters": [
           {

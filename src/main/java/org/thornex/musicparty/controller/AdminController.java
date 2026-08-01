@@ -37,7 +37,6 @@ public class AdminController {
     private final ChatService chatService;
     private final NeteaseMusicApiService neteaseMusicApiService;
     private final BilibiliMusicApiService bilibiliMusicApiService;
-    private final org.thornex.musicparty.service.stream.LiveStreamService liveStreamService;
     private final SubsonicSourceRegistry subsonicSourceRegistry;
     private final NavidromeAccessService navidromeAccessService;
     private final AdminAuthorizationService adminAuthorizationService;
@@ -48,7 +47,6 @@ public class AdminController {
                            ChatService chatService,
                            NeteaseMusicApiService neteaseMusicApiService,
                            BilibiliMusicApiService bilibiliMusicApiService,
-                           org.thornex.musicparty.service.stream.LiveStreamService liveStreamService,
                            SubsonicSourceRegistry subsonicSourceRegistry,
                            NavidromeAccessService navidromeAccessService,
                            AdminAuthorizationService adminAuthorizationService,
@@ -58,7 +56,6 @@ public class AdminController {
         this.chatService = chatService;
         this.neteaseMusicApiService = neteaseMusicApiService;
         this.bilibiliMusicApiService = bilibiliMusicApiService;
-        this.liveStreamService = liveStreamService;
         this.subsonicSourceRegistry = subsonicSourceRegistry;
         this.navidromeAccessService = navidromeAccessService;
         this.adminAuthorizationService = adminAuthorizationService;
@@ -81,21 +78,6 @@ public class AdminController {
         String action = parts[0].toUpperCase();
 
         switch (action) {
-            case "//STREAM":
-                if (parts.length < 2) {
-                    return just(ResponseEntity.badRequest().body(Map.of("message", "Usage: //STREAM <ON/OFF>")));
-                }
-                String subCmd = parts[1].toUpperCase();
-                if ("ON".equals(subCmd)) {
-                    liveStreamService.setEnabled(true);
-                    return just(ResponseEntity.ok(Map.of("message", "STREAM SERVICE ENABLED")));
-                } else if ("OFF".equals(subCmd)) {
-                    liveStreamService.setEnabled(false);
-                    return just(ResponseEntity.ok(Map.of("message", "STREAM SERVICE DISABLED")));
-                } else {
-                    return just(ResponseEntity.badRequest().body(Map.of("message", "Invalid stream command")));
-                }
-
             case "//LOCK":
                 if (parts.length < 3) {
                     if (parts.length < 2) {

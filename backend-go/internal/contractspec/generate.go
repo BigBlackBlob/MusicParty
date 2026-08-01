@@ -241,7 +241,7 @@ func openAPI(routes []route) map[string]any {
 		}
 		if item.Operation == "SpaRedirectController.fallback" {
 			operation["x-spring-catch-all"] = true
-			operation["description"] = "SPA fallback for extensionless non-api, non-ws, non-radio paths"
+			operation["description"] = "SPA fallback for extensionless non-api, non-ws paths"
 		}
 		if item.RequestBody {
 			contentType := "application/json"

@@ -2,7 +2,6 @@ package org.thornex.musicparty.service;
 
 import org.junit.jupiter.api.Test;
 import org.thornex.musicparty.config.AppProperties;
-import org.thornex.musicparty.service.stream.LiveStreamService;
 
 import java.util.Set;
 
@@ -18,7 +17,6 @@ class RuntimeMetricsServiceTests {
         LocalCacheService localCacheService = mock(LocalCacheService.class);
         ChatService chatService = mock(ChatService.class);
         SocketRateLimiter socketRateLimiter = mock(SocketRateLimiter.class);
-        LiveStreamService liveStreamService = mock(LiveStreamService.class);
         org.thornex.musicparty.websocket.ReactiveSocketBroker broker = mock(org.thornex.musicparty.websocket.ReactiveSocketBroker.class);
 
         when(playerService.getActiveRoomIds()).thenReturn(Set.of("default", "room-a"));
@@ -28,7 +26,6 @@ class RuntimeMetricsServiceTests {
         when(chatService.getLoadedRoomHistoryCount()).thenReturn(4);
         when(chatService.getTrackedMessageRateLimitCount()).thenReturn(5);
         when(socketRateLimiter.getTrackedWindowCount()).thenReturn(6);
-        when(liveStreamService.getStreamListenerCount()).thenReturn(7);
         when(broker.getSessionCount()).thenReturn(8);
 
         RuntimeMetricsService.Snapshot snapshot = new RuntimeMetricsService(
@@ -36,7 +33,6 @@ class RuntimeMetricsServiceTests {
                 localCacheService,
                 chatService,
                 socketRateLimiter,
-                liveStreamService,
                 broker,
                 new AppProperties()
         ).snapshot();
@@ -50,7 +46,6 @@ class RuntimeMetricsServiceTests {
         assertThat(snapshot.loadedChatRoomCount()).isEqualTo(4);
         assertThat(snapshot.chatRateLimitEntryCount()).isEqualTo(5);
         assertThat(snapshot.socketRateLimitWindowCount()).isEqualTo(6);
-        assertThat(snapshot.streamListenerCount()).isEqualTo(7);
         assertThat(snapshot.websocketSessionCount()).isEqualTo(8);
         assertThat(snapshot.downloadMaxQueuedTasks()).isEqualTo(100);
     }

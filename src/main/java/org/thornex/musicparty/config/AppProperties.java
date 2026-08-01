@@ -31,7 +31,6 @@ public class AppProperties {
     private DatabaseConfig database = new DatabaseConfig();
     private LocalLibraryConfig localLibrary = new LocalLibraryConfig();
     private PerformanceConfig performance = new PerformanceConfig();
-    private DesktopConfig desktop = new DesktopConfig();
 
     @Data
     public static class QueueConfig {
@@ -82,9 +81,6 @@ public class AppProperties {
 
     @Data
     public static class PerformanceConfig {
-        private int streamMaxListeners = 50;
-        private int streamClientQueueCapacity = 32;
-        private int streamWriterThreads = 8;
         private int downloadMaxQueuedTasks = 100;
         private int downloadMaxActiveTasks = 3;
         private long downloadReservationBytes = 32L * 1024L * 1024L;
@@ -118,14 +114,6 @@ public class AppProperties {
         private int webClientMaxConnections = 20;
         private int webClientPendingAcquireMax = 50;
         private long webClientPendingAcquireTimeoutMs = 5000;
-    }
-
-    @Data
-    public static class DesktopConfig {
-        private String profileDir = "data/desktop-profile";
-        private String lanBaseUrl = "";
-        private int neteaseApiPort = 3000;
-        private boolean adminInitialized = false;
     }
 
     @Data

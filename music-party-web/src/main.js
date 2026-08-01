@@ -5,9 +5,6 @@ import './style.css'
 import App from './App.vue'
 import { useUiStore } from './stores/ui'
 import { i18n } from './i18n/index'
-import { initializeDesktopHost } from './api/desktopHost'
-
-await initializeDesktopHost()
 
 const pinia = createPinia()
 const app = createApp(App)

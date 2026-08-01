@@ -232,8 +232,7 @@ final class RoomPlaybackState {
 
     synchronized PlayerState toPlayerState(String roomId,
                               List<MusicQueueItem> queue,
-                              List<UserSummary> onlineUsers,
-                              long streamListenerCount) {
+                              List<UserSummary> onlineUsers) {
         CurrentTrackInfo track = currentTrackInfo();
         PlayableMusic music = track.music();
         NowPlayingInfo info = music == null ? null : new NowPlayingInfo(
@@ -256,7 +255,6 @@ final class RoomPlaybackState {
                 skipLocked.get(),
                 shuffleLocked.get(),
                 loading.get(),
-                RoomService.DEFAULT_ROOM_ID.equals(roomId) ? (int) streamListenerCount : 0,
                 System.currentTimeMillis(),
                 stateVersion.get(),
                 playEpoch.get()

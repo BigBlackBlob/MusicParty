@@ -889,8 +889,7 @@
             "queue": [],
             "queueVersion": 0,
             "serverTimestamp": "\u003ctimestamp\u003e",
-            "stateVersion": 0,
-            "streamListenerCount": 0
+            "stateVersion": 0
           },
           "requestId": null,
           "roomId": null,
@@ -1020,8 +1019,7 @@
             "queue": [],
             "queueVersion": 0,
             "serverTimestamp": "\u003ctimestamp\u003e",
-            "stateVersion": 0,
-            "streamListenerCount": 0
+            "stateVersion": 0
           },
           "requestId": null,
           "roomId": "lounge",
@@ -1063,8 +1061,7 @@
             "queue": [],
             "queueVersion": 0,
             "serverTimestamp": "\u003ctimestamp\u003e",
-            "stateVersion": 0,
-            "streamListenerCount": 0
+            "stateVersion": 0
           },
           "requestId": null,
           "roomId": "lounge",
@@ -1128,8 +1125,7 @@
             "queue": [],
             "queueVersion": 0,
             "serverTimestamp": "\u003ctimestamp\u003e",
-            "stateVersion": 0,
-            "streamListenerCount": 0
+            "stateVersion": 0
           },
           "requestId": null,
           "roomId": null,

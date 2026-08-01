@@ -247,12 +247,6 @@
           <button class="admin-action" type="button" :disabled="busy" @click="runRevokeNavidrome">
             {{ t('settings.admin.revokeNavidrome') }}
           </button>
-          <button class="admin-action" type="button" :disabled="busy" @click="runStream(true)">
-            {{ t('settings.admin.streamOn') }}
-          </button>
-          <button class="admin-action" type="button" :disabled="busy" @click="runStream(false)">
-            {{ t('settings.admin.streamOff') }}
-          </button>
           <button class="admin-action" type="button" :disabled="busy" @click="runClearQueue">
             {{ t('settings.admin.clearQueue') }}
           </button>
@@ -540,11 +534,6 @@ const runGrantNavidrome = () => runAdminAction(
 const runRevokeNavidrome = () => runAdminAction(
   () => authApi.revokeNavidrome(adminSessionToken(), currentTargetUser(), roomStore.currentRoomId),
   t('settings.admin.navidromeRevoked')
-);
-
-const runStream = (enabled) => runAdminAction(
-  () => authApi.setStreamEnabled(adminSessionToken(), enabled, roomStore.currentRoomId),
-  enabled ? t('settings.admin.streamEnabled') : t('settings.admin.streamDisabled')
 );
 
 const runClearQueue = () => runAdminAction(

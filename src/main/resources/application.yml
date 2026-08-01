@@ -88,9 +88,6 @@ app:
     cache:
       max-size: ${CACHE_MAX_SIZE:1GB}
     performance:
-      stream-max-listeners: ${STREAM_MAX_LISTENERS:50}
-      stream-client-queue-capacity: ${STREAM_CLIENT_QUEUE_CAPACITY:32}
-      stream-writer-threads: ${STREAM_WRITER_THREADS:8}
       download-max-queued-tasks: ${DOWNLOAD_MAX_QUEUED_TASKS:100}
       download-max-active-tasks: ${DOWNLOAD_MAX_ACTIVE_TASKS:3}
       download-reservation-bytes: ${DOWNLOAD_RESERVATION_BYTES:33554432}
@@ -122,11 +119,6 @@ app:
       web-client-max-connections: ${WEB_CLIENT_MAX_CONNECTIONS:20}
       web-client-pending-acquire-max: ${WEB_CLIENT_PENDING_ACQUIRE_MAX:50}
       web-client-pending-acquire-timeout-ms: ${WEB_CLIENT_PENDING_ACQUIRE_TIMEOUT_MS:5000}
-    desktop:
-      profile-dir: ${MUSICPARTY_PROFILE_DIR:data/desktop-profile}
-      lan-base-url: ${DESKTOP_LAN_BASE_URL:}
-      netease-api-port: ${DESKTOP_NETEASE_API_PORT:3000}
-      admin-initialized: ${DESKTOP_ADMIN_INITIALIZED:false}
     local-library:
       enabled: ${LOCAL_LIBRARY_ENABLED:true}
       path: ${LOCAL_LIBRARY_PATH:data/local-library}

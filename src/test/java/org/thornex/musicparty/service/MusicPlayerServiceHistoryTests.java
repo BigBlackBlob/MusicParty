@@ -229,7 +229,6 @@ class MusicPlayerServiceHistoryTests {
                 apiServices,
                 userService,
                 localCacheService,
-                null,
                 eventPublisher,
                 properties,
                 null,
@@ -302,7 +301,6 @@ class MusicPlayerServiceHistoryTests {
                     new MusicPlayerService(
                             List.of(),
                             userService,
-                            null,
                             null,
                             event -> {},
                             properties,

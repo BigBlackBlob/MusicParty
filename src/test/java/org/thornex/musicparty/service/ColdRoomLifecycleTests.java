@@ -80,7 +80,6 @@ class ColdRoomLifecycleTests {
                 List.of(),
                 userService,
                 null,
-                null,
                 event -> {},
                 properties,
                 null,

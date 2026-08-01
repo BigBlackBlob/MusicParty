@@ -33,7 +33,7 @@ Capture the Java golden only from the isolated launcher. It creates a temporary 
 
 The comparison may replace only values on the declared normalization allowlist: timestamps, generated public IDs, session credentials, and cookie values. It must not normalize HTTP status, missing fields, array order, error bodies, cookie flags, selected header presence, WebSocket message order, or close codes.
 
-The current generated inventory contains 93 HTTP operations, including Actuator and SPA/static behavior, 26 canonical client WebSocket message types with slash aliases, 19 discovered server message types, and 103 environment variables. The black-box golden covers authentication, cookies, CSRF, permissions, empty data, invalid parameters, upstream failure, invitations, duplicate redemption, membership removal, user playlists, ordering/export/likes, queue version NACK, Unicode chat, and reconnect/resync.
+The current generated inventory contains 91 HTTP operations, including Actuator and SPA/static behavior, 26 canonical client WebSocket message types with slash aliases, 18 discovered server message types, and 96 environment variables. The black-box golden covers authentication, cookies, CSRF, permissions, empty data, invalid parameters, upstream failure, invitations, duplicate redemption, membership removal, user playlists, ordering/export/likes, queue version NACK, Unicode chat, and reconnect/resync.
 
 Never point these tools at `music_party/data/musicparty.db` or a running production server.
 
@@ -44,18 +44,3 @@ The generated assets and Java black-box golden were revalidated on 2026-08-01 ag
 The verification used a detached temporary worktree for generation and JAR construction, plus an isolated temporary SQLite database for the black-box comparison. All seven generated assets matched byte for byte, and the HTTP/WebSocket endpoint probe matched `http/golden/java-baseline.json`.
 
 The local health probe explicitly bypasses system HTTP proxies because it only addresses the isolated Java process on `127.0.0.1`.
-
-## Approved Radio compatibility exception
-
-The Go replacement deliberately does not implement the legacy HTTP Radio feature. Its usage is too limited to justify the continuous FFmpeg process, listener fan-out, buffering, and maintenance cost.
-
-The machine-readable decision is recorded in `compatibility-exceptions.yaml`.
-
-The compatibility boundary is:
-
-- ordinary room playback, media proxying, downloads, local uploads, transcoding, Range requests, and WebSocket playback state remain in scope;
-- `streamListenerCount` remains present in player-state payloads with the constant value `0`, so existing clients can continue decoding the payload without a Java/Go branch;
-- `/radio/stream`, Radio stream tokens, the `//stream` command, Radio listener accounting, and Radio audio production are outside the Go contract;
-- contract and acceptance checks must record this as an approved product exception rather than report it as an implementation failure.
-
-The transitional Go Radio scaffolding has been removed. The reserved `/radio/` static prefix remains only so legacy links receive an explicit `404` instead of the Vue SPA fallback.

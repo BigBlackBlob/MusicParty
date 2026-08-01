@@ -25,10 +25,6 @@ export const authApi = {
     revokeNavidrome: (_sessionToken, userName, roomId) => client.post('/api/admin/navidrome-access/revoke', {
         userName, roomId
     }),
-    setStreamEnabled: (_sessionToken, enabled, roomId) => client.post('/api/admin/command', {
-        command: `//STREAM ${enabled ? 'ON' : 'OFF'}`,
-        roomId
-    }),
     clearQueue: (_sessionToken, roomId) => client.post('/api/admin/command', { command: '//CLEAR QUEUE', roomId }),
     clearChat: (_sessionToken, roomId) => client.post('/api/admin/command', { command: '//CLEAR CHAT', roomId }),
     listSubsonicSources: (_sessionToken, roomId) => client.get('/api/admin/subsonic-sources', {

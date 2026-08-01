@@ -28,8 +28,7 @@
     "capDropAll": true,
     "noNewPrivileges": true,
     "health": "UP",
-    "staticFrontendHttpStatus": 200,
-    "radioStreamHttpStatus": 404
+    "staticFrontendHttpStatus": 200
   },
   "firstReleasePlatforms": {
     "netease": "PASS",

@@ -11,8 +11,8 @@
 - 不引入微服务、gRPC、GraphQL、PostgreSQL、ORM 或生产双写。
 - Go 在数据库副本上做差分验证，最终在 5–15 分钟维护窗口切换。
 - 首次切换及回滚期不执行 schema migration；Java 保留 30 天或两个稳定版本。
-- Docker/VPS 能力在范围内；废弃的 Tauri 桌面计划不在范围内。
-- 原 Java HTTP Radio 功能不进入 Go 重写范围；普通播放、媒体代理、缓存、本地上传和转码仍在范围内。
+- Docker/VPS 能力在范围内；已退役的产品能力不属于迁移范围，也不保留实现或契约。
+- 普通播放、媒体代理、缓存、本地上传和转码均在范围内。
 - 首发外部平台硬门槛为 Netease 和 Bilibili；本地曲库同时属于首发核心门槛。YouTube、Navidrome、Squidify 和动态 Subsonic 仅在管理员配置启用时验收，详见 `go-rewrite-launch-platform-scope-2026-08-01.md`。
 
 ## 当前协调边界
@@ -21,9 +21,9 @@
 
 - 基线提交 `95b9f8da32e2375b7183e9d6233d8c45d0d1dfcd` 和注释标签 `go-rewrite-baseline-v1` 已推送到 `origin/NRT-Base`；Java/前端基线内容自标签后保持不变。
 - 后续提交 `9079233686cda893c2eafaf25d70c471aa8fe4e1` 仅将 Surefire 临时目录从干净 checkout 中不存在的 `target/tmp` 改为必然存在的 `target`；不改变 Java 业务行为或契约。对应 GitHub Quality 的前端和 181 个 Java 测试均通过。
-- HTTP、WebSocket、配置与数据库契约已生成并可执行检查；契约必须以该标签为生成来源，并记录批准的 Radio 兼容例外。
+- HTTP、WebSocket、配置与数据库契约已生成并可执行检查；契约必须以该标签为生成来源。
 - 当前不修改、不暂存、不提交 Java 或前端文件。
-- Go、契约、验收证据和阶段文档将在功能完成后按阶段整理提交；运行时数据库、Tauri 删除和本地工具目录不得混入这些提交。
+- Go、契约、验收证据和阶段文档将在功能完成后按阶段整理提交；运行时数据库和本地工具目录不得混入这些提交。
 
 ## 已落地的 Go 基础设施
 
@@ -101,10 +101,7 @@
 - Netease、Bilibili、YouTube/yt-dlp、Navidrome 和房间 Subsonic stream/cover proxy 已接入，保留 Range、Content-Type、Content-Length、Content-Range 和 Accept-Ranges。
 - 播放状态按平台生成与前端兼容的代理 URL；真实 Netease 流已验证 `206 audio/mpeg`、浏览器音频加载、暂停、切歌和 seek 状态同步。
 - 下载缓存采用有界提交队列、平台共享并发上限、瞬态重试、`.part` 原子提升、重启后按确定文件名重新发现和 LRU 空间回收。
-- HTTP Radio 已由产品决策正式移出 Go 重写范围。`/radio/stream`、Radio token、`//stream`、监听者计数和 Radio 音频生产不再是阶段 7/8 退出条件。
-- 为保持普通播放状态载荷兼容，`streamListenerCount` 字段保留并固定为 `0`。Go 中的 Radio 路由、token、监听队列、FFmpeg 生产、状态观察链和 `//stream` 特殊命令均已删除；`/radio/` 仅保留为静态路由保留前缀，使旧链接明确返回 `404`。
-
-阶段 7 的有效故障矩阵覆盖 Range/后缀 Range/416、路径穿越、上游取消与状态映射、缓存原子写/LRU/重试/去重/队列满/关闭清理、本地上传重复检测/大小限制、转码完成与删除、转码超时清理、SQLite BUSY 和异常事务恢复。本机真实 FFmpeg 测试生成短 WAV、经正式 Transcoder 编码为 OGG/Opus，并验证 `OggS` 和 `.part` 清理。历史 Radio 测试不再计入完成证据；破坏性的真实磁盘满注入仍保留为环境验收项。
+阶段 7 的有效故障矩阵覆盖 Range/后缀 Range/416、路径穿越、上游取消与状态映射、缓存原子写/LRU/重试/去重/队列满/关闭清理、本地上传重复检测/大小限制、转码完成与删除、转码超时清理、SQLite BUSY 和异常事务恢复。本机真实 FFmpeg 测试生成短 WAV、经正式 Transcoder 编码为 OGG/Opus，并验证 `OggS` 和 `.part` 清理。破坏性的真实磁盘满注入仍保留为环境验收项。
 
 本轮本机二进制冒烟确认 FFmpeg 8.1.2 可执行 libopus/OGG 编码，ffprobe 可读取 lavfi 输入。隔离运行时镜像包含 yt-dlp 2026.7.4；最终候选已经保存 Netease 完整 CDN 音频、Bilibili 搜索/收藏夹/音频和本地曲库上传转码的真实证据。YouTube、Navidrome 和 Subsonic 未在目标部署启用，因此不属于本次首发门禁。
 
@@ -194,7 +191,7 @@ Trivy Critical: 0
 - 本地曲库使用临时 4 秒 WAV 完成上传、FFmpeg OGG 转码、搜索、入队、Range、seek、删除和引用清理；删除后媒体返回 410，临时音频和数据库未进入 Git。
 - 最终候选的 10 连接 + 20 房间 + 1000 队列、100 连接和 300 连接三组均运行 30 分钟。1000 队列 ACK P95 为 21.7991 ms，状态收敛为 0.0156 ms；100/300 连接关闭后 goroutine 均回落到 18。
 - 最终证据会话没有可用的可视化浏览器控制接口，因此没有声称重新点击 UI。浏览器结果从候选 `9b35fa7` 继承，并以 `9b35fa7..0c088a9` 在 `music-party-web/src`、`backend-go/internal` 和 `backend-go/cmd` 无差异作为边界证明；最终镜像静态首页返回 200。
-- 有效媒体故障矩阵覆盖 Range、取消、Retry-After、缓存/LRU/去重/队列满、SQLite BUSY/异常回滚、FFmpeg 超时、`.part` 清理及路径限制；历史 radio 慢客户端结果不再计入候选证据。
+- 有效媒体故障矩阵覆盖 Range、取消、Retry-After、缓存/LRU/去重/队列满、SQLite BUSY/异常回滚、FFmpeg 超时、`.part` 清理及路径限制。
 - 同硬件比较中，Java/Go 启动分别为 7073.81/348.43 ms，RSS 为 252723200/20766720 bytes，HTTP P95 为 25.03/2.83 ms，300 WS pong P95 为 374.39/148.21 ms；两端均建立全部连接且 0 error。
 - 当前 CGO-free 二进制在本地运行时镜像中以 UID 10001、只读 rootfs、cap-drop ALL、no-new-privileges 启动并通过 Trivy 0.72.0 CRITICAL=0。Docker Desktop 无 HTTPS proxy，导致干净 multi-stage Dockerfile 重建无法重新解析 Docker Hub manifest；该环境缺口与运行时扫描结果分开记录。
 - 阶段 9 准备期间 Docker Hub 访问恢复，`backend-go/Dockerfile` 已从头成功构建 `musicparty-go:stage9-prep`；正式镜像包含非 root 主进程以及 `/app/dbsnapshot`、`/app/dbcheck` 运维二进制，Compose 合并配置验证通过。该本地标签不是已发布的生产候选 digest。
@@ -214,7 +211,7 @@ Trivy Critical: 0
 | 4 无状态 HTTP/平台 | 已完成首发验收 | fixture 差分全部通过；最终候选的凭据化 Netease、Bilibili 和本地曲库真实流程通过。条件平台未在目标部署启用，不加入本次门禁 |
 | 5 账号/房间/播放列表 | 已实现，系统差分通过 | HTTP/持久化和实时 enqueue 已接入，冻结 HTTP/WS golden 通过 |
 | 6 实时核心 | 已完成本地验收 | actor、权威元信息、原子持久化、Hub/背压、全部冻结命令、race/集成、浏览器重连及 10/100/300 WS 30 分钟矩阵通过 |
-| 7 缓存/下载/流媒体 | 已完成首发验收 | 代理 URL、Netease/Bilibili 真实 Range/音频/seek、本地上传转码、缓存和有效故障矩阵通过；Radio 生产实现已按批准范围删除，真实磁盘满仍是非阻塞环境注入项 |
+| 7 缓存/下载/流媒体 | 已完成首发验收 | 代理 URL、Netease/Bilibili 真实 Range/音频/seek、本地上传转码、缓存和有效故障矩阵通过；真实磁盘满仍是非阻塞环境注入项 |
 | 8 系统验收 | 已完成，依赖整改跟进 | 最终候选的 Java/Go golden、Go 全质量门、前端 101 tests/lint/build、首发三类真实媒体、1000 队列、10/100/300 WS 30 分钟、媒体故障矩阵、同硬件比较、干净 Dockerfile 重建、只读非 root 运行和 Trivy 均通过；浏览器结果按无运行时代码差异继承。npm audit 的 2 MODERATE/7 HIGH 进入后续依赖升级审查 |
 | 9 生产切换 | 本机候选演练完成，未触碰生产 | 本地不可变 digest、发布质量门、冻结 schema 校验、停机快照、共享 UID/GID、Go 启动和 Java 回滚均已演练；仍等待 VPS 数据库隔离副本交接、正式远端 digest 和维护窗口审批 |
 | 10 Java 退役 | 未开始 | Go 稳定 30 天或两个版本后执行 |
@@ -232,4 +229,4 @@ Trivy Critical: 0
 
 ## Definition of Done
 
-完成标准仍是批准计划中的完整条件：原前端无分支使用 Go、除批准的 Radio 例外外全部冻结契约通过、SQLite 可原地切换和回滚、范围内业务与媒体能力可用、race/泄漏/安全/负载/浏览器验收通过、生产稳定期达标，并最终退役 Java 构建链。代码存在本身不构成完成证据。
+完成标准仍是批准计划中的完整条件：原前端无分支使用 Go、全部冻结契约通过、SQLite 可原地切换和回滚、范围内业务与媒体能力可用、race/泄漏/安全/负载/浏览器验收通过、生产稳定期达标，并最终退役 Java 构建链。代码存在本身不构成完成证据。

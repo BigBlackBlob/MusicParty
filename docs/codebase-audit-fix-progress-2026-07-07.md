@@ -6,7 +6,7 @@ Tracking follow-up for `docs/codebase-audit-2026-07-06.md`.
 
 The audit itself appears complete. There is no explicit breakpoint marker in the report. The interrupted work is the follow-up remediation pass for the "Fix Now" list.
 
-Working tree note: unrelated/unconfirmed local changes currently exist in `NeteaseMusicApiService.java`, `NeteaseMusicApiServiceTests.java`, `music_party/`, `playwright-acceptance.js`, `playwright-acceptance.png`, and `src-tauri/`. Do not overwrite these while continuing remediation.
+Working tree note: unrelated/unconfirmed local changes currently exist in `NeteaseMusicApiService.java`, `NeteaseMusicApiServiceTests.java`, `music_party/`, `playwright-acceptance.js`, and `playwright-acceptance.png`. Do not overwrite these while continuing remediation.
 
 ## Fix Now Checklist
 

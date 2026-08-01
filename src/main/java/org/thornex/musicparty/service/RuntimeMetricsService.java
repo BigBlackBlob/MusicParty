@@ -3,7 +3,6 @@ package org.thornex.musicparty.service;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.thornex.musicparty.config.AppProperties;
-import org.thornex.musicparty.service.stream.LiveStreamService;
 import org.thornex.musicparty.websocket.ReactiveSocketBroker;
 
 import java.lang.management.ManagementFactory;
@@ -14,7 +13,6 @@ public class RuntimeMetricsService {
     private final LocalCacheService localCacheService;
     private final ChatService chatService;
     private final SocketRateLimiter socketRateLimiter;
-    private final LiveStreamService liveStreamService;
     private final ReactiveSocketBroker broker;
     private final AppProperties appProperties;
     private final RoomService roomService;
@@ -23,10 +21,9 @@ public class RuntimeMetricsService {
                                  LocalCacheService localCacheService,
                                  ChatService chatService,
                                  SocketRateLimiter socketRateLimiter,
-                                  LiveStreamService liveStreamService,
                                   ReactiveSocketBroker broker,
                                   AppProperties appProperties) {
-        this(musicPlayerService, localCacheService, chatService, socketRateLimiter, liveStreamService, broker, appProperties, null);
+        this(musicPlayerService, localCacheService, chatService, socketRateLimiter, broker, appProperties, null);
     }
 
     @Autowired
@@ -34,7 +31,6 @@ public class RuntimeMetricsService {
                                  LocalCacheService localCacheService,
                                  ChatService chatService,
                                  SocketRateLimiter socketRateLimiter,
-                                 LiveStreamService liveStreamService,
                                  ReactiveSocketBroker broker,
                                  AppProperties appProperties,
                                  RoomService roomService) {
@@ -42,7 +38,6 @@ public class RuntimeMetricsService {
         this.localCacheService = localCacheService;
         this.chatService = chatService;
         this.socketRateLimiter = socketRateLimiter;
-        this.liveStreamService = liveStreamService;
         this.broker = broker;
         this.appProperties = appProperties;
         this.roomService = roomService;
@@ -60,14 +55,12 @@ public class RuntimeMetricsService {
                 musicPlayerService.getActivePlaybackRoomIds().size(),
                 broker.getSessionCount(),
                 broker.getSubscribedRoomCount(),
-                liveStreamService.getStreamListenerCount(),
                 localCacheService.getTrackedCacheEntryCount(),
                 localCacheService.getPendingDownloadTaskCount(),
                 chatService.getLoadedRoomHistoryCount(),
                 chatService.getTrackedMessageRateLimitCount(),
                 socketRateLimiter.getTrackedWindowCount(),
-                appProperties.getPerformance().getDownloadMaxQueuedTasks(),
-                appProperties.getPerformance().getStreamMaxListeners()
+                appProperties.getPerformance().getDownloadMaxQueuedTasks()
         );
     }
 
@@ -81,14 +74,12 @@ public class RuntimeMetricsService {
             int activePlaybackRoomCount,
             int websocketSessionCount,
             int subscribedRoomCount,
-            int streamListenerCount,
             int cacheEntryCount,
             int pendingDownloadTaskCount,
             int loadedChatRoomCount,
             int chatRateLimitEntryCount,
             int socketRateLimitWindowCount,
-            int downloadMaxQueuedTasks,
-            int streamMaxListeners
+            int downloadMaxQueuedTasks
     ) {
     }
 }

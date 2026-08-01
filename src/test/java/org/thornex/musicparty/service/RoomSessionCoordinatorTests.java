@@ -121,7 +121,6 @@ class RoomSessionCoordinatorTests {
                 List.of(),
                 userService,
                 null,
-                null,
                 event -> {},
                 new AppProperties(),
                 null,

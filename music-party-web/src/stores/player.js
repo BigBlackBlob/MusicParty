@@ -39,7 +39,6 @@ export const usePlayerStore = defineStore('player', () => {
     const likedSongs = ref([]);
     const connected = ref(false);
     const isLoading = ref(false);
-    const streamListenerCount = ref(0);
     const lastControlTime = ref(0);
     const remotePosition = ref(0);
     const lastSyncTime = ref(0);
@@ -360,7 +359,6 @@ export const usePlayerStore = defineStore('player', () => {
         isSkipLocked.value = state.isSkipLocked || false;
         isShuffleLocked.value = state.isShuffleLocked || false;
         isLoading.value = state.isLoading || false;
-        streamListenerCount.value = state.streamListenerCount || 0;
 
         const clientReceiveTime = Date.now();
         if (!hasClockSample.value) {
@@ -465,7 +463,6 @@ export const usePlayerStore = defineStore('player', () => {
         lyricDetail.value = { lyric: '', translatedLyric: '', romanizedLyric: '' };
         connected.value = false;
         isLoading.value = false;
-        streamListenerCount.value = 0;
 remotePosition.value = 0;
         lastSyncTime.value = 0;
         bufferedMs.value = 0;
@@ -786,7 +783,7 @@ remotePosition.value = 0;
 
     return {
         nowPlaying, queue, isPaused, isShuffle, isPauseLocked, isSkipLocked, isShuffleLocked, connected, isLoading, lyricText, lyricDetail, likedSongs,
-        localProgress, playbackPositionMs, isBuffering, bufferedMs, isErrorState, streamListenerCount, lastSyncTime, lastRttMs,
+        localProgress, playbackPositionMs, isBuffering, bufferedMs, isErrorState, lastSyncTime, lastRttMs,
         isSeekingPreview, forceNextSyncSeek, setSeekingPreview,
         setPlaybackPosition,
         connect, tryReconnect, reconnectToCurrentRoom, switchRoom, resetRoomState, resetSyncGate, getCurrentProgress, syncState, scheduleSyncState, handleSyncPong, requestPing, requestResync, requestSyncRefresh, setQueue, applyQueuePatch, scheduleQueuePatch, settleQueueReorder,
