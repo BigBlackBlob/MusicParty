@@ -176,8 +176,9 @@ jobs:
           cache-from: type=gha,scope=musicparty-go-release
           cache-to: type=gha,mode=max,scope=musicparty-go-release
       - name: Scan candidate for critical vulnerabilities
-        uses: aquasecurity/trivy-action@v0.33.1
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
+          version: v0.72.0
           image-ref: musicparty-go-release-scan:${{ github.sha }}
           format: table
           exit-code: '1'
