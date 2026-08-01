@@ -1,0 +1,26 @@
+{
+  "command": "npm audit --json with npm_config_registry=https://registry.npmjs.org",
+  "result": "FOLLOW_UP_REQUIRED",
+  "vulnerabilities": {
+    "info": 0,
+    "low": 0,
+    "moderate": 2,
+    "high": 7,
+    "critical": 0,
+    "total": 9
+  },
+  "packagesReported": [
+    "axios",
+    "brace-expansion",
+    "follow-redirects",
+    "form-data",
+    "picomatch",
+    "postcss",
+    "rollup",
+    "vite",
+    "yaml"
+  ],
+  "finalRuntimeImageContainsNode": false,
+  "finalRuntimeImageTrivyCritical": 0,
+  "interpretation": "The advisories belong to the frontend install/build dependency tree. They are not present as a Node runtime in the final image, but browser-bundled and build-time reachability still requires a separate upgrade review."
+}

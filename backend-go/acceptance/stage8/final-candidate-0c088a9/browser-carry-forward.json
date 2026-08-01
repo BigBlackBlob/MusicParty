@@ -1,0 +1,30 @@
+{
+  "result": "CARRIED_FORWARD_WITH_DIFF_PROOF",
+  "newVisualRun": false,
+  "reasonNewVisualRunWasNotPerformed": "A browser-control surface was unavailable in the final evidence session.",
+  "priorTestedCandidate": "9b35fa7",
+  "finalCandidate": "0c088a91d10a2a50badd8fa9c9727749acd246f1",
+  "priorPassedPaths": [
+    "administrator login",
+    "room entry and WebSocket presence",
+    "real playback, pause, skip, lyrics and seek",
+    "two-tab state synchronization",
+    "backend restart recovery",
+    "1000-item queue rendering"
+  ],
+  "diffFiles": [
+    ".gitattributes",
+    "backend-go/ci/run-go-contract.ps1",
+    "backend-go/ci/run-stage8-load.ps1",
+    "contracts/java/run-baseline.ps1",
+    "music-party-web/package.json",
+    "music-party-web/package-lock.json",
+    "music-party-web/pnpm-lock.yaml"
+  ],
+  "runtimeSourceDiff": {
+    "music-party-web/src": false,
+    "backend-go/internal": false,
+    "backend-go/cmd": false
+  },
+  "finalStaticFrontendHttpStatus": 200
+}

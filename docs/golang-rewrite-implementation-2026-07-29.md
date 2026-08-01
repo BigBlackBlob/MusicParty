@@ -55,7 +55,7 @@
 - 非 root Dockerfile，运行时保留 FFmpeg、Python 和 yt-dlp。
 - 正式 `.github/workflows/go-backend.yml`：Windows/Linux 验证、race、静态检查、Go 漏洞扫描、Docker build 和 Trivy。
 
-阶段 4 至阶段 7 的平台、业务、房间 actor、WebSocket Hub、媒体代理和静态前端服务已经实现。阶段 8 的本地系统验收已经收口：契约、质量门、浏览器真实播放、负载、故障矩阵、同硬件比较和运行时镜像扫描均有证据。阶段 9 的离线切换准备已开始，干净 Dockerfile 重建已经恢复并通过；凭据化的其他真实平台和生产切换仍是外部验收门，当前没有触碰生产环境。
+阶段 4 至阶段 7 的平台、业务、房间 actor、WebSocket Hub、媒体代理和静态前端服务已经实现。最终候选 `0c088a91d10a2a50badd8fa9c9727749acd246f1` 的阶段 8 系统验收已经收口：契约、质量门、首发真实平台、浏览器证据继承、负载、故障矩阵、同硬件比较和运行时镜像扫描均有证据。阶段 9 的离线切换准备已开始，干净 Dockerfile 重建已经恢复并通过；生产数据库副本交接验证和实际切换仍是后续门禁，当前没有触碰生产环境。
 
 阶段 4 当前落地内容：
 
@@ -65,7 +65,7 @@
 - 数据库优先的 Netease/Bilibili secret、Java AES-GCM 格式的 Subsonic credential 解密、房间绑定动态 source 和 session-token allowed-users 校验。
 - fixture 测试覆盖平台映射、WBI 签名、Subsonic token auth、超时/取消、重试、无效响应和冻结 HTTP 状态。
 
-未将 fixture 结果推断为真实上游验收。最终阶段 8 候选必须使用有效凭据完成 Netease、Bilibili 和本地曲库的规定流程；YouTube、Navidrome、Squidify 和动态 Subsonic 只在该部署明确启用时加入门禁。
+未将 fixture 结果推断为真实上游验收。最终阶段 8 候选已经使用有效运行时凭据完成 Netease、Bilibili 和本地曲库的规定流程；YouTube、Navidrome、Squidify 和动态 Subsonic 只在该部署明确启用时加入门禁，本次目标部署未将它们加入首发门禁。
 
 阶段 5 当前落地内容：
 
@@ -90,7 +90,7 @@
 - `enqueue` 通过统一 `PlayableResolver` 从 Netease、Bilibili、YouTube、Subsonic 或本地 repository 解析权威名称、艺术家和时长，不再信任客户端元信息；解析结果使用 5 分钟、最多 2048 项的有界缓存。
 - 本地测试覆盖同房间并发写、mutation 去重、进度/自动切歌/暂停、空闲驱逐、Hub FIFO/latest-only/慢客户端、真实 WebSocket 鉴权/alias/enqueue/resync，以及 fuzz 和 goleak。
 
-阶段 6 的 Java/Go WebSocket golden、原前端浏览器流程、300 连接、30 分钟状态收敛和真实元信息入队已在阶段 8 通过。生产替换仍取决于阶段 9 切换审批和外部平台验收，而不是由本地测试自动推断。
+阶段 6 的 Java/Go WebSocket golden、原前端浏览器流程、300 连接、30 分钟状态收敛和真实元信息入队已在阶段 8 通过。生产替换仍取决于阶段 9 的生产数据库副本交接、切换审批和维护窗口，而不是由本地测试自动推断。
 
 阶段 7 当前落地内容：
 
@@ -106,7 +106,7 @@
 
 阶段 7 的有效故障矩阵覆盖 Range/后缀 Range/416、路径穿越、上游取消与状态映射、缓存原子写/LRU/重试/去重/队列满/关闭清理、本地上传重复检测/大小限制、转码完成与删除、转码超时清理、SQLite BUSY 和异常事务恢复。本机真实 FFmpeg 测试生成短 WAV、经正式 Transcoder 编码为 OGG/Opus，并验证 `OggS` 和 `.part` 清理。历史 Radio 测试不再计入完成证据；破坏性的真实磁盘满注入仍保留为环境验收项。
 
-本轮本机二进制冒烟确认 FFmpeg 8.1.2 可执行 libopus/OGG 编码，ffprobe 可读取 lavfi 输入。隔离运行时镜像包含 yt-dlp 2026.7.4；Netease 真实 CDN 试听流已经保存证据，Bilibili、YouTube、Navidrome 和 Subsonic 的凭据化真实上游仍待专门环境执行。
+本轮本机二进制冒烟确认 FFmpeg 8.1.2 可执行 libopus/OGG 编码，ffprobe 可读取 lavfi 输入。隔离运行时镜像包含 yt-dlp 2026.7.4；最终候选已经保存 Netease 完整 CDN 音频、Bilibili 搜索/收藏夹/音频和本地曲库上传转码的真实证据。YouTube、Navidrome 和 Subsonic 未在目标部署启用，因此不属于本次首发门禁。
 
 ## 当前验证证据
 
@@ -190,10 +190,15 @@ Trivy Critical: 0
 - Netease 实际歌曲 `28816031` 解析为 `Cling Cling`、`Perfume`、257693 ms，代理 Range 返回 `206 audio/mpeg`，浏览器 `readyState=4` 且 seek 状态从 30000 ms 收敛到 30001 ms。
 - 无 Cookie 上游只提供约 30 秒试听，因此未把完整 4:17 seek 当作已验证；试听片段内真实 seek 已通过。
 - 两个浏览器标签在后端快速重启后恢复 track 与音频 ready state；约 1000 首真实元信息队列可滚动到底，500/1000 阶段 ACK P95 分别为 18.81/36.15 ms。
+- 最终候选镜像使用授权运行时 Cookie 重新验证 Netease 完整音频源，Range 返回 `bytes 0-65535/10310052`；Bilibili 真实搜索返回 10 条、收藏夹返回 14 个非空集合，音频 Range 返回 `bytes 0-65535/17713611`，入队和 seek 均通过。凭据、账号和收藏夹名称未写入证据。
+- 本地曲库使用临时 4 秒 WAV 完成上传、FFmpeg OGG 转码、搜索、入队、Range、seek、删除和引用清理；删除后媒体返回 410，临时音频和数据库未进入 Git。
+- 最终候选的 10 连接 + 20 房间 + 1000 队列、100 连接和 300 连接三组均运行 30 分钟。1000 队列 ACK P95 为 21.7991 ms，状态收敛为 0.0156 ms；100/300 连接关闭后 goroutine 均回落到 18。
+- 最终证据会话没有可用的可视化浏览器控制接口，因此没有声称重新点击 UI。浏览器结果从候选 `9b35fa7` 继承，并以 `9b35fa7..0c088a9` 在 `music-party-web/src`、`backend-go/internal` 和 `backend-go/cmd` 无差异作为边界证明；最终镜像静态首页返回 200。
 - 有效媒体故障矩阵覆盖 Range、取消、Retry-After、缓存/LRU/去重/队列满、SQLite BUSY/异常回滚、FFmpeg 超时、`.part` 清理及路径限制；历史 radio 慢客户端结果不再计入候选证据。
 - 同硬件比较中，Java/Go 启动分别为 7073.81/348.43 ms，RSS 为 252723200/20766720 bytes，HTTP P95 为 25.03/2.83 ms，300 WS pong P95 为 374.39/148.21 ms；两端均建立全部连接且 0 error。
 - 当前 CGO-free 二进制在本地运行时镜像中以 UID 10001、只读 rootfs、cap-drop ALL、no-new-privileges 启动并通过 Trivy 0.72.0 CRITICAL=0。Docker Desktop 无 HTTPS proxy，导致干净 multi-stage Dockerfile 重建无法重新解析 Docker Hub manifest；该环境缺口与运行时扫描结果分开记录。
 - 阶段 9 准备期间 Docker Hub 访问恢复，`backend-go/Dockerfile` 已从头成功构建 `musicparty-go:stage9-prep`；正式镜像包含非 root 主进程以及 `/app/dbsnapshot`、`/app/dbcheck` 运维二进制，Compose 合并配置验证通过。该本地标签不是已发布的生产候选 digest。
+- 官方 npm registry 的 `npm audit` 报告前端安装/构建依赖树 2 个 MODERATE、7 个 HIGH、0 个 CRITICAL。最终运行镜像不包含 Node 且 Trivy CRITICAL=0，但浏览器 bundle 与构建期可达性仍需单独升级审查，不能表述为“前端依赖 0 漏洞”。
 
 `govulncheck` 报告调用路径漏洞为 0；扫描同时识别出 1 个 required module 中的不可达漏洞，但 MusicParty 导入的包和调用路径均不受影响。
 
@@ -205,11 +210,11 @@ Trivy Critical: 0
 | 1 可执行契约 | 已完成 | 93 个 HTTP operation、WS 双向 schema、103 个环境变量、SQLite contract、隔离 Java capture/compare 和补充媒体测试证据均已落地 |
 | 2 Go 基础设施 | 已完成 | Windows 测试、静态检查、Linux race/交叉构建、Docker/Trivy 和正式 CI 均有证据 |
 | 3 SQLite 兼容 | 已完成 | 23 表 repository、单写者/只读连接模型、fresh/legacy/current-copy 往返、异常中断恢复、integrity 和 foreign-key 检查均已通过 |
-| 4 无状态 HTTP/平台 | 已实现，首发真实上游待收口 | fixture 差分全部通过；Netease 试听路径已通过。最终候选硬门槛为凭据化 Netease、Bilibili 和本地曲库；条件平台只在部署启用时验收 |
+| 4 无状态 HTTP/平台 | 已完成首发验收 | fixture 差分全部通过；最终候选的凭据化 Netease、Bilibili 和本地曲库真实流程通过。条件平台未在目标部署启用，不加入本次门禁 |
 | 5 账号/房间/播放列表 | 已实现，系统差分通过 | HTTP/持久化和实时 enqueue 已接入，冻结 HTTP/WS golden 通过 |
 | 6 实时核心 | 已完成本地验收 | actor、权威元信息、原子持久化、Hub/背压、全部冻结命令、race/集成、浏览器重连及 10/100/300 WS 30 分钟矩阵通过 |
-| 7 缓存/下载/流媒体 | 本地核心完成 | 代理 URL、真实 Netease Range/音频/seek、缓存、转码和有效故障矩阵通过；Radio 生产实现已按批准范围删除，凭据化 Bilibili 与真实磁盘满仍是环境项 |
-| 8 系统验收 | 本地核心收口，首发平台待验收 | Java/Go golden、Go 全质量门、前端 101 tests/lint/build、浏览器普通播放流程、1000 队列、媒体故障矩阵、30 分钟负载、同硬件比较、干净 Dockerfile 重建、只读非 root 运行和 Trivy 均通过；最终候选仍需完成凭据化 Netease、Bilibili、本地曲库并重新固化证据 |
+| 7 缓存/下载/流媒体 | 已完成首发验收 | 代理 URL、Netease/Bilibili 真实 Range/音频/seek、本地上传转码、缓存和有效故障矩阵通过；Radio 生产实现已按批准范围删除，真实磁盘满仍是非阻塞环境注入项 |
+| 8 系统验收 | 已完成，依赖整改跟进 | 最终候选的 Java/Go golden、Go 全质量门、前端 101 tests/lint/build、首发三类真实媒体、1000 队列、10/100/300 WS 30 分钟、媒体故障矩阵、同硬件比较、干净 Dockerfile 重建、只读非 root 运行和 Trivy 均通过；浏览器结果按无运行时代码差异继承。npm audit 的 2 MODERATE/7 HIGH 进入后续依赖升级审查 |
 | 9 生产切换 | 准备中，未触碰生产 | 已落地手动不可变镜像发布、Go Compose 覆盖、停机快照/完整性校验和回滚手册；实际切换仍等待全部硬门槛证据与维护窗口审批 |
 | 10 Java 退役 | 未开始 | Go 稳定 30 天或两个版本后执行 |
 
