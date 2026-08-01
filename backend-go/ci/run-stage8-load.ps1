@@ -14,6 +14,7 @@ $backendRoot = Join-Path $repositoryRoot 'backend-go'
 $acceptanceRoot = Join-Path $backendRoot 'acceptance\stage8'
 $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ('musicparty-go-stage8-' + [Guid]::NewGuid().ToString('N'))
 $process = $null
+$neteaseStubProcess = $null
 $savedEnvironment = @{}
 
 function Get-FreeTcpPort {
@@ -22,7 +23,7 @@ function Get-FreeTcpPort {
     try { return ([Net.IPEndPoint]$listener.LocalEndpoint).Port } finally { $listener.Stop() }
 }
 
-function Set-IsolatedEnvironment([int]$Port) {
+function Set-IsolatedEnvironment([int]$Port, [int]$NeteaseStubPort) {
     $origin = "http://127.0.0.1:$Port"
     $values = @{
         SERVER_PORT = [string]$Port
@@ -41,7 +42,7 @@ function Set-IsolatedEnvironment([int]$Port) {
         AUTH_SECURE_COOKIES = 'false'
         AUTH_RATE_LIMIT_ENABLED = 'false'
         ROOM_ACCESS_TOKEN_SECRET = 'stage8-room-access-secret-32-bytes'
-        NETEASE_API_URL = 'http://127.0.0.1:9'
+        NETEASE_API_URL = "http://127.0.0.1:$NeteaseStubPort"
         YOUTUBE_ENABLED = 'false'
         NAVIDROME_ENABLED = 'false'
         SQUIDIFY_ENABLED = 'false'
@@ -68,7 +69,24 @@ New-Item -ItemType Directory -Path $temporaryRoot | Out-Null
 New-Item -ItemType Directory -Path $acceptanceRoot -Force | Out-Null
 try {
     $port = Get-FreeTcpPort
-    Set-IsolatedEnvironment -Port $port
+    $neteaseStubPort = Get-FreeTcpPort
+    Set-IsolatedEnvironment -Port $port -NeteaseStubPort $neteaseStubPort
+
+    $neteaseStubStdout = Join-Path $temporaryRoot 'netease-stub.stdout.log'
+    $neteaseStubStderr = Join-Path $temporaryRoot 'netease-stub.stderr.log'
+    $neteaseStubScript = Join-Path $PSScriptRoot 'stage8-netease-stub.mjs'
+    $neteaseStubProcess = Start-Process -FilePath 'node' -ArgumentList @($neteaseStubScript, "--port=$neteaseStubPort") -WorkingDirectory $temporaryRoot -PassThru -WindowStyle Hidden -RedirectStandardOutput $neteaseStubStdout -RedirectStandardError $neteaseStubStderr
+    $neteaseStubHealth = "http://127.0.0.1:$neteaseStubPort/health"
+    $neteaseStubDeadline = [DateTime]::UtcNow.AddSeconds(15)
+    do {
+        if ($neteaseStubProcess.HasExited) { throw "Netease test stub exited early. stdout=$neteaseStubStdout stderr=$neteaseStubStderr" }
+        try {
+            $stubHealth = Invoke-RestMethod -Uri $neteaseStubHealth -TimeoutSec 2 -NoProxy
+            if ($stubHealth.status -eq 'UP') { break }
+        } catch { Start-Sleep -Milliseconds 100 }
+    } while ([DateTime]::UtcNow -lt $neteaseStubDeadline)
+    if ([DateTime]::UtcNow -ge $neteaseStubDeadline) { throw "Netease test stub did not become healthy. stdout=$neteaseStubStdout stderr=$neteaseStubStderr" }
+
     $executable = Join-Path $temporaryRoot 'musicparty.exe'
     Push-Location $backendRoot
     try {
@@ -117,6 +135,10 @@ try {
     if ($process -and -not $process.HasExited) {
         Stop-Process -Id $process.Id -Force
         $process.WaitForExit()
+    }
+    if ($neteaseStubProcess -and -not $neteaseStubProcess.HasExited) {
+        Stop-Process -Id $neteaseStubProcess.Id -Force
+        $neteaseStubProcess.WaitForExit()
     }
     Restore-Environment
     if ($KeepTemporaryFiles) {
