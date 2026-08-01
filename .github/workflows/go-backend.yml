@@ -98,7 +98,7 @@ jobs:
           cache-from: type=gha,scope=musicparty-go
           cache-to: type=gha,mode=max,scope=musicparty-go
       - name: Scan image for critical vulnerabilities
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@v0.33.1
         with:
           image-ref: musicparty-go-ci:${{ github.sha }}
           format: table
