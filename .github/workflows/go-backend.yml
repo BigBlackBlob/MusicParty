@@ -4,11 +4,21 @@ on:
   pull_request:
     paths:
       - 'backend-go/**'
+      - 'contracts/**'
+      - 'music-party-web/**'
+      - 'src/main/java/**'
+      - 'src/main/resources/application.yml'
+      - '.dockerignore'
       - '.github/workflows/go-backend.yml'
   push:
     branches: [ 'main', 'master', 'NRT-Base' ]
     paths:
       - 'backend-go/**'
+      - 'contracts/**'
+      - 'music-party-web/**'
+      - 'src/main/java/**'
+      - 'src/main/resources/application.yml'
+      - '.dockerignore'
       - '.github/workflows/go-backend.yml'
   workflow_dispatch:
 
@@ -36,6 +46,8 @@ jobs:
         run: test -z "$(gofmt -l .)"
       - name: Verify module files
         run: go mod tidy && git diff --exit-code -- go.mod go.sum
+      - name: Verify generated contracts
+        run: go run ./cmd/contractgen -check -repo ..
       - name: Vet
         run: go vet ./...
       - name: Staticcheck
