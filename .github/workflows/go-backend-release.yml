@@ -7,6 +7,10 @@ on:
         description: Immutable release label, for example go-v0.9.0-rc1
         required: true
         type: string
+      acceptance_manifest:
+        description: Committed Stage 8/9 manifest for this candidate
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -16,8 +20,13 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    outputs:
+      candidate_sha: ${{ steps.acceptance.outputs.candidate_sha }}
+      acceptance_manifest: ${{ inputs.acceptance_manifest }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -35,17 +44,69 @@ jobs:
           node-version: '22'
           cache: pnpm
           cache-dependency-path: music-party-web/pnpm-lock.yaml
-      - name: Require the frozen baseline or NRT-Base
+      - name: Validate release ref, baseline, and acceptance evidence
+        id: acceptance
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          ACCEPTANCE_MANIFEST: ${{ inputs.acceptance_manifest }}
         run: |
-          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" != go-* ]]; then
-            echo "Release tags must start with go-" >&2
+          if [[ ! "$RELEASE_VERSION" =~ ^go-v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]]; then
+            echo "version must match go-vMAJOR.MINOR.PATCH or go-vMAJOR.MINOR.PATCH-rcN" >&2
+            exit 1
+          fi
+          if [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" != "$RELEASE_VERSION" ]]; then
+            echo "a release tag must equal the requested immutable version" >&2
             exit 1
           fi
           if [[ "${GITHUB_REF_TYPE}" == "branch" && "${GITHUB_REF_NAME}" != "NRT-Base" ]]; then
-            echo "Manual candidates may only be published from NRT-Base or a go-* tag" >&2
+            echo "manual candidates may only be published from NRT-Base or a matching go-* tag" >&2
             exit 1
           fi
+          git merge-base --is-ancestor go-rewrite-baseline-v1 "$GITHUB_SHA" || {
+            echo "release commit is not based on go-rewrite-baseline-v1" >&2
+            exit 1
+          }
+          case "$ACCEPTANCE_MANIFEST" in
+            backend-go/acceptance/stage8/*/manifest.json|backend-go/acceptance/stage9/*/manifest.json) ;;
+            *) echo "acceptance_manifest must be under backend-go/acceptance/stage8 or stage9" >&2; exit 1 ;;
+          esac
+          test -f "$ACCEPTANCE_MANIFEST" || { echo "acceptance manifest not found" >&2; exit 1; }
+          python - "$ACCEPTANCE_MANIFEST" "$GITHUB_SHA" <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          manifest_path = Path(sys.argv[1]).resolve()
+          root = Path.cwd().resolve()
+          try:
+              manifest_path.relative_to(root)
+          except ValueError:
+              raise SystemExit("acceptance manifest escapes the repository")
+          data = json.loads(manifest_path.read_text(encoding="utf-8"))
+          candidate = data.get("candidateSha", "")
+          if not re.fullmatch(r"[0-9a-f]{40}", candidate):
+              raise SystemExit("acceptance manifest candidateSha must be a full commit SHA")
+          if not str(data.get("result", "")).startswith("PASS"):
+              raise SystemExit("acceptance manifest is not a passing result")
+          for key in ("containsCredentials", "containsDatabase", "containsExecutables"):
+              if data.get(key) is True:
+                  raise SystemExit(f"acceptance manifest contains forbidden material: {key}")
+          subprocess.run(["git", "merge-base", "--is-ancestor", candidate, sys.argv[2]], check=True)
+          changed = subprocess.check_output(["git", "diff", "--name-only", f"{candidate}..{sys.argv[2]}"], text=True).splitlines()
+          allowed = ("backend-go/acceptance/", "docs/")
+          unexpected = [path for path in changed if not path.startswith(allowed)]
+          if unexpected:
+              raise SystemExit("release ref changed source after acceptance: " + ", ".join(unexpected))
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"candidate_sha={candidate}\n")
+          print(f"accepted candidate: {candidate}")
+          print(f"manifest: {manifest_path.relative_to(root)}")
+          print(f"post-acceptance files: {len(changed)}")
+          PY
       - name: Verify Java baseline
         run: ./mvnw -q test
       - name: Verify frontend
@@ -67,18 +128,35 @@ jobs:
           go run honnef.co/go/tools/cmd/staticcheck@v0.7.0 ./...
           go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
           CGO_ENABLED=1 go test -race -count=1 ./...
+      - name: Upload acceptance manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage9-acceptance-${{ github.sha }}
+          path: ${{ inputs.acceptance_manifest }}
+          if-no-files-found: error
 
   publish:
     needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Reject reused release label
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER}/musicparty-go:${RELEASE_VERSION}"
+          if docker buildx imagetools inspect "$image" >/dev/null 2>&1; then
+            echo "release label already exists: $image" >&2
+            exit 1
+          fi
       - uses: docker/metadata-action@v5
         id: metadata
         with:
@@ -120,4 +198,13 @@ jobs:
           cache-from: type=gha,scope=musicparty-go-release
           cache-to: type=gha,mode=max,scope=musicparty-go-release
       - name: Record deployable digest
-        run: echo "MUSIC_PARTY_IMAGE=ghcr.io/${{ github.repository_owner }}/musicparty-go@${{ steps.build.outputs.digest }}" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          CANDIDATE_SHA: ${{ needs.verify.outputs.candidate_sha }}
+          ACCEPTANCE_MANIFEST: ${{ needs.verify.outputs.acceptance_manifest }}
+        run: |
+          {
+            echo "MUSIC_PARTY_IMAGE=ghcr.io/${{ github.repository_owner }}/musicparty-go@${{ steps.build.outputs.digest }}"
+            echo "accepted_candidate_sha=${CANDIDATE_SHA}"
+            echo "acceptance_manifest=${ACCEPTANCE_MANIFEST}"
+            echo "release_commit=${GITHUB_SHA}"
+          } >> "$GITHUB_STEP_SUMMARY"

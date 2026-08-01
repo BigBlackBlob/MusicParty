@@ -7,6 +7,8 @@ Usage: cutover.sh preflight|snapshot|verify [snapshot-path]
 
 Required environment:
   MUSIC_PARTY_IMAGE  Immutable Go image reference containing @sha256:
+  MUSIC_PARTY_RUNTIME_UID  Numeric uid recorded from the Java container
+  MUSIC_PARTY_RUNTIME_GID  Numeric gid recorded from the Java container
 
 Optional environment:
   DATA_DIR           Host data directory (default: ./music_party/data)
@@ -42,6 +44,14 @@ require_image_digest() {
   esac
 }
 
+require_numeric_id() {
+  name=$1
+  value=$2
+  case $value in
+    ''|*[!0-9]*) fail "$name must be a numeric id" ;;
+  esac
+}
+
 container_is_running() {
   [ "$(docker inspect --format '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null || true)" = "true" ]
 }
@@ -49,6 +59,8 @@ container_is_running() {
 preflight() {
   require_command docker
   require_image_digest
+  require_numeric_id MUSIC_PARTY_RUNTIME_UID "${MUSIC_PARTY_RUNTIME_UID:-}"
+  require_numeric_id MUSIC_PARTY_RUNTIME_GID "${MUSIC_PARTY_RUNTIME_GID:-}"
   docker compose version >/dev/null
   [ -f "$COMPOSE_FILE" ] || fail "compose file not found: $COMPOSE_FILE"
   [ -f "$GO_COMPOSE_FILE" ] || fail "Go compose override not found: $GO_COMPOSE_FILE"
@@ -56,6 +68,12 @@ preflight() {
   [ -f "$data_absolute/musicparty.db" ] || fail "database not found: $data_absolute/musicparty.db"
   [ -w "$data_absolute" ] || fail "data directory is not writable by the operator: $data_absolute"
   docker image inspect "$MUSIC_PARTY_IMAGE" >/dev/null 2>&1 || fail "Go image is not present locally; pull and inspect it first"
+  docker run --rm \
+    --user "$MUSIC_PARTY_RUNTIME_UID:$MUSIC_PARTY_RUNTIME_GID" \
+    --mount "type=bind,src=$data_absolute,dst=/data" \
+    --entrypoint /bin/sh \
+    "$MUSIC_PARTY_IMAGE" -c 'test -r /data/musicparty.db && test -w /data/musicparty.db && test -w /data' \
+    || fail "recorded Java uid/gid cannot write the database and data directory"
   docker compose -f "$COMPOSE_FILE" -f "$GO_COMPOSE_FILE" config --quiet
   printf '%s\n' "preflight passed"
 }

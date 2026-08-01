@@ -19,6 +19,14 @@ type CheckResult struct {
 	ApplicationTables    int                   `json:"applicationTables"`
 }
 
+// RequiredCheckResult combines physical SQLite integrity with compatibility
+// against the frozen Java schema used for the first Go production cutover.
+type RequiredCheckResult struct {
+	CheckResult
+	SchemaCompatible  bool               `json:"schemaCompatible"`
+	SchemaDifferences []SchemaDifference `json:"schemaDifferences"`
+}
+
 func Check(ctx context.Context, database *sql.DB) (CheckResult, error) {
 	result := CheckResult{Integrity: []string{}, ForeignKeyViolations: []ForeignKeyViolation{}}
 	rows, err := database.QueryContext(ctx, "PRAGMA integrity_check")
@@ -61,4 +69,27 @@ func Check(ctx context.Context, database *sql.DB) (CheckResult, error) {
 
 func (r CheckResult) OK() bool {
 	return len(r.Integrity) == 1 && r.Integrity[0] == "ok" && len(r.ForeignKeyViolations) == 0
+}
+
+func CheckRequired(ctx context.Context, database *sql.DB) (RequiredCheckResult, error) {
+	check, err := Check(ctx, database)
+	result := RequiredCheckResult{CheckResult: check, SchemaDifferences: []SchemaDifference{}}
+	if err != nil {
+		return result, err
+	}
+	required, err := RequiredSchema()
+	if err != nil {
+		return result, err
+	}
+	differences, err := VerifySchemaCompatibility(ctx, database, required)
+	if err != nil {
+		return result, fmt.Errorf("verify required schema: %w", err)
+	}
+	result.SchemaDifferences = differences
+	result.SchemaCompatible = len(differences) == 0
+	return result, nil
+}
+
+func (r RequiredCheckResult) OK() bool {
+	return r.CheckResult.OK() && r.SchemaCompatible
 }

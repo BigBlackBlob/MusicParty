@@ -6,11 +6,13 @@
 
 开始维护窗口前必须全部满足：
 
-- 阶段 8 尚未关闭的真实平台、完整 Netease 流和干净镜像重建验收已有书面证据，或由负责人明确接受对应风险。
+- 阶段 8 最终候选证据清单已通过，且清单中的 `candidateSha` 是发布 ref 的祖先；若发布 ref 只增加证据和文档提交，工作流会验证这一边界。
 - `.github/workflows/go-backend-release.yml` 从计划切换的提交发布成功，记录 `ghcr.io/...@sha256:...`，禁止使用移动标签。
 - VPS 上已拉取并检查该 digest，现有 Java digest、配置文件路径、数据目录属主和剩余磁盘空间已记录。
+- 已从仍在运行的 Java 容器记录数字 UID/GID。Go Compose 会继续使用这组身份，避免 SQLite 文件在 Go 与 Java 间切换时因属主不同变成只读。
 - 维护公告、操作人、观察人、回滚决策人和窗口开始/结束时间已确定。
 - 不改动 `.env` 中的凭据；切换日志不得输出其内容。
+- `dbcheck` 必须同时报告 `integrity=["ok"]`、空的外键违规、`applicationTables=23` 和 `schemaCompatible=true`；只有完整冻结 schema 才能继续。
 
 ## 维护窗口
 
@@ -19,6 +21,11 @@
 ```sh
 export MUSIC_PARTY_IMAGE='ghcr.io/OWNER/musicparty-go@sha256:...'
 docker pull "$MUSIC_PARTY_IMAGE"
+
+# 在停止 Java 前记录它实际使用的文件身份。当前镜像通常是 100:101，
+# 但切换时必须以 VPS 实测值为准，不要手填猜测值。
+export MUSIC_PARTY_RUNTIME_UID="$(docker exec music-party-app id -u)"
+export MUSIC_PARTY_RUNTIME_GID="$(docker exec music-party-app id -g)"
 sh backend-go/deploy/cutover.sh preflight
 
 # 进入公告过的维护窗口后停止唯一写入者。
@@ -40,7 +47,7 @@ curl --fail --silent --show-error http://127.0.0.1:8848/actuator/health/readines
 1. 停止 Go 容器，确保没有 SQLite 写入者。
 2. 保存 Go 日志和故障时间段指标。
 3. 用快照替换数据库前，再运行 `cutover.sh verify <snapshot-path>` 并保留 SHA-256。不要覆盖唯一快照。
-4. 将当前数据库另存为故障证据，再将已验证快照复制回原数据库路径；保持原属主和权限。
+4. 将当前数据库另存为故障证据，再把已验证快照内容覆盖回现有 `musicparty.db`。不要先删除目标文件；覆盖现有文件可以保留 Java/Go 共用的属主和权限。恢复后用 `stat` 确认 UID/GID 仍等于 `MUSIC_PARTY_RUNTIME_UID:MUSIC_PARTY_RUNTIME_GID`。
 5. 将 `MUSIC_PARTY_IMAGE` 恢复为记录的 Java digest，使用原 Compose 启动。
 6. 验证 Java readiness、登录、WebSocket、队列、播放和数据库完整性。
 
