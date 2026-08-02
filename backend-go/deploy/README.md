@@ -2,6 +2,74 @@
 
 本目录只准备阶段 9，不会自动连接或修改生产环境。首次切换继续遵守：5–15 分钟维护窗口、单 SQLite、无 schema migration、Java 可立即回滚。
 
+## 一次性 21→23 schema bridge
+
+若生产 Java 数据库仍为 21 个应用表，先在维护窗口执行一次 bridge；Go 首次启动绝不承担 schema migration。bridge 只创建快照、离线运行固定 Java initializer 并验证结果，不会启动、停止、恢复任何 Compose 服务，也不会更改 Cookie。
+
+三道确认缺一不可：
+
+1. 三个镜像 ref 都是不可变 digest，且 Go 和 Java bridge 必须是下列固定候选。
+2. 操作人进入已公告维护窗口，并显式设置 MUSICPARTY_MAINTENANCE_CONFIRMED=YES。
+3. 操作人手动停止唯一 Java 写入者，脚本再次确认 music-party-app 明确处于 stopped/exited 状态。
+
+    export MUSIC_PARTY_IMAGE='ghcr.io/bigblackblob/musicparty-go@sha256:f16d4a26b94d28ca42e47c0d1bee8043f5f2434d2a982f375290ef49c390e759'
+    export MUSIC_PARTY_JAVA_BRIDGE_IMAGE='ghcr.io/bigblackblob/musicparty@sha256:1f08392fa699bcb655e3fd2a6eb2347432378804412b2e5521f955e48cf299e2'
+    export MUSIC_PARTY_ORIGINAL_JAVA_IMAGE='ghcr.io/bigblackblob/musicparty@sha256:<recorded-current-java-digest>'
+
+    docker pull "$MUSIC_PARTY_IMAGE"
+    docker pull "$MUSIC_PARTY_JAVA_BRIDGE_IMAGE"
+    docker pull "$MUSIC_PARTY_ORIGINAL_JAVA_IMAGE"
+
+    # 在 Java 仍运行时记录真实文件身份，不能猜测。
+    export MUSIC_PARTY_RUNTIME_UID="$(docker exec music-party-app id -u)"
+    export MUSIC_PARTY_RUNTIME_GID="$(docker exec music-party-app id -g)"
+    sh backend-go/deploy/schema-bridge.sh preflight
+
+    # 仅由操作人停止唯一写入者，bridge 本身不会触碰 Compose 生命周期。
+    docker compose stop music-party
+    export MUSICPARTY_MAINTENANCE_CONFIRMED=YES
+    sh backend-go/deploy/schema-bridge.sh apply
+
+    # 对 apply 输出的显式快照路径复查 Go dbcheck 和 SHA-256。
+    sh backend-go/deploy/schema-bridge.sh verify ./music_party/backups/go-cutover/musicparty-post-bridge-pre-go-<timestamp>.db
+
+preflight 只接受准确的历史形状：21 个应用表，缺失的只能是 room_membership 与 room_invite。migration ledger 不按数量放行，所有记录都必须已完成，且 key 必须精确等于下列 allowlist，不能有 room_membership / room_invite 的 target key 或任何额外 key：
+
+    legacy.queue-data.json
+    legacy.rooms.json
+    schema.admin_bootstrap_claim.table
+    schema.local_track.original_hash_unique
+    schema.local_track.product_fields
+    schema.local_track.table
+    schema.local_upload_access.table
+    schema.room_history_track.table
+    schema.room_playback_state.like_markers_json
+    schema.room_playback_state.liked_user_ids_json
+    schema.room_subsonic_source.table
+    schema.site_setting.table
+    schema.subsonic_source.owner_room_id
+    schema.subsonic_source.table
+    schema.user_account.table
+    schema.user_binding.table
+    schema.user_playlist.system_key
+    schema.user_playlist.table
+    schema.user_playlist_track.table
+    schema.user_profile.current_room_id
+
+apply 使用 Java 镜像内的 Python SQLite backup API 创建不可覆盖的 pre-bridge 和 post-bridge/pre-Go 一致快照，因此停 Java 前留下的 WAL/SHM 不会被当成裸 musicparty.db 复制。Java 写入前，pre-bridge 快照还必须由不可变 Go `/app/dbcheck` 以退出码 1 报告唯一已知的不兼容状态：integrity 为 `["ok"]`、无外键违规、21 个应用表、schemaCompatible=false，且 schemaDifferences 仅为 `table.room_invite` 与 `table.room_membership` 的 `missing required table`。Java initializer 后 ledger 必须是上述 allowlist 加上两个 target key，以及已批准的 `schema.user_account.platform_admin_role` ADMIN→PLATFORM_ADMIN 兼容 migration，共 23 个完成 key。该兼容 migration 不放宽对既有 COOKIE、SESSDATA 或 user session 行的前后指纹保护。post-bridge 快照必须由同一不可变 dbcheck 精确报告 23 个应用表、schemaCompatible=true 和空 schemaDifferences。
+
+SQLite 的 WAL SHM 协调有一个窄例外：对仍在 data 目录中的 live 数据库，桥接的 Python 读取任务会把目录 bind 为可写，供 SQLite 协调 SHM；连接仍为 mode=ro，并立即设置 PRAGMA query_only=ON，绝不执行数据库写入。因此不会修改 DB/WAL 内容、COOKIE 或 session 行。已经由 backup API 关闭并一致化的 pre/post 快照始终以只读 bind 和 mode=ro&immutable=1 打开。
+
+临时 Java task container 使用记录的 Java UID/GID、--network none、只读根文件系统和临时 /tmp。唯一例外是 Java initializer 的私有 /tmp tmpfs 带有 exec，以便 SQLite JDBC 解压其原生 `.so`；这一权限只存在于离线、cap-drop、no-new-privileges 的 Java task，Python SQLite 与 Go dbcheck task 的 /tmp 始终为 noexec。该 bridge 仍使用普通应用 Java 镜像的 bridge mode，而非专用 migration 镜像，这是已记录的残余风险，故固定 digest、断网、最小权限和完整快照 gate 均不可省略。脚本私下确认 Java 的 SQLite schema initialized 完成标记及两个 migration ledger 条目后才优雅停止它；若完成标记前容器退出会立即报安全的通用错误，且不输出原始日志或环境内容。
+
+Windows 的 Git-Bash 本地 rehearsal 也受支持：脚本会将 bind source 解析为 C:/... 形式，并仅在 MINGW/MSYS 下为 Docker 调用设置 MSYS_NO_PATHCONV=1，避免 Docker CLI 改写容器内的 /bin/sh、/app 或 /data 路径。VPS 生产操作仍是 Linux，保持原有 pwd -P 和 Docker 调用行为。
+
+Python SQLite task 的源码经容器 stdin 传入，不作为 Docker 参数传递，避免 Git-Bash 与 Docker Desktop 改写 SQL 中的引号。
+
+bridge 会在前后比较已有 netease.cookie、bilibili.sessdata 设置行和已有 user session。比较材料及内部指纹仅短暂存在于进程内，输出只有安全行数和 unchanged=true，绝不显示 Cookie、SESSDATA、session、密码哈希、行内容或内部指纹。Netease 或 Bilibili Cookie 到期不是 bridge 期间改变存储值的理由；应在 bridge 之外按正常设置流程处理。
+
+bridge 完成后仍按下面的正常切换流程运行 cutover.sh。`schema-bridge.sh verify <snapshot>` 只接受上述精确的 pre-bridge 或 post-bridge 语义状态，并输出 `snapshot-kind=pre-bridge|post-bridge`；若 Go 验证失败，先停止 Go 写入者，运行 schema-bridge.sh verify <pre-bridge-snapshot>，再按回滚步骤恢复 Java。bridge 不会自动恢复数据库或启动 Java。所有 task 使用已在本机检查的固定 digest 并传入 `--pull=never`。原始数据库、WAL/SHM、快照、原始命令日志都不是仓库证据，绝不能提交；仓库只保留不含原始数据的声明式摘要。
+
 ## 硬门槛
 
 开始维护窗口前必须全部满足：
