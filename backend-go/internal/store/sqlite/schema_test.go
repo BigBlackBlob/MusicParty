@@ -128,6 +128,92 @@ func TestSchemaCompatibilityReportsMissingRequiredColumn(t *testing.T) {
 	}
 }
 
+func TestSchemaCompatibilityIgnoresPhysicalIndexColumnIDs(t *testing.T) {
+	required := inspectSchemaFixture(t, `
+		CREATE TABLE item (key TEXT, extra_b TEXT, extra_a TEXT);
+		CREATE INDEX item_key_idx ON item(key COLLATE NOCASE DESC);
+	`)
+	actual := inspectSchemaFixture(t, `
+		CREATE TABLE item (extra_a TEXT, key TEXT, extra_b TEXT);
+		CREATE INDEX item_key_idx ON item(key COLLATE NOCASE DESC);
+	`)
+	requiredIndex := schemaFixtureIndex(t, required, "item", "item_key_idx")
+	actualIndex := schemaFixtureIndex(t, actual, "item", "item_key_idx")
+	requiredKeys, actualKeys := keyIndexColumns(requiredIndex.Columns), keyIndexColumns(actualIndex.Columns)
+	if len(requiredKeys) != 1 || len(actualKeys) != 1 {
+		t.Fatalf("indexed key columns = %d and %d, want one each", len(requiredKeys), len(actualKeys))
+	}
+	if requiredKeys[0].ColumnID == actualKeys[0].ColumnID {
+		t.Fatalf("indexed key column IDs = %d and %d, want physical-order difference", requiredKeys[0].ColumnID, actualKeys[0].ColumnID)
+	}
+	if differences := ValidateSchemaCompatibility(required, actual); len(differences) != 0 {
+		t.Fatalf("semantically equivalent schemas differ: %+v", differences)
+	}
+}
+
+func TestSchemaCompatibilityRejectsChangedIndexSemantics(t *testing.T) {
+	required := inspectSchemaFixture(t, `
+		CREATE TABLE item (first TEXT, second TEXT, payload TEXT);
+		CREATE INDEX item_idx ON item(first COLLATE BINARY ASC, second COLLATE NOCASE DESC);
+	`)
+	tests := map[string]string{
+		"key order": `
+			CREATE TABLE item (first TEXT, second TEXT, payload TEXT);
+			CREATE INDEX item_idx ON item(second COLLATE NOCASE DESC, first COLLATE BINARY ASC);
+		`,
+		"desc direction": `
+			CREATE TABLE item (first TEXT, second TEXT, payload TEXT);
+			CREATE INDEX item_idx ON item(first COLLATE BINARY DESC, second COLLATE NOCASE DESC);
+		`,
+		"collation": `
+			CREATE TABLE item (first TEXT, second TEXT, payload TEXT);
+			CREATE INDEX item_idx ON item(first COLLATE NOCASE ASC, second COLLATE NOCASE DESC);
+		`,
+	}
+	for name, schemaSQL := range tests {
+		t.Run(name, func(t *testing.T) {
+			actual := inspectSchemaFixture(t, schemaSQL)
+			differences := ValidateSchemaCompatibility(required, actual)
+			if len(differences) != 1 || differences[0].Path != "table.item.index.item_idx" {
+				t.Fatalf("schema differences = %+v, want indexed-column difference", differences)
+			}
+		})
+	}
+}
+
+func inspectSchemaFixture(t *testing.T, schemaSQL string) SchemaSnapshot {
+	t.Helper()
+	database, err := Open(context.Background(), filepath.Join(t.TempDir(), "schema.db"), time.Second, 1)
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer database.Close()
+	if _, err := database.ExecContext(context.Background(), schemaSQL); err != nil {
+		t.Fatalf("create fixture schema: %v", err)
+	}
+	snapshot, _, err := InspectSchema(context.Background(), database)
+	if err != nil {
+		t.Fatalf("InspectSchema() error = %v", err)
+	}
+	return snapshot
+}
+
+func schemaFixtureIndex(t *testing.T, snapshot SchemaSnapshot, tableName, indexName string) SchemaIndex {
+	t.Helper()
+	for _, table := range snapshot.Tables {
+		if table.Name != tableName {
+			continue
+		}
+		for _, index := range table.Indexes {
+			if index.Name == indexName {
+				return index
+			}
+		}
+	}
+	t.Fatalf("index %s.%s not found", tableName, indexName)
+	return SchemaIndex{}
+}
+
 func contractSchemaDirectory(t *testing.T) string {
 	t.Helper()
 	_, currentFile, _, ok := runtime.Caller(0)

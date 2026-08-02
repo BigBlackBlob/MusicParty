@@ -196,7 +196,9 @@ func equalIndexKeyColumns(required, actual []SchemaIndexColumn) bool {
 	}
 	for index := range requiredKeys {
 		left, right := requiredKeys[index], actualKeys[index]
-		if left.ColumnID != right.ColumnID || left.Desc != right.Desc || !strings.EqualFold(left.Collation, right.Collation) {
+		// ColumnID is local to the table's physical column order and does not
+		// describe index semantics, so equivalent tables may report different IDs.
+		if left.Desc != right.Desc || !strings.EqualFold(left.Collation, right.Collation) {
 			return false
 		}
 		if left.Name == nil || right.Name == nil {
