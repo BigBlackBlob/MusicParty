@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "result": "PASS - fresh-fixture isolated Stage 9 Java to dd14edd Go to read-only Java handoff; production was not touched",
+  "recordedAt": "2026-08-03T06:27:00Z",
+  "recordedAtUtc": "2026-08-03T06:27:00Z",
+  "stage": 9,
+  "status": "complete",
+  "baselineTag": "go-rewrite-baseline-v1",
+  "candidateSha": "dd14edd4f13060a4096cf94a30347d01ac4bc89f",
+  "applicationTableCount": 23,
+  "integrityResult": ["ok"],
+  "foreignKeyResult": [],
+  "candidateImage": "musicparty-go:dd14edd",
+  "candidateImageBuildManifestDigest": "sha256:048b674ac910d0cd8a440b984bc54aba90a2b114c9c85f8ab1b45ffe23715b7c",
+  "candidateImageOciRevision": "dd14edd4f13060a4096cf94a30347d01ac4bc89f",
+  "fixture": {
+    "kind": "fresh isolated SQLite fixture",
+    "createdBy": "fixed Java bridge image with APP_MODE=bridge",
+    "vpsDerived": false,
+    "productionDataUsed": false
+  },
+  "javaWriteResult": "PASS - fixed Java image initialized the 23-table schema and created the isolated bootstrap administrator and session through its server startup and login flow; no platform endpoint was invoked",
+  "goReadJavaResult": "PASS - dd14edd Go HTTP API authenticated the Java-created administrator and read the Java-created lounge fixture",
+  "goWriteResult": "PASS - dd14edd Go HTTP API PUT /api/rooms/lounge wrote the isolated Stage 9 Go marker",
+  "goRuntimeResult": "PASS - DB_INIT_SCHEMA=false runtime reached readiness with network none, read-only root filesystem, tmpfs writable paths, cap-drop ALL, no-new-privileges, and the Java runtime UID/GID",
+  "javaReadGoResult": "PASS - fixed Java image Python SQLite client opened the fixture mode=ro&immutable=1 with PRAGMA query_only=ON and observed the Go room marker",
+  "finalDbcheckResult": "PASS - Go dbcheck reported integrity ok, no foreign-key violations, 23 application tables, schemaCompatible true, and no schema differences",
+  "testResults": {
+    "goTest": "PASS - go test ./...",
+    "goRaceTest": "PASS - go test -race ./...",
+    "frontendTest": "PASS - pnpm test:run (31 files, 100 tests)",
+    "frontendLint": "PASS with 3 pre-existing no-unused-vars warnings in src/services/socketHandler.js",
+    "frontendBuild": "PASS - pnpm build"
+  },
+  "securityControls": {
+    "outboundNetworkBlocked": true,
+    "hostPortsPublished": false,
+    "rootFilesystemReadOnly": true,
+    "capabilitiesDropped": true,
+    "noNewPrivileges": true,
+    "credentialsUsed": false,
+    "rawTokensLogged": false,
+    "platformEndpointsInvoked": false
+  },
+  "taskContainersRemoved": true,
+  "productionEnvironmentTouched": false,
+  "containsCredentials": false,
+  "containsDatabase": false,
+  "containsExecutables": false,
+  "residualRisk": "This is a real clean-fixture interoperability check, not a VPS-derived production snapshot handoff; it cannot establish production-data-specific compatibility.",
+  "evidenceScope": "Declarative local acceptance evidence only; the temporary fixture, container logs, session data, and binaries are not retained in the repository."
+}
