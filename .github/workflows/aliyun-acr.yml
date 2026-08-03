@@ -1,4 +1,4 @@
-name: Publish Legacy Java Image to Aliyun ACR
+name: Publish Legacy Java Image to Aliyun ACR (Legacy Only)
 
 on:
   workflow_dispatch:

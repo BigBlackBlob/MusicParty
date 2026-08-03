@@ -1,5 +1,11 @@
 # Go 生产切换包
 
+## ACR 镜像同步
+
+`.github/workflows/go-backend-release.yml` 在 GHCR 发布同一份已扫描的 Go 候选时，也会推送到 `crpi-533x5q1t88ew0x21.cn-hangzhou.personal.cr.aliyuncs.com/nrt-base/nrt-music-party`。工作流摘要会输出 `ACR_MUSIC_PARTY_IMAGE`，该值必须是带 `@sha256:` 的不可变引用。
+
+将该值写入 VPS 专用 `compose.go.env` 的 `MUSIC_PARTY_IMAGE`，然后按本文件既有维护窗口和 schema bridge 流程操作。不得使用 ACR `latest` 或 `java-legacy-*` 标签，它们不是 Go 后端，可能与 Go 所需的数据库形状不兼容。
+
 本目录只准备阶段 9，不会自动连接或修改生产环境。首次切换继续遵守：5–15 分钟维护窗口、单 SQLite、无 schema migration、Java 可立即回滚。
 
 ## 一次性 21→23 schema bridge

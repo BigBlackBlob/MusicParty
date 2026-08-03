@@ -69,22 +69,16 @@ http://localhost:8848
 image: ${MUSIC_PARTY_IMAGE:-ghcr.io/bigblackblob/musicparty:nrt-base}
 ```
 
-如果 VPS 需要走阿里云 ACR，把这一行的默认值改成：
-
-```yaml
-image: ${MUSIC_PARTY_IMAGE:-crpi-533x5q1t88ew0x21.cn-hangzhou.personal.cr.aliyuncs.com/nrt-base/nrt-music-party:latest}
-```
-
 也可以不改文件，启动前设置环境变量：
 
 ```bash
 MUSIC_PARTY_IMAGE=ghcr.io/bigblackblob/musicparty:nrt-base docker compose up -d
 ```
 
-如果 VPS 访问 GHCR 不稳定，可以改用阿里云 ACR：
+如果 VPS 访问 GHCR 不稳定，只能使用 Go release 工作流摘要中生成的 ACR 不可变 digest；不要使用 ACR 的 `latest`，该标签属于旧 Java 镜像：
 
 ```bash
-MUSIC_PARTY_IMAGE=crpi-533x5q1t88ew0x21.cn-hangzhou.personal.cr.aliyuncs.com/nrt-base/nrt-music-party:latest docker compose up -d
+MUSIC_PARTY_IMAGE=crpi-533x5q1t88ew0x21.cn-hangzhou.personal.cr.aliyuncs.com/nrt-base/nrt-music-party@sha256:<go-release-digest> docker compose -f docker-compose.yml -f backend-go/deploy/compose.go.yml up -d
 ```
 
 如果要在本机从源码构建镜像，使用额外的 build override：

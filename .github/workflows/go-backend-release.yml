@@ -17,6 +17,11 @@ permissions:
   packages: write
   id-token: write
 
+env:
+  ALIYUN_ACR_REGISTRY: crpi-533x5q1t88ew0x21.cn-hangzhou.personal.cr.aliyuncs.com
+  ALIYUN_ACR_NAMESPACE: nrt-base
+  ALIYUN_ACR_IMAGE: nrt-music-party
+
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -148,19 +153,30 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Login to Aliyun ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ALIYUN_ACR_REGISTRY }}
+          username: ${{ secrets.ALIYUN_ACR_USERNAME || secrets.ALIYUN_ACCESS_KEY_ID }}
+          password: ${{ secrets.ALIYUN_ACR_PASSWORD || secrets.ALIYUN_ACCESS_KEY_SECRET }}
       - name: Reject reused release label
         env:
           RELEASE_VERSION: ${{ inputs.version }}
         run: |
-          image="ghcr.io/${GITHUB_REPOSITORY_OWNER}/musicparty-go:${RELEASE_VERSION}"
-          if docker buildx imagetools inspect "$image" >/dev/null 2>&1; then
-            echo "release label already exists: $image" >&2
-            exit 1
-          fi
+          for image in \
+            "ghcr.io/${GITHUB_REPOSITORY_OWNER}/musicparty-go:${RELEASE_VERSION}" \
+            "${ALIYUN_ACR_REGISTRY}/${ALIYUN_ACR_NAMESPACE}/${ALIYUN_ACR_IMAGE}:${RELEASE_VERSION}"; do
+            if docker buildx imagetools inspect "$image" >/dev/null 2>&1; then
+              echo "release label already exists: $image" >&2
+              exit 1
+            fi
+          done
       - uses: docker/metadata-action@v5
         id: metadata
         with:
-          images: ghcr.io/${{ github.repository_owner }}/musicparty-go
+          images: |
+            ghcr.io/${{ github.repository_owner }}/musicparty-go
+            ${{ env.ALIYUN_ACR_REGISTRY }}/${{ env.ALIYUN_ACR_NAMESPACE }}/${{ env.ALIYUN_ACR_IMAGE }}
           tags: |
             type=raw,value=${{ inputs.version }}
             type=sha
@@ -205,6 +221,7 @@ jobs:
         run: |
           {
             echo "MUSIC_PARTY_IMAGE=ghcr.io/${{ github.repository_owner }}/musicparty-go@${{ steps.build.outputs.digest }}"
+            echo "ACR_MUSIC_PARTY_IMAGE=${{ env.ALIYUN_ACR_REGISTRY }}/${{ env.ALIYUN_ACR_NAMESPACE }}/${{ env.ALIYUN_ACR_IMAGE }}@${{ steps.build.outputs.digest }}"
             echo "accepted_candidate_sha=${CANDIDATE_SHA}"
             echo "acceptance_manifest=${ACCEPTANCE_MANIFEST}"
             echo "release_commit=${GITHUB_SHA}"
