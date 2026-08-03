@@ -17,6 +17,7 @@ export const authApi = {
     createInvite: (roomId, label = '') => client.post(`/api/rooms/${encodeURIComponent(roomId)}/invites`, { label }),
     listInvites: (roomId) => client.get(`/api/rooms/${encodeURIComponent(roomId)}/invites`),
     revokeInvite: (roomId, inviteId) => client.delete(`/api/rooms/${encodeURIComponent(roomId)}/invites/${encodeURIComponent(inviteId)}`),
+    updatePlatformCredential: (platform, credential) => client.post('/api/admin/platform-credentials', { platform, credential }),
     listRoomMembers: (roomId) => client.get(`/api/rooms/${encodeURIComponent(roomId)}/members`),
     removeRoomMember: (roomId, publicId) => client.delete(`/api/rooms/${encodeURIComponent(roomId)}/members/${encodeURIComponent(publicId)}`),
     grantNavidrome: (_sessionToken, userName, roomId) => client.post('/api/admin/navidrome-access/grant', {
@@ -25,8 +26,6 @@ export const authApi = {
     revokeNavidrome: (_sessionToken, userName, roomId) => client.post('/api/admin/navidrome-access/revoke', {
         userName, roomId
     }),
-    clearQueue: (_sessionToken, roomId) => client.post('/api/admin/command', { command: '//CLEAR QUEUE', roomId }),
-    clearChat: (_sessionToken, roomId) => client.post('/api/admin/command', { command: '//CLEAR CHAT', roomId }),
     listSubsonicSources: (_sessionToken, roomId) => client.get('/api/admin/subsonic-sources', {
         params: { roomId }
     }),

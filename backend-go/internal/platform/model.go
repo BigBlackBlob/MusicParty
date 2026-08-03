@@ -64,6 +64,12 @@ type Service interface {
 	Lyric(context.Context, string) (Lyric, error)
 }
 
+// CredentialUpdater allows an authenticated administrator to replace an
+// upstream platform credential without restarting the service.
+type CredentialUpdater interface {
+	UpdateCredential(string)
+}
+
 // MediaSource exposes authenticated upstream URLs to the streaming proxy.
 type MediaSource interface {
 	StreamURL(context.Context, string) (string, error)

@@ -24,6 +24,7 @@ import (
 
 type PlatformAPI struct {
 	cfg      config.Config
+	mu       sync.RWMutex
 	services map[string]platform.Service
 	access   map[string]func(context.Context, string) bool
 	cacheMu  sync.Mutex
@@ -45,26 +46,65 @@ func NewPlatformAPI(cfg config.Config, services ...platform.Service) *PlatformAP
 	return &PlatformAPI{cfg: cfg, services: m, access: map[string]func(context.Context, string) bool{}, cache: map[string]cachedPlayable{}}
 }
 func (api *PlatformAPI) SetAccess(platformName string, check func(context.Context, string) bool) {
+	api.mu.Lock()
+	defer api.mu.Unlock()
 	if check != nil {
 		api.access[platformName] = check
 	}
 }
 func (api *PlatformAPI) Register(service platform.Service) {
+	api.mu.Lock()
+	defer api.mu.Unlock()
 	if service != nil {
 		api.services[service.Name()] = service
 	}
 }
-func (api *PlatformAPI) Unregister(name string) { delete(api.services, name); delete(api.access, name) }
+func (api *PlatformAPI) Unregister(name string) {
+	api.mu.Lock()
+	delete(api.services, name)
+	delete(api.access, name)
+	api.mu.Unlock()
+}
 func (api *PlatformAPI) Service(name string) (platform.Service, bool) {
+	api.mu.RLock()
 	service := api.services[name]
+	api.mu.RUnlock()
 	return service, service != nil && service.Available()
+}
+func (api *PlatformAPI) SupportsCredentialUpdate(name string) bool {
+	api.mu.RLock()
+	service := api.services[name]
+	api.mu.RUnlock()
+	_, ok := service.(platform.CredentialUpdater)
+	return ok
+}
+func (api *PlatformAPI) UpdateCredential(name, credential string) error {
+	api.mu.RLock()
+	service := api.services[name]
+	api.mu.RUnlock()
+	updater, ok := service.(platform.CredentialUpdater)
+	if !ok {
+		return fmt.Errorf("platform credential updates are not supported")
+	}
+	updater.UpdateCredential(credential)
+	api.cacheMu.Lock()
+	for key := range api.cache {
+		if strings.HasPrefix(key, name+":") {
+			delete(api.cache, key)
+		}
+	}
+	api.cacheMu.Unlock()
+	return nil
 }
 func (api *PlatformAPI) ResolvePlayable(ctx context.Context, platformName, musicID, sessionToken string) (platform.PlayableMusic, error) {
 	service, err := api.service(platformName)
 	if err != nil {
 		return platform.PlayableMusic{}, err
 	}
-	if check := api.access[platformName]; check != nil && !check(ctx, sessionToken) {
+	api.mu.RLock()
+	check := api.access[platformName]
+	api.mu.RUnlock()
+	if check != nil && !check(ctx, sessionToken) {
 		return platform.PlayableMusic{}, &APIError{Status: http.StatusForbidden, Message: "Forbidden"}
 	}
 	key := platformName + ":" + musicID
@@ -115,25 +155,35 @@ func (api *PlatformAPI) platforms(w http.ResponseWriter, r *http.Request) {
 		SupportsAlbumSearch bool   `json:"supportsAlbumSearch"`
 		Subsonic            bool   `json:"subsonic"`
 	}
+	api.mu.RLock()
+	services := make(map[string]platform.Service, len(api.services))
+	for name, service := range api.services {
+		services[name] = service
+	}
+	access := make(map[string]func(context.Context, string) bool, len(api.access))
+	for name, check := range api.access {
+		access[name] = check
+	}
+	api.mu.RUnlock()
 	out := []item{{"netease", "netease", true, false}, {"bilibili", "bilibili", false, false}}
 	for _, name := range []string{"youtube", "local", "navidrome", "squidify"} {
-		if service := api.services[name]; service != nil && service.Available() {
-			if check := api.access[name]; check != nil && !check(r.Context(), r.URL.Query().Get("token")) {
+		if service := services[name]; service != nil && service.Available() {
+			if check := access[name]; check != nil && !check(r.Context(), r.URL.Query().Get("token")) {
 				continue
 			}
 			out = append(out, item{name, name, name == "navidrome" || name == "squidify", name == "navidrome" || name == "squidify"})
 		}
 	}
 	roomID := defaultValue(r.URL.Query().Get("roomId"), "lounge")
-	names := make([]string, 0, len(api.services))
-	for name := range api.services {
+	names := make([]string, 0, len(services))
+	for name := range services {
 		if strings.HasPrefix(name, "subsonic-") {
 			names = append(names, name)
 		}
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		service := api.services[name]
+		service := services[name]
 		roomAware, ok := service.(interface{ RoomID() string })
 		if ok && roomAware.RoomID() != roomID {
 			continue
@@ -141,7 +191,7 @@ func (api *PlatformAPI) platforms(w http.ResponseWriter, r *http.Request) {
 		if !service.Available() {
 			continue
 		}
-		if check := api.access[name]; check != nil && !check(r.Context(), r.URL.Query().Get("token")) {
+		if check := access[name]; check != nil && !check(r.Context(), r.URL.Query().Get("token")) {
 			continue
 		}
 		label := name
@@ -153,7 +203,9 @@ func (api *PlatformAPI) platforms(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 func (api *PlatformAPI) service(name string) (platform.Service, error) {
+	api.mu.RLock()
 	service := api.services[name]
+	api.mu.RUnlock()
 	if service == nil || !service.Available() {
 		return nil, &APIError{Status: http.StatusInternalServerError, Message: "Platform not supported: " + name}
 	}
@@ -165,7 +217,10 @@ func (api *PlatformAPI) authorizedService(r *http.Request) (platform.Service, er
 	if err != nil {
 		return nil, err
 	}
-	if check := api.access[name]; check != nil && !check(r.Context(), r.URL.Query().Get("token")) {
+	api.mu.RLock()
+	check := api.access[name]
+	api.mu.RUnlock()
+	if check != nil && !check(r.Context(), r.URL.Query().Get("token")) {
 		return nil, &APIError{Status: http.StatusForbidden, Message: "Forbidden"}
 	}
 	return service, nil

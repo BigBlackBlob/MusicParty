@@ -36,6 +36,7 @@ func (api *AdminAPI) Routes(r chi.Router) {
 	r.Post("/api/admin/subsonic-source/test", Adapt(api.testSource))
 	r.Post("/api/admin/navidrome-access/grant", Adapt(api.grantNavidrome))
 	r.Post("/api/admin/navidrome-access/revoke", Adapt(api.revokeNavidrome))
+	r.Post("/api/admin/platform-credentials", Adapt(api.updatePlatformCredential))
 }
 
 type sourceRequest struct {
@@ -50,6 +51,11 @@ type sourceRequest struct {
 	Enabled      *bool  `json:"enabled"`
 	SortOrder    *int   `json:"sortOrder"`
 }
+type platformCredentialRequest struct {
+	SessionToken string `json:"sessionToken"`
+	Platform     string `json:"platform"`
+	Credential   string `json:"credential"`
+}
 
 func (api *AdminAPI) admin(r *http.Request, requestToken string) bool {
 	token := requestToken
@@ -58,6 +64,38 @@ func (api *AdminAPI) admin(r *http.Request, requestToken string) bool {
 	}
 	session, err := api.accounts.Resolve(r.Context(), token)
 	return err == nil && session.Admin()
+}
+func (api *AdminAPI) updatePlatformCredential(w http.ResponseWriter, r *http.Request) error {
+	var request platformCredentialRequest
+	if err := decodeJSONBody(r, &request); err != nil {
+		return badRequest("Invalid request body")
+	}
+	if !api.admin(r, request.SessionToken) {
+		return accessDenied(w)
+	}
+	platformName := strings.ToLower(strings.TrimSpace(request.Platform))
+	if platformName != "netease" && platformName != "bilibili" {
+		return badRequest("Unsupported platform")
+	}
+	credential := strings.TrimSpace(request.Credential)
+	if credential == "" || len(credential) > 16*1024 {
+		return badRequest("Credential must be between 1 and 16384 bytes")
+	}
+	if !api.platforms.SupportsCredentialUpdate(platformName) {
+		return badRequest("Platform credential updates are not supported")
+	}
+	key := "netease.cookie"
+	if platformName == "bilibili" {
+		key = "bilibili.sessdata"
+	}
+	if err := storesqlite.NewSiteSettingRepository(api.store).Upsert(r.Context(), storesqlite.SiteSetting{Key: key, Value: &credential, Secret: true, UpdatedAt: time.Now().UnixMilli()}); err != nil {
+		return err
+	}
+	if err := api.platforms.UpdateCredential(platformName, credential); err != nil {
+		return err
+	}
+	writeJSON(w, map[string]string{"message": "PLATFORM CREDENTIAL UPDATED", "platform": platformName})
+	return nil
 }
 func (api *AdminAPI) listSources(w http.ResponseWriter, r *http.Request) error {
 	if !api.admin(r, r.URL.Query().Get("sessionToken")) {

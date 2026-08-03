@@ -6,13 +6,16 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform"
 )
 
 type Service struct {
-	client          *platform.Client
-	baseURL, cookie string
+	client  *platform.Client
+	baseURL string
+	mu      sync.RWMutex
+	cookie  string
 }
 
 func New(client *platform.Client, baseURL, cookie string) *Service {
@@ -20,10 +23,20 @@ func New(client *platform.Client, baseURL, cookie string) *Service {
 }
 func (*Service) Name() string    { return "netease" }
 func (*Service) Available() bool { return true }
+func (s *Service) UpdateCredential(value string) {
+	s.mu.Lock()
+	s.cookie = value
+	s.mu.Unlock()
+}
+func (s *Service) credential() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.cookie
+}
 
 func (s *Service) get(ctx context.Context, path string, query url.Values, target any) error {
-	if s.cookie != "" {
-		query.Set("cookie", s.cookie)
+	if credential := s.credential(); credential != "" {
+		query.Set("cookie", credential)
 	}
 	return s.client.JSON(ctx, s.baseURL+path+"?"+query.Encode(), nil, target)
 }

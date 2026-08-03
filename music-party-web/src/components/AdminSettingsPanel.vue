@@ -239,7 +239,7 @@
       </div>
 
       <div class="admin-panel">
-        <h4>{{ t('settings.admin.userAccessAndLive') }}</h4>
+        <h4>{{ t('settings.admin.userAccess') }}</h4>
         <div class="grid grid-cols-2 gap-2">
           <button class="admin-action" type="button" :disabled="busy" @click="runGrantNavidrome">
             {{ t('settings.admin.grantNavidrome') }}
@@ -247,32 +247,24 @@
           <button class="admin-action" type="button" :disabled="busy" @click="runRevokeNavidrome">
             {{ t('settings.admin.revokeNavidrome') }}
           </button>
-          <button class="admin-action" type="button" :disabled="busy" @click="runClearQueue">
-            {{ t('settings.admin.clearQueue') }}
-          </button>
-          <button class="admin-action" type="button" :disabled="busy" @click="runClearChat">
-            {{ t('settings.admin.clearChat') }}
-          </button>
         </div>
       </div>
 
       <div class="admin-panel">
-        <h4>{{ t('settings.admin.advancedCommand') }}</h4>
-        <input
-          v-model="customCommand"
-          type="text"
-          class="admin-input"
-          :placeholder="t('settings.admin.commandPlaceholder')"
-          @keyup.enter="runCustomCommand"
-        />
-        <button
-          type="button"
-          class="w-full rounded-md bg-primary px-3 py-2 text-xs font-bold text-on-primary transition-colors hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-50"
-          :disabled="busy || !customCommand.trim()"
-          @click="runCustomCommand"
-        >
-          {{ busy ? t('settings.admin.running') : t('settings.admin.runCommand') }}
-        </button>
+        <h4>{{ t('settings.admin.platformCredentials') }}</h4>
+        <p class="admin-hint">{{ t('settings.admin.platformCredentialsHint') }}</p>
+        <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+          <input v-model="neteaseCredential" type="password" autocomplete="off" class="admin-input" :placeholder="t('settings.admin.neteaseCookiePlaceholder')" :aria-label="t('settings.admin.neteaseCookie')" />
+          <button class="admin-action" type="button" :disabled="busy || !neteaseCredential.trim()" @click="updatePlatformCredential('netease')">
+            {{ t('settings.admin.updateCredential') }}
+          </button>
+        </div>
+        <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+          <input v-model="bilibiliCredential" type="password" autocomplete="off" class="admin-input" :placeholder="t('settings.admin.bilibiliSessdataPlaceholder')" :aria-label="t('settings.admin.bilibiliSessdata')" />
+          <button class="admin-action" type="button" :disabled="busy || !bilibiliCredential.trim()" @click="updatePlatformCredential('bilibili')">
+            {{ t('settings.admin.updateCredential') }}
+          </button>
+        </div>
       </div>
     </section>
   </div>
@@ -302,8 +294,9 @@ const props = defineProps({
 });
 
 const targetUser = ref(userStore.currentUser?.name || '');
-const customCommand = ref('');
 const localTracks = ref([]);
+const neteaseCredential = ref('');
+const bilibiliCredential = ref('');
 const loadingLocalTracks = ref(false);
 const localFiles = ref([]);
 const localFileInput = ref(null);
@@ -536,14 +529,14 @@ const runRevokeNavidrome = () => runAdminAction(
   t('settings.admin.navidromeRevoked')
 );
 
-const runClearQueue = () => runAdminAction(
-  () => authApi.clearQueue(adminSessionToken(), roomStore.currentRoomId),
-  t('settings.admin.queueCleared')
-);
-
-const runClearChat = () => runAdminAction(
-  () => authApi.clearChat(adminSessionToken(), roomStore.currentRoomId),
-  t('settings.admin.chatCleared')
+const updatePlatformCredential = (platform) => runAdminAction(
+  async () => {
+    const credential = platform === 'netease' ? neteaseCredential.value.trim() : bilibiliCredential.value.trim();
+    await authApi.updatePlatformCredential(platform, credential);
+    if (platform === 'netease') neteaseCredential.value = '';
+    else bilibiliCredential.value = '';
+  },
+  t('settings.admin.credentialUpdated')
 );
 
 const runSaveCustomNavidrome = () => runAdminAction(
@@ -576,13 +569,6 @@ const runTestCustomNavidrome = () => runAdminAction(
   () => authApi.testSubsonicSource(adminSessionToken(), roomStore.currentRoomId, navidromeForm.value.id.trim()),
   t('settings.admin.sourceTested')
 );
-
-const runCustomCommand = () => runAdminAction(async () => {
-  const command = customCommand.value.trim();
-  if (!command) return;
-  await authApi.adminCommand(adminSessionToken(), command, roomStore.currentRoomId);
-  customCommand.value = '';
-});
 
 watch(
   () => [props.section, userStore.role],

@@ -16,7 +16,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const InviteTTL = 7 * 24 * time.Hour
+const PermanentInviteExpiresAt int64 = 253402300799000
 
 var (
 	//lint:ignore ST1005 Java-compatible API message.
@@ -49,6 +49,7 @@ type Invite struct {
 	RoomID    string `json:"-"`
 	Label     string `json:"label"`
 	ExpiresAt int64  `json:"expiresAt"`
+	Permanent bool   `json:"permanent"`
 	UsedAt    *int64 `json:"usedAt,omitempty"`
 	RevokedAt *int64 `json:"revokedAt,omitempty"`
 	CreatedAt int64  `json:"-"`
@@ -183,7 +184,7 @@ func (s *Service) CreateInvite(ctx context.Context, roomID, token, label string)
 	}
 	secret := base64.RawURLEncoding.EncodeToString(bytes)
 	now := s.now().UnixMilli()
-	value := Invite{ID: "inv_" + strings.ReplaceAll(uuid.NewString(), "-", ""), Secret: secret, RoomID: roomID, Label: label, ExpiresAt: now + InviteTTL.Milliseconds(), CreatedAt: now}
+	value := Invite{ID: "inv_" + strings.ReplaceAll(uuid.NewString(), "-", ""), Secret: secret, RoomID: roomID, Label: label, ExpiresAt: PermanentInviteExpiresAt, Permanent: true, CreatedAt: now}
 	err := s.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, "insert into room_invite(id,room_id,created_by_public_id,secret_hash,label,expires_at,max_uses,created_at) values(?,?,?,?,?,?,1,?)", value.ID, roomID, session.PublicID, hash(secret), nullable(label), value.ExpiresAt, now)
 		return err
@@ -217,6 +218,7 @@ func (s *Service) ListInvites(ctx context.Context, roomID, token string) ([]Invi
 		if revoked.Valid {
 			value.RevokedAt = &revoked.Int64
 		}
+		value.Permanent = value.ExpiresAt == PermanentInviteExpiresAt
 		result = append(result, value)
 	}
 	return result, rows.Err()

@@ -18,12 +18,14 @@ import (
 )
 
 type Service struct {
-	client          *platform.Client
-	baseURL, cookie string
-	now             func() time.Time
-	mu              sync.Mutex
-	mixin           string
-	mixinAt         time.Time
+	client       *platform.Client
+	baseURL      string
+	credentialMu sync.RWMutex
+	cookie       string
+	now          func() time.Time
+	mu           sync.Mutex
+	mixin        string
+	mixinAt      time.Time
 }
 
 func New(client *platform.Client, baseURL, cookie string) *Service {
@@ -31,9 +33,23 @@ func New(client *platform.Client, baseURL, cookie string) *Service {
 }
 func (*Service) Name() string    { return "bilibili" }
 func (*Service) Available() bool { return true }
+func (s *Service) UpdateCredential(value string) {
+	s.credentialMu.Lock()
+	s.cookie = value
+	s.credentialMu.Unlock()
+	s.mu.Lock()
+	s.mixin = ""
+	s.mixinAt = time.Time{}
+	s.mu.Unlock()
+}
+func (s *Service) credential() string {
+	s.credentialMu.RLock()
+	defer s.credentialMu.RUnlock()
+	return s.cookie
+}
 
 func (s *Service) Search(ctx context.Context, keyword string, offset, limit int) ([]platform.Music, error) {
-	if strings.TrimSpace(s.cookie) == "" {
+	if strings.TrimSpace(s.credential()) == "" {
 		return nil, errors.New("bilibili SESSDATA is not configured")
 	}
 	page := offset/max(1, limit) + 1
@@ -53,7 +69,7 @@ func (s *Service) Search(ctx context.Context, keyword string, offset, limit int)
 			} `json:"result"`
 		} `json:"data"`
 	}
-	headers := map[string]string{"Referer": "https://www.bilibili.com/", "Cookie": cookieHeader(s.cookie), "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"}
+	headers := map[string]string{"Referer": "https://www.bilibili.com/", "Cookie": cookieHeader(s.credential()), "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"}
 	if err := s.client.JSON(ctx, s.baseURL+"/x/web-interface/wbi/search/type?"+query, headers, &response); err != nil {
 		return nil, err
 	}
@@ -126,7 +142,7 @@ func (s *Service) mixinKey(ctx context.Context) (string, error) {
 			} `json:"wbi_img"`
 		} `json:"data"`
 	}
-	headers := map[string]string{"Cookie": cookieHeader(s.cookie), "User-Agent": "Mozilla/5.0"}
+	headers := map[string]string{"Cookie": cookieHeader(s.credential()), "User-Agent": "Mozilla/5.0"}
 	if err := s.client.JSON(ctx, s.baseURL+"/x/web-interface/nav", headers, &response); err != nil {
 		return "", err
 	}
@@ -196,7 +212,7 @@ func duration(value string) int64 {
 	return seconds * 1000
 }
 func (s *Service) UserPlaylists(ctx context.Context, userID string) ([]platform.Playlist, error) {
-	if strings.TrimSpace(s.cookie) == "" {
+	if strings.TrimSpace(s.credential()) == "" {
 		return nil, errors.New("bilibili SESSDATA is not configured")
 	}
 	var response struct {
@@ -226,7 +242,7 @@ func (s *Service) UserPlaylists(ctx context.Context, userID string) ([]platform.
 	return result, nil
 }
 func (s *Service) PlaylistSongs(ctx context.Context, playlistID string, offset, limit int) ([]platform.Music, error) {
-	if strings.TrimSpace(s.cookie) == "" {
+	if strings.TrimSpace(s.credential()) == "" {
 		return nil, errors.New("bilibili SESSDATA is not configured")
 	}
 	limit = min(limit, 20)
@@ -309,7 +325,7 @@ func (s *Service) StreamURL(ctx context.Context, bvid string) (string, error) {
 }
 func (*Service) CoverURL(context.Context, string) (string, error) { return "", nil }
 func (s *Service) SearchUsers(ctx context.Context, keyword string) ([]platform.User, error) {
-	if strings.TrimSpace(s.cookie) == "" {
+	if strings.TrimSpace(s.credential()) == "" {
 		return nil, errors.New("bilibili SESSDATA is not configured")
 	}
 	query, err := s.sign(ctx, url.Values{"search_type": {"bili_user"}, "keyword": {keyword}})
@@ -340,7 +356,7 @@ func (s *Service) SearchUsers(ctx context.Context, keyword string) ([]platform.U
 }
 func (*Service) Lyric(context.Context, string) (platform.Lyric, error) { return platform.Lyric{}, nil }
 func (s *Service) headers() map[string]string {
-	return map[string]string{"Referer": "https://www.bilibili.com/", "Cookie": cookieHeader(s.cookie), "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"}
+	return map[string]string{"Referer": "https://www.bilibili.com/", "Cookie": cookieHeader(s.credential()), "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"}
 }
 
 type jsonID string

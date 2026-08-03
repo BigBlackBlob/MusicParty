@@ -92,6 +92,10 @@
             <PersonalInfoPanel @logged-out="$emit('close')" />
           </section>
 
+          <section v-else-if="activeSection === 'invites'" class="settings-section">
+            <InviteManager />
+          </section>
+
           <section v-else class="settings-section">
             <AdminSettingsPanel :section="activeSection" />
           </section>
@@ -105,6 +109,7 @@
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import AdminSettingsPanel from './AdminSettingsPanel.vue';
+import InviteManager from './InviteManager.vue';
 import PersonalInfoPanel from './PersonalInfoPanel.vue';
 import { useUiStore } from '../stores/ui';
 import { useUserStore } from '../stores/user';
@@ -135,6 +140,7 @@ const sections = computed(() => {
     baseSections[1],
     { id: 'library', icon: 'library_music', label: t('settings.admin.localLibrary') },
     { id: 'sources', icon: 'dns', label: t('settings.admin.sourceManager') },
+    { id: 'invites', icon: 'link', label: t('settings.invites.nav') },
     { id: 'admin', icon: 'admin_panel_settings', label: t('settings.admin.title') },
     baseSections[2]
   ];
