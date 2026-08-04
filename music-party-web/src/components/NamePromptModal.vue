@@ -54,8 +54,13 @@ const confirm = () => {
     errorMsg.value = t('namePrompt.errors.guestNameReserved');
     return;
   }
-  
+
   // 调用 renameUser，等待后端 socket 确认后关闭
   playerStore.renameUser(name);
+
+  // 对于访客模式，直接关闭弹窗（因为访客改名不会触发身份变更）
+  if (userStore.isGuest) {
+    userStore.showNameModal = false;
+  }
 };
 </script>

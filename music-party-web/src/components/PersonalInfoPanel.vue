@@ -531,7 +531,7 @@ const logout = async () => {
 
 .personal-info__secondary {
   border-color: var(--border-default);
-  background: var(--surface-control);
+  background: var(--surface-2);
   color: var(--text-primary);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 8%, transparent);
   /* 增加字体粗细和字号提升可读性 */
@@ -540,22 +540,22 @@ const logout = async () => {
 }
 
 .personal-info__secondary:hover {
-  background: var(--surface-control-hover);
+  background: var(--surface-1);
   color: var(--text-primary);
   border-color: var(--border-hover);
   font-weight: 900;
 }
 
 .personal-info__secondary--danger {
-  /* 增加错误色对比度 */
+  /* 使用更高对比度的错误色 */
   border-color: var(--error);
-  background: color-mix(in srgb, var(--error) 25%, var(--surface-control));
+  background: var(--error-soft-bg);
   color: var(--error-text);
   font-weight: 900;
 }
 
 .personal-info__secondary--danger:hover {
-  background: color-mix(in srgb, var(--error) 35%, var(--surface-control));
+  background: var(--error-bg);
   color: var(--error-text);
   border-color: var(--error);
 }
