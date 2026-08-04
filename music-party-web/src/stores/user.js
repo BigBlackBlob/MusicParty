@@ -31,6 +31,15 @@ export const useUserStore = defineStore('user', () => {
 
     const isGuest = ref(!storageName);
 
+    const accountType = computed(() => {
+        if (role.value === 'PLATFORM_ADMIN' || role.value === 'ADMIN') return 'admin';
+        if (isGuest.value || role.value === 'GUEST') return 'guest';
+        return 'user';
+    });
+
+    const canManageRooms = computed(() => accountType.value === 'admin');
+    const canCreatePlaylists = computed(() => true); // 访客也可以创建个人歌单（根据决策2）
+
     // 核心方法：将 SessionID 翻译成名字
     const resolveName = (id, fallbackName) => {
         if (!id) return 'Unknown';
@@ -100,9 +109,9 @@ export const useUserStore = defineStore('user', () => {
             session.sessionToken,
             session.publicId,
             session.displayName || session.username,
-            session.guest,
+            session.guest !== undefined ? session.guest : true, // 默认为访客
             session.role,
-            session.admin === true || session.role === 'ADMIN'
+            session.role === 'PLATFORM_ADMIN' || session.role === 'ADMIN'
         );
         accountLastLoginAt.value = session.lastLoginAt || null;
     };
@@ -178,7 +187,10 @@ export const useUserStore = defineStore('user', () => {
         publicId,
         role,
         accountLastLoginAt,
-        isAdmin: computed(() => role.value === 'PLATFORM_ADMIN'),
+        isAdmin: computed(() => role.value === 'PLATFORM_ADMIN' || role.value === 'ADMIN'),
+        accountType,
+        canManageRooms,
+        canCreatePlaylists,
         initAccount,
         refreshAccount,
         updateProfile,

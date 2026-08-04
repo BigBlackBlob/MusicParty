@@ -22,7 +22,7 @@ func TestSearchMapsJavaCompatibleMusic(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"Artist"}, songs[0].Artists)
 	require.Equal(t, "42", songs[0].ID)
-	require.Equal(t, "https://img.test/a.jpg?param=300y300", songs[0].CoverURL)
+	require.Equal(t, "https://img.test/a.jpg?param=1000y1000", songs[0].CoverURL)
 }
 func TestLyricDetailMapsAllVariants(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -49,5 +49,5 @@ func TestResolvePlayableReturnsCanonicalMetadataAndProxyURL(t *testing.T) {
 	require.Equal(t, []string{"中田ヤスタカ"}, playable.Artists)
 	require.Equal(t, int64(253000), playable.Duration)
 	require.Equal(t, "/api/netease/stream/28816031", playable.URL)
-	require.Equal(t, "https://img.test/cover.jpg?param=300y300", playable.CoverURL)
+	require.Equal(t, "https://img.test/cover.jpg?param=1000y1000", playable.CoverURL)
 }

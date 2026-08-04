@@ -52,6 +52,20 @@ export default {
     loginAccountPrompt: '已有账号？返回登录',
     setPasswordProtection: '启用密码保护',
     noPasswordPublic: '不设密码（公开）',
+    guestUpgradeBanner: {
+      title: '当前为访客模式',
+      description: '使用邀请码注册后可跨设备同步、保存个人歌单',
+      action: '立即注册'
+    },
+    upgradeModal: {
+      title: '升级为注册账号',
+      description: '输入邀请码将您的访客账号升级为永久账号，您的数据将会保留。',
+      inviteCodeLabel: '邀请码',
+      inviteCodePlaceholder: '输入邀请码',
+      upgrade: '升级账号',
+      upgrading: '正在升级...',
+      error: '升级失败，请检查邀请码是否有效'
+    },
     errors: {
       connectionFailed: '连接失败',
       invalidPassword: '密码错误',

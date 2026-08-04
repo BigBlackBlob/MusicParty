@@ -10,20 +10,45 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-type RoomAPI struct{ service *roomdomain.Service }
+type RoomAPI struct {
+	service      *roomdomain.Service
+	authService  *account.Service
+}
 
-func NewRoomAPI(service *roomdomain.Service) *RoomAPI { return &RoomAPI{service: service} }
+func NewRoomAPI(service *roomdomain.Service) *RoomAPI {
+	return &RoomAPI{service: service}
+}
+
+func (api *RoomAPI) SetAuthService(authService *account.Service) {
+	api.authService = authService
+}
+
 func (api *RoomAPI) Routes(r chi.Router) {
 	r.Get("/api/rooms", Adapt(api.list))
-	r.Put("/api/rooms/{roomId}", Adapt(api.update))
-	r.Delete("/api/rooms/{roomId}", Adapt(api.delete))
-	r.Post("/api/rooms/{roomId}/invites", Adapt(api.createInvite))
-	r.Get("/api/rooms/{roomId}/invites", Adapt(api.invites))
-	r.Delete("/api/rooms/{roomId}/invites/{inviteId}", Adapt(api.revokeInvite))
-	r.Get("/api/rooms/{roomId}/members", Adapt(api.members))
-	r.Delete("/api/rooms/{roomId}/members/{publicId}", Adapt(api.removeMember))
-	r.Post("/api/rooms/{roomId}/owners/{publicId}", Adapt(api.makeOwner))
-	r.Delete("/api/rooms/{roomId}/owners/{publicId}", Adapt(api.removeOwner))
+
+	// Room management requires admin
+	if api.authService != nil {
+		r.With(RequireAdmin(api.authService)).Put("/api/rooms/{roomId}", Adapt(api.update))
+		r.With(RequireAdmin(api.authService)).Delete("/api/rooms/{roomId}", Adapt(api.delete))
+		r.With(RequireAdmin(api.authService)).Post("/api/rooms/{roomId}/invites", Adapt(api.createInvite))
+		r.With(RequireAdmin(api.authService)).Get("/api/rooms/{roomId}/invites", Adapt(api.invites))
+		r.With(RequireAdmin(api.authService)).Delete("/api/rooms/{roomId}/invites/{inviteId}", Adapt(api.revokeInvite))
+		r.With(RequireAdmin(api.authService)).Get("/api/rooms/{roomId}/members", Adapt(api.members))
+		r.With(RequireAdmin(api.authService)).Delete("/api/rooms/{roomId}/members/{publicId}", Adapt(api.removeMember))
+		r.With(RequireAdmin(api.authService)).Post("/api/rooms/{roomId}/owners/{publicId}", Adapt(api.makeOwner))
+		r.With(RequireAdmin(api.authService)).Delete("/api/rooms/{roomId}/owners/{publicId}", Adapt(api.removeOwner))
+	} else {
+		// Fallback if auth service not set
+		r.Put("/api/rooms/{roomId}", Adapt(api.update))
+		r.Delete("/api/rooms/{roomId}", Adapt(api.delete))
+		r.Post("/api/rooms/{roomId}/invites", Adapt(api.createInvite))
+		r.Get("/api/rooms/{roomId}/invites", Adapt(api.invites))
+		r.Delete("/api/rooms/{roomId}/invites/{inviteId}", Adapt(api.revokeInvite))
+		r.Get("/api/rooms/{roomId}/members", Adapt(api.members))
+		r.Delete("/api/rooms/{roomId}/members/{publicId}", Adapt(api.removeMember))
+		r.Post("/api/rooms/{roomId}/owners/{publicId}", Adapt(api.makeOwner))
+		r.Delete("/api/rooms/{roomId}/owners/{publicId}", Adapt(api.removeOwner))
+	}
 }
 func (api *RoomAPI) list(w http.ResponseWriter, r *http.Request) error {
 	value, err := api.service.List(r.Context(), sessionToken(r))

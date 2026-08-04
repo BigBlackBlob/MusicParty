@@ -27,6 +27,8 @@ func (api *AuthAPI) Routes(r chi.Router) {
 	r.Get("/api/account/status", Adapt(api.status))
 	r.Post("/api/account/register", Adapt(api.register))
 	r.Post("/api/account/login", Adapt(api.login))
+	r.Post("/api/account/guest", Adapt(api.createGuest))
+	r.Post("/api/account/upgrade", Adapt(api.upgradeGuest))
 	r.Get("/api/account/me", Adapt(api.me))
 	r.Post("/api/account/logout", Adapt(api.logout))
 	r.Post("/api/account/change-password", Adapt(api.changePassword))
@@ -46,6 +48,61 @@ func (*AuthAPI) register(w http.ResponseWriter, _ *http.Request) error {
 	writeErrorJSON(w, http.StatusGone, map[string]string{"message": "Member passwords were replaced by invitation links"})
 	return nil
 }
+func (api *AuthAPI) createGuest(w http.ResponseWriter, r *http.Request) error {
+	var request struct {
+		DisplayName string `json:"displayName"`
+	}
+	if err := decodeJSONBody(r, &request); err != nil {
+		return &APIError{Status: http.StatusBadRequest, Message: "Invalid request body"}
+	}
+	session, err := api.service.CreateGuestSession(r.Context(), request.DisplayName)
+	if err != nil {
+		writeErrorJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
+		return nil
+	}
+	cookies, err := api.cookies.EstablishMember(r, session.SessionToken)
+	if err != nil {
+		return err
+	}
+	for _, cookie := range cookies {
+		http.SetCookie(w, cookie)
+	}
+	session.SessionToken = ""
+	writeJSON(w, session)
+	return nil
+}
+func (api *AuthAPI) upgradeGuest(w http.ResponseWriter, r *http.Request) error {
+	var request struct {
+		Secret string `json:"secret"`
+	}
+	if err := decodeJSONBody(r, &request); err != nil {
+		return &APIError{Status: http.StatusBadRequest, Message: "Invalid request body"}
+	}
+	session, err := api.service.UpgradeGuestToUser(r.Context(), sessionToken(r), request.Secret)
+	if err != nil {
+		status := http.StatusBadRequest
+		if err.Error() == "Unknown session token" {
+			status = http.StatusUnauthorized
+		} else if err.Error() == "session is already a registered user" {
+			status = http.StatusConflict
+		} else if err.Error() == "Invitation is invalid or expired" {
+			status = http.StatusUnauthorized
+		}
+		writeErrorJSON(w, status, map[string]string{"message": err.Error()})
+		return nil
+	}
+	cookies, err := api.cookies.EstablishMember(r, session.SessionToken)
+	if err != nil {
+		return err
+	}
+	for _, cookie := range cookies {
+		http.SetCookie(w, cookie)
+	}
+	session.SessionToken = ""
+	writeJSON(w, session)
+	return nil
+}
+
 func (api *AuthAPI) login(w http.ResponseWriter, r *http.Request) error {
 	ip := ClientIP(r)
 	if retry, blocked := api.limiter.blocked(ip); blocked {

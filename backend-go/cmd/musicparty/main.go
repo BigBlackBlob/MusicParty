@@ -129,6 +129,7 @@ func run() error {
 		authAPI = httpapi.NewAuthAPI(cfg, accountService)
 		roomService := roomdomain.New(databaseStore, accountService)
 		roomAPI = httpapi.NewRoomAPI(roomService)
+		roomAPI.SetAuthService(accountService)
 		playlistAPI = httpapi.NewPlaylistAPI(cfg, databaseStore, accountService, roomService, platformAPI)
 		adminAPI = httpapi.NewAdminAPI(databaseStore, accountService, platformClient, platformAPI)
 		var library *media.LocalLibrary

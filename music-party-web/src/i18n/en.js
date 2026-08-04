@@ -52,6 +52,20 @@ export default {
     loginAccountPrompt: 'Already have an account? Log in',
     setPasswordProtection: 'Set Password Protection',
     noPasswordPublic: 'No Password (Public)',
+    guestUpgradeBanner: {
+      title: 'Guest Mode',
+      description: 'Register with an invite code to sync across devices and save playlists',
+      action: 'Register Now'
+    },
+    upgradeModal: {
+      title: 'Upgrade to Registered Account',
+      description: 'Enter an invite code to upgrade your guest account to a permanent account. Your data will be preserved.',
+      inviteCodeLabel: 'Invite Code',
+      inviteCodePlaceholder: 'Enter invite code',
+      upgrade: 'Upgrade Account',
+      upgrading: 'Upgrading...',
+      error: 'Upgrade failed, please check if the invite code is valid'
+    },
     errors: {
       connectionFailed: 'Connection failed',
       invalidPassword: 'Invalid password',

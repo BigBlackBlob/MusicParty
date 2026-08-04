@@ -194,7 +194,7 @@ func image(raw string) string {
 		raw = "https://" + strings.TrimPrefix(raw, "http://")
 	}
 	if !strings.Contains(raw, "?") {
-		raw += "?param=300y300"
+		raw += "?param=1000y1000"
 	}
 	return raw
 }

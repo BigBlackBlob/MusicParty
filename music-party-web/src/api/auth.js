@@ -8,6 +8,8 @@ const accountTokenOptions = () => accountRequestOptions;
 
 export const authApi = {
     getAccountStatus: () => client.get('/api/account/status'),
+    createGuestSession: (displayName) => client.post('/api/account/guest', { displayName }, accountRequestOptions),
+    upgradeGuestToUser: (secret) => client.post('/api/account/upgrade', { secret }, accountRequestOptions),
     loginAccount: (username, password) => client.post('/api/account/login', { username, password }, accountRequestOptions),
     getAccountMe: () => client.get('/api/account/me', accountTokenOptions()),
     updateAccountProfile: (displayName) => client.put('/api/account/profile', { displayName }, accountTokenOptions()),

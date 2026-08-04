@@ -109,16 +109,33 @@ func (s *Service) Resolve(ctx context.Context, token string) (Session, error) {
 		return Session{}, ErrUnknownSession
 	}
 	hash := tokenHash(token)
-	row := s.store.Reader().QueryRowContext(ctx, `select a.public_id,a.username,p.display_name,a.role,a.enabled,a.last_login_at from user_session ss join user_account a on a.public_id=ss.public_id join user_profile p on p.public_id=a.public_id where ss.session_token_hash=? and a.enabled=1`, hash)
+
+	// Try to resolve as registered user (with user_account)
+	row := s.store.Reader().QueryRowContext(ctx, `select a.public_id,a.username,p.display_name,a.role,a.enabled,a.last_login_at,p.is_guest from user_session ss join user_account a on a.public_id=ss.public_id join user_profile p on p.public_id=a.public_id where ss.session_token_hash=? and a.enabled=1`, hash)
 	var result Session
 	var last sql.NullInt64
-	if err := row.Scan(&result.PublicID, &result.Username, &result.DisplayName, &result.Role, &result.Enabled, &last); err != nil {
+	var isGuest int
+	err := row.Scan(&result.PublicID, &result.Username, &result.DisplayName, &result.Role, &result.Enabled, &last, &isGuest)
+	if err == nil {
+		result.SessionToken = token
+		result.Guest = isGuest == 1
+		if last.Valid {
+			result.LastLoginAt = &last.Int64
+		}
+		return result, nil
+	}
+
+	// Try to resolve as guest (no user_account)
+	row = s.store.Reader().QueryRowContext(ctx, `select p.public_id,p.display_name,p.is_guest from user_session ss join user_profile p on p.public_id=ss.public_id where ss.session_token_hash=?`, hash)
+	err = row.Scan(&result.PublicID, &result.DisplayName, &isGuest)
+	if err != nil {
 		return Session{}, ErrUnknownSession
 	}
 	result.SessionToken = token
-	if last.Valid {
-		result.LastLoginAt = &last.Int64
-	}
+	result.Username = ""
+	result.Role = "GUEST"
+	result.Guest = true
+	result.Enabled = true
 	return result, nil
 }
 func (s *Service) Login(ctx context.Context, username, password string) (Session, error) {
@@ -210,6 +227,71 @@ func (s *Service) ChangePassword(ctx context.Context, token, current, next strin
 		return err
 	})
 }
+func (s *Service) UpgradeGuestToUser(ctx context.Context, guestToken, inviteSecret string) (Session, error) {
+	guestSession, err := s.Resolve(ctx, guestToken)
+	if err != nil {
+		return Session{}, err
+	}
+	if !guestSession.Guest {
+		return Session{}, errors.New("session is already a registered user")
+	}
+	if strings.TrimSpace(inviteSecret) == "" {
+		return Session{}, errInvalidInvite
+	}
+
+	now := s.now().UnixMilli()
+	newToken := uuid.NewString()
+	username := "member_" + strings.TrimPrefix(guestSession.PublicID, "u_")
+	passwordBytes := make([]byte, 32)
+	if _, err := rand.Read(passwordBytes); err != nil {
+		return Session{}, err
+	}
+	passwordHash, err := security.HashPassword(base64.RawURLEncoding.EncodeToString(passwordBytes))
+	if err != nil {
+		return Session{}, err
+	}
+
+	err = s.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		var inviteID, roomID string
+		err := tx.QueryRowContext(ctx, "select id,room_id from room_invite where secret_hash=? and used_at is null and revoked_at is null and expires_at>=?", tokenHash(inviteSecret), now).Scan(&inviteID, &roomID)
+		if err != nil {
+			return errInvalidInvite
+		}
+		result, err := tx.ExecContext(ctx, "update room_invite set used_at=?,used_by_public_id=?,revoked_at=? where id=? and used_at is null and revoked_at is null and expires_at>=?", now, guestSession.PublicID, now, inviteID, now)
+		if err != nil {
+			return err
+		}
+		rows, _ := result.RowsAffected()
+		if rows != 1 {
+			return errInvalidInvite
+		}
+
+		// Create user_account for the guest
+		if _, err = tx.ExecContext(ctx, "insert into user_account(username,public_id,password_hash,role,enabled,created_at,updated_at,last_login_at) values(?,?,?,'MEMBER',1,?,?,?)", username, guestSession.PublicID, passwordHash, now, now, now); err != nil {
+			return err
+		}
+
+		// Update profile to mark as non-guest and set current room
+		if _, err = tx.ExecContext(ctx, "update user_profile set is_guest=0,current_room_id=?,last_seen_at=? where public_id=?", roomID, now, guestSession.PublicID); err != nil {
+			return err
+		}
+
+		// Create room membership
+		if _, err = tx.ExecContext(ctx, "insert into room_membership(room_id,public_id,role,created_at,updated_at) values(?,?,'MEMBER',?,?)", roomID, guestSession.PublicID, now, now); err != nil {
+			return err
+		}
+
+		// Create new session token
+		_, err = tx.ExecContext(ctx, "insert into user_session(session_token_hash,public_id,created_at,last_seen_at) values(?,?,?,?)", tokenHash(newToken), guestSession.PublicID, now, now)
+		return err
+	})
+	if err != nil {
+		return Session{}, err
+	}
+
+	return Session{SessionToken: newToken, PublicID: guestSession.PublicID, Username: username, DisplayName: guestSession.DisplayName, Role: "MEMBER", Guest: false, Enabled: true, LastLoginAt: &now}, nil
+}
+
 func (s *Service) RedeemInvite(ctx context.Context, secret, displayName string) (Session, error) {
 	displayName, err := normalizeDisplayName(displayName)
 	if err != nil {
@@ -260,6 +342,27 @@ func (s *Service) RedeemInvite(ctx context.Context, secret, displayName string) 
 		return Session{}, err
 	}
 	return Session{SessionToken: token, PublicID: publicID, Username: "", DisplayName: displayName, Role: "MEMBER", Enabled: true, LastLoginAt: &now}, nil
+}
+func (s *Service) CreateGuestSession(ctx context.Context, displayName string) (Session, error) {
+	displayName, err := normalizeDisplayName(displayName)
+	if err != nil {
+		return Session{}, err
+	}
+	now := s.now().UnixMilli()
+	token := uuid.NewString()
+	publicID := "u_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
+
+	err = s.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, "insert into user_profile(public_id,display_name,is_guest,current_room_id,created_at,last_seen_at) values(?,?,1,'lounge',?,?)", publicID, displayName, now, now); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, "insert into user_session(session_token_hash,public_id,created_at,last_seen_at) values(?,?,?,?)", tokenHash(token), publicID, now, now)
+		return err
+	})
+	if err != nil {
+		return Session{}, err
+	}
+	return Session{SessionToken: token, PublicID: publicID, Username: "", DisplayName: displayName, Role: "GUEST", Guest: true, Enabled: true, LastLoginAt: &now}, nil
 }
 func (s *Service) InviteMetadata(ctx context.Context, secret string) InviteMetadata {
 	var value InviteMetadata
