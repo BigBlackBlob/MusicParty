@@ -534,25 +534,28 @@ const logout = async () => {
   background: var(--surface-control);
   color: var(--text-primary);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 8%, transparent);
-  /* 增加字体粗细提升可读性 */
-  font-weight: 700;
+  /* 增加字体粗细和字号提升可读性 */
+  font-weight: 800;
+  font-size: 13px;
 }
 
 .personal-info__secondary:hover {
   background: var(--surface-control-hover);
   color: var(--text-primary);
   border-color: var(--border-hover);
+  font-weight: 900;
 }
 
 .personal-info__secondary--danger {
-  border-color: color-mix(in srgb, var(--error) 50%, var(--border-default));
-  background: color-mix(in srgb, var(--error) 20%, var(--surface-control));
+  /* 增加错误色对比度 */
+  border-color: var(--error);
+  background: color-mix(in srgb, var(--error) 25%, var(--surface-control));
   color: var(--error-text);
   font-weight: 900;
 }
 
 .personal-info__secondary--danger:hover {
-  background: color-mix(in srgb, var(--error) 30%, var(--surface-control));
+  background: color-mix(in srgb, var(--error) 35%, var(--surface-control));
   color: var(--error-text);
   border-color: var(--error);
 }
