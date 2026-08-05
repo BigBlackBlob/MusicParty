@@ -2,4 +2,5 @@
 *.cmd text eol=crlf
 /contracts/** text eol=lf
 /backend-go/** text eol=lf
+/music-party-web/src/contracts/generated/** text eol=lf
 /.github/workflows/go-backend*.yml text eol=lf
