@@ -34,6 +34,13 @@ import (
 	wsruntime "github.com/BigBlackBlob/MusicParty/backend-go/internal/ws"
 )
 
+const (
+	proxyMaxIdleConnections        = 64
+	proxyMaxIdleConnectionsPerHost = 16
+	proxyIdleConnectionTimeout     = 90 * time.Second
+	proxyResponseHeaderTimeout     = 15 * time.Second
+)
+
 func main() {
 	if err := run(); err != nil {
 		slog.Error("musicparty stopped", "error", err)
@@ -42,6 +49,9 @@ func main() {
 }
 
 func run() error {
+	applicationContext, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	cfg, err := config.Load(os.LookupEnv)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
@@ -51,51 +61,20 @@ func run() error {
 
 	health := observability.NewHealth()
 	metrics := observability.NewMetrics()
-	var databaseStore *storesqlite.Store
-	if cfg.Database.Enabled {
-		databaseContext, cancelDatabase := context.WithTimeout(context.Background(), cfg.Database.ConnectionTimeout)
-		databaseStore, err = storesqlite.OpenStore(databaseContext, storesqlite.StoreConfig{
-			Path:               cfg.Database.Path,
-			BusyTimeout:        cfg.Database.BusyTimeout,
-			ReadConnections:    cfg.Performance.DBReadThreads,
-			WriteQueueCapacity: cfg.Performance.DBWriteQueueCapacity,
-		})
-		if err == nil {
-			err = storesqlite.EnsureCompatibleSchema(databaseContext, databaseStore, cfg.Database.InitSchema)
-		}
-		cancelDatabase()
-		if err != nil {
-			if databaseStore != nil {
-				_ = databaseStore.Close()
-			}
-			return fmt.Errorf("initialize SQLite storage: %w", err)
-		}
-		if err := ensureSystemRoom(context.Background(), databaseStore); err != nil {
-			return fmt.Errorf("ensure system room: %w", err)
-		}
+	databaseStore, err := openDatabase(applicationContext, cfg)
+	if err != nil {
+		return err
+	}
+	if databaseStore != nil {
 		defer func() {
 			if closeErr := databaseStore.Close(); closeErr != nil {
 				logger.Error("close SQLite storage", "error", closeErr)
 			}
 		}()
 	}
-	neteaseCookie := cfg.Platforms.Netease.Cookie
-	bilibiliCookie := cfg.Platforms.Bilibili.Sessdata
-	navidromeAllowedUsers := cfg.Platforms.Navidrome.AllowedUsers
-	if databaseStore != nil {
-		settings := storesqlite.NewSiteSettingRepository(databaseStore)
-		neteaseCookie, err = settingOrDefault(context.Background(), settings, "netease.cookie", neteaseCookie)
-		if err != nil {
-			return fmt.Errorf("load Netease cookie setting: %w", err)
-		}
-		bilibiliCookie, err = settingOrDefault(context.Background(), settings, "bilibili.sessdata", bilibiliCookie)
-		if err != nil {
-			return fmt.Errorf("load Bilibili cookie setting: %w", err)
-		}
-		navidromeAllowedUsers, err = settingValue(context.Background(), settings, "navidrome.allowed-users", navidromeAllowedUsers)
-		if err != nil {
-			return fmt.Errorf("load Navidrome allowed users setting: %w", err)
-		}
+	neteaseCookie, bilibiliCookie, navidromeAllowedUsers, err := loadPlatformSettings(applicationContext, cfg, databaseStore)
+	if err != nil {
+		return err
 	}
 	platformClient := platform.NewClient(15 * time.Second)
 	services := []platform.Service{
@@ -122,13 +101,13 @@ func run() error {
 	if databaseStore != nil {
 		accountService := accountdomain.New(databaseStore)
 		if cfg.Application.BootstrapAdminUsername != "" || cfg.Application.BootstrapAdminPassword != "" {
-			if err := accountService.Bootstrap(context.Background(), cfg.Application.BootstrapAdminUsername, cfg.Application.BootstrapAdminPassword); err != nil {
+			if err := accountService.Bootstrap(applicationContext, cfg.Application.BootstrapAdminUsername, cfg.Application.BootstrapAdminPassword); err != nil {
 				return fmt.Errorf("bootstrap administrator: %w", err)
 			}
 		}
 		authAPI = httpapi.NewAuthAPI(cfg, accountService)
 		roomService := roomdomain.New(databaseStore, accountService)
-		roomAPI = httpapi.NewRoomAPI(roomService)
+		roomAPI = httpapi.NewRoomAPI(roomService, cfg)
 		roomAPI.SetAuthService(accountService)
 		playlistAPI = httpapi.NewPlaylistAPI(cfg, databaseStore, accountService, roomService, platformAPI)
 		adminAPI = httpapi.NewAdminAPI(databaseStore, accountService, platformClient, platformAPI)
@@ -142,7 +121,7 @@ func run() error {
 				return fmt.Errorf("initialize local media library: %w", libraryErr)
 			}
 		}
-		proxyClient := &http.Client{Transport: &http.Transport{Proxy: http.ProxyFromEnvironment, MaxIdleConns: 64, MaxIdleConnsPerHost: 16, IdleConnTimeout: 90 * time.Second, ResponseHeaderTimeout: 15 * time.Second}}
+		proxyClient := newProxyClient()
 		cacheBytes, sizeErr := media.ParseByteSize(cfg.Cache.MaxSize)
 		if sizeErr != nil {
 			return fmt.Errorf("parse media cache size: %w", sizeErr)
@@ -160,7 +139,7 @@ func run() error {
 		accounts := storesqlite.NewUserAccountRepository(databaseStore)
 		platformAPI.SetAccess("navidrome", sessionAccess(profiles, accounts, navidromeAllowedUsers))
 		platformAPI.SetAccess("subsonic-"+cfg.Platforms.Squidify.ID+"@lounge", sessionAccess(profiles, accounts, cfg.Platforms.Squidify.AllowedUsers))
-		dynamicServices, dynamicAccess, loadErr := loadSubsonicServices(context.Background(), databaseStore, platformClient)
+		dynamicServices, dynamicAccess, loadErr := loadSubsonicServices(applicationContext, databaseStore, platformClient)
 		if loadErr != nil {
 			return fmt.Errorf("load Subsonic sources: %w", loadErr)
 		}
@@ -171,7 +150,9 @@ func run() error {
 			platformAPI.SetAccess(name, sessionAccess(profiles, accounts, allowed))
 		}
 		socketHub = wsruntime.NewHub(cfg.Performance.WebSocketClientQueueCapacity)
-		realtimeManager = realtime.NewManager(databaseStore, cfg.Performance.RoomCommandQueueCapacity, cfg.Performance.RoomCommandQueueTimeout, cfg.Player.RoomEvictionIdle, socketHub, socketHub.Online)
+		authAPI.SetSessionCloser(socketHub)
+		authAPI.SetSessionPresenceUpdater(socketHub)
+		realtimeManager = realtime.NewManager(databaseStore, cfg.Performance.RoomCommandQueueCapacity, cfg.Performance.RoomCommandQueueTimeout, cfg.Player.RoomEvictionIdle, socketHub)
 		defer realtimeManager.Close()
 		defer socketHub.Close()
 		playlistAPI.SetRealtime(realtimeManager)
@@ -188,6 +169,69 @@ func run() error {
 	} else {
 		handler = httpapi.NewHandler(cfg, logger, health, metrics, platformAPI, staticAPI)
 	}
+	return serve(applicationContext, cfg, handler, health, logger)
+}
+
+func openDatabase(ctx context.Context, cfg config.Config) (*storesqlite.Store, error) {
+	if !cfg.Database.Enabled {
+		return nil, nil
+	}
+	databaseContext, cancel := context.WithTimeout(ctx, cfg.Database.ConnectionTimeout)
+	defer cancel()
+	store, err := storesqlite.OpenStore(databaseContext, storesqlite.StoreConfig{
+		Path:               cfg.Database.Path,
+		BusyTimeout:        cfg.Database.BusyTimeout,
+		ReadConnections:    cfg.Performance.DBReadThreads,
+		WriteQueueCapacity: cfg.Performance.DBWriteQueueCapacity,
+	})
+	if err == nil {
+		err = storesqlite.EnsureCompatibleSchema(databaseContext, store, cfg.Database.InitSchema)
+	}
+	if err != nil {
+		if store != nil {
+			_ = store.Close()
+		}
+		return nil, fmt.Errorf("initialize SQLite storage: %w", err)
+	}
+	if err := ensureSystemRoom(ctx, store); err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("ensure system room: %w", err)
+	}
+	return store, nil
+}
+
+func loadPlatformSettings(ctx context.Context, cfg config.Config, store *storesqlite.Store) (string, string, string, error) {
+	neteaseCookie := cfg.Platforms.Netease.Cookie
+	bilibiliCookie := cfg.Platforms.Bilibili.Sessdata
+	navidromeAllowedUsers := cfg.Platforms.Navidrome.AllowedUsers
+	if store == nil {
+		return neteaseCookie, bilibiliCookie, navidromeAllowedUsers, nil
+	}
+	settings := storesqlite.NewSiteSettingRepository(store)
+	var err error
+	if neteaseCookie, err = settingOrDefault(ctx, settings, "netease.cookie", neteaseCookie); err != nil {
+		return "", "", "", fmt.Errorf("load Netease cookie setting: %w", err)
+	}
+	if bilibiliCookie, err = settingOrDefault(ctx, settings, "bilibili.sessdata", bilibiliCookie); err != nil {
+		return "", "", "", fmt.Errorf("load Bilibili cookie setting: %w", err)
+	}
+	if navidromeAllowedUsers, err = settingValue(ctx, settings, "navidrome.allowed-users", navidromeAllowedUsers); err != nil {
+		return "", "", "", fmt.Errorf("load Navidrome allowed users setting: %w", err)
+	}
+	return neteaseCookie, bilibiliCookie, navidromeAllowedUsers, nil
+}
+
+func newProxyClient() *http.Client {
+	return &http.Client{Transport: &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
+		MaxIdleConns:          proxyMaxIdleConnections,
+		MaxIdleConnsPerHost:   proxyMaxIdleConnectionsPerHost,
+		IdleConnTimeout:       proxyIdleConnectionTimeout,
+		ResponseHeaderTimeout: proxyResponseHeaderTimeout,
+	}}
+}
+
+func serve(ctx context.Context, cfg config.Config, handler http.Handler, health *observability.Health, logger *slog.Logger) error {
 	server := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Server.Port),
 		Handler:           handler,
@@ -204,10 +248,8 @@ func run() error {
 	serverErrors := make(chan error, 1)
 	go func() { serverErrors <- server.Serve(listener) }()
 
-	signalContext, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	select {
-	case <-signalContext.Done():
+	case <-ctx.Done():
 		logger.Info("shutdown requested")
 	case serveErr := <-serverErrors:
 		if !errors.Is(serveErr, http.ErrServerClosed) {

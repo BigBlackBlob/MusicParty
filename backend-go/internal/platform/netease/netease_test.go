@@ -29,7 +29,7 @@ func TestLyricDetailMapsAllVariants(t *testing.T) {
 		_, _ = w.Write([]byte(`{"lrc":{"lyric":"a"},"tlyric":{"lyric":"b"},"romalrc":{"lyric":"c"}}`))
 	}))
 	defer server.Close()
-	service := New(&platform.Client{HTTP: server.Client(), Retries: 0, MaxBody: 1024}, server.URL, "")
+	service := New(&platform.Client{HTTP: server.Client(), Retries: 0, MaxBody: 1024}, server.URL, "secret")
 	value, err := service.Lyric(context.Background(), "1")
 	require.NoError(t, err)
 	require.Equal(t, platform.Lyric{Lyric: "a", TranslatedLyric: "b", RomanizedLyric: "c"}, value)
@@ -42,7 +42,7 @@ func TestResolvePlayableReturnsCanonicalMetadataAndProxyURL(t *testing.T) {
 		_, _ = w.Write([]byte(`{"songs":[{"id":28816031,"name":"Cling Cling","dt":253000,"ar":[{"name":"中田ヤスタカ"}],"al":{"picUrl":"http://img.test/cover.jpg"}}]}`))
 	}))
 	defer server.Close()
-	service := New(&platform.Client{HTTP: server.Client(), Retries: 0, MaxBody: 2048}, server.URL, "")
+	service := New(&platform.Client{HTTP: server.Client(), Retries: 0, MaxBody: 2048}, server.URL, "secret")
 	playable, err := service.ResolvePlayable(context.Background(), "28816031")
 	require.NoError(t, err)
 	require.Equal(t, "Cling Cling", playable.Name)
@@ -50,4 +50,20 @@ func TestResolvePlayableReturnsCanonicalMetadataAndProxyURL(t *testing.T) {
 	require.Equal(t, int64(253000), playable.Duration)
 	require.Equal(t, "/api/netease/stream/28816031", playable.URL)
 	require.Equal(t, "https://img.test/cover.jpg?param=1000y1000", playable.CoverURL)
+}
+
+func TestMissingCookieDoesNotCallUpstream(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		calls++
+	}))
+	defer server.Close()
+
+	service := New(&platform.Client{HTTP: server.Client(), Retries: 0, MaxBody: 1024}, server.URL, "")
+	_, err := service.Search(context.Background(), "contract", 0, 20)
+
+	var credentialErr *platform.CredentialNotConfiguredError
+	require.ErrorAs(t, err, &credentialErr)
+	require.Equal(t, "netease", credentialErr.Platform)
+	require.Zero(t, calls)
 }

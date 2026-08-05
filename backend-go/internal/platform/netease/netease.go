@@ -35,9 +35,11 @@ func (s *Service) credential() string {
 }
 
 func (s *Service) get(ctx context.Context, path string, query url.Values, target any) error {
-	if credential := s.credential(); credential != "" {
-		query.Set("cookie", credential)
+	credential := strings.TrimSpace(s.credential())
+	if credential == "" {
+		return &platform.CredentialNotConfiguredError{Platform: s.Name()}
 	}
+	query.Set("cookie", credential)
 	return s.client.JSON(ctx, s.baseURL+path+"?"+query.Encode(), nil, target)
 }
 

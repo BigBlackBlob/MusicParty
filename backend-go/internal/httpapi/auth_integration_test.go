@@ -55,6 +55,41 @@ func TestAccountCookieAndCSRFFlow(t *testing.T) {
 	require.Equal(t, 200, updated.Code)
 	require.Contains(t, updated.Body.String(), "新名称")
 }
+
+type sessionCloserSpy struct{ tokens []string }
+
+func (s *sessionCloserSpy) CloseSession(token string) { s.tokens = append(s.tokens, token) }
+
+func TestLogoutRevokesRealtimeSession(t *testing.T) {
+	store := httpStore(t)
+	service := account.New(store)
+	require.NoError(t, service.Bootstrap(context.Background(), "admin", "strong-password"))
+	cfg := testConfig(t)
+	api := NewAuthAPI(cfg, service)
+	closer := &sessionCloserSpy{}
+	api.SetSessionCloser(closer)
+	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
+
+	login := httptest.NewRequest(http.MethodPost, "/api/account/login", strings.NewReader(`{"username":"admin","password":"strong-password"}`))
+	login.Header.Set("Content-Type", "application/json")
+	loginResponse := httptest.NewRecorder()
+	handler.ServeHTTP(loginResponse, login)
+	require.Equal(t, http.StatusOK, loginResponse.Code)
+	cookies := map[string]*http.Cookie{}
+	for _, cookie := range loginResponse.Result().Cookies() {
+		cookies[cookie.Name] = cookie
+	}
+
+	logout := httptest.NewRequest(http.MethodPost, "/api/account/logout", nil)
+	logout.AddCookie(cookies[SessionCookieName])
+	logout.AddCookie(cookies[CSRFCookieName])
+	logout.Header.Set(CSRFHeaderName, cookies[CSRFCookieName].Value)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, logout)
+
+	require.Equal(t, http.StatusNoContent, response.Code)
+	require.Equal(t, []string{cookies[SessionCookieName].Value}, closer.tokens)
+}
 func httpStore(t *testing.T) *storesqlite.Store {
 	t.Helper()
 	store, err := storesqlite.OpenStore(context.Background(), storesqlite.StoreConfig{Path: filepath.Join(t.TempDir(), "http.db"), BusyTimeout: time.Second, ReadConnections: 2})

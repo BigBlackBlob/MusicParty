@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,14 +16,32 @@ import (
 )
 
 type AuthAPI struct {
-	service *account.Service
-	cookies CookieFactory
-	limiter *loginLimiter
+	service       *account.Service
+	cookies       CookieFactory
+	limiter       *loginLimiter
+	sessionCloser sessionCloser
+	presence      sessionPresenceUpdater
+}
+
+type sessionCloser interface {
+	CloseSession(string)
+}
+
+type sessionPresenceUpdater interface {
+	UpdateUserSession(account.Session)
 }
 
 func NewAuthAPI(cfg config.Config, service *account.Service) *AuthAPI {
 	return &AuthAPI{service: service, cookies: CookieFactory{SecureCookies: cfg.Auth.SecureCookies}, limiter: newLoginLimiter(cfg)}
 }
+
+// SetSessionCloser lets the realtime hub revoke existing WebSocket clients
+// when an HTTP logout or password reset invalidates their cookie session.
+func (api *AuthAPI) SetSessionCloser(closer sessionCloser) { api.sessionCloser = closer }
+
+// SetSessionPresenceUpdater propagates profile changes to existing room
+// connections without making the frontend infer identity from stale data.
+func (api *AuthAPI) SetSessionPresenceUpdater(updater sessionPresenceUpdater) { api.presence = updater }
 func (api *AuthAPI) Routes(r chi.Router) {
 	r.Get("/api/account/status", Adapt(api.status))
 	r.Post("/api/account/register", Adapt(api.register))
@@ -152,7 +171,7 @@ func (api *AuthAPI) me(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 func (api *AuthAPI) logout(w http.ResponseWriter, r *http.Request) error {
-	if err := api.service.Logout(r.Context(), sessionToken(r)); err != nil {
+	if err := api.logoutSession(r.Context(), sessionToken(r)); err != nil {
 		return err
 	}
 	for _, cookie := range api.cookies.Clear(r) {
@@ -180,11 +199,21 @@ func (api *AuthAPI) changePassword(w http.ResponseWriter, r *http.Request) error
 		writeErrorJSON(w, status, map[string]string{"message": err.Error()})
 		return nil
 	}
-	_ = api.service.Logout(r.Context(), sessionToken(r))
+	_ = api.logoutSession(r.Context(), sessionToken(r))
 	for _, cookie := range api.cookies.Clear(r) {
 		http.SetCookie(w, cookie)
 	}
 	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+func (api *AuthAPI) logoutSession(ctx context.Context, token string) error {
+	if err := api.service.Logout(ctx, token); err != nil {
+		return err
+	}
+	if api.sessionCloser != nil {
+		api.sessionCloser.CloseSession(token)
+	}
 	return nil
 }
 func (api *AuthAPI) profile(w http.ResponseWriter, r *http.Request) error {
@@ -204,6 +233,9 @@ func (api *AuthAPI) profile(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	session.SessionToken = ""
+	if api.presence != nil {
+		api.presence.UpdateUserSession(session)
+	}
 	writeJSON(w, session)
 	return nil
 }
