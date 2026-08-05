@@ -176,8 +176,8 @@ const sections = computed(() => {
   const result = [...baseSections];
   if (canManageCurrentRoom.value) {
     result.push({ id: 'room', icon: 'meeting_room', label: t('settings.currentRoom') });
-    if (currentRoomCapabilities.value.canManageInvites) result.push({ id: 'invites', icon: 'link', label: t('settings.invites.nav') });
   }
+  if (currentRoomCapabilities.value.canManageInvites) result.push({ id: 'invites', icon: 'link', label: t('settings.invites.nav') });
   if (user.capabilities.canManageSite) result.push(
     { id: 'library', icon: 'library_music', label: t('settings.admin.localLibrary') },
     { id: 'sources', icon: 'dns', label: t('settings.admin.sourceManager') },
