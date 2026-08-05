@@ -1,5 +1,6 @@
 import { storeToRefs } from 'pinia'
 import { defineStore } from 'pinia'
+import { watch } from 'vue'
 import { useRoomPlaylistsStore } from '../../stores/roomPlaylists'
 import { useChatStore } from '../../stores/chat'
 import { useRoomStore } from '../../stores/room'
@@ -42,6 +43,15 @@ export const useRoomRealtimeCoordinator = defineStore('room-realtime-coordinator
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let pingTimer: ReturnType<typeof setInterval> | null = null
   let switchOriginRoomId: string | null = null
+
+  watch(
+    () => {
+      const music = runtime.nowPlaying?.music
+      return music ? `${music.platform}:${music.id}` : ''
+    },
+    () => { void lyrics.load(runtime.nowPlaying?.music) },
+    { immediate: true },
+  )
 
   function requestPing(reason = 'manual', force = false): boolean {
     const now = Date.now()
