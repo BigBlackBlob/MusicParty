@@ -1,82 +1,50 @@
-# ============================
-# Stage 1: Build Frontend (Vue)
-# ============================
-FROM node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2 AS frontend-builder
-WORKDIR /app/frontend
+FROM node:22-alpine AS frontend-builder
+WORKDIR /src/music-party-web
+COPY music-party-web/package.json music-party-web/pnpm-lock.yaml music-party-web/pnpm-workspace.yaml ./
+RUN corepack enable && pnpm install --frozen-lockfile
+COPY music-party-web/ ./
+RUN pnpm build
 
-ARG APP_AUTHOR_NAME="ThorNex"
-ARG APP_BACK_WORDS="THORNEX"
+FROM golang:1.26.5-alpine AS backend-builder
+WORKDIR /src/backend-go
+COPY backend-go/go.mod backend-go/go.sum ./
+RUN go mod download
+COPY backend-go/ ./
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/musicparty ./cmd/musicparty \
+    && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/dbsnapshot ./cmd/dbsnapshot \
+    && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/dbcheck ./cmd/dbcheck
 
-ENV VITE_APP_AUTHOR_NAME=${APP_AUTHOR_NAME}
-ENV VITE_APP_BACK_WORDS=${APP_BACK_WORDS}
+FROM alpine:3.23
 
-# 复制前端项目定义文件
-COPY music-party-web/package*.json ./
-# 安装依赖
-RUN npm ci
+ARG OCI_SOURCE="https://github.com/BigBlackBlob/MusicParty"
+ARG OCI_REVISION="unknown"
+ARG OCI_CREATED="unknown"
+ARG OCI_VERSION="dev"
 
-# 复制前端源代码
-COPY music-party-web/ .
-# 编译生产环境代码
-RUN npm run build
+LABEL org.opencontainers.image.source=$OCI_SOURCE \
+      org.opencontainers.image.revision=$OCI_REVISION \
+      org.opencontainers.image.created=$OCI_CREATED \
+      org.opencontainers.image.version=$OCI_VERSION
 
-# ============================
-# Stage 2: Build Backend (Spring Boot)
-# ============================
-FROM maven:3.9-eclipse-temurin-21-alpine@sha256:d88e5b38297858f65f97bc7e7964c760ab988fd18ace41589176f1468c49a489 AS backend-builder
-WORKDIR /app/backend
-
-# 复制 Maven 依赖定义
-COPY pom.xml .
-# 预下载依赖 (利用缓存，加速构建)
-RUN mvn dependency:go-offline -B
-
-# 复制后端源代码
-COPY src ./src
-
-# Spring Boot 默认会服务 static 目录下的 index.html
-COPY --from=frontend-builder /app/frontend/dist ./src/main/resources/static/
-
-# 编译 JAR 包，跳过测试
-RUN mvn clean package -DskipTests
-
-# ============================
-# Stage 3: Runtime Image
-# ============================
-FROM eclipse-temurin:21-jre-alpine@sha256:3f08b13888f595cc49edabea7250ba69499ba25602b267da591720769400e08c
 WORKDIR /app
 
-# 安装 FFmpeg 和 Java AWT 运行所需的图形库/字体
-RUN apk add --no-cache \
-    ffmpeg \
-    python3 \
-    py3-pip \
-    fontconfig \
-    ttf-dejavu \
-    libxext \
-    libxrender \
-    libxtst \
-    libxi \
-    && pip3 install --no-cache-dir --break-system-packages -U yt-dlp
-
-# 复制构建好的 JAR 包
-COPY --from=backend-builder /app/backend/target/*.jar app.jar
-
-# 创建非 root 用户并切换
-RUN addgroup -S appgroup && adduser -S -G appgroup appuser \
-    && mkdir -p /app/data \
+RUN apk add --no-cache ca-certificates ffmpeg python3 py3-pip tzdata wget \
+    && pip3 install --no-cache-dir --break-system-packages -U yt-dlp \
+    && addgroup -S -g 10001 appgroup \
+    && adduser -S -D -H -u 10001 -G appgroup appuser \
+    && mkdir -p /app/data /app/cached_media /app/static \
     && chown -R appuser:appgroup /app
-USER appuser
 
-# 暴露端口
+COPY --from=backend-builder /out/musicparty /app/musicparty
+COPY --from=backend-builder /out/dbsnapshot /app/dbsnapshot
+COPY --from=backend-builder /out/dbcheck /app/dbcheck
+COPY --from=frontend-builder /src/music-party-web/dist /app/static
+
+ENV STATIC_PATH=/app/static
+USER 10001:10001
 EXPOSE 8080
 
-# 默认按容器内存收敛 JVM heap，并使用适合服务端长运行的 G1。
-ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=50 -XX:+UseG1GC -Dreactor.schedulers.defaultBoundedElasticSize=64"
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:8080/actuator/health/readiness >/dev/null 2>&1 || exit 1
 
-# 健康检查
-HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:8080/actuator/health >/dev/null 2>&1 || wget -qO- http://127.0.0.1:8080/ >/dev/null 2>&1 || exit 1
-
-# 启动命令
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["/app/musicparty"]

@@ -7,15 +7,14 @@ Usage: cutover.sh preflight|snapshot|verify [snapshot-path]
 
 Required environment:
   MUSIC_PARTY_IMAGE  Immutable Go image reference containing @sha256:
-  MUSIC_PARTY_RUNTIME_UID  Numeric uid recorded from the Java container
-  MUSIC_PARTY_RUNTIME_GID  Numeric gid recorded from the Java container
 
 Optional environment:
+  MUSIC_PARTY_RUNTIME_UID  Runtime uid (default: 10001)
+  MUSIC_PARTY_RUNTIME_GID  Runtime gid (default: 10001)
   DATA_DIR           Host data directory (default: ./music_party/data)
   COMPOSE_FILE       Base compose file (default: ./docker-compose.yml)
-  GO_COMPOSE_FILE    Go override (default: ./backend-go/deploy/compose.go.yml)
   CONTAINER_NAME     Application container (default: music-party-app)
-  BACKUP_DIR         Snapshot directory (default: ./music_party/backups/go-cutover)
+  BACKUP_DIR         Snapshot directory (default: ./music_party/backups)
 
 snapshot additionally requires MUSICPARTY_MAINTENANCE_CONFIRMED=YES and the
 application container to be stopped. Existing files are never overwritten.
@@ -63,7 +62,6 @@ preflight() {
   require_numeric_id MUSIC_PARTY_RUNTIME_GID "${MUSIC_PARTY_RUNTIME_GID:-}"
   docker compose version >/dev/null
   [ -f "$COMPOSE_FILE" ] || fail "compose file not found: $COMPOSE_FILE"
-  [ -f "$GO_COMPOSE_FILE" ] || fail "Go compose override not found: $GO_COMPOSE_FILE"
   data_absolute=$(absolute_dir "$DATA_DIR")
   [ -f "$data_absolute/musicparty.db" ] || fail "database not found: $data_absolute/musicparty.db"
   [ -w "$data_absolute" ] || fail "data directory is not writable by the operator: $data_absolute"
@@ -73,8 +71,8 @@ preflight() {
     --mount "type=bind,src=$data_absolute,dst=/data" \
     --entrypoint /bin/sh \
     "$MUSIC_PARTY_IMAGE" -c 'test -r /data/musicparty.db && test -w /data/musicparty.db && test -w /data' \
-    || fail "recorded Java uid/gid cannot write the database and data directory"
-  docker compose -f "$COMPOSE_FILE" -f "$GO_COMPOSE_FILE" config --quiet
+    || fail "configured runtime uid/gid cannot write the database and data directory"
+  docker compose -f "$COMPOSE_FILE" config --quiet
   printf '%s\n' "preflight passed"
 }
 
@@ -87,7 +85,7 @@ snapshot() {
   mkdir -p "$BACKUP_DIR"
   backup_absolute=$(absolute_dir "$BACKUP_DIR")
   timestamp=$(date -u +%Y%m%dT%H%M%SZ)
-  snapshot_name="musicparty-pre-go-$timestamp.db"
+  snapshot_name="musicparty-$timestamp.db"
   snapshot_path="$backup_absolute/$snapshot_name"
 
   docker run --rm \
@@ -139,9 +137,10 @@ verify() {
 
 DATA_DIR=${DATA_DIR:-./music_party/data}
 COMPOSE_FILE=${COMPOSE_FILE:-./docker-compose.yml}
-GO_COMPOSE_FILE=${GO_COMPOSE_FILE:-./backend-go/deploy/compose.go.yml}
 CONTAINER_NAME=${CONTAINER_NAME:-music-party-app}
-BACKUP_DIR=${BACKUP_DIR:-./music_party/backups/go-cutover}
+BACKUP_DIR=${BACKUP_DIR:-./music_party/backups}
+MUSIC_PARTY_RUNTIME_UID=${MUSIC_PARTY_RUNTIME_UID:-10001}
+MUSIC_PARTY_RUNTIME_GID=${MUSIC_PARTY_RUNTIME_GID:-10001}
 
 case ${1:-} in
   preflight) preflight ;;

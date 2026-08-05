@@ -10,20 +10,26 @@ services:
     networks:
       - music-net
 
-  # 2. Music Party 主应用
+  # 2. MusicParty Go 主应用
   music-party:
-    # Set MUSIC_PARTY_IMAGE in .env to the custom image digest, e.g.
-    # ghcr.io/bigblackblob/musicparty@sha256:<published-image-digest>
-    # Do not deploy the moving nrt-base tag.
+    # Production deployments must pin an immutable digest. The moving
+    # nrt-base tag is intended only for local verification.
     image: ${MUSIC_PARTY_IMAGE:?set MUSIC_PARTY_IMAGE in .env to a custom image digest}
     pull_policy: ${MUSIC_PARTY_PULL_POLICY:-missing}
     container_name: music-party-app
     restart: always
+    user: "${MUSIC_PARTY_RUNTIME_UID:-10001}:${MUSIC_PARTY_RUNTIME_GID:-10001}"
     ports:
       - "8848:8080" 
     environment:
       # [必填] 网易云 API 地址，指向上面的容器名
       - NETEASE_API_URL=http://netease-api:3000
+
+      # [Go 运行时与 SQLite]
+      - APP_MODE=server
+      - DB_PATH=/app/data/musicparty.db
+      - DB_INIT_SCHEMA=true
+      - STATIC_PATH=/app/static
       
       # [基础配置]
       # Must be the public URL that browsers use (for example http://203.0.113.8:8848
@@ -54,7 +60,6 @@ services:
       # - NAVIDROME_ALLOWED_USERS=Nirotiy,Alice
 
       # [性能/策略配置]
-      - JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=50 -XX:+UseG1GC -Dreactor.schedulers.defaultBoundedElasticSize=64
       - QUEUE_MAX_SIZE=1000          # 播放队列最大长度
       - QUEUE_HISTORY_SIZE=50        # 历史记录保留数量
       - PLAYLIST_IMPORT_LIMIT=100    # 导入歌单时的最大歌曲数限制

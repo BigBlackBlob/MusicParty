@@ -1,0 +1,152 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing v* Git tag to publish again
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+  actions: read
+
+env:
+  GHCR_IMAGE: ghcr.io/bigblackblob/musicparty
+  LEGACY_GHCR_IMAGE: ghcr.io/bigblackblob/musicparty-go
+  ACR_REGISTRY: crpi-533x5q1t88ew0x21.cn-hangzhou.personal.cr.aliyuncs.com
+  ACR_IMAGE: crpi-533x5q1t88ew0x21.cn-hangzhou.personal.cr.aliyuncs.com/nrt-base/nrt-music-party
+  LEGACY_GHCR_ALIAS_ENABLED: 'true'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_REGISTRY }}
+          username: ${{ secrets.ALIYUN_ACR_USERNAME }}
+          password: ${{ secrets.ALIYUN_ACR_PASSWORD }}
+      - name: Resolve and validate release tag
+        id: release
+        shell: bash
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            tag="$REQUESTED_TAG"
+          fi
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
+            echo "tag must match vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-rc.N" >&2
+            exit 1
+          fi
+          git show-ref --verify --quiet "refs/tags/$tag" || { echo "Git tag does not exist: $tag" >&2; exit 1; }
+          sha=$(git rev-list -n 1 "$tag")
+          git fetch origin NRT-Base
+          git merge-base --is-ancestor "$sha" origin/NRT-Base || { echo "tag commit is not reachable from NRT-Base" >&2; exit 1; }
+          successful_runs=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${sha}&status=success" --jq '.total_count')
+          test "$successful_runs" -gt 0 || { echo "no successful CI run found for $sha" >&2; exit 1; }
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          if [[ "$tag" == *-rc.* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Verify immutable source images
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ steps.release.outputs.sha }}
+        run: |
+          set -euo pipefail
+          sha_tag="sha-${SOURCE_SHA}"
+          ghcr_ref="${GHCR_IMAGE}:${sha_tag}"
+          acr_ref="${ACR_IMAGE}:${sha_tag}"
+          ghcr_digest=$(docker buildx imagetools inspect "$ghcr_ref" | awk '/^Digest:/ {print $2; exit}')
+          acr_digest=$(docker buildx imagetools inspect "$acr_ref" | awk '/^Digest:/ {print $2; exit}')
+          test -n "$ghcr_digest"
+          test "$ghcr_digest" = "$acr_digest"
+          docker buildx imagetools inspect "$ghcr_ref" --format '{{json .Image.Config.Labels}}' | grep -F "$SOURCE_SHA"
+          docker buildx imagetools inspect "$acr_ref" --format '{{json .Image.Config.Labels}}' | grep -F "$SOURCE_SHA"
+          echo "SOURCE_DIGEST=$ghcr_digest" >> "$GITHUB_ENV"
+      - name: Copy verified image to release tags
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          SOURCE_SHA: ${{ steps.release.outputs.sha }}
+          PRERELEASE: ${{ steps.release.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          source_tag="sha-${SOURCE_SHA}"
+          tags=("$RELEASE_TAG")
+          if [[ "$PRERELEASE" == "true" ]]; then
+            tags+=("rc")
+          else
+            version="${RELEASE_TAG#v}"
+            major="v${version%%.*}"
+            remainder="${version#*.}"
+            minor="${remainder%%.*}"
+            tags+=("v${version%%.*}.${minor}" "$major" "latest")
+          fi
+          for tag in "${tags[@]}"; do
+            docker buildx imagetools create --tag "${GHCR_IMAGE}:${tag}" "${GHCR_IMAGE}:${source_tag}"
+            docker buildx imagetools create --tag "${ACR_IMAGE}:${tag}" "${ACR_IMAGE}:${source_tag}"
+            if [[ "$LEGACY_GHCR_ALIAS_ENABLED" == "true" ]]; then
+              docker buildx imagetools create --tag "${LEGACY_GHCR_IMAGE}:${tag}" "${GHCR_IMAGE}:${source_tag}"
+            fi
+          done
+      - name: Create or update GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          SOURCE_SHA: ${{ steps.release.outputs.sha }}
+          PRERELEASE: ${{ steps.release.outputs.prerelease }}
+        run: |
+          gh api --method POST "repos/${GH_REPOSITORY}/releases/generate-notes" \
+            -f tag_name="$RELEASE_TAG" --jq '.body' > "$RUNNER_TEMP/release-body.md"
+          {
+            echo
+            echo "Source commit: \`$SOURCE_SHA\`"
+            echo
+            echo "GHCR: \`${GHCR_IMAGE}@${SOURCE_DIGEST}\`"
+            echo
+            echo "Aliyun ACR: \`${ACR_IMAGE}@${SOURCE_DIGEST}\`"
+          } >> "$RUNNER_TEMP/release-body.md"
+          prerelease_args=()
+          if [[ "$PRERELEASE" == "true" ]]; then prerelease_args+=(--prerelease); fi
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" --title "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-body.md" "${prerelease_args[@]}"
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-body.md" "${prerelease_args[@]}"
+          fi
+      - name: Publish release summary
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          SOURCE_SHA: ${{ steps.release.outputs.sha }}
+        run: |
+          {
+            echo "release=${RELEASE_TAG}"
+            echo "source_sha=${SOURCE_SHA}"
+            echo "GHCR_IMAGE=${GHCR_IMAGE}@${SOURCE_DIGEST}"
+            echo "ACR_IMAGE=${ACR_IMAGE}@${SOURCE_DIGEST}"
+          } >> "$GITHUB_STEP_SUMMARY"

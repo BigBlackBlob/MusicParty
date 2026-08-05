@@ -1,0 +1,359 @@
+name: CI
+
+on:
+  pull_request:
+    paths:
+      - 'backend-go/**'
+      - 'music-party-web/**'
+      - 'contracts/**'
+      - 'Dockerfile'
+      - 'docker-compose*.yml'
+      - '.dockerignore'
+      - '.github/workflows/**'
+  push:
+    branches: [NRT-Base]
+    paths:
+      - 'backend-go/**'
+      - 'music-party-web/**'
+      - 'contracts/**'
+      - 'Dockerfile'
+      - 'docker-compose*.yml'
+      - '.dockerignore'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  GO_VERSION: '1.26.5'
+  NODE_VERSION: '22'
+  PNPM_VERSION: '11.10.0'
+  GHCR_IMAGE: ghcr.io/bigblackblob/musicparty
+  LEGACY_GHCR_IMAGE: ghcr.io/bigblackblob/musicparty-go
+  ACR_REGISTRY: crpi-533x5q1t88ew0x21.cn-hangzhou.personal.cr.aliyuncs.com
+  ACR_IMAGE: crpi-533x5q1t88ew0x21.cn-hangzhou.personal.cr.aliyuncs.com/nrt-base/nrt-music-party
+  LEGACY_GHCR_ALIAS_ENABLED: 'true'
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: backend-go/go.sum
+      - name: Verify generated Go contracts
+        working-directory: backend-go
+        run: |
+          go run ./cmd/contractgen -check -repo ..
+          go test ./internal/contractspec
+          git diff --exit-code
+
+  go:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend-go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: backend-go/go.sum
+      - name: Verify formatting and module files
+        run: |
+          test -z "$(gofmt -l .)"
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+      - name: Vet and static analysis
+        run: |
+          go vet ./...
+          go run honnef.co/go/tools/cmd/staticcheck@v0.7.0 ./...
+      - name: Test and build
+        run: |
+          go test -count=1 ./...
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath ./...
+      - name: Go vulnerability check
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+
+  go-race:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend-go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: backend-go/go.sum
+      - name: Race detector
+        env:
+          CGO_ENABLED: '1'
+        run: go test -race -count=1 ./...
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: music-party-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: music-party-web/pnpm-lock.yaml
+          registry-url: https://registry.npmjs.org
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Type-check, lint, test and build
+        run: |
+          pnpm typecheck
+          pnpm lint
+          pnpm test:run
+          pnpm build
+      - name: Dependency audit
+        run: pnpm audit --audit-level=moderate --registry=https://registry.npmjs.org
+
+  browser-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: backend-go/go.sum
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: music-party-web/pnpm-lock.yaml
+      - name: Install frontend dependencies
+        working-directory: music-party-web
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        working-directory: music-party-web
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Build frontend and backend
+        run: |
+          cd music-party-web && pnpm build
+          cd ../backend-go && go build -trimpath -o "$RUNNER_TEMP/musicparty" ./cmd/musicparty
+      - name: Start isolated Go server
+        env:
+          SERVER_PORT: '18081'
+          APP_MODE: server
+          BASE_URL: http://127.0.0.1:18081
+          ALLOWED_ORIGINS: http://127.0.0.1:18081
+          DB_ENABLED: 'true'
+          DB_INIT_SCHEMA: 'true'
+          BOOTSTRAP_ADMIN_USERNAME: e2e-admin
+          BOOTSTRAP_ADMIN_PASSWORD: E2E-Password-2026!
+          AUTH_SECURE_COOKIES: 'false'
+          AUTH_RATE_LIMIT_ENABLED: 'false'
+          ROOM_ACCESS_TOKEN_SECRET: e2e-room-access-secret-32-bytes
+          NETEASE_API_URL: http://127.0.0.1:9
+          YOUTUBE_ENABLED: 'false'
+          NAVIDROME_ENABLED: 'false'
+          SQUIDIFY_ENABLED: 'false'
+        run: |
+          export DB_PATH="$RUNNER_TEMP/musicparty-e2e.db"
+          export LOCAL_LIBRARY_PATH="$RUNNER_TEMP/musicparty-e2e-local"
+          export STATIC_PATH="$GITHUB_WORKSPACE/music-party-web/dist"
+          "$RUNNER_TEMP/musicparty" >"$RUNNER_TEMP/musicparty-e2e.log" 2>&1 &
+          echo $! >"$RUNNER_TEMP/musicparty-e2e.pid"
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:18081/actuator/health/readiness >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/musicparty-e2e.log"
+          exit 1
+      - name: Run browser flows
+        working-directory: music-party-web
+        env:
+          E2E_BASE_URL: http://127.0.0.1:18081
+        run: pnpm test:e2e
+      - name: Upload browser artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            music-party-web/playwright-report
+            music-party-web/test-results
+          if-no-files-found: ignore
+      - name: Stop isolated Go server
+        if: always()
+        run: |
+          if test -f "$RUNNER_TEMP/musicparty-e2e.pid"; then
+            kill "$(cat "$RUNNER_TEMP/musicparty-e2e.pid")" || true
+          fi
+
+  container:
+    needs: [contracts, go, go-race, frontend, browser-e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build verified image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: musicparty-ci:${{ github.sha }}
+          build-args: |
+            OCI_SOURCE=${{ github.server_url }}/${{ github.repository }}
+            OCI_REVISION=${{ github.sha }}
+            OCI_CREATED=${{ github.event.head_commit.timestamp || github.event.pull_request.updated_at }}
+            OCI_VERSION=sha-${{ github.sha }}
+          cache-from: type=gha,scope=musicparty-ci
+          cache-to: type=gha,mode=max,scope=musicparty-ci
+      - name: Scan image for critical vulnerabilities
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.72.0
+          image-ref: musicparty-ci:${{ github.sha }}
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: CRITICAL
+      - name: Verify image identity and readiness
+        shell: bash
+        run: |
+          test "$(docker image inspect musicparty-ci:${GITHUB_SHA} --format '{{.Config.User}}')" = "10001:10001"
+          test "$(docker image inspect musicparty-ci:${GITHUB_SHA} --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$GITHUB_SHA"
+          docker volume create musicparty-ci-data >/dev/null
+          docker volume create musicparty-ci-cache >/dev/null
+          docker run --rm --user 0 -v musicparty-ci-data:/data -v musicparty-ci-cache:/cache alpine:3.23 \
+            sh -c 'chown -R 10001:10001 /data /cache'
+          docker run -d --name musicparty-ci-smoke \
+            -p 18082:8080 \
+            -v musicparty-ci-data:/app/data \
+            -v musicparty-ci-cache:/app/cached_media \
+            -e DB_ENABLED=true \
+            -e DB_INIT_SCHEMA=true \
+            -e DB_PATH=/app/data/musicparty.db \
+            -e AUTH_SECURE_COOKIES=false \
+            -e BOOTSTRAP_ADMIN_USERNAME=ci-admin \
+            -e BOOTSTRAP_ADMIN_PASSWORD=CI-Password-2026! \
+            -e ROOM_ACCESS_TOKEN_SECRET=ci-room-access-secret-32-bytes \
+            -e YOUTUBE_ENABLED=false \
+            -e NAVIDROME_ENABLED=false \
+            -e SQUIDIFY_ENABLED=false \
+            musicparty-ci:${GITHUB_SHA}
+          trap 'docker rm -f musicparty-ci-smoke >/dev/null 2>&1 || true' EXIT
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:18082/actuator/health/readiness >/dev/null; then
+              curl --fail --silent http://127.0.0.1:18082/actuator/health >/dev/null
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs musicparty-ci-smoke
+          exit 1
+      - name: Export verified image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/NRT-Base'
+        run: docker save musicparty-ci:${GITHUB_SHA} | gzip > "$RUNNER_TEMP/musicparty-image.tar.gz"
+      - name: Upload verified image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/NRT-Base'
+        uses: actions/upload-artifact@v4
+        with:
+          name: verified-image-${{ github.sha }}
+          path: ${{ runner.temp }}/musicparty-image.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/NRT-Base'
+    needs: container
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: verified-image-${{ github.sha }}
+          path: ${{ runner.temp }}
+      - name: Load verified image
+        run: gunzip -c "$RUNNER_TEMP/musicparty-image.tar.gz" | docker load
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_REGISTRY }}
+          username: ${{ secrets.ALIYUN_ACR_USERNAME }}
+          password: ${{ secrets.ALIYUN_ACR_PASSWORD }}
+      - name: Publish canonical and compatibility tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          local_image="musicparty-ci:${GITHUB_SHA}"
+          sha_tag="sha-${GITHUB_SHA}"
+          immutable_targets=(
+            "${GHCR_IMAGE}:${sha_tag}"
+            "${ACR_IMAGE}:${sha_tag}"
+          )
+          if [[ "$LEGACY_GHCR_ALIAS_ENABLED" == "true" ]]; then
+            immutable_targets+=("${LEGACY_GHCR_IMAGE}:${sha_tag}")
+          fi
+
+          for target in "${immutable_targets[@]}"; do
+            if labels=$(docker buildx imagetools inspect "$target" --format '{{json .Image.Config.Labels}}' 2>/dev/null); then
+              grep -Fq "${GITHUB_SHA}" <<<"$labels" || {
+                echo "immutable tag conflict: $target" >&2
+                exit 1
+              }
+              echo "already published: $target"
+              continue
+            fi
+            docker tag "$local_image" "$target"
+            docker push "$target"
+          done
+
+          rolling_targets=("${GHCR_IMAGE}:nrt-base" "${ACR_IMAGE}:nrt-base")
+          if [[ "$LEGACY_GHCR_ALIAS_ENABLED" == "true" ]]; then
+            rolling_targets+=("${LEGACY_GHCR_IMAGE}:nrt-base")
+          fi
+          for target in "${rolling_targets[@]}"; do
+            docker tag "$local_image" "$target"
+            docker push "$target"
+          done
+      - name: Verify published digests
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha_tag="sha-${GITHUB_SHA}"
+          ghcr_ref="${GHCR_IMAGE}:${sha_tag}"
+          acr_ref="${ACR_IMAGE}:${sha_tag}"
+          ghcr_digest=$(docker buildx imagetools inspect "$ghcr_ref" | awk '/^Digest:/ {print $2; exit}')
+          acr_digest=$(docker buildx imagetools inspect "$acr_ref" | awk '/^Digest:/ {print $2; exit}')
+          test -n "$ghcr_digest"
+          test "$ghcr_digest" = "$acr_digest"
+          docker buildx imagetools inspect "$ghcr_ref" --format '{{json .Image.Config.Labels}}' | grep -F "$GITHUB_SHA"
+          docker buildx imagetools inspect "$acr_ref" --format '{{json .Image.Config.Labels}}' | grep -F "$GITHUB_SHA"
+          {
+            echo "GHCR_IMAGE=${GHCR_IMAGE}@${ghcr_digest}"
+            echo "ACR_IMAGE=${ACR_IMAGE}@${acr_digest}"
+            echo "SOURCE_SHA=${GITHUB_SHA}"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,71 @@
+name: Scheduled Security
+
+on:
+  schedule:
+    - cron: '0 2 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: scheduled-security
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deep-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.5'
+          cache-dependency-path: backend-go/go.sum
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.10.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: music-party-web/pnpm-lock.yaml
+          registry-url: https://registry.npmjs.org
+      - name: Go vulnerability scan
+        working-directory: backend-go
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+      - name: Frontend dependency audit
+        working-directory: music-party-web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm audit --audit-level=moderate --registry=https://registry.npmjs.org
+      - name: Workflow static analysis
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+      - name: Validate Compose configuration
+        env:
+          MUSIC_PARTY_IMAGE: ghcr.io/bigblackblob/musicparty@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          NETEASE_API_IMAGE: example.invalid/netease-api:fixed
+          BASE_URL: https://music.example.invalid
+          ALLOWED_ORIGINS: https://music.example.invalid
+          BOOTSTRAP_ADMIN_USERNAME: security-check
+          BOOTSTRAP_ADMIN_PASSWORD: security-check-password
+        run: docker compose config --quiet
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.72.0
+          scan-type: fs
+          scan-ref: .
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: CRITICAL
+      - name: Trivy published image scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.72.0
+          image-ref: ghcr.io/bigblackblob/musicparty:nrt-base
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: CRITICAL
