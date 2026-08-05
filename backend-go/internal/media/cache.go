@@ -19,9 +19,9 @@ import (
 var ErrDownloadQueueFull = errors.New("download queue is full")
 
 type cacheEntry struct {
-	path       string
-	size       int64
-	lastAccess time.Time
+	path        string
+	size        int64
+	accessOrder uint64
 }
 
 func ParseByteSize(value string) (int64, error) {
@@ -57,6 +57,7 @@ type Cache struct {
 	entries   map[string]cacheEntry
 	inflight  map[string]struct{}
 	limits    map[string]chan struct{}
+	accessSeq uint64
 	wait      sync.WaitGroup
 	closeOne  sync.Once
 	closed    bool
@@ -99,14 +100,14 @@ func (c *Cache) Get(key string) (string, bool) {
 		if err != nil || !info.Mode().IsRegular() {
 			return "", false
 		}
-		entry = cacheEntry{path: path, size: info.Size(), lastAccess: time.Now()}
+		entry = cacheEntry{path: path, size: info.Size(), accessOrder: c.nextAccessOrderLocked()}
 		c.entries[key] = entry
 	}
 	if _, err := os.Stat(entry.path); err != nil {
 		delete(c.entries, key)
 		return "", false
 	}
-	entry.lastAccess = time.Now()
+	entry.accessOrder = c.nextAccessOrderLocked()
 	c.entries[key] = entry
 	return entry.path, true
 }
@@ -227,7 +228,7 @@ func (c *Cache) download(job downloadJob) {
 			return
 		}
 		c.mu.Lock()
-		c.entries[job.key] = cacheEntry{path: path, size: size, lastAccess: time.Now()}
+		c.entries[job.key] = cacheEntry{path: path, size: size, accessOrder: c.nextAccessOrderLocked()}
 		c.evictLocked()
 		c.mu.Unlock()
 		return
@@ -263,7 +264,7 @@ func (c *Cache) evictLocked() {
 			cacheEntry
 		}{key, entry})
 	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].lastAccess.Before(entries[j].lastAccess) })
+	sort.Slice(entries, func(i, j int) bool { return entries[i].accessOrder < entries[j].accessOrder })
 	for _, entry := range entries {
 		if total <= c.maxBytes {
 			break
@@ -273,6 +274,12 @@ func (c *Cache) evictLocked() {
 			delete(c.entries, entry.key)
 		}
 	}
+}
+
+// nextAccessOrderLocked assigns a deterministic recency order while c.mu is held.
+func (c *Cache) nextAccessOrderLocked() uint64 {
+	c.accessSeq++
+	return c.accessSeq
 }
 
 func (c *Cache) finish(key string) {
