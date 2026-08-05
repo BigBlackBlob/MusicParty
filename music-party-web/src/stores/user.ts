@@ -102,7 +102,6 @@ export const useUserStore = defineStore('user', () => {
   }
 
   async function refreshAccount(): Promise<Session> {
-    status.value = 'loading'
     try {
       const session = await authApi.getAccountMe()
       initAccount(session)

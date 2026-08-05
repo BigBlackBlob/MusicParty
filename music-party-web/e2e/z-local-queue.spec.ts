@@ -1,7 +1,7 @@
 import { expect, test, type Browser, type Page } from '@playwright/test'
 
-const adminUsername = process.env.E2E_ADMIN_USERNAME || 'stage8-admin'
-const adminPassword = process.env.E2E_ADMIN_PASSWORD || 'Stage8-Password-2026!'
+const adminUsername = process.env.E2E_ADMIN_USERNAME || 'e2e-admin'
+const adminPassword = process.env.E2E_ADMIN_PASSWORD || 'E2E-Password-2026!'
 
 test.setTimeout(60_000)
 
