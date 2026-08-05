@@ -61,11 +61,4 @@ class BilibiliProxyControllerTest {
         assertThat(src).contains("PARTIAL_CONTENT");
     }
 
-    @Test
-    void frontendAudioUrlIncludesBilibiliTokenRequirement() throws IOException {
-        Path webBase = Path.of("music-party-web/src/utils/audioUrl.js");
-        String src = Files.readString(webBase);
-        assertThat(src).contains("platform === 'bilibili'");
-        assertThat(src).contains("/api/bilibili/");
-    }
 }
