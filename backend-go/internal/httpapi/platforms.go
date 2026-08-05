@@ -245,7 +245,7 @@ func (api *PlatformAPI) search(w http.ResponseWriter, r *http.Request) error {
 	}
 	result, err := service.Search(r.Context(), keyword, offset, limit)
 	if err != nil && chi.URLParam(r, "platform") == "netease" {
-		return BadGateway("尚未配置网易云 Cookie，请联系管理员设置")
+		return mapNeteaseError(err)
 	}
 	return writePlatformResult(w, result, err)
 }
@@ -268,7 +268,7 @@ func (api *PlatformAPI) playlistSongs(w http.ResponseWriter, r *http.Request) er
 	}
 	v, err := service.PlaylistSongs(r.Context(), chi.URLParam(r, "playlistId"), offset, limit)
 	if err != nil && chi.URLParam(r, "platform") == "netease" {
-		return BadGateway("尚未配置网易云 Cookie，请联系管理员设置")
+		return mapNeteaseError(err)
 	}
 	return writePlatformResult(w, v, err)
 }
@@ -385,6 +385,27 @@ func mapPlatformError(err error) error {
 		return &APIError{Status: http.StatusGatewayTimeout, Message: "Upstream request timed out"}
 	}
 	return BadGateway("Upstream API request failed")
+}
+
+func mapNeteaseError(err error) error {
+	var credentialErr *platform.CredentialNotConfiguredError
+	if errors.As(err, &credentialErr) {
+		return BadGateway("尚未配置网易云 Cookie，请联系管理员设置")
+	}
+
+	var upstream *platform.UpstreamError
+	if errors.As(err, &upstream) {
+		switch {
+		case upstream.Status == http.StatusUnauthorized || upstream.Status == http.StatusForbidden:
+			return BadGateway("网易云 Cookie 无效或已过期，请在管理员设置中更新")
+		case upstream.Status == 0:
+			return BadGateway("网易云 API 服务不可达，请检查管理员平台配置")
+		case upstream.Status >= http.StatusInternalServerError:
+			return BadGateway("网易云 API 服务异常，请稍后重试")
+		}
+	}
+
+	return mapPlatformError(err)
 }
 func writeJSON(w http.ResponseWriter, value any) {
 	w.Header().Set("Content-Type", "application/json")

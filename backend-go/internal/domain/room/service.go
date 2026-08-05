@@ -14,17 +14,23 @@ import (
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/domain/account"
 	storesqlite "github.com/BigBlackBlob/MusicParty/backend-go/internal/store/sqlite"
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 )
 
 const PermanentInviteExpiresAt int64 = 253402300799000
 
 var (
 	//lint:ignore ST1005 Java-compatible API message.
-	errUpdateForbidden = errors.New("No permission to update room")
+	ErrUpdateForbidden = errors.New("No permission to update room")
 	//lint:ignore ST1005 Java-compatible API message.
-	errInvalidRoomName = errors.New("Room name must be 1-64 characters")
+	ErrInvalidRoomName = errors.New("Room name must be 1-64 characters")
 	//lint:ignore ST1005 Java-compatible API message.
-	errLastOwner = errors.New("A room must retain an owner")
+	ErrLastOwner = errors.New("A room must retain an owner")
+	//lint:ignore ST1005 Java-compatible API message.
+	ErrPrivatePasswordRequired = errors.New("Private room password cannot be empty")
+	//lint:ignore ST1005 Java-compatible API message.
+	ErrInvalidRoomPassword = errors.New("Invalid room password")
+	ErrForbidden           = errors.New("Forbidden")
 )
 
 type Info struct {
@@ -35,6 +41,20 @@ type Info struct {
 	PrivateRoom     bool   `json:"privateRoom"`
 	System          bool   `json:"system"`
 	OnlineCount     int    `json:"onlineCount"`
+	AccessGranted   bool   `json:"accessGranted"`
+}
+
+type UpdateInput struct {
+	Name                 string
+	Private              bool
+	Password             string
+	KeepExistingPassword bool
+}
+
+type AccessMetadata struct {
+	Private         bool
+	PasswordHash    string
+	PasswordVersion int
 }
 type Membership struct {
 	RoomID    string `json:"roomId"`
@@ -64,11 +84,8 @@ func New(store *storesqlite.Store, accounts *account.Service) *Service {
 	return &Service{store: store, accounts: accounts, now: time.Now}
 }
 func (s *Service) List(ctx context.Context, token string) ([]Info, error) {
-	publicID := ""
-	if session, err := s.accounts.Resolve(ctx, token); err == nil {
-		publicID = session.PublicID
-	}
-	rows, err := s.store.Reader().QueryContext(ctx, `select id,name,owner_public_id,visibility,system,created_at from room where deleted_at is null and (system=1 or visibility='PUBLIC' or owner_public_id=?) order by system desc,last_active_at desc,created_at`, publicID)
+	_ = token
+	rows, err := s.store.Reader().QueryContext(ctx, `select id,name,owner_public_id,visibility,system,created_at from room where deleted_at is null order by system desc,last_active_at desc,created_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -98,20 +115,54 @@ func (s *Service) CanManage(ctx context.Context, roomID, token string) (account.
 	return session, err == nil && role == "OWNER"
 }
 func (s *Service) Update(ctx context.Context, roomID, token, name string) (Info, error) {
+	metadata, err := s.Access(ctx, roomID)
+	if err != nil {
+		return Info{}, err
+	}
+	return s.UpdateDetails(ctx, roomID, token, UpdateInput{Name: name, Private: metadata.Private, KeepExistingPassword: metadata.Private})
+}
+
+func (s *Service) UpdateDetails(ctx context.Context, roomID, token string, input UpdateInput) (Info, error) {
 	if _, err := s.accounts.Resolve(ctx, token); err != nil {
 		return Info{}, err
 	}
 	session, ok := s.CanManage(ctx, roomID, token)
 	if !ok {
-		return Info{}, errUpdateForbidden
+		return Info{}, ErrUpdateForbidden
 	}
-	name = strings.TrimSpace(name)
+	name := strings.TrimSpace(input.Name)
 	if name == "" || len([]rune(name)) > 64 {
-		return Info{}, errInvalidRoomName
+		return Info{}, ErrInvalidRoomName
+	}
+	var existingVisibility, existingHash string
+	var existingVersion int
+	if err := s.store.Reader().QueryRowContext(ctx, "select visibility,coalesce(password_hash,''),password_version from room where id=? and deleted_at is null", roomID).Scan(&existingVisibility, &existingHash, &existingVersion); err != nil {
+		return Info{}, err
+	}
+	visibility := "PUBLIC"
+	passwordHash := ""
+	passwordVersion := existingVersion
+	if input.Private {
+		visibility = "PRIVATE"
+		if input.KeepExistingPassword && existingVisibility == "PRIVATE" && existingHash != "" {
+			passwordHash = existingHash
+		} else {
+			if strings.TrimSpace(input.Password) == "" {
+				return Info{}, ErrPrivatePasswordRequired
+			}
+			hash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+			if err != nil {
+				return Info{}, err
+			}
+			passwordHash = string(hash)
+			passwordVersion++
+		}
+	} else if existingVisibility == "PRIVATE" {
+		passwordVersion++
 	}
 	now := s.now().UnixMilli()
 	if err := s.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		result, err := tx.ExecContext(ctx, "update room set name=?,last_active_at=? where id=? and deleted_at is null", name, now, roomID)
+		result, err := tx.ExecContext(ctx, "update room set name=?,visibility=?,password_hash=?,password_version=?,last_active_at=? where id=? and deleted_at is null", name, visibility, nullable(passwordHash), passwordVersion, now, roomID)
 		if err != nil {
 			return err
 		}
@@ -124,6 +175,32 @@ func (s *Service) Update(ctx context.Context, roomID, token, name string) (Info,
 		return Info{}, err
 	}
 	return s.get(ctx, roomID, session.PublicID)
+}
+
+func (s *Service) Access(ctx context.Context, roomID string) (AccessMetadata, error) {
+	var visibility string
+	var metadata AccessMetadata
+	err := s.store.Reader().QueryRowContext(ctx, "select visibility,coalesce(password_hash,''),password_version from room where id=? and deleted_at is null", roomID).Scan(&visibility, &metadata.PasswordHash, &metadata.PasswordVersion)
+	metadata.Private = visibility == "PRIVATE"
+	return metadata, err
+}
+
+func (s *Service) VerifyAccess(ctx context.Context, roomID, token, password string) (AccessMetadata, account.Session, error) {
+	session, err := s.accounts.Resolve(ctx, token)
+	if err != nil {
+		return AccessMetadata{}, account.Session{}, err
+	}
+	metadata, err := s.Access(ctx, roomID)
+	if err != nil {
+		return AccessMetadata{}, account.Session{}, err
+	}
+	if !metadata.Private {
+		return metadata, session, nil
+	}
+	if metadata.PasswordHash == "" || bcrypt.CompareHashAndPassword([]byte(metadata.PasswordHash), []byte(password)) != nil {
+		return AccessMetadata{}, account.Session{}, ErrInvalidRoomPassword
+	}
+	return metadata, session, nil
 }
 func (s *Service) Delete(ctx context.Context, roomID, token string) (bool, error) {
 	if _, err := s.accounts.Resolve(ctx, token); err != nil {
@@ -172,7 +249,7 @@ func (s *Service) Delete(ctx context.Context, roomID, token string) (bool, error
 func (s *Service) CreateInvite(ctx context.Context, roomID, token, label string) (Invite, error) {
 	session, ok := s.CanManage(ctx, roomID, token)
 	if !ok {
-		return Invite{}, errors.New("Forbidden")
+		return Invite{}, ErrForbidden
 	}
 	label = strings.TrimSpace(label)
 	if len([]rune(label)) > 64 {
@@ -193,7 +270,7 @@ func (s *Service) CreateInvite(ctx context.Context, roomID, token, label string)
 }
 func (s *Service) ListInvites(ctx context.Context, roomID, token string) ([]Invite, error) {
 	if _, ok := s.CanManage(ctx, roomID, token); !ok {
-		return nil, errors.New("Forbidden")
+		return nil, ErrForbidden
 	}
 	rows, err := s.store.Reader().QueryContext(ctx, "select id,label,expires_at,used_at,revoked_at,created_at from room_invite where room_id=? order by created_at desc", roomID)
 	if err != nil {
@@ -225,7 +302,7 @@ func (s *Service) ListInvites(ctx context.Context, roomID, token string) ([]Invi
 }
 func (s *Service) RevokeInvite(ctx context.Context, roomID, inviteID, token string) (bool, error) {
 	if _, ok := s.CanManage(ctx, roomID, token); !ok {
-		return false, errors.New("Forbidden")
+		return false, ErrForbidden
 	}
 	updated := false
 	err := s.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
@@ -240,7 +317,7 @@ func (s *Service) RevokeInvite(ctx context.Context, roomID, inviteID, token stri
 }
 func (s *Service) Members(ctx context.Context, roomID, token string) ([]Membership, error) {
 	if _, ok := s.CanManage(ctx, roomID, token); !ok {
-		return nil, errors.New("Forbidden")
+		return nil, ErrForbidden
 	}
 	rows, err := s.store.Reader().QueryContext(ctx, "select room_id,public_id,role,created_at,updated_at from room_membership where room_id=? order by created_at", roomID)
 	if err != nil {
@@ -259,14 +336,14 @@ func (s *Service) Members(ctx context.Context, roomID, token string) ([]Membersh
 }
 func (s *Service) RemoveMember(ctx context.Context, roomID, publicID, token string) (bool, error) {
 	if _, ok := s.CanManage(ctx, roomID, token); !ok {
-		return false, errors.New("Forbidden")
+		return false, ErrForbidden
 	}
 	return s.changeMembership(ctx, roomID, publicID, "DELETE", false)
 }
 func (s *Service) SetOwner(ctx context.Context, roomID, publicID, token string, owner bool) (bool, error) {
 	session, err := s.accounts.Resolve(ctx, token)
 	if err != nil || !session.Admin() {
-		return false, errors.New("Forbidden")
+		return false, ErrForbidden
 	}
 	role := "MEMBER"
 	if owner {
@@ -287,7 +364,7 @@ func (s *Service) changeMembership(ctx context.Context, roomID, publicID, role s
 				return err
 			}
 			if owners <= 1 {
-				return errLastOwner
+				return ErrLastOwner
 			}
 		}
 		if role == "DELETE" {

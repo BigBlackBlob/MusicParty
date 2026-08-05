@@ -39,7 +39,12 @@ func TestLocalMediaRequiresSessionAndSupportsRange(t *testing.T) {
 	handler.ServeHTTP(unauthorized, httptest.NewRequest(http.MethodGet, "/api/local/media/track", nil))
 	require.Equal(t, http.StatusForbidden, unauthorized.Code)
 
-	r := httptest.NewRequest(http.MethodGet, "/api/local/media/track?token=media-token", nil)
+	legacy := httptest.NewRecorder()
+	handler.ServeHTTP(legacy, httptest.NewRequest(http.MethodGet, "/api/local/media/track?token=media-token", nil))
+	require.Equal(t, http.StatusForbidden, legacy.Code)
+
+	r := httptest.NewRequest(http.MethodGet, "/api/local/media/track", nil)
+	r.AddCookie(&http.Cookie{Name: SessionCookieName, Value: "media-token"})
 	r.Header.Set("Range", "bytes=3-6")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, r)

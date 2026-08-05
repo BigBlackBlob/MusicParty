@@ -52,7 +52,7 @@ func TestElevationAndClearCookiePaths(t *testing.T) {
 		t.Fatalf("unexpected elevation cookie: %+v", elevation)
 	}
 	cleared := factory.Clear(request)
-	if len(cleared) != 3 || cleared[0].MaxAge >= 0 || cleared[1].MaxAge >= 0 || cleared[2].Path != "/api/admin" {
+	if len(cleared) != 4 || cleared[0].MaxAge >= 0 || cleared[1].MaxAge >= 0 || cleared[2].Path != "/api/admin" || cleared[3].Name != RoomAccessCookieName || cleared[3].MaxAge >= 0 {
 		t.Fatalf("unexpected clear cookies: %+v", cleared)
 	}
 }

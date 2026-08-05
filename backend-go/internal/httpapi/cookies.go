@@ -10,12 +10,14 @@ import (
 const (
 	SessionCookieName        = "MP_SESSION"
 	CSRFCookieName           = "MP_CSRF"
+	RoomAccessCookieName     = "MP_ROOM_ACCESS"
 	AdminElevationCookieName = "MP_ADMIN_ELEVATION"
 	CSRFHeaderName           = "X-CSRF-Token"
 
 	memberSessionSeconds  = 90 * 24 * 60 * 60
 	adminSessionSeconds   = 12 * 60 * 60
 	adminElevationSeconds = 10 * 60
+	roomAccessSeconds     = 5 * 60
 )
 
 type CookieFactory struct {
@@ -45,12 +47,20 @@ func (f CookieFactory) EstablishElevation(r *http.Request, value string) *http.C
 	}
 }
 
+func (f CookieFactory) EstablishRoomAccess(r *http.Request, value string) *http.Cookie {
+	return &http.Cookie{
+		Name: RoomAccessCookieName, Value: value, Path: "/", MaxAge: roomAccessSeconds,
+		HttpOnly: true, Secure: f.secureForRequest(r), SameSite: http.SameSiteLaxMode,
+	}
+}
+
 func (f CookieFactory) Clear(r *http.Request) []*http.Cookie {
 	secure := f.secureForRequest(r)
 	return []*http.Cookie{
 		{Name: SessionCookieName, Path: "/", MaxAge: -1, HttpOnly: true, Secure: secure, SameSite: http.SameSiteStrictMode},
 		{Name: CSRFCookieName, Path: "/", MaxAge: -1, HttpOnly: false, Secure: secure, SameSite: http.SameSiteStrictMode},
 		{Name: AdminElevationCookieName, Path: "/api/admin", MaxAge: -1, HttpOnly: true, Secure: secure, SameSite: http.SameSiteStrictMode},
+		{Name: RoomAccessCookieName, Path: "/", MaxAge: -1, HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode},
 	}
 }
 

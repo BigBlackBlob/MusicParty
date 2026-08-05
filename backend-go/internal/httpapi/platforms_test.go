@@ -17,6 +17,32 @@ import (
 
 type fixturePlatform struct{ err error }
 
+type neteaseFixture struct{ err error }
+
+func (neteaseFixture) Name() string    { return "netease" }
+func (neteaseFixture) Available() bool { return true }
+func (f neteaseFixture) Search(context.Context, string, int, int) ([]platform.Music, error) {
+	return []platform.Music{}, f.err
+}
+func (neteaseFixture) UserPlaylists(context.Context, string) ([]platform.Playlist, error) {
+	return []platform.Playlist{}, nil
+}
+func (f neteaseFixture) PlaylistSongs(context.Context, string, int, int) ([]platform.Music, error) {
+	return []platform.Music{}, f.err
+}
+func (neteaseFixture) SearchAlbums(context.Context, string) ([]platform.Album, error) {
+	return []platform.Album{}, nil
+}
+func (neteaseFixture) AlbumSongs(context.Context, string) ([]platform.Music, error) {
+	return []platform.Music{}, nil
+}
+func (neteaseFixture) SearchUsers(context.Context, string) ([]platform.User, error) {
+	return []platform.User{}, nil
+}
+func (neteaseFixture) Lyric(context.Context, string) (platform.Lyric, error) {
+	return platform.Lyric{}, nil
+}
+
 func (fixturePlatform) Name() string    { return "local" }
 func (fixturePlatform) Available() bool { return true }
 func (f fixturePlatform) Search(context.Context, string, int, int) ([]platform.Music, error) {
@@ -69,6 +95,30 @@ func TestPlatformUpstreamFailureIsBadGateway(t *testing.T) {
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/search/local/x", nil))
 	require.Equal(t, http.StatusBadGateway, response.Code)
 	require.Contains(t, response.Body.String(), "Upstream API request failed")
+}
+
+func TestNeteaseErrorsAreClassified(t *testing.T) {
+	cfg := testConfig(t)
+	for _, test := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "missing cookie", err: &platform.CredentialNotConfiguredError{Platform: "netease"}, want: "尚未配置网易云 Cookie"},
+		{name: "unreachable API", err: &platform.UpstreamError{Cause: errors.New("connection refused")}, want: "网易云 API 服务不可达"},
+		{name: "invalid cookie", err: &platform.UpstreamError{Status: http.StatusUnauthorized}, want: "网易云 Cookie 无效或已过期"},
+		{name: "upstream failure", err: &platform.UpstreamError{Status: http.StatusBadGateway}, want: "网易云 API 服务异常"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewPlatformAPI(cfg, neteaseFixture{err: test.err}))
+			for _, path := range []string{"/api/search/netease/x", "/api/playlist/songs/netease/id"} {
+				response := httptest.NewRecorder()
+				handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+				require.Equal(t, http.StatusBadGateway, response.Code, path)
+				require.Contains(t, response.Body.String(), test.want, path)
+			}
+		})
+	}
 }
 func TestRestrictedPlatformRequiresToken(t *testing.T) {
 	cfg := testConfig(t)

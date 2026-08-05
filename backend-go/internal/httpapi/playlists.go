@@ -1,11 +1,7 @@
 package httpapi
 
 import (
-	"crypto/hmac"
-	"crypto/rand"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,13 +32,7 @@ type PlaylistAPI struct {
 }
 
 func NewPlaylistAPI(cfg config.Config, store *storesqlite.Store, accounts *account.Service, rooms *roomdomain.Service, platforms *PlatformAPI) *PlaylistAPI {
-	secret := []byte(cfg.Auth.RoomAccessTokenSecret)
-	if len(secret) == 0 {
-		secret = make([]byte, 32)
-		if _, err := rand.Read(secret); err != nil {
-			panic("generate room access token secret: " + err.Error())
-		}
-	}
+	secret := roomAccessSecret(cfg.Auth.RoomAccessTokenSecret)
 	return &PlaylistAPI{store: store, accounts: accounts, rooms: rooms, users: storesqlite.NewUserPlaylistRepository(store, time.Now, nil), roomPlaylists: storesqlite.NewRoomPlaylistRepository(store, time.Now, nil), platforms: platforms, roomSecret: secret}
 }
 func (api *PlaylistAPI) Routes(r chi.Router) {
@@ -350,40 +340,11 @@ func (api *PlaylistAPI) roomWrite(r *http.Request) error {
 	if visibility != "PRIVATE" {
 		return nil
 	}
-	if !validRoomAccessToken(api.roomSecret, r.URL.Query().Get("roomAccessToken"), roomID, session.PublicID, passwordVersion, time.Now()) {
+	proof, _ := r.Cookie(RoomAccessCookieName)
+	if !validRoomAccessToken(api.roomSecret, cookieValue(proof), roomID, session.PublicID, passwordVersion, time.Now()) {
 		return errors.New("Forbidden")
 	}
 	return nil
-}
-
-func validRoomAccessToken(secret []byte, token, roomID, publicID string, passwordVersion int, now time.Time) bool {
-	parts := strings.Split(token, ".")
-	if len(parts) != 2 || publicID == "" {
-		return false
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
-	if err != nil {
-		return false
-	}
-	signature, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return false
-	}
-	mac := hmac.New(sha256.New, secret)
-	_, _ = mac.Write(payload)
-	if !hmac.Equal(mac.Sum(nil), signature) {
-		return false
-	}
-	fields := strings.Split(string(payload), "|")
-	if len(fields) != 4 {
-		return false
-	}
-	expiresAt, err := strconv.ParseInt(fields[2], 10, 64)
-	if err != nil {
-		return false
-	}
-	version, err := strconv.Atoi(fields[3])
-	return err == nil && fields[0] == roomID && fields[1] == publicID && expiresAt >= now.UnixMilli() && version == passwordVersion
 }
 func (api *PlaylistAPI) roomList(w http.ResponseWriter, r *http.Request) error {
 	values, err := api.roomPlaylists.ListPlaylists(r.Context(), chi.URLParam(r, "roomId"))
@@ -596,10 +557,7 @@ func exportTracks(w http.ResponseWriter, r *http.Request, values []storesqlite.P
 	return nil
 }
 func roomSessionToken(r *http.Request) string {
-	if token := sessionToken(r); token != "" {
-		return token
-	}
-	return r.URL.Query().Get("sessionToken")
+	return sessionToken(r)
 }
 func noContentOrNotFound(w http.ResponseWriter, changed bool, err error) error {
 	if err != nil {

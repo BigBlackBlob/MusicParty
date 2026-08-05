@@ -34,7 +34,7 @@ var (
 )
 
 type Session struct {
-	SessionToken string `json:"sessionToken"`
+	SessionToken string `json:"sessionToken,omitempty"`
 	PublicID     string `json:"publicId"`
 	Username     string `json:"username"`
 	DisplayName  string `json:"displayName"`

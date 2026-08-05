@@ -4,19 +4,27 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"time"
 
+	"github.com/BigBlackBlob/MusicParty/backend-go/internal/config"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/domain/account"
 	roomdomain "github.com/BigBlackBlob/MusicParty/backend-go/internal/domain/room"
 	"github.com/go-chi/chi/v5"
 )
 
 type RoomAPI struct {
-	service      *roomdomain.Service
-	authService  *account.Service
+	service     *roomdomain.Service
+	authService *account.Service
+	cfg         config.Config
+	cookies     CookieFactory
 }
 
-func NewRoomAPI(service *roomdomain.Service) *RoomAPI {
-	return &RoomAPI{service: service}
+func NewRoomAPI(service *roomdomain.Service, configs ...config.Config) *RoomAPI {
+	var cfg config.Config
+	if len(configs) > 0 {
+		cfg = configs[0]
+	}
+	return &RoomAPI{service: service, cfg: cfg, cookies: CookieFactory{SecureCookies: cfg.Auth.SecureCookies}}
 }
 
 func (api *RoomAPI) SetAuthService(authService *account.Service) {
@@ -25,16 +33,19 @@ func (api *RoomAPI) SetAuthService(authService *account.Service) {
 
 func (api *RoomAPI) Routes(r chi.Router) {
 	r.Get("/api/rooms", Adapt(api.list))
+	if api.authService != nil {
+		r.With(RequireSession(api.authService)).Post("/api/rooms/{roomId}/verify", Adapt(api.verify))
+	}
 
 	// Room management requires admin
 	if api.authService != nil {
-		r.With(RequireAdmin(api.authService)).Put("/api/rooms/{roomId}", Adapt(api.update))
-		r.With(RequireAdmin(api.authService)).Delete("/api/rooms/{roomId}", Adapt(api.delete))
-		r.With(RequireAdmin(api.authService)).Post("/api/rooms/{roomId}/invites", Adapt(api.createInvite))
-		r.With(RequireAdmin(api.authService)).Get("/api/rooms/{roomId}/invites", Adapt(api.invites))
-		r.With(RequireAdmin(api.authService)).Delete("/api/rooms/{roomId}/invites/{inviteId}", Adapt(api.revokeInvite))
-		r.With(RequireAdmin(api.authService)).Get("/api/rooms/{roomId}/members", Adapt(api.members))
-		r.With(RequireAdmin(api.authService)).Delete("/api/rooms/{roomId}/members/{publicId}", Adapt(api.removeMember))
+		r.With(RequireSession(api.authService)).Put("/api/rooms/{roomId}", Adapt(api.update))
+		r.With(RequireSession(api.authService)).Delete("/api/rooms/{roomId}", Adapt(api.delete))
+		r.With(RequireSession(api.authService)).Post("/api/rooms/{roomId}/invites", Adapt(api.createInvite))
+		r.With(RequireSession(api.authService)).Get("/api/rooms/{roomId}/invites", Adapt(api.invites))
+		r.With(RequireSession(api.authService)).Delete("/api/rooms/{roomId}/invites/{inviteId}", Adapt(api.revokeInvite))
+		r.With(RequireSession(api.authService)).Get("/api/rooms/{roomId}/members", Adapt(api.members))
+		r.With(RequireSession(api.authService)).Delete("/api/rooms/{roomId}/members/{publicId}", Adapt(api.removeMember))
 		r.With(RequireAdmin(api.authService)).Post("/api/rooms/{roomId}/owners/{publicId}", Adapt(api.makeOwner))
 		r.With(RequireAdmin(api.authService)).Delete("/api/rooms/{roomId}/owners/{publicId}", Adapt(api.removeOwner))
 	} else {
@@ -55,24 +66,44 @@ func (api *RoomAPI) list(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	if api.authService != nil {
+		if session, err := api.authService.Resolve(r.Context(), sessionToken(r)); err == nil {
+			roomCookie, _ := r.Cookie(RoomAccessCookieName)
+			for index := range value {
+				if !value[index].PrivateRoom {
+					value[index].AccessGranted = true
+					continue
+				}
+				if _, canManage := api.service.CanManage(r.Context(), value[index].RoomID, sessionToken(r)); canManage {
+					value[index].AccessGranted = true
+					continue
+				}
+				metadata, accessErr := api.service.Access(r.Context(), value[index].RoomID)
+				value[index].AccessGranted = accessErr == nil && (session.Admin() || validRoomAccessToken(roomAccessSecret(api.cfg.Auth.RoomAccessTokenSecret), cookieValue(roomCookie), value[index].RoomID, session.PublicID, metadata.PasswordVersion, time.Now()))
+			}
+		}
+	}
 	writeJSON(w, value)
 	return nil
 }
 func (api *RoomAPI) update(w http.ResponseWriter, r *http.Request) error {
 	var request struct {
-		Name string `json:"name"`
+		Name                 string `json:"name"`
+		IsPrivate            bool   `json:"isPrivate"`
+		Password             string `json:"password"`
+		KeepExistingPassword bool   `json:"keepExistingPassword"`
 	}
 	if err := decodeJSONBody(r, &request); err != nil {
 		return &APIError{Status: 400, Message: "Invalid request body"}
 	}
-	value, err := api.service.Update(r.Context(), chi.URLParam(r, "roomId"), sessionToken(r), request.Name)
+	value, err := api.service.UpdateDetails(r.Context(), chi.URLParam(r, "roomId"), sessionToken(r), roomdomain.UpdateInput{Name: request.Name, Private: request.IsPrivate, Password: request.Password, KeepExistingPassword: request.KeepExistingPassword})
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, account.ErrUnknownSession) {
 			status = http.StatusUnauthorized
 		} else if errors.Is(err, sql.ErrNoRows) {
 			status = http.StatusNotFound
-		} else if err.Error() == "No permission to update room" {
+		} else if errors.Is(err, roomdomain.ErrUpdateForbidden) {
 			status = http.StatusForbidden
 		}
 		writeErrorJSON(w, status, map[string]string{"message": err.Error()})
@@ -80,6 +111,40 @@ func (api *RoomAPI) update(w http.ResponseWriter, r *http.Request) error {
 	}
 	writeJSON(w, value)
 	return nil
+}
+
+func (api *RoomAPI) verify(w http.ResponseWriter, r *http.Request) error {
+	var request struct {
+		Password string `json:"password"`
+	}
+	if err := decodeJSONBody(r, &request); err != nil {
+		return badRequest("Invalid request body")
+	}
+	roomID := chi.URLParam(r, "roomId")
+	metadata, session, err := api.service.VerifyAccess(r.Context(), roomID, sessionToken(r), request.Password)
+	if errors.Is(err, account.ErrUnknownSession) {
+		return unauthorized(w)
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		w.WriteHeader(http.StatusNotFound)
+		return nil
+	}
+	if err != nil {
+		writeErrorJSON(w, http.StatusForbidden, map[string]string{"message": "Invalid room password"})
+		return nil
+	}
+	expiresAt := time.Now().Add(time.Duration(roomAccessSeconds) * time.Second).UnixMilli()
+	proof := signRoomAccessToken(roomAccessSecret(api.cfg.Auth.RoomAccessTokenSecret), roomID, session.PublicID, expiresAt, metadata.PasswordVersion)
+	http.SetCookie(w, api.cookies.EstablishRoomAccess(r, proof))
+	writeJSON(w, map[string]any{"roomId": roomID, "accessGranted": true, "expiresAt": expiresAt})
+	return nil
+}
+
+func cookieValue(cookie *http.Cookie) string {
+	if cookie == nil {
+		return ""
+	}
+	return cookie.Value
 }
 func (api *RoomAPI) delete(w http.ResponseWriter, r *http.Request) error {
 	deleted, err := api.service.Delete(r.Context(), chi.URLParam(r, "roomId"), sessionToken(r))
@@ -145,7 +210,7 @@ func roomResult(w http.ResponseWriter, value any, err error) error {
 		writeJSON(w, value)
 		return nil
 	}
-	if err.Error() == "Forbidden" {
+	if errors.Is(err, roomdomain.ErrForbidden) {
 		writeErrorJSON(w, http.StatusForbidden, map[string]string{"message": "Forbidden"})
 		return nil
 	}
@@ -153,11 +218,11 @@ func roomResult(w http.ResponseWriter, value any, err error) error {
 }
 func membershipResult(w http.ResponseWriter, changed bool, err error) error {
 	if err != nil {
-		if err.Error() == "Forbidden" {
+		if errors.Is(err, roomdomain.ErrForbidden) {
 			writeErrorJSON(w, http.StatusForbidden, map[string]string{"message": "Forbidden"})
 			return nil
 		}
-		if err.Error() == "A room must retain an owner" {
+		if errors.Is(err, roomdomain.ErrLastOwner) {
 			writeErrorJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
 			return nil
 		}

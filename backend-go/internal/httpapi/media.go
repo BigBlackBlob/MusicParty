@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"crypto/subtle"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -53,23 +52,16 @@ func (api *MediaAPI) Routes(r chi.Router) {
 	r.Get("/api/subsonic/{roomId}/{sourceId}/cover/{coverId}", Adapt(api.subsonicCover))
 }
 
-func (api *MediaAPI) admin(r *http.Request, explicit string) (account.Session, bool) {
-	token := explicit
-	if token == "" {
-		token = sessionToken(r)
-	}
-	session, err := api.accounts.Resolve(r.Context(), token)
+func (api *MediaAPI) admin(r *http.Request) (account.Session, bool) {
+	session, err := api.accounts.Resolve(r.Context(), sessionToken(r))
 	return session, err == nil && session.Admin()
 }
 
-func (api *MediaAPI) canManage(r *http.Request, token, legacyPassword string) (account.Session, bool) {
-	if session, ok := api.admin(r, token); ok {
+func (api *MediaAPI) canManage(r *http.Request) (account.Session, bool) {
+	if session, ok := api.admin(r); ok {
 		return session, true
 	}
-	if api.cfg.Application.LegacyAdminPassword != "" && subtle.ConstantTimeCompare([]byte(legacyPassword), []byte(api.cfg.Application.LegacyAdminPassword)) == 1 {
-		return account.Session{DisplayName: "admin"}, true
-	}
-	session, err := api.accounts.Resolve(r.Context(), token)
+	session, err := api.accounts.Resolve(r.Context(), sessionToken(r))
 	if err != nil {
 		return account.Session{}, false
 	}
@@ -83,7 +75,7 @@ func (api *MediaAPI) canManage(r *http.Request, token, legacyPassword string) (a
 }
 
 func (api *MediaAPI) listLocal(w http.ResponseWriter, r *http.Request) error {
-	if _, ok := api.admin(r, r.URL.Query().Get("sessionToken")); !ok {
+	if _, ok := api.admin(r); !ok {
 		return accessDenied(w)
 	}
 	tracks, err := api.repository.FindAll(r.Context())
@@ -102,7 +94,7 @@ func (api *MediaAPI) uploadLocal(w http.ResponseWriter, r *http.Request) error {
 	if r.MultipartForm != nil {
 		defer r.MultipartForm.RemoveAll()
 	}
-	session, ok := api.canManage(r, r.FormValue("token"), r.FormValue("adminPassword"))
+	session, ok := api.canManage(r)
 	if !ok {
 		return accessDenied(w)
 	}
@@ -128,13 +120,13 @@ func (api *MediaAPI) uploadLocal(w http.ResponseWriter, r *http.Request) error {
 
 func (api *MediaAPI) updateLocal(w http.ResponseWriter, r *http.Request) error {
 	var request struct {
-		Title, Album, AdminPassword, Token string
-		Artists                            []string `json:"artists"`
+		Title, Album string
+		Artists      []string `json:"artists"`
 	}
 	if err := decodeJSONBody(r, &request); err != nil {
 		return badRequest("Invalid request body")
 	}
-	if _, ok := api.canManage(r, request.Token, request.AdminPassword); !ok {
+	if _, ok := api.canManage(r); !ok {
 		return accessDenied(w)
 	}
 	track, err := api.repository.FindByID(r.Context(), chi.URLParam(r, "id"))
@@ -157,7 +149,7 @@ func (api *MediaAPI) updateLocal(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (api *MediaAPI) deleteLocal(w http.ResponseWriter, r *http.Request) error {
-	if _, ok := api.canManage(r, r.URL.Query().Get("token"), r.URL.Query().Get("adminPassword")); !ok {
+	if _, ok := api.canManage(r); !ok {
 		return accessDenied(w)
 	}
 	if err := api.library.Delete(r.Context(), chi.URLParam(r, "id")); err != nil {
@@ -172,7 +164,7 @@ func (api *MediaAPI) deleteLocal(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (api *MediaAPI) listUploadAccess(w http.ResponseWriter, r *http.Request) error {
-	if _, ok := api.admin(r, r.URL.Query().Get("sessionToken")); !ok {
+	if _, ok := api.admin(r); !ok {
 		return accessDenied(w)
 	}
 	users, err := api.repository.FindAllowedUploadUsers(r.Context())
@@ -194,11 +186,11 @@ func (api *MediaAPI) revokeUploadAccess(w http.ResponseWriter, r *http.Request) 
 	return api.changeUploadAccess(w, r, false)
 }
 func (api *MediaAPI) changeUploadAccess(w http.ResponseWriter, r *http.Request, grant bool) error {
-	var request struct{ SessionToken, UserName string }
+	var request struct{ UserName string }
 	if err := decodeJSONBody(r, &request); err != nil {
 		return badRequest("Invalid request body")
 	}
-	if _, ok := api.admin(r, request.SessionToken); !ok {
+	if _, ok := api.admin(r); !ok {
 		return accessDenied(w)
 	}
 	name := strings.ToLower(strings.TrimSpace(request.UserName))
@@ -221,7 +213,7 @@ func (api *MediaAPI) changeUploadAccess(w http.ResponseWriter, r *http.Request, 
 }
 
 func (api *MediaAPI) canRead(r *http.Request) bool {
-	_, err := api.accounts.Resolve(r.Context(), r.URL.Query().Get("token"))
+	_, err := api.accounts.Resolve(r.Context(), sessionToken(r))
 	return err == nil
 }
 
@@ -306,7 +298,7 @@ func (api *MediaAPI) proxyPlatform(w http.ResponseWriter, r *http.Request, name,
 	if !ok {
 		return forbidden(w)
 	}
-	if check := api.platforms.access[name]; check != nil && !check(r.Context(), r.URL.Query().Get("token")) {
+	if check := api.platforms.access[name]; check != nil && !check(r.Context(), sessionToken(r)) {
 		return forbidden(w)
 	}
 	source, ok := service.(platform.MediaSource)

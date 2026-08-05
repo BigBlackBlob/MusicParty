@@ -29,18 +29,17 @@ func NewAdminAPI(store *storesqlite.Store, accounts *account.Service, client *pl
 	return &AdminAPI{store: store, accounts: accounts, client: client, platforms: platforms}
 }
 func (api *AdminAPI) Routes(r chi.Router) {
-	r.Get("/api/admin/subsonic-sources", Adapt(api.listSources))
-	r.Post("/api/admin/subsonic-source", Adapt(api.saveSource))
-	r.Post("/api/admin/subsonic-source/order", Adapt(api.orderSource))
-	r.Post("/api/admin/subsonic-source/remove", Adapt(api.removeSource))
-	r.Post("/api/admin/subsonic-source/test", Adapt(api.testSource))
-	r.Post("/api/admin/navidrome-access/grant", Adapt(api.grantNavidrome))
-	r.Post("/api/admin/navidrome-access/revoke", Adapt(api.revokeNavidrome))
-	r.Post("/api/admin/platform-credentials", Adapt(api.updatePlatformCredential))
+	r.With(RequireAdmin(api.accounts)).Get("/api/admin/subsonic-sources", Adapt(api.listSources))
+	r.With(RequireAdmin(api.accounts)).Post("/api/admin/subsonic-source", Adapt(api.saveSource))
+	r.With(RequireAdmin(api.accounts)).Post("/api/admin/subsonic-source/order", Adapt(api.orderSource))
+	r.With(RequireAdmin(api.accounts)).Post("/api/admin/subsonic-source/remove", Adapt(api.removeSource))
+	r.With(RequireAdmin(api.accounts)).Post("/api/admin/subsonic-source/test", Adapt(api.testSource))
+	r.With(RequireAdmin(api.accounts)).Post("/api/admin/navidrome-access/grant", Adapt(api.grantNavidrome))
+	r.With(RequireAdmin(api.accounts)).Post("/api/admin/navidrome-access/revoke", Adapt(api.revokeNavidrome))
+	r.With(RequireAdmin(api.accounts)).Post("/api/admin/platform-credentials", Adapt(api.updatePlatformCredential))
 }
 
 type sourceRequest struct {
-	SessionToken string `json:"sessionToken"`
 	RoomID       string `json:"roomId"`
 	ID           string `json:"id"`
 	Label        string `json:"label"`
@@ -52,17 +51,12 @@ type sourceRequest struct {
 	SortOrder    *int   `json:"sortOrder"`
 }
 type platformCredentialRequest struct {
-	SessionToken string `json:"sessionToken"`
-	Platform     string `json:"platform"`
-	Credential   string `json:"credential"`
+	Platform   string `json:"platform"`
+	Credential string `json:"credential"`
 }
 
-func (api *AdminAPI) admin(r *http.Request, requestToken string) bool {
-	token := requestToken
-	if token == "" {
-		token = sessionToken(r)
-	}
-	session, err := api.accounts.Resolve(r.Context(), token)
+func (api *AdminAPI) admin(r *http.Request) bool {
+	session, err := api.accounts.Resolve(r.Context(), sessionToken(r))
 	return err == nil && session.Admin()
 }
 func (api *AdminAPI) updatePlatformCredential(w http.ResponseWriter, r *http.Request) error {
@@ -70,7 +64,7 @@ func (api *AdminAPI) updatePlatformCredential(w http.ResponseWriter, r *http.Req
 	if err := decodeJSONBody(r, &request); err != nil {
 		return badRequest("Invalid request body")
 	}
-	if !api.admin(r, request.SessionToken) {
+	if !api.admin(r) {
 		return accessDenied(w)
 	}
 	platformName := strings.ToLower(strings.TrimSpace(request.Platform))
@@ -98,7 +92,7 @@ func (api *AdminAPI) updatePlatformCredential(w http.ResponseWriter, r *http.Req
 	return nil
 }
 func (api *AdminAPI) listSources(w http.ResponseWriter, r *http.Request) error {
-	if !api.admin(r, r.URL.Query().Get("sessionToken")) {
+	if !api.admin(r) {
 		return accessDenied(w)
 	}
 	roomID := defaultValue(r.URL.Query().Get("roomId"), "lounge")
@@ -142,7 +136,7 @@ func (api *AdminAPI) saveSource(w http.ResponseWriter, r *http.Request) error {
 	if err := decodeJSONBody(r, &request); err != nil {
 		return badRequest("Invalid request body")
 	}
-	if !api.admin(r, request.SessionToken) {
+	if !api.admin(r) {
 		return accessDenied(w)
 	}
 	request.RoomID = defaultValue(request.RoomID, "lounge")
@@ -200,7 +194,7 @@ func (api *AdminAPI) orderSource(w http.ResponseWriter, r *http.Request) error {
 	if err := decodeJSONBody(r, &request); err != nil {
 		return badRequest("Invalid request body")
 	}
-	if !api.admin(r, request.SessionToken) {
+	if !api.admin(r) {
 		return accessDenied(w)
 	}
 	if request.SortOrder == nil {
@@ -224,7 +218,7 @@ func (api *AdminAPI) removeSource(w http.ResponseWriter, r *http.Request) error 
 	if err := decodeJSONBody(r, &request); err != nil {
 		return badRequest("Invalid request body")
 	}
-	if !api.admin(r, request.SessionToken) {
+	if !api.admin(r) {
 		return accessDenied(w)
 	}
 	repository := storesqlite.NewSubsonicSourceRepository(api.store)
@@ -247,7 +241,7 @@ func (api *AdminAPI) testSource(w http.ResponseWriter, r *http.Request) error {
 	if err := decodeJSONBody(r, &request); err != nil {
 		return badRequest("Invalid request body")
 	}
-	if !api.admin(r, request.SessionToken) {
+	if !api.admin(r) {
 		return accessDenied(w)
 	}
 	repository := storesqlite.NewSubsonicSourceRepository(api.store)
@@ -281,13 +275,12 @@ func (api *AdminAPI) revokeNavidrome(w http.ResponseWriter, r *http.Request) err
 }
 func (api *AdminAPI) updateNavidrome(w http.ResponseWriter, r *http.Request, grant bool) error {
 	var request struct {
-		SessionToken string `json:"sessionToken"`
-		UserName     string `json:"userName"`
+		UserName string `json:"userName"`
 	}
 	if err := decodeJSONBody(r, &request); err != nil {
 		return badRequest("Invalid request body")
 	}
-	if !api.admin(r, request.SessionToken) {
+	if !api.admin(r) {
 		return accessDenied(w)
 	}
 	repository := storesqlite.NewSiteSettingRepository(api.store)
