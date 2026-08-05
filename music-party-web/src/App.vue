@@ -6,7 +6,7 @@
   <div class="app-viewport w-full overflow-hidden font-sans">
     <AudioEngine />
     <!-- 1. 认证遮罩 -->
-    <AuthOverlay @unlocked="userStore.isAuthPassed = true" v-if="!userStore.isAuthPassed" />
+    <AuthOverlay v-if="!userStore.isAuthPassed" />
 
     <!-- 2. 启动页 (Start Screen) -->
     <!-- 注意：点击 Connect 后，我们先不销毁它，直到 socket 连接成功，或者直接切换布局 -->
@@ -31,7 +31,10 @@
               :class="roomStore.currentRoomId === room.roomId ? 'border-[var(--accent)] bg-[var(--accent-subtle)]' : 'border-[var(--border-default)] bg-[var(--surface-2)] hover:bg-[var(--surface-3)]'"
           >
             <button class="min-w-0 flex-1 text-left" @click="selectRoomBeforeStart(room)">
-              <span class="block truncate font-semibold text-[var(--text-primary)]">{{ room.name }}</span>
+              <span class="flex items-center gap-1 truncate font-semibold text-[var(--text-primary)]">
+                <span v-if="room.privateRoom" class="material-symbols-outlined text-[15px] text-[var(--accent)]">lock</span>
+                <span class="truncate">{{ room.name }}</span>
+              </span>
               <span class="text-xs text-[var(--text-tertiary)]">{{ room.onlineCount || 0 }} active</span>
             </button>
             <div v-if="canManageRoom(room)" class="flex flex-shrink-0 items-center gap-1">
@@ -52,7 +55,7 @@
             </div>
           </div>
         </div>
-        <div class="mt-3 flex gap-2">
+        <div v-if="userStore.capabilities.canCreateRoom" class="mt-3 flex gap-2">
           <input
               v-model="newRoomName"
               class="min-w-0 flex-1 rounded-xl border border-[var(--border-default)] bg-[var(--surface-2)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
@@ -61,13 +64,30 @@
           />
           <button @click="createRoom" class="rounded-xl bg-[var(--accent)] px-4 text-sm font-semibold text-[var(--text-inverse)]">Create</button>
         </div>
+        <label v-if="userStore.capabilities.canCreateRoom" class="mt-2 flex items-center gap-2 text-xs text-[var(--text-secondary)]">
+          <input v-model="newRoomPrivate" type="checkbox" class="h-4 w-4 accent-[var(--accent)]" />
+          {{ $t('rooms.createPrivate') }}
+        </label>
+        <input
+          v-if="userStore.capabilities.canCreateRoom && newRoomPrivate"
+          v-model="newRoomPassword"
+          type="password"
+          class="mt-2 w-full rounded-xl border border-[var(--border-default)] bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+          :placeholder="$t('rooms.newRoomPassword')"
+          autocomplete="new-password"
+          @keyup.enter="createRoom"
+        />
       </div>
       <button
           @click="startGame"
+          :disabled="roomStore.transition.status === 'connecting'"
           class="min-h-[44px] px-12 py-4 bg-[var(--accent)] text-[var(--text-inverse)] font-semibold text-lg hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-colors rounded-xl shadow-lg"
       >
-        进入 {{ roomStore.currentRoom?.name || 'Lounge' }}
+        {{ roomStore.transition.status === 'connecting' ? '正在连接…' : `进入 ${roomStore.currentRoom?.name || 'Lounge'}` }}
       </button>
+      <p v-if="roomStore.transition.status === 'failed' && !privateRoomDialogOpen" class="max-w-md text-center text-sm text-[var(--error-soft-text)]" role="alert">
+        {{ roomStore.transition.error.message }}
+      </p>
     </div>
 
     <div v-if="editingRoom" class="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-[var(--surface-0)]/70 p-4 backdrop-blur-xl">
@@ -158,15 +178,18 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, onBeforeUnmount } from 'vue';
+import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useEventListener, useWindowSize } from '@vueuse/core';
-import { usePlayerStore } from './stores/player';
+import { useRoomRealtimeCoordinator } from './domains/realtime/roomRealtimeCoordinator';
+import { useRealtimeConnectionStore } from './domains/realtime/realtimeConnectionStore';
+import { useRoomRuntimeStore } from './domains/realtime/roomRuntimeStore';
 import { useUserStore } from './stores/user';
 import { useUiStore } from './stores/ui';
 import { useRoomStore } from './stores/room';
 import { useLayoutStore } from './stores/layout';
 import { useToast } from './composables/useToast';
 import { useShortcuts } from './composables/useShortcuts';
+import { isAPIError } from './transport/errors';
 
 // Components
 import MainLayout from './components/layout/MainLayout.vue';
@@ -182,14 +205,20 @@ import PrivateRoomAccessDialog from './components/PrivateRoomAccessDialog.vue';
 import MobileLayout from './components/mobile/MobileLayout.vue';
 import MobilePreviewShell from './components/mobile/MobilePreviewShell.vue';
 
-const player = usePlayerStore();
+const player = useRoomRealtimeCoordinator();
+const realtimeConnection = useRealtimeConnectionStore();
+const playerRuntime = useRoomRuntimeStore();
 const userStore = useUserStore();
 const uiStore = useUiStore();
 const roomStore = useRoomStore();
 const layoutStore = useLayoutStore();
 const hasStarted = ref(false);
+const pendingStart = ref(false);
+const pendingRoomCreate = ref(null);
 const showSearch = ref(false);
 const newRoomName = ref('');
+const newRoomPrivate = ref(false);
+const newRoomPassword = ref('');
 const editingRoom = ref(null);
 const deletingRoom = ref(null);
 const roomDialogError = ref('');
@@ -266,9 +295,43 @@ const startGame = () => {
     openPrivateRoomDialog(room, 'start');
     return;
   }
-  hasStarted.value = true;
+  pendingStart.value = true;
+  roomStore.beginConnection(room.roomId);
   player.connect();
 };
+
+watch(() => realtimeConnection.hasInitialSnapshot, (ready) => {
+  if (!ready || !pendingStart.value) return;
+  pendingStart.value = false;
+  roomStore.commitTransition(roomStore.currentRoomId);
+  hasStarted.value = true;
+  const createAfterConnect = pendingRoomCreate.value;
+  pendingRoomCreate.value = null;
+  createAfterConnect?.();
+});
+
+// A logout or revoked session ends the room lifecycle as well. Without this
+// reset, a newly created guest session would inherit the previous screen
+// while its realtime connection (and Presence snapshot) had already closed.
+watch(() => userStore.isAuthPassed, (isAuthenticated, wasAuthenticated) => {
+  if (isAuthenticated || !wasAuthenticated) return;
+  player.resetRoomState();
+  hasStarted.value = false;
+  pendingStart.value = false;
+  pendingRoomCreate.value = null;
+  showSearch.value = false;
+  closePrivateRoomDialog();
+});
+
+watch(() => roomStore.transition.status, (status) => {
+  if (status !== 'failed') return;
+  pendingStart.value = false;
+  pendingRoomCreate.value = null;
+  const room = roomStore.currentRoom;
+  if (room?.privateRoom && !roomStore.hasValidRoomAccess(room.roomId)) {
+    openPrivateRoomDialog(room, hasStarted.value ? 'reconnect' : 'start');
+  }
+});
 
 const submitPrivateRoomPassword = async (password) => {
   const room = privateRoomDialogRoom.value;
@@ -279,13 +342,16 @@ const submitPrivateRoomPassword = async (password) => {
     await roomStore.verifyRoomAccess(room.roomId, password);
     roomStore.setCurrentRoom(room.roomId);
     const shouldStart = privateRoomDialogAction.value === 'start';
+    const shouldReconnect = privateRoomDialogAction.value === 'reconnect';
     closePrivateRoomDialog();
     if (shouldStart) {
-      hasStarted.value = true;
-      player.connect();
+      startGame();
+    } else if (shouldReconnect) {
+      roomStore.beginConnection(room.roomId);
+      player.reconnectToCurrentRoom();
     }
   } catch (error) {
-    privateRoomDialogError.value = error?.response?.data?.message || 'Room password could not be verified';
+    privateRoomDialogError.value = isAPIError(error) ? error.message : 'Room password could not be verified';
   } finally {
     privateRoomDialogLoading.value = false;
   }
@@ -293,16 +359,20 @@ const submitPrivateRoomPassword = async (password) => {
 
 const createRoom = () => {
   const name = newRoomName.value.trim();
-  if (!name) return;
+  const password = newRoomPassword.value;
+  if (!name || (newRoomPrivate.value && !password.trim())) return;
 
   const submitCreate = () => {
-    roomStore.createRoom(name);
+    roomStore.createRoom(name, { isPrivate: newRoomPrivate.value, password });
     newRoomName.value = '';
+    newRoomPrivate.value = false;
+    newRoomPassword.value = '';
   };
 
   if (!hasStarted.value) {
-    hasStarted.value = true;
-    player.connect();
+    pendingRoomCreate.value = submitCreate;
+    startGame();
+    return;
   }
 
   if (userStore.isGuest) {
@@ -314,7 +384,7 @@ const createRoom = () => {
   submitCreate();
 };
 
-const canManageRoom = (room) => !room?.system && (userStore.isAdmin || room.creatorPublicId === userStore.publicId);
+const canManageRoom = (room) => !room?.system && userStore.capabilitiesForRoom(room.creatorPublicId).canManageCurrentRoom;
 
 const closeRoomDialog = () => {
   editingRoom.value = null;
@@ -396,7 +466,7 @@ useEventListener(document, 'visibilitychange', () => {
   if (document.visibilityState === 'hidden') {
     if (
       hasStarted.value &&
-      !player.isPaused &&
+      !playerRuntime.isPaused &&
       uiStore.autoLiteMode &&
       !uiStore.isLiteMode
     ) {
@@ -405,7 +475,7 @@ useEventListener(document, 'visibilitychange', () => {
         if (
           document.visibilityState === 'hidden' &&
           hasStarted.value &&
-          !player.isPaused &&
+          !playerRuntime.isPaused &&
           uiStore.autoLiteMode &&
           lastInteractionAt <= hiddenAt
         ) {
@@ -423,7 +493,7 @@ ACTIVITY_EVENTS.forEach(eventName => {
 
 const handleSearchClick = () => {
   // 简单的搜索逻辑代理
-  if (userStore.isGuest) {
+  if (!userStore.hasDisplayName) {
     userStore.setPostNameAction(() => { showSearch.value = true; });
     userStore.showNameModal = true;
   } else {
@@ -432,7 +502,7 @@ const handleSearchClick = () => {
 };
 
 const handleMobileChat = () => {
-  if (userStore.isGuest) {
+  if (!userStore.hasDisplayName) {
     userStore.setPostNameAction(() => {
       chatOverlayRef.value?.toggleChat?.();
     });

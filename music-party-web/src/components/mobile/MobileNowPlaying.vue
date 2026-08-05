@@ -12,6 +12,8 @@
       <div class="flex-1 flex items-center justify-end">
         <button 
           class="w-[44px] h-[44px] flex items-center justify-center rounded-full hover:bg-surface-raised transition-colors active:scale-95 text-primary ml-1"
+          :aria-label="t('settings.title')"
+          :title="t('settings.title')"
           @click="$emit('open-settings')"
         >
           <span class="material-symbols-outlined">settings</span>

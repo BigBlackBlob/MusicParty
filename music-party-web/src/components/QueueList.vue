@@ -21,12 +21,12 @@
 
       <!-- Actions / Metadata -->
       <div class="flex min-w-0 items-center gap-2">
-        <span class="font-micro text-micro text-text-muted uppercase">{{ activeView === 'queue' ? queue.length : player.likedSongs.length }} {{ t('queue.tracks') }}</span>
+        <span class="font-micro text-micro text-text-muted uppercase">{{ activeView === 'queue' ? queue.length : liked.likedSongs.length }} {{ t('queue.tracks') }}</span>
         <button v-if="activeView === 'queue' && queue.length > 0" @click="toggleSelectionMode" class="flex h-8 w-8 items-center justify-center rounded-md text-text-muted hover:bg-[var(--surface-control-hover)] hover:text-text-primary" :aria-label="t('queue.selectTracks')" :title="t('queue.selectTracks')">
           <span class="material-symbols-outlined text-[16px]">{{ selectionMode ? 'close' : 'checklist' }}</span>
         </button>
 
-        <button v-if="activeView === 'liked' && player.likedSongs.length > 0" @click="exportLikedSongs" class="text-text-muted hover:text-text-primary" :aria-label="t('common.export')" :title="t('common.export')">
+        <button v-if="activeView === 'liked' && liked.likedSongs.length > 0" @click="exportLikedSongs" class="text-text-muted hover:text-text-primary" :aria-label="t('common.export')" :title="t('common.export')">
           <span class="material-symbols-outlined text-[16px]">download</span>
         </button>
       </div>
@@ -43,13 +43,13 @@
 
       <!-- Liked View -->
       <div v-if="activeView === 'liked'" class="flex flex-col gap-2">
-        <div v-if="player.likedSongs.length === 0" class="py-16 text-center">
+        <div v-if="liked.likedSongs.length === 0" class="py-16 text-center">
           <div class="text-sm font-bold text-text-primary">{{ t('queue.noLiked') }}</div>
           <div class="mt-1 text-xs text-text-muted">{{ t('queue.likedDesc') }}</div>
         </div>
 
         <TrackListItem
-          v-for="song in player.likedSongs"
+          v-for="song in liked.likedSongs"
           :key="song.key"
           :title="song.name"
             :artist="formatArtists(song.artists)"
@@ -59,7 +59,7 @@
             {{ song.platform }}
           </template>
           <template #suffix>
-            <button @click="player.removeLikedSongAndSync(song.key)" class="text-error hover:text-red-400" :aria-label="t('queue.remove')" :title="t('queue.remove')">
+            <button @click="removeLikedSong(song.key)" class="text-error hover:text-red-400" :aria-label="t('queue.remove')" :title="t('queue.remove')">
               <span class="material-symbols-outlined text-[18px]">delete</span>
             </button>
           </template>
@@ -110,7 +110,9 @@
 import { computed, ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Sortable from 'sortablejs';
-import { usePlayerStore } from '../stores/player';
+import { useRoomCommandStore } from '../domains/realtime/roomCommandStore';
+import { useRoomRuntimeStore } from '../domains/realtime/roomRuntimeStore';
+import { useLikedSongsStore } from '../domains/playback/likedSongs';
 import { useUserStore } from '../stores/user';
 import QueueItem from './QueueItem.vue';
 import TrackListItem from './ui/TrackListItem.vue';
@@ -119,10 +121,12 @@ import { useQueueSelection } from '../composables/useQueueSelection';
 import { useVirtualQueue } from '../composables/useVirtualQueue';
 import { buildQueueReorderPayload, buildQueueReorderPayloadFromDom, isQueueReorderSourceCurrent } from '../utils/queueReorder';
 
-const player = usePlayerStore();
+const player = useRoomCommandStore();
+const runtime = useRoomRuntimeStore();
+const liked = useLikedSongsStore();
 const user = useUserStore();
 const { t } = useI18n();
-const queue = computed(() => player.queue);
+const queue = computed(() => runtime.queue);
 const activeView = ref('queue');
 const queueListRef = ref(null);
 const queueScrollerRef = ref(null);
@@ -194,20 +198,20 @@ onBeforeUnmount(() => {
 const batchTop = () => {
   const ids = selectedIds.value;
   if (!ids.length) return;
-  if (!player.topSongs(ids)) player.topSongsCompat(ids);
+  player.topSongs(ids);
   exitSelectionMode();
 };
 
 const batchRemove = () => {
   const ids = selectedIds.value;
   if (!ids.length) return;
-  if (!player.removeSongs(ids)) player.removeSongsCompat(ids);
+  player.removeSongs(ids);
   exitSelectionMode();
 };
 
 const exportLikedSongs = () => {
-  if (!player.likedSongs.length) return;
-  const blob = new Blob([createLikedSongsText(player.likedSongs)], { type: 'text/plain;charset=utf-8' });
+  if (!liked.likedSongs.length) return;
+  const blob = new Blob([createLikedSongsText(liked.likedSongs)], { type: 'text/plain;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -217,6 +221,8 @@ const exportLikedSongs = () => {
   link.remove();
   URL.revokeObjectURL(url);
 };
+
+const removeLikedSong = (key) => liked.removeAndSync(key, user.isGuest);
 
 const formatArtists = (artists) => Array.isArray(artists) && artists.length ? artists.join(' / ') : t('common.unknownArtist');
 

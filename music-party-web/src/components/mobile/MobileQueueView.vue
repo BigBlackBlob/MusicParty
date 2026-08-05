@@ -15,7 +15,7 @@
           <button 
             v-if="activeView === 'liked'"
             @click="exportLikedSongs"
-            :disabled="player.likedSongs.length === 0"
+            :disabled="liked.likedSongs.length === 0"
             class="w-[44px] h-[44px] flex items-center justify-center rounded-full hover:bg-surface-raised transition-colors disabled:opacity-30"
           >
             <span class="material-symbols-outlined text-text-secondary">download</span>
@@ -88,14 +88,14 @@
             <div class="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
               <button 
                 v-if="!selectionMode && !user.isGuest"
-                @click.stop="player.topSong(item.queueId)"
+                @click.stop="commands.topSong(item.queueId)"
                 class="w-[44px] h-[44px] flex items-center justify-center rounded-full hover:bg-surface-raised transition-colors text-text-secondary hover:text-primary"
               >
                 <span class="material-symbols-outlined text-[20px]">arrow_upward</span>
               </button>
               <button 
                 v-if="!selectionMode && !user.isGuest"
-                @click.stop="player.removeSong(item.queueId)"
+                @click.stop="commands.removeSong(item.queueId)"
                 class="w-[44px] h-[44px] flex items-center justify-center rounded-full hover:bg-surface-raised transition-colors text-text-secondary hover:text-error"
               >
                 <span class="material-symbols-outlined text-[20px]">delete</span>
@@ -121,14 +121,14 @@
       </template>
 
       <template v-else>
-        <div v-if="player.likedSongs.length === 0" class="flex flex-col items-center justify-center py-20 text-center opacity-40">
+        <div v-if="liked.likedSongs.length === 0" class="flex flex-col items-center justify-center py-20 text-center opacity-40">
           <span class="material-symbols-outlined text-[48px] mb-2">favorite</span>
           <p class="font-compact text-compact uppercase tracking-widest">{{ t('queue.noLiked') }}</p>
         </div>
 
         <div v-else class="flex flex-col gap-xs">
           <div
-            v-for="song in player.likedSongs"
+            v-for="song in liked.likedSongs"
             :key="song.key"
             class="flex items-center p-sm rounded-xl hover:bg-surface-raised transition-colors group cursor-pointer"
           >
@@ -140,7 +140,7 @@
               <p class="font-caption text-caption text-text-secondary truncate">{{ formatArtists(song.artists) }}</p>
             </div>
             <button 
-              @click="player.removeLikedSong(song.key)"
+              @click="liked.remove(song.key)"
               class="w-[44px] h-[44px] flex items-center justify-center rounded-full hover:bg-surface-raised transition-colors text-text-secondary hover:text-error opacity-0 group-hover:opacity-100"
             >
               <span class="material-symbols-outlined text-[20px]">delete</span>
@@ -186,7 +186,9 @@
 import { computed, ref, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Sortable from 'sortablejs';
-import { usePlayerStore } from '../../stores/player';
+import { useRoomRuntimeStore } from '../../domains/realtime/roomRuntimeStore';
+import { useRoomCommandStore } from '../../domains/realtime/roomCommandStore';
+import { useLikedSongsStore } from '../../domains/playback/likedSongs';
 import { useUserStore } from '../../stores/user';
 import { useRoomStore } from '../../stores/room';
 import { createLikedSongsFilename, createLikedSongsText } from '../../utils/likedSongs';
@@ -196,7 +198,9 @@ import { useVirtualQueue } from '../../composables/useVirtualQueue';
 import CoverImage from '../CoverImage.vue';
 
 const { t } = useI18n();
-const player = usePlayerStore();
+const player = useRoomRuntimeStore();
+const commands = useRoomCommandStore();
+const liked = useLikedSongsStore();
 const user = useUserStore();
 const roomStore = useRoomStore();
 const activeView = ref('queue');
@@ -265,8 +269,8 @@ const initSortable = () => {
         || (isQueueReorderSourceCurrent(queue.value, evt)
           ? buildQueueReorderPayload(queue.value, evt.oldIndex, evt.newIndex)
           : null);
-      if (payload && payload.oldIndex < 50 && payload.newIndex < 50) player.reorderQueue(payload.oldIndex, payload.newIndex, payload.queueId, payload.targetQueueId, payload.position);
-      else if (evt.oldIndex !== evt.newIndex) player.requestResync('queue-reorder-stale-dom', true);
+      if (payload && payload.oldIndex < 50 && payload.newIndex < 50) commands.reorderQueue(payload.oldIndex, payload.newIndex, payload.queueId, payload.targetQueueId, payload.position);
+      else if (evt.oldIndex !== evt.newIndex) commands.requestResync('queue-reorder-stale-dom', true);
       dragStartedInInteractiveZone = false;
     }
   });
@@ -280,8 +284,8 @@ onBeforeUnmount(() => {
 const formatArtists = (artists) => Array.isArray(artists) && artists.length ? artists.join(' / ') : t('common.unknownArtist');
 
 const exportLikedSongs = () => {
-  if (!player.likedSongs.length) return;
-  const blob = new Blob([createLikedSongsText(player.likedSongs)], { type: 'text/plain;charset=utf-8' });
+  if (!liked.likedSongs.length) return;
+  const blob = new Blob([createLikedSongsText(liked.likedSongs)], { type: 'text/plain;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -325,7 +329,7 @@ const cancelSelection = () => {
 const topSelected = () => {
   if (!hasSelection.value) return;
   const ids = selectedIds.value;
-  if (!player.topSongs(ids)) player.topSongsCompat(ids);
+  commands.topSongs(ids);
   cancelSelection();
 };
 
@@ -337,7 +341,7 @@ const requestDeleteSelected = () => {
 const confirmDeleteSelected = () => {
   if (!hasSelection.value) return;
   const ids = selectedIds.value;
-  if (!player.removeSongs(ids)) player.removeSongsCompat(ids);
+  commands.removeSongs(ids);
   cancelSelection();
 };
 

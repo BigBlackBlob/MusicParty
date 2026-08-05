@@ -34,7 +34,7 @@
 import { computed, ref, watch } from 'vue';
 import SettingsCenter from '../SettingsCenter.vue';
 import { useChatStore } from '../../stores/chat';
-import { usePlayerStore } from '../../stores/player';
+import { useRoomRuntimeStore } from '../../domains/realtime/roomRuntimeStore';
 import { useUiStore } from '../../stores/ui';
 import MobileBottomNav from './MobileBottomNav.vue';
 import MobileChatView from './MobileChatView.vue';
@@ -44,7 +44,7 @@ import MobileSearchView from './MobileSearchView.vue';
 
 const showSettings = ref(false);
 const chat = useChatStore();
-const player = usePlayerStore();
+const player = useRoomRuntimeStore();
 const ui = useUiStore();
 const activeTab = computed({
   get: () => ui.mobileActiveTab,

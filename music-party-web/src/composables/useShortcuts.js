@@ -1,9 +1,11 @@
 import { onMounted, onUnmounted } from 'vue';
-import { usePlayerStore } from '../stores/player';
+import { useRoomCommandStore } from '../domains/realtime/roomCommandStore';
+import { useRoomRuntimeStore } from '../domains/realtime/roomRuntimeStore';
 import { useUiStore } from '../stores/ui';
 
 export function useShortcuts(actions = {}) {
-  const player = usePlayerStore();
+  const player = useRoomCommandStore();
+  const runtime = useRoomRuntimeStore();
   const ui = useUiStore();
 
   const handleKeyDown = (e) => {
@@ -22,7 +24,7 @@ export function useShortcuts(actions = {}) {
         break;
       
       case 'l': // L: Like
-        player.sendLike();
+        player.toggleLike(runtime.nowPlaying?.music);
         break;
 
       case 's': // S: Shuffle

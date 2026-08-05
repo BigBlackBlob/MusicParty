@@ -37,7 +37,7 @@
 <script setup>
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { usePlayerStore } from '../stores/player';
+import { useRoomCommandStore } from '../domains/realtime/roomCommandStore';
 import { useUserStore } from '../stores/user';
 import { useUserPlaylistsStore } from '../stores/userPlaylists';
 import { useToast } from '../composables/useToast';
@@ -65,7 +65,7 @@ const props = defineProps({
 const emit = defineEmits(['toggle-select']);
 
 const { t } = useI18n();
-const player = usePlayerStore();
+const player = useRoomCommandStore();
 const userStore = useUserStore();
 const userPlaylistsStore = useUserPlaylistsStore();
 const artistLine = computed(() => Array.isArray(props.item.music?.artists) && props.item.music.artists.length

@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
-import { usePlayerStore } from './player';
+import { useAudioPlaybackStore } from '../domains/playback/audioPlaybackStore';
+import { useRoomRealtimeCoordinator } from '../domains/realtime/roomRealtimeCoordinator';
 
 const readSrc = (rel) => readFileSync(resolve(process.cwd(), rel), 'utf8');
 
@@ -13,11 +14,12 @@ describe('buffering progress + reload position restore', () => {
   });
 
   it('player store exposes reset bufferedMs state', () => {
-    const player = usePlayerStore();
+    const player = useAudioPlaybackStore();
+    const coordinator = useRoomRealtimeCoordinator();
     expect(player.bufferedMs).toBe(0);
     player.bufferedMs = 12345;
     expect(player.bufferedMs).toBe(12345);
-    player.resetRoomState();
+    coordinator.resetRoomState();
     expect(player.bufferedMs).toBe(0);
   });
 
@@ -50,13 +52,13 @@ describe('buffering progress + reload position restore', () => {
   it('PlayerControl renders the buffered range behind the played range', () => {
     const src = readSrc('src/components/PlayerControl.vue');
     expect(src).toContain('bufferedPercent');
-    expect(src).toContain('player.bufferedMs');
+    expect(src).toContain('audio.bufferedMs');
   });
 
   it('useNowPlayingViewModel exposes bufferedPercent', () => {
-    const src = readSrc('src/composables/useNowPlayingViewModel.js');
+    const src = readSrc('src/composables/useNowPlayingViewModel.ts');
     expect(src).toContain('bufferedPercent');
-    expect(src).toContain('player.bufferedMs');
+    expect(src).toContain('audio.bufferedMs');
   });
 
   it('useAudio implements three-level soft retry (L1 wait / L2 soft retry / L3 hard reload)', () => {

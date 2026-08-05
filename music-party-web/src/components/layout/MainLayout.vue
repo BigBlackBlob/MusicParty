@@ -22,7 +22,7 @@
     <!-- Lite Mode Overlay -->
     <LiteModeView
       v-if="uiStore.isLiteMode"
-      :now-playing="playerStore.nowPlaying"
+      :now-playing="playerRuntime.nowPlaying"
       v-model:volume="uiStore.volume"
       v-model:auto-lite="uiStore.autoLiteMode"
       @exit="uiStore.toggleLiteMode"
@@ -45,8 +45,8 @@
             </button>
             <span
               class="h-2 w-2 rounded-full"
-              :class="playerStore.connected ? 'bg-[#22C55E] shadow-[0_0_14px_rgba(34,197,94,0.45)]' : 'bg-error'"
-              :title="playerStore.connected ? t('settings.connected') : t('settings.disconnected')"
+              :class="realtimeConnection.connected ? 'bg-[#22C55E] shadow-[0_0_14px_rgba(34,197,94,0.45)]' : 'bg-error'"
+              :title="realtimeConnection.connected ? t('settings.connected') : t('settings.disconnected')"
             />
           </div>
           <div
@@ -66,7 +66,10 @@
                 @click="attemptSwitchRoom(room)"
               >
                 <div class="flex flex-col min-w-0 flex-1">
-                  <span class="truncate font-compact text-sm font-bold">{{ room.name }}</span>
+                  <span class="flex items-center gap-1 truncate font-compact text-sm font-bold">
+                    <span v-if="room.privateRoom" class="material-symbols-outlined text-[14px] text-primary">lock</span>
+                    <span class="truncate">{{ room.name }}</span>
+                  </span>
                   <span class="text-[10px] opacity-60 font-mono tracking-tight">{{ room.onlineCount || 0 }} {{ t('settings.active') }}</span>
                 </div>
                 
@@ -93,6 +96,19 @@
               />
               <button class="rounded-md bg-primary px-4 text-xs font-black uppercase tracking-widest text-on-primary hover:bg-[var(--accent-hover)] transition-colors" @click="createRoom">{{ t('rooms.create') }}</button>
             </div>
+            <label class="mt-2 flex items-center gap-2 text-xs text-text-secondary">
+              <input v-model="newRoomPrivate" type="checkbox" class="h-4 w-4 accent-[var(--accent)]" />
+              {{ t('rooms.createPrivate') }}
+            </label>
+            <input
+              v-if="newRoomPrivate"
+              v-model="newRoomPassword"
+              type="password"
+              class="mt-2 w-full rounded-md border border-border-default bg-surface-raised px-3 py-2 text-sm text-text-primary outline-none focus:border-primary"
+              :placeholder="t('rooms.newRoomPassword')"
+              autocomplete="new-password"
+              @keyup.enter="createRoom"
+            />
           </div>
           <button
             type="button"
@@ -204,7 +220,10 @@ import LiteModeView from './LiteModeView.vue';
 import UserList from '../UserList.vue';
 import { useUserStore } from '../../stores/user';
 import { useUiStore } from '../../stores/ui';
-import { ROOM_SWITCH_PASSWORD_REQUIRED, usePlayerStore } from '../../stores/player';
+import { ROOM_SWITCH_PASSWORD_REQUIRED, useRoomRealtimeCoordinator } from '../../domains/realtime/roomRealtimeCoordinator';
+import { useRoomRuntimeStore } from '../../domains/realtime/roomRuntimeStore';
+import { useRoomPresenceStore } from '../../domains/realtime/roomPresenceStore';
+import { useRealtimeConnectionStore } from '../../domains/realtime/realtimeConnectionStore';
 import { useRoomStore } from '../../stores/room';
 import { useLayoutStore } from '../../stores/layout';
 import { extractErrorMessage } from '../../utils/errors';
@@ -214,7 +233,10 @@ const emit = defineEmits(['search', 'toggle-mobile-chat']);
 const { t } = useI18n();
 const userStore = useUserStore();
 const uiStore = useUiStore();
-const playerStore = usePlayerStore();
+const playerRuntime = useRoomRuntimeStore();
+const presenceStore = useRoomPresenceStore();
+const realtimeConnection = useRealtimeConnectionStore();
+const realtimeCoordinator = useRoomRealtimeCoordinator();
 const roomStore = useRoomStore();
 const layoutStore = useLayoutStore();
 const toast = useToast();
@@ -224,20 +246,17 @@ const isSettingsOpen = ref(false);
 const isUserListOpen = ref(false);
 const isRoomMenuOpen = ref(false);
 const newRoomName = ref('');
+const newRoomPrivate = ref(false);
+const newRoomPassword = ref('');
 const privateRoomDialogOpen = ref(false);
 const privateRoomDialogRoom = ref(null);
 const privateRoomDialogLoading = ref(false);
 const privateRoomDialogError = ref('');
-const currentMusic = computed(() => playerStore.nowPlaying?.music || null);
+const currentMusic = computed(() => playerRuntime.nowPlaying?.music || null);
 const currentCover = computed(() => currentMusic.value?.coverUrl || '');
 const currentRoomName = computed(() => roomStore.currentRoom?.name || t('app.lounge'));
-const visibleUsers = computed(() => {
-  const users = userStore.onlineUsers.length
-    ? userStore.onlineUsers
-    : [{ name: userStore.currentUser.name, publicId: userStore.publicId }];
-  return users.slice(0, 3);
-});
-const extraUserCount = computed(() => Math.max(0, userStore.onlineUsers.length - visibleUsers.value.length));
+const visibleUsers = computed(() => presenceStore.users.slice(0, 3));
+const extraUserCount = computed(() => Math.max(0, presenceStore.count - visibleUsers.value.length));
 
 onMounted(() => {
   uiStore.fetchConfig();
@@ -284,7 +303,7 @@ const closePrivateRoomDialog = () => {
 const attemptSwitchRoom = async (room) => {
   if (!room?.roomId) return;
   try {
-    await playerStore.switchRoom(room.roomId);
+    await realtimeCoordinator.switchRoom(room.roomId);
     isRoomMenuOpen.value = false;
   } catch (error) {
     if (error?.code === ROOM_SWITCH_PASSWORD_REQUIRED) {
@@ -301,7 +320,7 @@ const submitPrivateRoomPassword = async (password) => {
   privateRoomDialogLoading.value = true;
   privateRoomDialogError.value = '';
   try {
-    await playerStore.switchRoom(room.roomId, password);
+    await realtimeCoordinator.switchRoom(room.roomId, password);
     closePrivateRoomDialog();
     isRoomMenuOpen.value = false;
   } catch (error) {
@@ -313,17 +332,20 @@ const submitPrivateRoomPassword = async (password) => {
 
 const createRoom = () => {
   const name = newRoomName.value.trim();
-  if (!name) return;
+  const password = newRoomPassword.value;
+  if (!name || (newRoomPrivate.value && !password.trim())) return;
   if (userStore.isGuest) {
-    userStore.setPostNameAction(() => roomStore.createRoom(name));
+    userStore.setPostNameAction(() => roomStore.createRoom(name, { isPrivate: newRoomPrivate.value, password }));
     userStore.showNameModal = true;
     return;
   }
-  roomStore.createRoom(name);
+  roomStore.createRoom(name, { isPrivate: newRoomPrivate.value, password });
   newRoomName.value = '';
+  newRoomPrivate.value = false;
+  newRoomPassword.value = '';
 };
 
-const canDeleteRoom = (room) => !room.system && (userStore.isAdmin || (room.creatorPublicId && room.creatorPublicId === userStore.publicId));
+const canDeleteRoom = (room) => !room.system && userStore.capabilitiesForRoom(room.creatorPublicId).canManageCurrentRoom;
 
 const deleteRoom = (room) => {
   roomStore.deleteRoom(room.roomId);

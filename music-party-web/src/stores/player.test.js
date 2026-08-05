@@ -1,17 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
-import { ROOM_SWITCH_PASSWORD_REQUIRED, usePlayerStore } from './player';
+import { ROOM_SWITCH_PASSWORD_REQUIRED, useRoomRealtimeCoordinator } from '../domains/realtime/roomRealtimeCoordinator';
+import { useRoomCommandStore } from '../domains/realtime/roomCommandStore';
+import { useRoomRuntimeStore } from '../domains/realtime/roomRuntimeStore';
+import { useRealtimeConnectionStore } from '../domains/realtime/realtimeConnectionStore';
 import { useUserStore } from './user';
 import { useRoomStore } from './room';
+import { queryClient } from '../app/providers';
 import { useToastStore } from './toast';
-import { socketService } from '../services/socket';
+import { realtimeClient as socketService } from '../transport/realtimeClient';
 import { roomApi } from '../api/rooms';
 import { WS_DEST } from '../constants/api';
 
-vi.mock('../services/socket', () => ({
-  socketService: {
+vi.mock('../transport/realtimeClient', () => ({
+  realtimeClient: {
     connected: false,
     send: vi.fn(),
+    sendEnvelope: vi.fn(),
     connect: vi.fn(),
     disconnect: vi.fn(),
     reconnectNow: vi.fn()
@@ -27,14 +32,38 @@ vi.mock('../api/rooms', () => ({
   }
 }));
 
+const usePlayerStore = () => {
+  const commands = useRoomCommandStore();
+  const runtime = useRoomRuntimeStore();
+  const connection = useRealtimeConnectionStore();
+  const coordinator = useRoomRealtimeCoordinator();
+  return {
+    get queue() { return runtime.queue; },
+    set queue(value) { runtime.queue = value; },
+    get connected() { return connection.connected; },
+    set connected(value) { connection.connected = value; },
+    togglePause: commands.togglePause,
+    toggleShuffle: commands.toggleShuffle,
+    playNext: commands.playNext,
+    enqueue: commands.enqueue,
+    reorderQueue: commands.reorderQueue,
+    setQueue: commands.setQueue,
+    applyQueuePatch: commands.applyQueuePatch,
+    settleQueueReorder: commands.settleQueueReorder,
+    switchRoom: coordinator.switchRoom
+  };
+};
+
 describe('player controls', () => {
   beforeEach(() => {
     localStorage.clear();
+    queryClient.clear();
     setActivePinia(createPinia());
     vi.clearAllMocks();
     socketService.connected = false;
     socketService.send.mockReturnValue(true);
-    roomApi.verify.mockResolvedValue({ valid: true, expiresAt: Date.now() + 60_000 });
+    socketService.sendEnvelope.mockReturnValue(true);
+    roomApi.verify.mockResolvedValue({ accessGranted: true, expiresAt: Date.now() + 60_000 });
     vi.useRealTimers();
   });
 
@@ -49,37 +78,9 @@ describe('player controls', () => {
     expect(socketService.send).not.toHaveBeenCalled();
   });
 
-  it('shows a toast when controls are used before socket connection', () => {
-    localStorage.setItem('mp_username', 'Alice');
+  it('allows named guests to send controls when connected', () => {
     const user = useUserStore();
-    user.initUser('token', 'u1', 'Alice', false);
-    const player = usePlayerStore();
-    const toast = useToastStore();
-
-    const sent = player.togglePause();
-
-    expect(sent).toBe(false);
-    expect(toast.toasts.at(-1).message).toContain('播放服务尚未连接');
-    expect(socketService.send).not.toHaveBeenCalled();
-  });
-
-  it('blocks rapid repeated controls locally', () => {
-    localStorage.setItem('mp_username', 'Alice');
-    const user = useUserStore();
-    user.initUser('token', 'u1', 'Alice', false);
-    const player = usePlayerStore();
-    player.connected = true;
-    socketService.connected = true;
-
-    expect(player.togglePause()).toBe(true);
-    expect(player.playNext()).toBe(false);
-    expect(socketService.send).toHaveBeenCalledTimes(1);
-  });
-
-  it('sends controls through the socket when connected and allowed', () => {
-    localStorage.setItem('mp_username', 'Alice');
-    const user = useUserStore();
-    user.initUser('token', 'u1', 'Alice', false);
+    user.initUser('guest_a', 'Named guest', true);
     const player = usePlayerStore();
     player.connected = true;
     socketService.connected = true;
@@ -87,14 +88,55 @@ describe('player controls', () => {
     const sent = player.toggleShuffle();
 
     expect(sent).toBe(true);
-    expect(socketService.send).toHaveBeenCalledWith(WS_DEST.PLAYER_SHUFFLE, {});
+    expect(socketService.sendEnvelope).toHaveBeenCalledWith({ type: WS_DEST.PLAYER_SHUFFLE, payload: {} });
+  });
+
+  it('shows a toast when controls are used before socket connection', () => {
+    localStorage.setItem('mp_username', 'Alice');
+    const user = useUserStore();
+    user.initUser('u1', 'Alice', false);
+    const player = usePlayerStore();
+    const toast = useToastStore();
+
+    const sent = player.togglePause();
+
+    expect(sent).toBe(false);
+    expect(toast.toasts.at(-1).message).toContain('播放服务尚未连接');
+    expect(socketService.sendEnvelope).not.toHaveBeenCalled();
+  });
+
+  it('blocks rapid repeated controls locally', () => {
+    localStorage.setItem('mp_username', 'Alice');
+    const user = useUserStore();
+    user.initUser('u1', 'Alice', false);
+    const player = usePlayerStore();
+    player.connected = true;
+    socketService.connected = true;
+
+    expect(player.togglePause()).toBe(true);
+    expect(player.playNext()).toBe(false);
+    expect(socketService.sendEnvelope).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends controls through the socket when connected and allowed', () => {
+    localStorage.setItem('mp_username', 'Alice');
+    const user = useUserStore();
+    user.initUser('u1', 'Alice', false);
+    const player = usePlayerStore();
+    player.connected = true;
+    socketService.connected = true;
+
+    const sent = player.toggleShuffle();
+
+    expect(sent).toBe(true);
+    expect(socketService.sendEnvelope).toHaveBeenCalledWith({ type: WS_DEST.PLAYER_SHUFFLE, payload: {} });
   });
 
   it('optimistically reorders queue without immediate forced resync', () => {
     vi.useFakeTimers();
     localStorage.setItem('mp_username', 'Alice');
     const user = useUserStore();
-    user.initUser('token', 'u1', 'Alice', false);
+    user.initUser('u1', 'Alice', false);
     const player = usePlayerStore();
     player.queue = [{ queueId: 'a' }, { queueId: 'b' }, { queueId: 'c' }];
 
@@ -115,13 +157,13 @@ describe('player controls', () => {
     vi.advanceTimersByTime(1499);
     expect(socketService.send).not.toHaveBeenCalledWith(WS_DEST.RESYNC, expect.anything());
     vi.advanceTimersByTime(1);
-    expect(socketService.send).toHaveBeenCalledWith(WS_DEST.RESYNC, { reason: 'queue-reorder-timeout' });
+    expect(socketService.send).toHaveBeenCalledWith(WS_DEST.RESYNC, {});
   });
 
   it('defers queue broadcasts until a pending reorder is acknowledged', () => {
     localStorage.setItem('mp_username', 'Alice');
     const user = useUserStore();
-    user.initUser('token', 'u1', 'Alice', false);
+    user.initUser('u1', 'Alice', false);
     const player = usePlayerStore();
     player.queue = [{ queueId: 'a' }, { queueId: 'b' }, { queueId: 'c' }];
 
@@ -134,6 +176,28 @@ describe('player controls', () => {
     expect(player.queue.map(item => item.queueId)).toEqual(['a', 'b', 'c']);
   });
 
+  it('tracks enqueue commands with the mutation id required by the Go contract', () => {
+    vi.useFakeTimers();
+    const user = useUserStore();
+    user.initUser('u1', 'Alice', false);
+    const player = usePlayerStore();
+    player.connected = true;
+    socketService.connected = true;
+
+    expect(player.enqueue('netease', 'track-1')).toBe(true);
+    expect(socketService.sendEnvelope).toHaveBeenCalledWith({
+      type: WS_DEST.ENQUEUE,
+      payload: {
+        platform: 'netease',
+        musicId: 'track-1',
+        mutationId: expect.any(String)
+      }
+    });
+
+    vi.advanceTimersByTime(3000);
+    expect(socketService.send).toHaveBeenCalledWith(WS_DEST.RESYNC, {});
+  });
+
   it('applies ordered queue patches and resyncs on a version gap', () => {
     const player = usePlayerStore();
     player.setQueue([{ queueId: 'a' }], 1, { snapshot: true });
@@ -144,7 +208,7 @@ describe('player controls', () => {
     expect(player.queue.map(item => item.queueId)).toEqual(['b']);
 
     expect(player.applyQueuePatch({ operation: 'append', queueVersion: 5, items: [{ queueId: 'c' }] })).toBe(false);
-    expect(socketService.send).toHaveBeenCalledWith(WS_DEST.RESYNC, { reason: 'queue-version-gap' });
+    expect(socketService.send).toHaveBeenCalledWith(WS_DEST.RESYNC, {});
   });
 
   it('applies status and clear patches without replacing unchanged queue items', () => {
@@ -172,7 +236,8 @@ describe('player controls', () => {
     await player.switchRoom('public');
 
     expect(roomApi.verify).not.toHaveBeenCalled();
-    expect(roomStore.currentRoomId).toBe('public');
+    expect(roomStore.currentRoomId).toBe('lounge');
+    expect(roomStore.transition).toEqual({ status: 'connecting', roomId: 'public' });
     expect(socketService.disconnect).toHaveBeenCalled();
   });
 
@@ -196,7 +261,7 @@ describe('player controls', () => {
 
   it('verifies private room passwords before switching and reconnecting', async () => {
     const user = useUserStore();
-    user.initUser('session-token', 'u1', 'Alice', false);
+    user.initUser('u1', 'Alice', false);
     const roomStore = useRoomStore();
     const player = usePlayerStore();
     roomStore.setRooms([
@@ -207,8 +272,9 @@ describe('player controls', () => {
     await player.switchRoom('private', 'letmein');
 
     expect(roomApi.verify).toHaveBeenCalledWith('private', 'letmein');
-    expect(roomStore.getRoomAccessToken('private')).toBe('granted');
-    expect(roomStore.currentRoomId).toBe('private');
+    expect(roomStore.rooms.find(room => room.roomId === 'private').accessGranted).toBe(true);
+    expect(roomStore.currentRoomId).toBe('lounge');
+    expect(roomStore.transition).toEqual({ status: 'connecting', roomId: 'private' });
     expect(socketService.disconnect).toHaveBeenCalled();
   });
 
@@ -217,14 +283,13 @@ describe('player controls', () => {
     const player = usePlayerStore();
     roomStore.setRooms([
       { roomId: 'lounge', name: 'Lounge' },
-      { roomId: 'private', name: 'Private', privateRoom: true }
+      { roomId: 'private', name: 'Private', privateRoom: true, accessGranted: true }
     ]);
-    roomStore.setRoomAccessToken('private', 'cached-token', Date.now() + 60_000);
-
     await player.switchRoom('private');
 
     expect(roomApi.verify).not.toHaveBeenCalled();
-    expect(roomStore.currentRoomId).toBe('private');
+    expect(roomStore.currentRoomId).toBe('lounge');
+    expect(roomStore.transition).toEqual({ status: 'connecting', roomId: 'private' });
     expect(socketService.disconnect).toHaveBeenCalled();
   });
 });

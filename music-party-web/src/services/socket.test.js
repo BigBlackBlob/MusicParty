@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { socketService } from './socket';
+import { realtimeClient as socketService } from '../transport/realtimeClient';
 
 const sockets = [];
 
@@ -56,13 +56,10 @@ describe('socketService', () => {
     expect(socketService.client.url).toContain('room-id=stage');
   });
 
-  it('uses the configured backend origin when building socket URLs', async () => {
-    const { setConnectionProfile } = await import('../api/connectionProfile');
-    setConnectionProfile({ mode: 'join', baseUrl: 'http://192.168.1.10:48120/room/lobby' });
-
+  it('uses the current origin when building socket URLs', () => {
     socketService.connect({ 'room-id': 'lounge' }, {}, {});
 
-    expect(socketService.client.url).toBe('ws://192.168.1.10:48120/ws?room-id=lounge');
+    expect(socketService.client.url).toBe('ws://localhost:3000/ws?room-id=lounge');
   });
 
   it('returns false instead of silently dropping sends while disconnected', () => {
@@ -94,10 +91,13 @@ describe('socketService', () => {
     socketService.client.message(JSON.stringify({
       type: 'player.state',
       roomId: 'lounge',
-      payload: { isPaused: true }
+      payload: { isPaused: true, stateVersion: 1, queueVersion: 1, playEpoch: 1 }
     }));
 
-    expect(handler).toHaveBeenCalledWith({ isPaused: true }, expect.objectContaining({ roomId: 'lounge' }));
+    expect(handler).toHaveBeenCalledWith(
+      { isPaused: true, stateVersion: 1, queueVersion: 1, playEpoch: 1 },
+      expect.objectContaining({ roomId: 'lounge' })
+    );
   });
 
   it('marks disconnected and schedules reconnect after unexpected close', () => {

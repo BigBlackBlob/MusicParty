@@ -36,11 +36,11 @@
 import { ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useUserStore } from '../stores/user';
-import { usePlayerStore } from '../stores/player';
+import { useRoomRealtimeCoordinator } from '../domains/realtime/roomRealtimeCoordinator';
 
 const { t } = useI18n();
 const userStore = useUserStore();
-const playerStore = usePlayerStore();
+const playerStore = useRoomRealtimeCoordinator();
 const inputName = ref('');
 const errorMsg = ref('');
 

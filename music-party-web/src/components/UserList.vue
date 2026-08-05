@@ -10,6 +10,7 @@
     <div class="space-y-3">
       <!-- 自己 -->
       <div
+          v-if="me"
           class="flex min-w-0 items-center gap-3 rounded-2xl border border-[var(--border-default)] bg-[var(--surface-2)] px-3 py-2 transition-colors"
           :class="[
               isEnqueuerById(userStore.publicId) ? 'border-[var(--accent)]/30 bg-[var(--accent-subtle)]' :
@@ -106,15 +107,19 @@
 import { ref, computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useUserStore } from '../stores/user';
-import { usePlayerStore } from '../stores/player';
+import { useRoomRuntimeStore } from '../domains/realtime/roomRuntimeStore';
+import { useRoomRealtimeCoordinator } from '../domains/realtime/roomRealtimeCoordinator';
+import { useRoomPresenceStore } from '../domains/realtime/roomPresenceStore';
 import { Zap } from 'lucide-vue-next';
 
 const { t } = useI18n();
 const userStore = useUserStore();
-const playerStore = usePlayerStore();
-const users = computed(() => userStore.onlineUsers);
-const me = computed(() => userStore.currentUser);
-const newName = ref(me.value.name);
+const playerStore = useRoomRuntimeStore();
+const presenceStore = useRoomPresenceStore();
+const realtimeCoordinator = useRoomRealtimeCoordinator();
+const users = computed(() => presenceStore.users);
+const me = computed(() => users.value.find(user => user.publicId === userStore.publicId) || null);
+const newName = ref(userStore.currentUser.name);
 
 const getInitials = (name) => {
   const source = (name || '').trim();
@@ -129,13 +134,13 @@ const isLikedUser = (publicId) => {
   return playerStore.nowPlaying.likedUserIds?.includes(publicId);
 };
 
-watch(() => me.value.name, (n) => newName.value = n);
+watch(() => userStore.currentUser.name, (name) => newName.value = name);
 
 const others = computed(() => users.value.filter(u => u.publicId !== userStore.publicId));
 
 const doRename = () => {
-  if(newName.value && newName.value !== me.value.name) {
-    playerStore.renameUser(newName.value);
+  if(newName.value && newName.value !== userStore.currentUser.name) {
+    realtimeCoordinator.renameUser(newName.value);
   }
 };
 

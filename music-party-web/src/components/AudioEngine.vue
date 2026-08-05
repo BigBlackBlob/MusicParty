@@ -33,15 +33,13 @@
 
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
-import { usePlayerStore } from '../stores/player';
+import { useAudioPlayerAdapter } from '../composables/useAudioPlayerAdapter';
 import { useUiStore } from '../stores/ui';
-import { useUserStore } from '../stores/user';
 import { useAudio } from '../composables/useAudio';
 import { withPlaybackToken } from '../utils/audioUrl';
 
-const player = usePlayerStore();
+const player = useAudioPlayerAdapter();
 const ui = useUiStore();
-const user = useUserStore();
 const audioRef = ref(null);
 const silentAudioRef = ref(null);
 
@@ -62,7 +60,7 @@ const {
   isActuallyStalled
 } = useAudio(audioRef, player, computed(() => ui.volume));
 
-const audioSrc = computed(() => withPlaybackToken(player.nowPlaying?.music, user.sessionToken));
+const audioSrc = computed(() => withPlaybackToken(player.nowPlaying?.music));
 
 // 同步状态到 playerStore
 watch(localProgress, (val) => {
