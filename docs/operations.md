@@ -52,7 +52,8 @@ NETEASE_API_IMAGE=binaryify/neteasecloudmusicapi:4.21.3
 MUSIC_PARTY_IMAGE=ghcr.io/bigblackblob/musicparty@sha256:your-digest
 
 # 公开访问 URL
-MUSIC_PARTY_PUBLIC_URL=https://music.example.com
+BASE_URL=https://music.example.com
+ALLOWED_ORIGINS=https://music.example.com
 
 # 管理员账号（首次启动时创建）
 BOOTSTRAP_ADMIN_USERNAME=admin
@@ -147,7 +148,7 @@ server {
 #### 小型部署 (1-10 用户)
 ```bash
 # 基础配置
-MUSIC_PARTY_PUBLIC_URL=http://localhost:8848
+BASE_URL=http://localhost:8848
 
 # 性能配置（保守）
 SQLITE_BUSY_TIMEOUT=5000
@@ -209,7 +210,8 @@ CHAT_MAX_LENGTH=1000
 #### 必填配置
 | 变量 | 说明 | 示例 |
 |------|------|------|
-| `MUSIC_PARTY_PUBLIC_URL` | 公开访问 URL | `https://music.example.com` |
+| `BASE_URL` | 公开访问 URL | `https://music.example.com` |
+| `ALLOWED_ORIGINS` | 浏览器与 WebSocket 允许来源 | `https://music.example.com` |
 | `NETEASE_API_URL` | 网易云 API 地址 | `http://netease-api:3000` |
 | `BOOTSTRAP_ADMIN_USERNAME` | 管理员用户名 | `admin` |
 | `BOOTSTRAP_ADMIN_PASSWORD` | 管理员密码 | `SecurePass123` |

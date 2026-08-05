@@ -4,8 +4,7 @@
 
 本仓库是基于上游 MusicParty 的个人 fork。NRT-Base 分支在上游多人听歌基础上扩展了账号体系、多房间、SQLite 持久化、房间/个人歌单、本地媒体库、Subsonic/Navidrome 私有曲库、移动端、桌面模块化布局、播放同步、直播流、可访问性、国际化、前端构建体积和 Docker/CI 发布流程。
 
-![Java](https://img.shields.io/badge/Java-21-orange)
-![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.2.5-green)
+![Go](https://img.shields.io/badge/Go-1.26-00ADD8)
 ![Vue](https://img.shields.io/badge/Vue-3-4FC08D)
 ![Vite](https://img.shields.io/badge/Vite-7-646CFF)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue)
@@ -18,7 +17,7 @@
 
 ## 核心特性
 
-- **多人同步播放**：基于 Spring Boot WebSocket/STOMP 分发播放状态，前端按服务端时间轴、RTT 和漂移校准进度，支持手动 resync、平滑 seek 和浏览器侧切歌过渡。
+- **多人同步播放**：基于 Go WebSocket 房间运行时分发版本化播放状态，前端按服务端时间轴、RTT 和漂移校准进度，支持手动 resync、平滑 seek 和浏览器侧切歌过渡。
 - **多房间与私密房间**：支持 Lounge 以外的多房间会话，房间有独立队列、聊天、播放状态和在线人数；房主/管理员可创建、编辑、删除房间，私密房间使用密码校验和房间访问 token。
 - **SQLite 持久化**：房间、队列、历史、聊天、播放快照、账号、用户资料、歌单、本地曲库和 Subsonic 源配置可持久化到 `data/`；冷房间可按快照恢复，旧 JSON 数据有迁移状态保护。
 - **账号与权限**：首次启动创建管理员账号，后续使用账号密码登录；支持注册入口、登录限流、会话 token、显示名修改、密码修改、退出登录确认、管理员命令、房间管理权限和本地上传授权。
@@ -33,7 +32,7 @@
 - **实时互动**：聊天室、系统消息、在线成员、活跃成员弹层、点赞反馈和房间人数变化实时同步。
 - **可访问性与国际化**：前端接入 `vue-i18n`，中英文文案覆盖主要界面；桌面壳、播放控制、队列/歌单图标按钮和可点击曲目行提供 accessible name、键盘焦点状态与按钮语义。
 - **本地字体与构建分包**：Material Symbols 字体已本地化；Vite 生产构建会拆分 Vue、网络、UI、拖拽和工具依赖，降低入口 chunk 体积。
-- **发布与质量门禁**：提供 Docker Compose、可选 Navidrome Compose、GitHub Actions 质量检查、Docker 发布和 Aliyun ACR 镜像工作流；前端包含 Vitest/ESLint 覆盖关键队列、音频、布局、a11y 和 payload 行为。
+- **发布与质量门禁**：`NRT-Base` 的 Go、前端、E2E、容器和安全门禁全部通过后，同一镜像自动发布到 GHCR 与 Aliyun ACR；流水线不会自动部署 VPS。
 
 ## 快速部署
 
@@ -50,7 +49,7 @@ docker compose up -d
 http://localhost:8848
 ```
 
-首次访问页面时会进入初始化流程，第一个注册账号会自动成为管理员。正式部署前至少修改这些环境变量：
+首次启动使用 `BOOTSTRAP_ADMIN_USERNAME` 和 `BOOTSTRAP_ADMIN_PASSWORD` 建立平台管理员；普通成员通过邀请码加入。正式部署前至少配置这些环境变量：
 
 ```yaml
 - BASE_URL=https://music.example.com
@@ -63,22 +62,22 @@ http://localhost:8848
 
 ### 选择镜像源
 
-`docker-compose.yml` 默认使用 GHCR：
+生产环境应使用 Actions 摘要输出的 GHCR 或 ACR 不可变 digest：
 
 ```yaml
-image: ${MUSIC_PARTY_IMAGE:-ghcr.io/bigblackblob/musicparty:nrt-base}
+image: ${MUSIC_PARTY_IMAGE:?set an immutable image digest}
 ```
 
 也可以不改文件，启动前设置环境变量：
 
 ```bash
-MUSIC_PARTY_IMAGE=ghcr.io/bigblackblob/musicparty:nrt-base docker compose up -d
+MUSIC_PARTY_IMAGE=ghcr.io/bigblackblob/musicparty@sha256:<digest> docker compose up -d
 ```
 
-如果 VPS 访问 GHCR 不稳定，只能使用 Go release 工作流摘要中生成的 ACR 不可变 digest；不要使用 ACR 的 `latest`，该标签属于旧 Java 镜像：
+如果 VPS 访问 GHCR 不稳定，使用同一工作流摘要中的 ACR 不可变 digest：
 
 ```bash
-MUSIC_PARTY_IMAGE=crpi-533x5q1t88ew0x21.cn-hangzhou.personal.cr.aliyuncs.com/nrt-base/nrt-music-party@sha256:<go-release-digest> docker compose -f docker-compose.yml -f backend-go/deploy/compose.go.yml up -d
+MUSIC_PARTY_IMAGE=crpi-533x5q1t88ew0x21.cn-hangzhou.personal.cr.aliyuncs.com/nrt-base/nrt-music-party@sha256:<digest> docker compose up -d
 ```
 
 如果要在本机从源码构建镜像，使用额外的 build override：
@@ -103,7 +102,6 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 | `YOUTUBE_API_KEY` | 否 | 空 | YouTube Data API Key，用于搜索和获取视频元数据。 |
 | `YTDLP_PATH` | 否 | `yt-dlp` | `yt-dlp` 可执行文件路径；Docker 镜像内默认可直接使用。 |
 | `YOUTUBE_SEARCH_LIMIT` | 否 | `20` | YouTube 单次搜索最大结果数。 |
-| `JAVA_TOOL_OPTIONS` | 否 | `-XX:MaxRAMPercentage=65 -XX:+UseG1GC` | Docker 镜像默认 JVM 策略；低内存部署可把 `MaxRAMPercentage` 调低。 |
 | `QUEUE_MAX_SIZE` | 否 | `1000` | 队列最大长度。 |
 | `QUEUE_HISTORY_SIZE` | 否 | `50` | 历史记录保留数量。 |
 | `QUEUE_MAX_USER_SONGS` | 否 | `100` | 单用户最大排队歌曲数。 |
@@ -131,9 +129,9 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 
 ### 低内存部署建议
 
-1GB 左右内存的 VPS 建议先把 `JAVA_TOOL_OPTIONS` 调整为 `-XX:MaxRAMPercentage=55 -XX:+UseG1GC`，并把 `CACHE_MAX_SIZE=512MB`、`QUEUE_MAX_SIZE=300`、`CHAT_HISTORY_LIMIT=300`、`DOWNLOAD_MAX_QUEUED_TASKS=20`。如果同时启用 YouTube 下载，建议至少保留 1.5GB 以上容器内存。
+1GB 左右内存的 VPS 建议把 `CACHE_MAX_SIZE=512MB`、`QUEUE_MAX_SIZE=300`、`CHAT_HISTORY_LIMIT=300`、`DOWNLOAD_MAX_QUEUED_TASKS=20`。如果同时启用 YouTube 下载，建议至少保留 1.5GB 以上容器内存。
 
-管理员可通过 `GET /api/admin/runtime-metrics` 查看当前 JVM heap、线程数、WebSocket session、缓存索引、下载排队数、聊天历史加载量和限流桶数量，用于压测和空闲回落验证。
+管理员可通过 `GET /api/admin/runtime-metrics` 查看当前 Go runtime、WebSocket session、缓存索引、下载排队数、聊天历史加载量和限流桶数量，用于压测和空闲回落验证。
 
 ## 数据与持久化
 
@@ -266,37 +264,40 @@ export NETEASE_COOKIE="MUSIC_U=xxxx...; __csrf=xxxx..."
 
 ```bash
 cd music-party-web
-npm install
-npm run dev
+pnpm install --frozen-lockfile
+pnpm dev
 ```
 
 后端：
 
 ```bash
-mvn spring-boot:run
+cd backend-go
+go run ./cmd/musicparty
 ```
 
 生产构建：
 
 ```bash
 cd music-party-web
-npm run build
+pnpm build
 cd ..
-mvn clean package -DskipTests
+cd backend-go
+go build -trimpath ./...
 ```
 
 前端提交前推荐至少执行：
 
 ```bash
 cd music-party-web
-npm run lint
-npm run test:run
-npm run build
+pnpm typecheck
+pnpm lint
+pnpm test:run
+pnpm build
 ```
 
 ## 技术栈
 
-- 后端：Java 21、Spring Boot 3.2、WebSocket/STOMP、WebFlux、FFmpeg
+- 后端：Go、Chi、原生 WebSocket、SQLite、FFmpeg
 - 前端：Vue 3、Vite 7、Pinia、Tailwind CSS、vue-i18n、lucide-vue-next、Material Symbols 本地字体
 - 部署：Docker、Docker Compose，可选 Cloudflare Tunnel、Navidrome、rclone
 
