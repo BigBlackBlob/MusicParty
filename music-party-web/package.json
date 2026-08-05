@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "packageManager": "pnpm@11.10.0",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -10,9 +11,12 @@
     "lint": "eslint .",
     "test": "node ./scripts/run-vitest.mjs",
     "test:run": "node ./scripts/run-vitest.mjs run",
+    "test:e2e": "playwright test",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json",
     "benchmark:queue-state": "node ./scripts/queue-state-benchmark.mjs"
   },
   "dependencies": {
+    "@tanstack/vue-query": "^5.90.21",
     "@vueuse/core": "^14.1.0",
     "axios": "^1.18.0",
     "class-variance-authority": "^0.7.1",
@@ -29,7 +33,11 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.55.1",
+    "@typescript-eslint/parser": "^8.46.2",
+    "@types/node": "^26.0.0",
     "@vitejs/plugin-vue": "^6.0.1",
+    "@vue/tsconfig": "^0.8.1",
     "autoprefixer": "^10.4.23",
     "eslint": "^10.3.0",
     "eslint-plugin-vue": "^10.9.1",
@@ -37,8 +45,10 @@
     "happy-dom": "^20.9.0",
     "postcss": "^8.5.18",
     "tailwindcss": "^3.4.17",
+    "typescript": "^5.9.3",
     "vite": "7.3.6",
     "vitest": "^4.1.6",
+    "vue-tsc": "^3.2.5",
     "ws": "8.21.1"
   }
 }

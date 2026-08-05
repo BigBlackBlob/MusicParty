@@ -1,6 +1,7 @@
 import js from '@eslint/js';
 import pluginVue from 'eslint-plugin-vue';
 import globals from 'globals';
+import tsParser from '@typescript-eslint/parser';
 
 export default [
   {
@@ -9,7 +10,26 @@ export default [
   js.configs.recommended,
   ...pluginVue.configs['flat/recommended'],
   {
-    files: ['**/*.{js,mjs,vue}'],
+    files: ['**/*.ts'],
+    languageOptions: {
+      parser: tsParser,
+      parserOptions: { sourceType: 'module' }
+    },
+    rules: {
+      'no-unused-vars': 'off'
+    }
+  },
+  {
+    files: ['**/*.vue'],
+    languageOptions: {
+      parserOptions: {
+        parser: tsParser,
+        extraFileExtensions: ['.vue']
+      }
+    }
+  },
+  {
+    files: ['**/*.{js,mjs,ts,vue}'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',
@@ -34,6 +54,12 @@ export default [
       'vue/html-self-closing': 'off',
       'vue/html-indent': 'off',
       'no-useless-assignment': 'off'
+    }
+  },
+  {
+    files: ['**/*.ts', '**/*.d.ts'],
+    rules: {
+      'no-unused-vars': 'off'
     }
   }
 ];

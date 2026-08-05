@@ -1,9 +1,9 @@
 FROM node:22-alpine AS frontend-builder
 WORKDIR /src/music-party-web
-COPY music-party-web/package.json music-party-web/package-lock.json ./
-RUN npm ci
+COPY music-party-web/package.json music-party-web/pnpm-lock.yaml music-party-web/pnpm-workspace.yaml ./
+RUN corepack enable && pnpm install --frozen-lockfile
 COPY music-party-web/ ./
-RUN npm run build
+RUN pnpm build
 
 FROM golang:1.26.5-alpine AS backend-builder
 WORKDIR /src/backend-go
