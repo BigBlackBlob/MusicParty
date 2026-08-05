@@ -8,7 +8,7 @@ import (
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/contractspec"
 )
 
-func TestGeneratedContractsMatchJavaSource(t *testing.T) {
+func TestGeneratedContractsMatchGoSource(t *testing.T) {
 	repositoryRoot, err := findRepositoryRoot()
 	if err != nil {
 		t.Fatal(err)
@@ -28,8 +28,8 @@ func findRepositoryRoot() (string, error) {
 		return "", err
 	}
 	for {
-		if _, err := os.Stat(filepath.Join(directory, "pom.xml")); err == nil {
-			if _, err := os.Stat(filepath.Join(directory, "backend-go", "go.mod")); err == nil {
+		if _, err := os.Stat(filepath.Join(directory, "backend-go", "go.mod")); err == nil {
+			if _, err := os.Stat(filepath.Join(directory, "contracts")); err == nil {
 				return directory, nil
 			}
 		}

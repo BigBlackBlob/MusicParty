@@ -1,1199 +1,589 @@
 {
-  "routeCount": 91,
+  "routeCount": 97,
   "routes": [
     {
       "method": "GET",
       "path": "/",
-      "operationId": "Static.index",
-      "controller": "Static",
-      "source": "src/main/resources/static/index.html",
-      "line": 1,
-      "produces": "text/html"
+      "operationId": "get.root",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "HEAD",
+      "path": "/",
+      "operationId": "head.root",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
-      "path": "/actuator",
-      "operationId": "Actuator.discovery",
-      "controller": "Actuator",
-      "source": "src/main/resources/application.yml",
-      "line": 4
+      "path": "/*",
+      "operationId": "get.*",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "HEAD",
+      "path": "/*",
+      "operationId": "head.*",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/actuator/health",
-      "operationId": "Actuator.health",
-      "controller": "Actuator",
-      "source": "src/main/resources/application.yml",
-      "line": 15
+      "operationId": "get.actuator.health",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/actuator/health/liveness",
-      "operationId": "Actuator.liveness",
-      "controller": "Actuator",
-      "source": "src/main/resources/application.yml",
-      "line": 15
+      "operationId": "get.actuator.health.liveness",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/actuator/health/readiness",
-      "operationId": "Actuator.readiness",
-      "controller": "Actuator",
-      "source": "src/main/resources/application.yml",
-      "line": 15
+      "operationId": "get.actuator.health.readiness",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/actuator/info",
-      "operationId": "Actuator.info",
-      "controller": "Actuator",
-      "source": "src/main/resources/application.yml",
-      "line": 12
+      "operationId": "get.actuator.info",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/actuator/metrics",
-      "operationId": "Actuator.metrics",
-      "controller": "Actuator",
-      "source": "src/main/resources/application.yml",
-      "line": 12
+      "operationId": "get.actuator.metrics",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
-      "path": "/actuator/metrics/{name}",
-      "operationId": "Actuator.metric",
-      "controller": "Actuator",
-      "source": "src/main/resources/application.yml",
-      "line": 12
+      "path": "/actuator/metrics/{metricName}",
+      "operationId": "get.actuator.metrics.metricName",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/actuator/prometheus",
-      "operationId": "Actuator.prometheus",
-      "controller": "Actuator",
-      "source": "src/main/resources/application.yml",
-      "line": 12,
-      "produces": "text/plain"
+      "operationId": "get.actuator.prometheus",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "POST",
       "path": "/api/account/change-password",
-      "operationId": "AccountAuthController.changePassword",
-      "controller": "AccountAuthController",
-      "source": "src/main/java/org/thornex/musicparty/controller/AccountAuthController.java",
-      "line": 100,
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "post.api.account.change_password",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "POST",
+      "path": "/api/account/guest",
+      "operationId": "post.api.account.guest",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "POST",
       "path": "/api/account/login",
-      "operationId": "AccountAuthController.loginPlatformAdmin",
-      "controller": "AccountAuthController",
-      "source": "src/main/java/org/thornex/musicparty/controller/AccountAuthController.java",
-      "line": 54,
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "post.api.account.login",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "POST",
       "path": "/api/account/logout",
-      "operationId": "AccountAuthController.logout",
-      "controller": "AccountAuthController",
-      "source": "src/main/java/org/thornex/musicparty/controller/AccountAuthController.java",
-      "line": 92
+      "operationId": "post.api.account.logout",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/account/me",
-      "operationId": "AccountAuthController.me",
-      "controller": "AccountAuthController",
-      "source": "src/main/java/org/thornex/musicparty/controller/AccountAuthController.java",
-      "line": 84
+      "operationId": "get.api.account.me",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "PUT",
       "path": "/api/account/profile",
-      "operationId": "AccountAuthController.updateProfile",
-      "controller": "AccountAuthController",
-      "source": "src/main/java/org/thornex/musicparty/controller/AccountAuthController.java",
-      "line": 120,
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "put.api.account.profile",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "POST",
       "path": "/api/account/register",
-      "operationId": "AccountAuthController.retiredMemberRegistrationEndpoint",
-      "controller": "AccountAuthController",
-      "source": "src/main/java/org/thornex/musicparty/controller/AccountAuthController.java",
-      "line": 49
+      "operationId": "post.api.account.register",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/account/status",
-      "operationId": "AccountAuthController.status",
-      "controller": "AccountAuthController",
-      "source": "src/main/java/org/thornex/musicparty/controller/AccountAuthController.java",
-      "line": 44
+      "operationId": "get.api.account.status",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "POST",
-      "path": "/api/admin/command",
-      "operationId": "AdminController.handleAdminCommand",
-      "controller": "AdminController",
-      "source": "src/main/java/org/thornex/musicparty/controller/AdminController.java",
-      "line": 66,
-      "requestBody": true,
-      "requestBodyRequired": true
+      "path": "/api/account/upgrade",
+      "operationId": "post.api.account.upgrade",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "POST",
       "path": "/api/admin/navidrome-access/grant",
-      "operationId": "AdminController.grantNavidromeAccess",
-      "controller": "AdminController",
-      "source": "src/main/java/org/thornex/musicparty/controller/AdminController.java",
-      "line": 195,
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "post.api.admin.navidrome_access.grant",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "POST",
       "path": "/api/admin/navidrome-access/revoke",
-      "operationId": "AdminController.revokeNavidromeAccess",
-      "controller": "AdminController",
-      "source": "src/main/java/org/thornex/musicparty/controller/AdminController.java",
-      "line": 203,
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "post.api.admin.navidrome_access.revoke",
+      "source": "backend-go/internal/httpapi"
     },
     {
-      "method": "GET",
-      "path": "/api/admin/runtime-metrics",
-      "operationId": "AdminController.runtimeMetrics",
-      "controller": "AdminController",
-      "source": "src/main/java/org/thornex/musicparty/controller/AdminController.java",
-      "line": 163
+      "method": "POST",
+      "path": "/api/admin/platform-credentials",
+      "operationId": "post.api.admin.platform_credentials",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "POST",
       "path": "/api/admin/subsonic-source",
-      "operationId": "AdminController.upsertSubsonicSource",
-      "controller": "AdminController",
-      "source": "src/main/java/org/thornex/musicparty/controller/AdminController.java",
-      "line": 171,
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "post.api.admin.subsonic_source",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "POST",
       "path": "/api/admin/subsonic-source/order",
-      "operationId": "AdminController.reorderSubsonicSource",
-      "controller": "AdminController",
-      "source": "src/main/java/org/thornex/musicparty/controller/AdminController.java",
-      "line": 240,
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "post.api.admin.subsonic_source.order",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "POST",
       "path": "/api/admin/subsonic-source/remove",
-      "operationId": "AdminController.removeSubsonicSource",
-      "controller": "AdminController",
-      "source": "src/main/java/org/thornex/musicparty/controller/AdminController.java",
-      "line": 260,
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "post.api.admin.subsonic_source.remove",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "POST",
       "path": "/api/admin/subsonic-source/test",
-      "operationId": "AdminController.testSubsonicSource",
-      "controller": "AdminController",
-      "source": "src/main/java/org/thornex/musicparty/controller/AdminController.java",
-      "line": 222,
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "post.api.admin.subsonic_source.test",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/admin/subsonic-sources",
-      "operationId": "AdminController.listSubsonicSources",
-      "controller": "AdminController",
-      "source": "src/main/java/org/thornex/musicparty/controller/AdminController.java",
-      "line": 211
+      "operationId": "get.api.admin.subsonic_sources",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/album/search/{platform}",
-      "operationId": "ApiController.searchAlbums",
-      "controller": "ApiController",
-      "source": "src/main/java/org/thornex/musicparty/controller/ApiController.java",
-      "line": 161,
-      "queryParameters": [
-        {
-          "name": "keyword",
-          "required": true
-        },
-        {
-          "name": "roomId",
-          "required": false
-        },
-        {
-          "name": "token",
-          "required": false
-        }
-      ]
+      "operationId": "get.api.album.search.platform",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/album/songs/{platform}/{albumId}",
-      "operationId": "ApiController.getAlbumSongs",
-      "controller": "ApiController",
-      "source": "src/main/java/org/thornex/musicparty/controller/ApiController.java",
-      "line": 184,
-      "queryParameters": [
-        {
-          "name": "roomId",
-          "required": false
-        },
-        {
-          "name": "token",
-          "required": false
-        }
-      ]
+      "operationId": "get.api.album.songs.platform.albumId",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/bilibili/stream/{bvid}",
-      "operationId": "BilibiliProxyController.streamSong",
-      "controller": "BilibiliProxyController",
-      "source": "src/main/java/org/thornex/musicparty/controller/BilibiliProxyController.java",
-      "line": 63,
-      "queryParameters": [
-        {
-          "name": "token",
-          "required": false
-        }
-      ]
+      "operationId": "get.api.bilibili.stream.bvid",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/config",
-      "operationId": "ApiController.getConfig",
-      "controller": "ApiController",
-      "source": "src/main/java/org/thornex/musicparty/controller/ApiController.java",
-      "line": 57
+      "operationId": "get.api.config",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "POST",
       "path": "/api/invites/redeem",
-      "operationId": "InvitationController.redeem",
-      "controller": "InvitationController",
-      "source": "src/main/java/org/thornex/musicparty/controller/InvitationController.java",
-      "line": 27,
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "post.api.invites.redeem",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/join/{secret}/metadata",
-      "operationId": "InvitationController.metadata",
-      "controller": "InvitationController",
-      "source": "src/main/java/org/thornex/musicparty/controller/InvitationController.java",
-      "line": 20
+      "operationId": "get.api.join.secret.metadata",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/local/cover/{id}",
-      "operationId": "LocalTrackController.cover",
-      "controller": "LocalTrackController",
-      "source": "src/main/java/org/thornex/musicparty/controller/LocalTrackController.java",
-      "line": 148,
-      "queryParameters": [
-        {
-          "name": "token",
-          "required": false
-        }
-      ]
+      "operationId": "get.api.local.cover.id",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/local/media/{id}",
-      "operationId": "LocalTrackController.media",
-      "controller": "LocalTrackController",
-      "source": "src/main/java/org/thornex/musicparty/controller/LocalTrackController.java",
-      "line": 122,
-      "queryParameters": [
-        {
-          "name": "token",
-          "required": false
-        }
-      ]
+      "operationId": "get.api.local.media.id",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "HEAD",
+      "path": "/api/local/media/{id}",
+      "operationId": "head.api.local.media.id",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/local/tracks",
-      "operationId": "LocalTrackController.listTracks",
-      "controller": "LocalTrackController",
-      "source": "src/main/java/org/thornex/musicparty/controller/LocalTrackController.java",
-      "line": 44,
-      "queryParameters": [
-        {
-          "name": "adminPassword",
-          "required": false
-        },
-        {
-          "name": "sessionToken",
-          "required": false
-        }
-      ]
+      "operationId": "get.api.local.tracks",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "POST",
       "path": "/api/local/tracks/upload",
-      "operationId": "LocalTrackController.uploadTrack",
-      "controller": "LocalTrackController",
-      "source": "src/main/java/org/thornex/musicparty/controller/LocalTrackController.java",
-      "line": 53,
-      "consumes": "multipart/form-data",
-      "queryParameters": [
-        {
-          "name": "adminPassword",
-          "required": false
-        },
-        {
-          "name": "album",
-          "required": false
-        },
-        {
-          "name": "artists",
-          "required": false
-        },
-        {
-          "name": "title",
-          "required": false
-        },
-        {
-          "name": "token",
-          "required": false
-        }
-      ],
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "post.api.local.tracks.upload",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "DELETE",
       "path": "/api/local/tracks/{id}",
-      "operationId": "LocalTrackController.deleteTrack",
-      "controller": "LocalTrackController",
-      "source": "src/main/java/org/thornex/musicparty/controller/LocalTrackController.java",
-      "line": 84,
-      "queryParameters": [
-        {
-          "name": "adminPassword",
-          "required": false
-        },
-        {
-          "name": "token",
-          "required": false
-        }
-      ]
+      "operationId": "delete.api.local.tracks.id",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "PATCH",
       "path": "/api/local/tracks/{id}",
-      "operationId": "LocalTrackController.updateTrack",
-      "controller": "LocalTrackController",
-      "source": "src/main/java/org/thornex/musicparty/controller/LocalTrackController.java",
-      "line": 76,
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "patch.api.local.tracks.id",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/local/upload-access",
-      "operationId": "LocalTrackController.listUploadAccess",
-      "controller": "LocalTrackController",
-      "source": "src/main/java/org/thornex/musicparty/controller/LocalTrackController.java",
-      "line": 95,
-      "queryParameters": [
-        {
-          "name": "adminPassword",
-          "required": false
-        },
-        {
-          "name": "sessionToken",
-          "required": false
-        }
-      ]
+      "operationId": "get.api.local.upload_access",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "POST",
       "path": "/api/local/upload-access/grant",
-      "operationId": "LocalTrackController.grantUploadAccess",
-      "controller": "LocalTrackController",
-      "source": "src/main/java/org/thornex/musicparty/controller/LocalTrackController.java",
-      "line": 104,
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "post.api.local.upload_access.grant",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "POST",
       "path": "/api/local/upload-access/revoke",
-      "operationId": "LocalTrackController.revokeUploadAccess",
-      "controller": "LocalTrackController",
-      "source": "src/main/java/org/thornex/musicparty/controller/LocalTrackController.java",
-      "line": 113,
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "post.api.local.upload_access.revoke",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/me/liked-songs",
-      "operationId": "UserPlaylistController.likedSongs",
-      "controller": "UserPlaylistController",
-      "source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java",
-      "line": 97,
-      "queryParameters": [
-        {
-          "name": "sessionToken",
-          "required": true
-        }
-      ]
+      "operationId": "get.api.me.liked_songs",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "DELETE",
       "path": "/api/me/liked-songs/{platform}/{musicId}",
-      "operationId": "UserPlaylistController.unlikeSong",
-      "controller": "UserPlaylistController",
-      "source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java",
-      "line": 110,
-      "queryParameters": [
-        {
-          "name": "sessionToken",
-          "required": true
-        }
-      ]
+      "operationId": "delete.api.me.liked_songs.platform.musicId",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "PUT",
       "path": "/api/me/liked-songs/{platform}/{musicId}",
-      "operationId": "UserPlaylistController.likeSong",
-      "controller": "UserPlaylistController",
-      "source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java",
-      "line": 102,
-      "queryParameters": [
-        {
-          "name": "sessionToken",
-          "required": true
-        }
-      ],
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "put.api.me.liked_songs.platform.musicId",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/me/playlists",
-      "operationId": "UserPlaylistController.list",
-      "controller": "UserPlaylistController",
-      "source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java",
-      "line": 22,
-      "queryParameters": [
-        {
-          "name": "sessionToken",
-          "required": true
-        }
-      ]
+      "operationId": "get.api.me.playlists",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "POST",
       "path": "/api/me/playlists",
-      "operationId": "UserPlaylistController.create",
-      "controller": "UserPlaylistController",
-      "source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java",
-      "line": 27,
-      "queryParameters": [
-        {
-          "name": "sessionToken",
-          "required": true
-        }
-      ],
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "post.api.me.playlists",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "DELETE",
       "path": "/api/me/playlists/{playlistId}",
-      "operationId": "UserPlaylistController.delete",
-      "controller": "UserPlaylistController",
-      "source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java",
-      "line": 39,
-      "queryParameters": [
-        {
-          "name": "sessionToken",
-          "required": true
-        }
-      ]
+      "operationId": "delete.api.me.playlists.playlistId",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "PATCH",
       "path": "/api/me/playlists/{playlistId}",
-      "operationId": "UserPlaylistController.rename",
-      "controller": "UserPlaylistController",
-      "source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java",
-      "line": 32,
-      "queryParameters": [
-        {
-          "name": "sessionToken",
-          "required": true
-        }
-      ],
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "patch.api.me.playlists.playlistId",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "POST",
       "path": "/api/me/playlists/{playlistId}/enqueue",
-      "operationId": "UserPlaylistController.enqueue",
-      "controller": "UserPlaylistController",
-      "source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java",
-      "line": 92,
-      "queryParameters": [
-        {
-          "name": "sessionToken",
-          "required": true
-        }
-      ]
+      "operationId": "post.api.me.playlists.playlistId.enqueue",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/me/playlists/{playlistId}/export",
-      "operationId": "UserPlaylistController.export",
-      "controller": "UserPlaylistController",
-      "source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java",
-      "line": 85,
-      "produces": "text/plain",
-      "queryParameters": [
-        {
-          "name": "format",
-          "required": false,
-          "default": "txt"
-        },
-        {
-          "name": "sessionToken",
-          "required": true
-        }
-      ]
+      "operationId": "get.api.me.playlists.playlistId.export",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "POST",
       "path": "/api/me/playlists/{playlistId}/import",
-      "operationId": "UserPlaylistController.importPlaylist",
-      "controller": "UserPlaylistController",
-      "source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java",
-      "line": 78,
-      "produces": "text/plain",
-      "queryParameters": [
-        {
-          "name": "format",
-          "required": false,
-          "default": "txt"
-        },
-        {
-          "name": "sessionToken",
-          "required": true
-        }
-      ],
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "post.api.me.playlists.playlistId.import",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "POST",
       "path": "/api/me/playlists/{playlistId}/import/netease",
-      "operationId": "UserPlaylistController.importNetease",
-      "controller": "UserPlaylistController",
-      "source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java",
-      "line": 71,
-      "queryParameters": [
-        {
-          "name": "sessionToken",
-          "required": true
-        }
-      ],
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "post.api.me.playlists.playlistId.import.netease",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/me/playlists/{playlistId}/tracks",
-      "operationId": "UserPlaylistController.tracks",
-      "controller": "UserPlaylistController",
-      "source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java",
-      "line": 44,
-      "queryParameters": [
-        {
-          "name": "limit",
-          "required": false,
-          "default": "100"
-        },
-        {
-          "name": "offset",
-          "required": false,
-          "default": "0"
-        },
-        {
-          "name": "sessionToken",
-          "required": true
-        }
-      ],
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "get.api.me.playlists.playlistId.tracks",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "POST",
       "path": "/api/me/playlists/{playlistId}/tracks/batch",
-      "operationId": "UserPlaylistController.addTracks",
-      "controller": "UserPlaylistController",
-      "source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java",
-      "line": 52,
-      "queryParameters": [
-        {
-          "name": "sessionToken",
-          "required": true
-        }
-      ],
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "post.api.me.playlists.playlistId.tracks.batch",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "POST",
       "path": "/api/me/playlists/{playlistId}/tracks/reorder",
-      "operationId": "UserPlaylistController.reorder",
-      "controller": "UserPlaylistController",
-      "source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java",
-      "line": 64,
-      "queryParameters": [
-        {
-          "name": "sessionToken",
-          "required": true
-        }
-      ],
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "post.api.me.playlists.playlistId.tracks.reorder",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "DELETE",
       "path": "/api/me/playlists/{playlistId}/tracks/{trackId}",
-      "operationId": "UserPlaylistController.deleteTrack",
-      "controller": "UserPlaylistController",
-      "source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java",
-      "line": 59,
-      "queryParameters": [
-        {
-          "name": "sessionToken",
-          "required": true
-        }
-      ]
+      "operationId": "delete.api.me.playlists.playlistId.tracks.trackId",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/music/lyric-detail/{platform}/{musicId}",
-      "operationId": "ApiController.getLyricDetail",
-      "controller": "ApiController",
-      "source": "src/main/java/org/thornex/musicparty/controller/ApiController.java",
-      "line": 226
+      "operationId": "get.api.music.lyric_detail.platform.musicId",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/music/lyric/{platform}/{musicId}",
-      "operationId": "ApiController.getLyric",
-      "controller": "ApiController",
-      "source": "src/main/java/org/thornex/musicparty/controller/ApiController.java",
-      "line": 215
+      "operationId": "get.api.music.lyric.platform.musicId",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
-      "path": "/api/navidrome/cover/{coverArtId}",
-      "operationId": "NavidromeProxyController.coverArt",
-      "controller": "NavidromeProxyController",
-      "source": "src/main/java/org/thornex/musicparty/controller/NavidromeProxyController.java",
-      "line": 118,
-      "queryParameters": [
-        {
-          "name": "token",
-          "required": false
-        }
-      ]
+      "path": "/api/navidrome/cover/{coverId}",
+      "operationId": "get.api.navidrome.cover.coverId",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/navidrome/stream/{songId}",
-      "operationId": "NavidromeProxyController.streamSong",
-      "controller": "NavidromeProxyController",
-      "source": "src/main/java/org/thornex/musicparty/controller/NavidromeProxyController.java",
-      "line": 52,
-      "queryParameters": [
-        {
-          "name": "token",
-          "required": false
-        }
-      ]
+      "operationId": "get.api.navidrome.stream.songId",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/netease/stream/{songId}",
-      "operationId": "NeteaseProxyController.streamSong",
-      "controller": "NeteaseProxyController",
-      "source": "src/main/java/org/thornex/musicparty/controller/NeteaseProxyController.java",
-      "line": 63,
-      "queryParameters": [
-        {
-          "name": "token",
-          "required": false
-        }
-      ]
+      "operationId": "get.api.netease.stream.songId",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/platforms",
-      "operationId": "ApiController.getPlatforms",
-      "controller": "ApiController",
-      "source": "src/main/java/org/thornex/musicparty/controller/ApiController.java",
-      "line": 65,
-      "queryParameters": [
-        {
-          "name": "roomId",
-          "required": false
-        },
-        {
-          "name": "token",
-          "required": false
-        }
-      ]
+      "operationId": "get.api.platforms",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/playlist/songs/{platform}/{playlistId}",
-      "operationId": "ApiController.getPlaylistSongs",
-      "controller": "ApiController",
-      "source": "src/main/java/org/thornex/musicparty/controller/ApiController.java",
-      "line": 150,
-      "queryParameters": [
-        {
-          "name": "limit",
-          "required": false,
-          "default": "20"
-        },
-        {
-          "name": "offset",
-          "required": false,
-          "default": "0"
-        }
-      ]
+      "operationId": "get.api.playlist.songs.platform.playlistId",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/rooms",
-      "operationId": "RoomController.listRooms",
-      "controller": "RoomController",
-      "source": "src/main/java/org/thornex/musicparty/controller/RoomController.java",
-      "line": 66
+      "operationId": "get.api.rooms",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "DELETE",
       "path": "/api/rooms/{roomId}",
-      "operationId": "RoomController.deleteRoomRequest",
-      "controller": "RoomController",
-      "source": "src/main/java/org/thornex/musicparty/controller/RoomController.java",
-      "line": 97
+      "operationId": "delete.api.rooms.roomId",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "PUT",
       "path": "/api/rooms/{roomId}",
-      "operationId": "RoomController.updateRoom",
-      "controller": "RoomController",
-      "source": "src/main/java/org/thornex/musicparty/controller/RoomController.java",
-      "line": 73,
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "put.api.rooms.roomId",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/rooms/{roomId}/invites",
-      "operationId": "RoomMembershipController.listInvites",
-      "controller": "RoomMembershipController",
-      "source": "src/main/java/org/thornex/musicparty/controller/RoomMembershipController.java",
-      "line": 30
+      "operationId": "get.api.rooms.roomId.invites",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "POST",
       "path": "/api/rooms/{roomId}/invites",
-      "operationId": "RoomMembershipController.createInvite",
-      "controller": "RoomMembershipController",
-      "source": "src/main/java/org/thornex/musicparty/controller/RoomMembershipController.java",
-      "line": 24,
-      "requestBody": true
+      "operationId": "post.api.rooms.roomId.invites",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "DELETE",
       "path": "/api/rooms/{roomId}/invites/{inviteId}",
-      "operationId": "RoomMembershipController.revokeInvite",
-      "controller": "RoomMembershipController",
-      "source": "src/main/java/org/thornex/musicparty/controller/RoomMembershipController.java",
-      "line": 34
+      "operationId": "delete.api.rooms.roomId.invites.inviteId",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/rooms/{roomId}/members",
-      "operationId": "RoomMembershipController.members",
-      "controller": "RoomMembershipController",
-      "source": "src/main/java/org/thornex/musicparty/controller/RoomMembershipController.java",
-      "line": 35
+      "operationId": "get.api.rooms.roomId.members",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "DELETE",
       "path": "/api/rooms/{roomId}/members/{publicId}",
-      "operationId": "RoomMembershipController.removeMember",
-      "controller": "RoomMembershipController",
-      "source": "src/main/java/org/thornex/musicparty/controller/RoomMembershipController.java",
-      "line": 36
+      "operationId": "delete.api.rooms.roomId.members.publicId",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "DELETE",
       "path": "/api/rooms/{roomId}/owners/{publicId}",
-      "operationId": "RoomMembershipController.removeOwner",
-      "controller": "RoomMembershipController",
-      "source": "src/main/java/org/thornex/musicparty/controller/RoomMembershipController.java",
-      "line": 38
+      "operationId": "delete.api.rooms.roomId.owners.publicId",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "POST",
       "path": "/api/rooms/{roomId}/owners/{publicId}",
-      "operationId": "RoomMembershipController.makeOwner",
-      "controller": "RoomMembershipController",
-      "source": "src/main/java/org/thornex/musicparty/controller/RoomMembershipController.java",
-      "line": 37
+      "operationId": "post.api.rooms.roomId.owners.publicId",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/rooms/{roomId}/playlists",
-      "operationId": "RoomPlaylistController.list",
-      "controller": "RoomPlaylistController",
-      "source": "src/main/java/org/thornex/musicparty/controller/RoomPlaylistController.java",
-      "line": 30
+      "operationId": "get.api.rooms.roomId.playlists",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "POST",
+      "path": "/api/rooms/{roomId}/playlists",
+      "operationId": "post.api.rooms.roomId.playlists",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "DELETE",
       "path": "/api/rooms/{roomId}/playlists/{playlistId}",
-      "operationId": "RoomPlaylistController.delete",
-      "controller": "RoomPlaylistController",
-      "source": "src/main/java/org/thornex/musicparty/controller/RoomPlaylistController.java",
-      "line": 54,
-      "queryParameters": [
-        {
-          "name": "offset",
-          "required": false,
-          "default": "0"
-        },
-        {
-          "name": "roomAccessToken",
-          "required": false
-        },
-        {
-          "name": "sessionToken",
-          "required": false
-        }
-      ]
+      "operationId": "delete.api.rooms.roomId.playlists.playlistId",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "PATCH",
       "path": "/api/rooms/{roomId}/playlists/{playlistId}",
-      "operationId": "RoomPlaylistController.rename",
-      "controller": "RoomPlaylistController",
-      "source": "src/main/java/org/thornex/musicparty/controller/RoomPlaylistController.java",
-      "line": 44,
-      "queryParameters": [
-        {
-          "name": "roomAccessToken",
-          "required": false
-        },
-        {
-          "name": "sessionToken",
-          "required": false
-        }
-      ],
-      "requestBody": true,
-      "requestBodyRequired": true
-    },
-    {
-      "method": "POST",
-      "path": "/api/rooms/{roomId}/playlists/{playlistId}",
-      "operationId": "RoomPlaylistController.create",
-      "controller": "RoomPlaylistController",
-      "source": "src/main/java/org/thornex/musicparty/controller/RoomPlaylistController.java",
-      "line": 35,
-      "queryParameters": [
-        {
-          "name": "roomAccessToken",
-          "required": false
-        },
-        {
-          "name": "sessionToken",
-          "required": false
-        }
-      ],
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "patch.api.rooms.roomId.playlists.playlistId",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/rooms/{roomId}/playlists/{playlistId}/export",
-      "operationId": "RoomPlaylistController.export",
-      "controller": "RoomPlaylistController",
-      "source": "src/main/java/org/thornex/musicparty/controller/RoomPlaylistController.java",
-      "line": 112,
-      "produces": "text/plain",
-      "queryParameters": [
-        {
-          "name": "format",
-          "required": false,
-          "default": "txt"
-        }
-      ]
+      "operationId": "get.api.rooms.roomId.playlists.playlistId.export",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "POST",
       "path": "/api/rooms/{roomId}/playlists/{playlistId}/import",
-      "operationId": "RoomPlaylistController.importPlaylist",
-      "controller": "RoomPlaylistController",
-      "source": "src/main/java/org/thornex/musicparty/controller/RoomPlaylistController.java",
-      "line": 101,
-      "produces": "text/plain",
-      "queryParameters": [
-        {
-          "name": "roomAccessToken",
-          "required": false
-        },
-        {
-          "name": "sessionToken",
-          "required": false
-        },
-        {
-          "name": "token",
-          "required": false
-        }
-      ],
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "post.api.rooms.roomId.playlists.playlistId.import",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/rooms/{roomId}/playlists/{playlistId}/tracks",
-      "operationId": "RoomPlaylistController.tracks",
-      "controller": "RoomPlaylistController",
-      "source": "src/main/java/org/thornex/musicparty/controller/RoomPlaylistController.java",
-      "line": 63,
-      "queryParameters": [
-        {
-          "name": "limit",
-          "required": false,
-          "default": "100"
-        },
-        {
-          "name": "offset",
-          "required": false,
-          "default": "0"
-        },
-        {
-          "name": "sessionToken",
-          "required": false
-        }
-      ],
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "get.api.rooms.roomId.playlists.playlistId.tracks",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "POST",
       "path": "/api/rooms/{roomId}/playlists/{playlistId}/tracks",
-      "operationId": "RoomPlaylistController.addTrack",
-      "controller": "RoomPlaylistController",
-      "source": "src/main/java/org/thornex/musicparty/controller/RoomPlaylistController.java",
-      "line": 71,
-      "queryParameters": [
-        {
-          "name": "roomAccessToken",
-          "required": false
-        },
-        {
-          "name": "sessionToken",
-          "required": false
-        }
-      ],
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "post.api.rooms.roomId.playlists.playlistId.tracks",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "POST",
       "path": "/api/rooms/{roomId}/playlists/{playlistId}/tracks/reorder",
-      "operationId": "RoomPlaylistController.reorder",
-      "controller": "RoomPlaylistController",
-      "source": "src/main/java/org/thornex/musicparty/controller/RoomPlaylistController.java",
-      "line": 91,
-      "queryParameters": [
-        {
-          "name": "roomAccessToken",
-          "required": false
-        },
-        {
-          "name": "sessionToken",
-          "required": false
-        }
-      ],
-      "requestBody": true,
-      "requestBodyRequired": true
+      "operationId": "post.api.rooms.roomId.playlists.playlistId.tracks.reorder",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "DELETE",
       "path": "/api/rooms/{roomId}/playlists/{playlistId}/tracks/{trackId}",
-      "operationId": "RoomPlaylistController.deleteTrack",
-      "controller": "RoomPlaylistController",
-      "source": "src/main/java/org/thornex/musicparty/controller/RoomPlaylistController.java",
-      "line": 81,
-      "queryParameters": [
-        {
-          "name": "roomAccessToken",
-          "required": false
-        },
-        {
-          "name": "sessionToken",
-          "required": false
-        }
-      ]
+      "operationId": "delete.api.rooms.roomId.playlists.playlistId.tracks.trackId",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "POST",
+      "path": "/api/rooms/{roomId}/verify",
+      "operationId": "post.api.rooms.roomId.verify",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/search/{platform}/{keyword}",
-      "operationId": "ApiController.searchMusic",
-      "controller": "ApiController",
-      "source": "src/main/java/org/thornex/musicparty/controller/ApiController.java",
-      "line": 113,
-      "queryParameters": [
-        {
-          "name": "limit",
-          "required": false,
-          "default": "20"
-        },
-        {
-          "name": "offset",
-          "required": false,
-          "default": "0"
-        },
-        {
-          "name": "roomId",
-          "required": false
-        },
-        {
-          "name": "token",
-          "required": false
-        }
-      ]
+      "operationId": "get.api.search.platform.keyword",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
-      "path": "/api/subsonic/{roomId}/{sourceId}/cover/{coverArtId}",
-      "operationId": "SubsonicProxyController.coverArt",
-      "controller": "SubsonicProxyController",
-      "source": "src/main/java/org/thornex/musicparty/controller/SubsonicProxyController.java",
-      "line": 136,
-      "queryParameters": [
-        {
-          "name": "token",
-          "required": false
-        }
-      ]
+      "path": "/api/subsonic/{roomId}/{sourceId}/cover/{coverId}",
+      "operationId": "get.api.subsonic.roomId.sourceId.cover.coverId",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/subsonic/{roomId}/{sourceId}/stream/{songId}",
-      "operationId": "SubsonicProxyController.streamSong",
-      "controller": "SubsonicProxyController",
-      "source": "src/main/java/org/thornex/musicparty/controller/SubsonicProxyController.java",
-      "line": 53,
-      "queryParameters": [
-        {
-          "name": "token",
-          "required": false
-        }
-      ]
+      "operationId": "get.api.subsonic.roomId.sourceId.stream.songId",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
-      "path": "/api/subsonic/{sourceId}/cover/{coverArtId}",
-      "operationId": "SubsonicProxyController.coverArt",
-      "controller": "SubsonicProxyController",
-      "source": "src/main/java/org/thornex/musicparty/controller/SubsonicProxyController.java",
-      "line": 126,
-      "queryParameters": [
-        {
-          "name": "token",
-          "required": false
-        }
-      ]
+      "path": "/api/subsonic/{sourceId}/cover/{coverId}",
+      "operationId": "get.api.subsonic.sourceId.cover.coverId",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/subsonic/{sourceId}/stream/{songId}",
-      "operationId": "SubsonicProxyController.streamSong",
-      "controller": "SubsonicProxyController",
-      "source": "src/main/java/org/thornex/musicparty/controller/SubsonicProxyController.java",
-      "line": 42,
-      "queryParameters": [
-        {
-          "name": "token",
-          "required": false
-        }
-      ]
+      "operationId": "get.api.subsonic.sourceId.stream.songId",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/theme/extract-cover-color",
-      "operationId": "ApiController.extractCoverColor",
-      "controller": "ApiController",
-      "source": "src/main/java/org/thornex/musicparty/controller/ApiController.java",
-      "line": 243,
-      "queryParameters": [
-        {
-          "name": "url",
-          "required": true
-        }
-      ]
+      "operationId": "get.api.theme.extract_cover_color",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/user/playlists/{platform}/{userId}",
-      "operationId": "ApiController.getUserPlaylists",
-      "controller": "ApiController",
-      "source": "src/main/java/org/thornex/musicparty/controller/ApiController.java",
-      "line": 142
+      "operationId": "get.api.user.playlists.platform.userId",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
       "path": "/api/user/search/{platform}/{keyword}",
-      "operationId": "ApiController.searchUsers",
-      "controller": "ApiController",
-      "source": "src/main/java/org/thornex/musicparty/controller/ApiController.java",
-      "line": 207
+      "operationId": "get.api.user.search.platform.keyword",
+      "source": "backend-go/internal/httpapi"
     },
     {
       "method": "GET",
-      "path": "/{path}",
-      "operationId": "SpaRedirectController.fallback",
-      "controller": "Static",
-      "source": "src/main/java/org/thornex/musicparty/config/SpaRedirectController.java",
-      "line": 19,
-      "produces": "text/html"
+      "path": "/api/youtube/stream/{videoId}",
+      "operationId": "get.api.youtube.stream.videoId",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "GET",
+      "path": "/ws",
+      "operationId": "get.ws",
+      "source": "backend-go/internal/httpapi"
     }
   ],
-  "version": 1
+  "runtime": "go",
+  "version": 2
 }

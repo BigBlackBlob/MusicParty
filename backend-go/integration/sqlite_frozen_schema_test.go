@@ -2,22 +2,40 @@ package integration
 
 import (
 	"context"
+	"database/sql"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	storesqlite "github.com/BigBlackBlob/MusicParty/backend-go/internal/store/sqlite"
+	_ "modernc.org/sqlite"
 )
 
-// TestSQLiteJavaRoundTrip is opt-in because it requires a database initialized
-// by the Java SqliteSchemaInitializer. The seed phase writes through the Go
-// repositories; an external Java repository probe then updates the same rows;
-// the verify phase confirms Go can read the Java mutation without migration.
-func TestSQLiteJavaRoundTrip(t *testing.T) {
-	databasePath := os.Getenv("MUSICPARTY_JAVA_SQLITE_FIXTURE")
-	if databasePath == "" {
-		t.Skip("MUSICPARTY_JAVA_SQLITE_FIXTURE is not set")
+// TestSQLiteFrozenSchemaCompatibility proves that current Go repositories can
+// read and write a database created from the frozen pre-Go production schema.
+func TestSQLiteFrozenSchemaCompatibility(t *testing.T) {
+	repositoryRoot, err := findRepositoryRoot()
+	if err != nil {
+		t.Fatal(err)
 	}
+	databasePath := filepath.Join(t.TempDir(), "frozen-schema.db")
+	schema, err := os.ReadFile(filepath.Join(repositoryRoot, "contracts", "db", "schema.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	database, err := sql.Open("sqlite", databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec(string(schema)); err != nil {
+		_ = database.Close()
+		t.Fatalf("apply frozen schema: %v", err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+
 	store, err := storesqlite.OpenStore(context.Background(), storesqlite.StoreConfig{
 		Path:               databasePath,
 		BusyTimeout:        time.Second,
@@ -25,9 +43,8 @@ func TestSQLiteJavaRoundTrip(t *testing.T) {
 		WriteQueueCapacity: 100,
 	})
 	if err != nil {
-		t.Fatalf("OpenStore(Java fixture): %v", err)
+		t.Fatalf("OpenStore(frozen fixture): %v", err)
 	}
-	defer store.Close()
 	ctx := context.Background()
 	rooms := storesqlite.NewRoomRepository(store)
 	profiles := storesqlite.NewUserProfileRepository(store, nil)
@@ -39,51 +56,6 @@ func TestSQLiteJavaRoundTrip(t *testing.T) {
 	settings := storesqlite.NewSiteSettingRepository(store)
 	subsonic := storesqlite.NewSubsonicSourceRepository(store)
 	local := storesqlite.NewLocalTrackRepository(store)
-
-	switch os.Getenv("MUSICPARTY_JAVA_SQLITE_PHASE") {
-	case "verify-java":
-		room, err := rooms.FindByID(ctx, "go-roundtrip-room")
-		if err != nil {
-			t.Fatalf("Go read Java-updated room: %v", err)
-		}
-		if room.LastActiveAt != 4242 {
-			t.Fatalf("Java-updated last_active_at = %d, want 4242", room.LastActiveAt)
-		}
-		membership, err := access.FindMembership(ctx, "go-roundtrip-room", "java-roundtrip-user")
-		if err != nil {
-			t.Fatalf("Go read Java-created membership: %v", err)
-		}
-		if membership.Role != "MEMBER" {
-			t.Fatalf("Java-created membership role = %q, want MEMBER", membership.Role)
-		}
-		roomID := "go-roundtrip-room"
-		messages, err := chat.FetchMessages(ctx, &roomID, 0, 20)
-		if err != nil {
-			t.Fatalf("Go read Java-created chat: %v", err)
-		}
-		foundJavaChat := false
-		for _, message := range messages {
-			foundJavaChat = foundJavaChat || message.ID == "java-roundtrip-chat"
-		}
-		if !foundJavaChat {
-			t.Fatalf("Java-created chat not found: %+v", messages)
-		}
-		setting, err := settings.FindValue(ctx, "java.roundtrip")
-		if err != nil || setting == nil || *setting != "ok" {
-			t.Fatalf("Go read Java-created setting = %v, %v", setting, err)
-		}
-		uploadUsers, err := local.FindAllowedUploadUsers(ctx)
-		if err != nil {
-			t.Fatalf("Go read Java-created upload grant: %v", err)
-		}
-		if _, found := uploadUsers["java-roundtrip-uploader"]; !found {
-			t.Fatalf("Java-created upload grant not found: %v", uploadUsers)
-		}
-		return
-	case "", "seed-go":
-	default:
-		t.Fatalf("unknown MUSICPARTY_JAVA_SQLITE_PHASE %q", os.Getenv("MUSICPARTY_JAVA_SQLITE_PHASE"))
-	}
 
 	profile := storesqlite.UserProfile{
 		PublicID:      "go-roundtrip-user",
@@ -170,9 +142,41 @@ func TestSQLiteJavaRoundTrip(t *testing.T) {
 	}
 	result, err := storesqlite.Check(ctx, store.Reader())
 	if err != nil {
-		t.Fatalf("Check(Java fixture after Go writes): %v", err)
+		t.Fatalf("Check(frozen fixture after Go writes): %v", err)
 	}
 	if !result.OK() || result.ApplicationTables != 23 {
-		t.Fatalf("Java fixture after Go writes is unhealthy: %+v", result)
+		t.Fatalf("frozen fixture after Go writes is unhealthy: %+v", result)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := storesqlite.OpenStore(ctx, storesqlite.StoreConfig{
+		Path:               databasePath,
+		BusyTimeout:        time.Second,
+		ReadConnections:    2,
+		WriteQueueCapacity: 100,
+	})
+	if err != nil {
+		t.Fatalf("reopen frozen fixture: %v", err)
+	}
+	defer reopened.Close()
+	reopenedRoom, err := storesqlite.NewRoomRepository(reopened).FindByID(ctx, room.ID)
+	if err != nil {
+		t.Fatalf("read room after reopen: %v", err)
+	}
+	if reopenedRoom.Name != room.Name || reopenedRoom.OwnerPublicID != profile.PublicID {
+		t.Fatalf("room changed after reopen: %+v", reopenedRoom)
+	}
+	reopenedQueue, err := storesqlite.NewQueueRepository(reopened, nil).LoadQueue(ctx, room.ID)
+	if err != nil {
+		t.Fatalf("read queue after reopen: %v", err)
+	}
+	if len(reopenedQueue) != 1 || reopenedQueue[0].Music.ID != music.ID {
+		t.Fatalf("queue changed after reopen: %+v", reopenedQueue)
+	}
+	reopenedCheck, err := storesqlite.Check(ctx, reopened.Reader())
+	if err != nil || !reopenedCheck.OK() || reopenedCheck.ApplicationTables != 23 {
+		t.Fatalf("reopened frozen fixture is unhealthy: result=%+v err=%v", reopenedCheck, err)
 	}
 }

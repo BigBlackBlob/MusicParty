@@ -4,7 +4,13 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "items": {
+            "type": "object",
+            "x-typescript-type": "ChatMessage"
+          },
+          "type": "array"
+        },
         "requestId": {
           "type": [
             "string",
@@ -30,7 +36,10 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "type": "object",
+          "x-typescript-type": "ChatMessage"
+        },
         "requestId": {
           "type": [
             "string",
@@ -56,7 +65,28 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "accepted": {
+              "type": "boolean"
+            },
+            "count": {
+              "type": "number"
+            },
+            "mutationId": {
+              "type": "string"
+            },
+            "queueId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "accepted",
+            "mutationId"
+          ],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -82,7 +112,28 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "accepted": {
+              "type": "boolean"
+            },
+            "mutationId": {
+              "type": "string"
+            },
+            "queueVersion": {
+              "type": "number"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "mutationId",
+            "reason"
+          ],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -108,7 +159,10 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "type": "object",
+          "x-typescript-type": "PlayerEvent"
+        },
         "requestId": {
           "type": [
             "string",
@@ -134,7 +188,66 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "isLoading": {
+              "type": "boolean"
+            },
+            "isPauseLocked": {
+              "type": "boolean"
+            },
+            "isPaused": {
+              "type": "boolean"
+            },
+            "isShuffle": {
+              "type": "boolean"
+            },
+            "isShuffleLocked": {
+              "type": "boolean"
+            },
+            "isSkipLocked": {
+              "type": "boolean"
+            },
+            "nowPlaying": {
+              "type": "object",
+              "x-typescript-type": "NowPlaying"
+            },
+            "playEpoch": {
+              "type": "number"
+            },
+            "queue": {
+              "items": {
+                "type": "object",
+                "x-typescript-type": "QueueItem"
+              },
+              "type": "array"
+            },
+            "queueVersion": {
+              "type": "number"
+            },
+            "serverTimestamp": {
+              "type": "number"
+            },
+            "stateVersion": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "isLoading",
+            "isPauseLocked",
+            "isPaused",
+            "isShuffle",
+            "isShuffleLocked",
+            "isSkipLocked",
+            "playEpoch",
+            "queue",
+            "queueVersion",
+            "serverTimestamp",
+            "stateVersion"
+          ],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -160,7 +273,13 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "items": {
+            "type": "object",
+            "x-typescript-type": "ChatMessage"
+          },
+          "type": "array"
+        },
         "requestId": {
           "type": [
             "string",
@@ -186,7 +305,10 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "type": "object",
+          "x-typescript-type": "ChatMessage"
+        },
         "requestId": {
           "type": [
             "string",
@@ -212,7 +334,18 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "mutationId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "mutationId"
+          ],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -238,7 +371,25 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "mutationId": {
+              "type": "string"
+            },
+            "queueVersion": {
+              "type": "number"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "mutationId",
+            "reason"
+          ],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -264,7 +415,59 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "item": {
+              "type": "object",
+              "x-typescript-type": "Partial\u003cQueueItem\u003e"
+            },
+            "items": {
+              "items": {
+                "type": "object",
+                "x-typescript-type": "QueueItem"
+              },
+              "type": "array"
+            },
+            "operation": {
+              "type": "object",
+              "x-typescript-type": "QueuePatchOperation"
+            },
+            "position": {
+              "type": "string"
+            },
+            "queue": {
+              "items": {
+                "type": "object",
+                "x-typescript-type": "QueueItem"
+              },
+              "type": "array"
+            },
+            "queueId": {
+              "type": "string"
+            },
+            "queueIds": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "queueVersion": {
+              "type": "number"
+            },
+            "status": {
+              "type": "string"
+            },
+            "targetQueueId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "operation",
+            "queueVersion"
+          ],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -290,7 +493,18 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "mutationId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "mutationId"
+          ],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -316,7 +530,25 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "mutationId": {
+              "type": "string"
+            },
+            "queueVersion": {
+              "type": "number"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "mutationId",
+            "reason"
+          ],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -342,7 +574,10 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "type": "object",
+          "x-typescript-type": "RoomSummary"
+        },
         "requestId": {
           "type": [
             "string",
@@ -368,7 +603,13 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "items": {
+            "type": "object",
+            "x-typescript-type": "RoomSummary"
+          },
+          "type": "array"
+        },
         "requestId": {
           "type": [
             "string",
@@ -394,7 +635,30 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "clientSendTime": {
+              "type": "number"
+            },
+            "pingId": {
+              "type": "string"
+            },
+            "serverReceiveTime": {
+              "type": "number"
+            },
+            "serverSendTime": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "clientSendTime",
+            "pingId",
+            "serverReceiveTime",
+            "serverSendTime"
+          ],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -420,7 +684,34 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "isAdmin": {
+              "type": "boolean"
+            },
+            "isGuest": {
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string"
+            },
+            "publicId": {
+              "type": "string"
+            },
+            "role": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "isAdmin",
+            "isGuest",
+            "name",
+            "publicId",
+            "role"
+          ],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -446,7 +737,10 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "type": "object",
+          "x-typescript-type": "PresenceSnapshot"
+        },
         "requestId": {
           "type": [
             "string",
@@ -470,26 +764,6 @@
       "type": "object"
     }
   ],
-  "title": "MusicParty WebSocket server messages",
-  "x-message-types": [
-    "chat.history",
-    "chat.message",
-    "enqueue.ack",
-    "enqueue.nack",
-    "player.events",
-    "player.state",
-    "public-chat.history",
-    "public-chat.message",
-    "queue.mutation.ack",
-    "queue.mutation.nack",
-    "queue.patch",
-    "queue.reorder.ack",
-    "queue.reorder.nack",
-    "rooms.created",
-    "rooms.list",
-    "sync.pong",
-    "user.me",
-    "users.online"
-  ],
-  "x-order-is-contractual": true
+  "title": "MusicParty Go WebSocket server messages",
+  "version": "2.0.0"
 }

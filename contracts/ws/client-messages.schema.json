@@ -4,7 +4,19 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "limit": {
+              "type": "number"
+            },
+            "offset": {
+              "type": "number"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -30,7 +42,18 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "content": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "content"
+          ],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -56,7 +79,12 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -82,7 +110,12 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -108,7 +141,18 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "positionMs": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "positionMs"
+          ],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -134,7 +178,12 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -160,7 +209,12 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -186,7 +240,26 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "musicId": {
+              "type": "string"
+            },
+            "mutationId": {
+              "type": "string"
+            },
+            "platform": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "musicId",
+            "mutationId",
+            "platform"
+          ],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -212,7 +285,26 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "albumId": {
+              "type": "string"
+            },
+            "mutationId": {
+              "type": "string"
+            },
+            "platform": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "albumId",
+            "mutationId",
+            "platform"
+          ],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -238,7 +330,26 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "mutationId": {
+              "type": "string"
+            },
+            "platform": {
+              "type": "string"
+            },
+            "playlistId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "mutationId",
+            "platform",
+            "playlistId"
+          ],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -264,7 +375,22 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "mutationId": {
+              "type": "string"
+            },
+            "playlistId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "mutationId",
+            "playlistId"
+          ],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -290,7 +416,12 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -316,7 +447,19 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "limit": {
+              "type": "number"
+            },
+            "offset": {
+              "type": "number"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -342,7 +485,18 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "content": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "content"
+          ],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -368,7 +522,25 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "mutationId": {
+              "type": "string"
+            },
+            "queueIds": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "mutationId",
+            "queueIds"
+          ],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -394,7 +566,25 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "mutationId": {
+              "type": "string"
+            },
+            "queueIds": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "mutationId",
+            "queueIds"
+          ],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -420,7 +610,22 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "mutationId": {
+              "type": "string"
+            },
+            "queueId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "mutationId",
+            "queueId"
+          ],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -446,7 +651,33 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "mutationId": {
+              "type": "string"
+            },
+            "newIndex": {
+              "type": "number"
+            },
+            "oldIndex": {
+              "type": "number"
+            },
+            "position": {
+              "type": "string"
+            },
+            "queueId": {
+              "type": "string"
+            },
+            "targetQueueId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "mutationId"
+          ],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -472,7 +703,22 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "mutationId": {
+              "type": "string"
+            },
+            "queueId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "mutationId",
+            "queueId"
+          ],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -498,7 +744,24 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "isPrivate": {
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string"
+            },
+            "password": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -524,7 +787,18 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "roomId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "roomId"
+          ],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -550,7 +824,22 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "clientSendTime": {
+              "type": "number"
+            },
+            "pingId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "clientSendTime",
+            "pingId"
+          ],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -576,7 +865,22 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "platform": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "accountId",
+            "platform"
+          ],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -602,7 +906,12 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -628,7 +937,18 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "newName": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "newName"
+          ],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -654,7 +974,12 @@
     {
       "additionalProperties": false,
       "properties": {
-        "payload": {},
+        "payload": {
+          "additionalProperties": false,
+          "properties": {},
+          "required": [],
+          "type": "object"
+        },
         "requestId": {
           "type": [
             "string",
@@ -678,34 +1003,6 @@
       "type": "object"
     }
   ],
-  "title": "MusicParty WebSocket client messages",
-  "x-message-types": [
-    "chat.history.fetch",
-    "chat.message",
-    "control.like",
-    "control.next",
-    "control.seek",
-    "control.toggle-pause",
-    "control.toggle-shuffle",
-    "enqueue",
-    "enqueue.album",
-    "enqueue.playlist",
-    "enqueue.room-playlist",
-    "player.resync",
-    "public-chat.history.fetch",
-    "public-chat.message",
-    "queue.batch-remove",
-    "queue.batch-top",
-    "queue.remove",
-    "queue.reorder",
-    "queue.top",
-    "rooms.create",
-    "rooms.delete",
-    "sync.ping",
-    "user.bind",
-    "user.me",
-    "user.rename",
-    "users.online"
-  ],
-  "x-order-is-contractual": true
+  "title": "MusicParty Go WebSocket client messages",
+  "version": "2.0.0"
 }

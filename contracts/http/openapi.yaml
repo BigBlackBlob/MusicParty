@@ -1,4951 +1,1386 @@
 {
   "components": {
     "responses": {
-      "BadRequest": {
+      "Error": {
         "content": {
           "application/json": {
             "schema": {
-              "$ref": "#/components/schemas/Error"
+              "$ref": "#/components/schemas/APIError"
             }
           }
         },
-        "description": "Bad request"
-      },
-      "Forbidden": {
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Error"
-            }
-          }
-        },
-        "description": "Permission denied or CSRF rejected"
-      },
-      "InternalError": {
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Error"
-            }
-          }
-        },
-        "description": "Unexpected Java baseline failure"
-      },
-      "NotFound": {
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Error"
-            }
-          }
-        },
-        "description": "Resource not found"
-      },
-      "TooManyRequests": {
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Error"
-            }
-          }
-        },
-        "description": "Rate limit exceeded"
-      },
-      "Unauthorized": {
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Error"
-            }
-          }
-        },
-        "description": "Authentication required"
+        "description": "API error"
       }
     },
     "schemas": {
-      "Error": {
-        "additionalProperties": true,
+      "APIError": {
+        "additionalProperties": false,
         "properties": {
+          "code": {
+            "type": "string"
+          },
+          "fieldErrors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
           "message": {
             "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
           }
         },
+        "required": [
+          "status",
+          "code",
+          "message"
+        ],
         "type": "object"
-      }
-    },
-    "securitySchemes": {
-      "csrfHeader": {
-        "in": "header",
-        "name": "X-CSRF-Token",
-        "type": "apiKey"
-      },
-      "sessionCookie": {
-        "in": "cookie",
-        "name": "MP_SESSION",
-        "type": "apiKey"
       }
     }
   },
   "info": {
-    "title": "MusicParty frozen Java HTTP contract",
-    "version": "go-rewrite-baseline-v1"
+    "title": "MusicParty Go HTTP API",
+    "version": "2.0.0"
   },
   "openapi": "3.1.0",
   "paths": {
     "/": {
       "get": {
-        "operationId": "Static_index",
-        "parameters": [],
+        "operationId": "get.root",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "Static"
-        ],
-        "x-java-source": "src/main/resources/static/index.html:1"
+        "x-go-source": "backend-go/internal/httpapi"
+      },
+      "head": {
+        "operationId": "head.root",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
-    "/actuator": {
+    "/*": {
       "get": {
-        "operationId": "Actuator_discovery",
-        "parameters": [],
+        "operationId": "get.*",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "Actuator"
-        ],
-        "x-java-source": "src/main/resources/application.yml:4"
+        "x-go-source": "backend-go/internal/httpapi"
+      },
+      "head": {
+        "operationId": "head.*",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/actuator/health": {
       "get": {
-        "operationId": "Actuator_health",
-        "parameters": [],
+        "operationId": "get.actuator.health",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "Actuator"
-        ],
-        "x-java-source": "src/main/resources/application.yml:15"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/actuator/health/liveness": {
       "get": {
-        "operationId": "Actuator_liveness",
-        "parameters": [],
+        "operationId": "get.actuator.health.liveness",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "Actuator"
-        ],
-        "x-java-source": "src/main/resources/application.yml:15"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/actuator/health/readiness": {
       "get": {
-        "operationId": "Actuator_readiness",
-        "parameters": [],
+        "operationId": "get.actuator.health.readiness",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "Actuator"
-        ],
-        "x-java-source": "src/main/resources/application.yml:15"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/actuator/info": {
       "get": {
-        "operationId": "Actuator_info",
-        "parameters": [],
+        "operationId": "get.actuator.info",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "Actuator"
-        ],
-        "x-java-source": "src/main/resources/application.yml:12"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/actuator/metrics": {
       "get": {
-        "operationId": "Actuator_metrics",
-        "parameters": [],
+        "operationId": "get.actuator.metrics",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "Actuator"
-        ],
-        "x-java-source": "src/main/resources/application.yml:12"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
-    "/actuator/metrics/{name}": {
+    "/actuator/metrics/{metricName}": {
       "get": {
-        "operationId": "Actuator_metric",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.actuator.metrics.metricName",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "Actuator"
-        ],
-        "x-java-source": "src/main/resources/application.yml:12"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/actuator/prometheus": {
       "get": {
-        "operationId": "Actuator_prometheus",
-        "parameters": [],
+        "operationId": "get.actuator.prometheus",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "Actuator"
-        ],
-        "x-java-source": "src/main/resources/application.yml:12"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/account/change-password": {
       "post": {
-        "operationId": "AccountAuthController_changePassword",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "post.api.account.change_password",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "AccountAuthController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AccountAuthController.java:100"
+        "x-go-source": "backend-go/internal/httpapi"
+      }
+    },
+    "/api/account/guest": {
+      "post": {
+        "operationId": "post.api.account.guest",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/account/login": {
       "post": {
-        "operationId": "AccountAuthController_loginPlatformAdmin",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "post.api.account.login",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "AccountAuthController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AccountAuthController.java:54"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/account/logout": {
       "post": {
-        "operationId": "AccountAuthController_logout",
-        "parameters": [],
+        "operationId": "post.api.account.logout",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "AccountAuthController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AccountAuthController.java:92"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/account/me": {
       "get": {
-        "operationId": "AccountAuthController_me",
-        "parameters": [],
+        "operationId": "get.api.account.me",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "AccountAuthController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AccountAuthController.java:84"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/account/profile": {
       "put": {
-        "operationId": "AccountAuthController_updateProfile",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "put.api.account.profile",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "AccountAuthController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AccountAuthController.java:120"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/account/register": {
       "post": {
-        "operationId": "AccountAuthController_retiredMemberRegistrationEndpoint",
-        "parameters": [],
+        "operationId": "post.api.account.register",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "AccountAuthController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AccountAuthController.java:49"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/account/status": {
       "get": {
-        "operationId": "AccountAuthController_status",
-        "parameters": [],
+        "operationId": "get.api.account.status",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "AccountAuthController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AccountAuthController.java:44"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
-    "/api/admin/command": {
+    "/api/account/upgrade": {
       "post": {
-        "operationId": "AdminController_handleAdminCommand",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "post.api.account.upgrade",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "AdminController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AdminController.java:66"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/admin/navidrome-access/grant": {
       "post": {
-        "operationId": "AdminController_grantNavidromeAccess",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "post.api.admin.navidrome_access.grant",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "AdminController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AdminController.java:195"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/admin/navidrome-access/revoke": {
       "post": {
-        "operationId": "AdminController_revokeNavidromeAccess",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "post.api.admin.navidrome_access.revoke",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "AdminController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AdminController.java:203"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
-    "/api/admin/runtime-metrics": {
-      "get": {
-        "operationId": "AdminController_runtimeMetrics",
-        "parameters": [],
+    "/api/admin/platform-credentials": {
+      "post": {
+        "operationId": "post.api.admin.platform_credentials",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "AdminController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AdminController.java:163"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/admin/subsonic-source": {
       "post": {
-        "operationId": "AdminController_upsertSubsonicSource",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "post.api.admin.subsonic_source",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "AdminController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AdminController.java:171"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/admin/subsonic-source/order": {
       "post": {
-        "operationId": "AdminController_reorderSubsonicSource",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "post.api.admin.subsonic_source.order",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "AdminController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AdminController.java:240"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/admin/subsonic-source/remove": {
       "post": {
-        "operationId": "AdminController_removeSubsonicSource",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "post.api.admin.subsonic_source.remove",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "AdminController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AdminController.java:260"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/admin/subsonic-source/test": {
       "post": {
-        "operationId": "AdminController_testSubsonicSource",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "post.api.admin.subsonic_source.test",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "AdminController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AdminController.java:222"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/admin/subsonic-sources": {
       "get": {
-        "operationId": "AdminController_listSubsonicSources",
-        "parameters": [],
+        "operationId": "get.api.admin.subsonic_sources",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "AdminController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/AdminController.java:211"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/album/search/{platform}": {
       "get": {
-        "operationId": "ApiController_searchAlbums",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "platform",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "keyword",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "roomId",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "token",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.album.search.platform",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "ApiController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/ApiController.java:161"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/album/songs/{platform}/{albumId}": {
       "get": {
-        "operationId": "ApiController_getAlbumSongs",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "platform",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "albumId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "roomId",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "token",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.album.songs.platform.albumId",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "ApiController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/ApiController.java:184"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/bilibili/stream/{bvid}": {
       "get": {
-        "operationId": "BilibiliProxyController_streamSong",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "bvid",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "token",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.bilibili.stream.bvid",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "BilibiliProxyController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/BilibiliProxyController.java:63"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/config": {
       "get": {
-        "operationId": "ApiController_getConfig",
-        "parameters": [],
+        "operationId": "get.api.config",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "ApiController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/ApiController.java:57"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/invites/redeem": {
       "post": {
-        "operationId": "InvitationController_redeem",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "post.api.invites.redeem",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "InvitationController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/InvitationController.java:27"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/join/{secret}/metadata": {
       "get": {
-        "operationId": "InvitationController_metadata",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "secret",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.join.secret.metadata",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "InvitationController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/InvitationController.java:20"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/local/cover/{id}": {
       "get": {
-        "operationId": "LocalTrackController_cover",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "token",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.local.cover.id",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "LocalTrackController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/LocalTrackController.java:148"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/local/media/{id}": {
       "get": {
-        "operationId": "LocalTrackController_media",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "token",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.local.media.id",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "LocalTrackController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/LocalTrackController.java:122"
+        "x-go-source": "backend-go/internal/httpapi"
+      },
+      "head": {
+        "operationId": "head.api.local.media.id",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/local/tracks": {
       "get": {
-        "operationId": "LocalTrackController_listTracks",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "adminPassword",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "sessionToken",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.local.tracks",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "LocalTrackController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/LocalTrackController.java:44"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/local/tracks/upload": {
       "post": {
-        "operationId": "LocalTrackController_uploadTrack",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "adminPassword",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "album",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "artists",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "title",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "token",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "multipart/form-data": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "post.api.local.tracks.upload",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "LocalTrackController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/LocalTrackController.java:53"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/local/tracks/{id}": {
       "delete": {
-        "operationId": "LocalTrackController_deleteTrack",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "adminPassword",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "token",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "delete.api.local.tracks.id",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "LocalTrackController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/LocalTrackController.java:84"
+        "x-go-source": "backend-go/internal/httpapi"
       },
       "patch": {
-        "operationId": "LocalTrackController_updateTrack",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "patch.api.local.tracks.id",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "LocalTrackController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/LocalTrackController.java:76"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/local/upload-access": {
       "get": {
-        "operationId": "LocalTrackController_listUploadAccess",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "adminPassword",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "sessionToken",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.local.upload_access",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "LocalTrackController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/LocalTrackController.java:95"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/local/upload-access/grant": {
       "post": {
-        "operationId": "LocalTrackController_grantUploadAccess",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "post.api.local.upload_access.grant",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "LocalTrackController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/LocalTrackController.java:104"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/local/upload-access/revoke": {
       "post": {
-        "operationId": "LocalTrackController_revokeUploadAccess",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "post.api.local.upload_access.revoke",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "LocalTrackController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/LocalTrackController.java:113"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/me/liked-songs": {
       "get": {
-        "operationId": "UserPlaylistController_likedSongs",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "sessionToken",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.me.liked_songs",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "UserPlaylistController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java:97"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/me/liked-songs/{platform}/{musicId}": {
       "delete": {
-        "operationId": "UserPlaylistController_unlikeSong",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "platform",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "musicId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "sessionToken",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "delete.api.me.liked_songs.platform.musicId",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "UserPlaylistController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java:110"
+        "x-go-source": "backend-go/internal/httpapi"
       },
       "put": {
-        "operationId": "UserPlaylistController_likeSong",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "platform",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "musicId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "sessionToken",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "put.api.me.liked_songs.platform.musicId",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "UserPlaylistController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java:102"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/me/playlists": {
       "get": {
-        "operationId": "UserPlaylistController_list",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "sessionToken",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.me.playlists",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "UserPlaylistController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java:22"
+        "x-go-source": "backend-go/internal/httpapi"
       },
       "post": {
-        "operationId": "UserPlaylistController_create",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "sessionToken",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "post.api.me.playlists",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "UserPlaylistController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java:27"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/me/playlists/{playlistId}": {
       "delete": {
-        "operationId": "UserPlaylistController_delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "playlistId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "sessionToken",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "delete.api.me.playlists.playlistId",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "UserPlaylistController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java:39"
+        "x-go-source": "backend-go/internal/httpapi"
       },
       "patch": {
-        "operationId": "UserPlaylistController_rename",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "playlistId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "sessionToken",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "patch.api.me.playlists.playlistId",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "UserPlaylistController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java:32"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/me/playlists/{playlistId}/enqueue": {
       "post": {
-        "operationId": "UserPlaylistController_enqueue",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "playlistId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "sessionToken",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "post.api.me.playlists.playlistId.enqueue",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "UserPlaylistController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java:92"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/me/playlists/{playlistId}/export": {
       "get": {
-        "operationId": "UserPlaylistController_export",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "playlistId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "format",
-            "required": false,
-            "schema": {
-              "default": "txt",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "sessionToken",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.me.playlists.playlistId.export",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "UserPlaylistController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java:85"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/me/playlists/{playlistId}/import": {
       "post": {
-        "operationId": "UserPlaylistController_importPlaylist",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "playlistId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "format",
-            "required": false,
-            "schema": {
-              "default": "txt",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "sessionToken",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "post.api.me.playlists.playlistId.import",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "UserPlaylistController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java:78"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/me/playlists/{playlistId}/import/netease": {
       "post": {
-        "operationId": "UserPlaylistController_importNetease",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "playlistId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "sessionToken",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "post.api.me.playlists.playlistId.import.netease",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "UserPlaylistController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java:71"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/me/playlists/{playlistId}/tracks": {
       "get": {
-        "operationId": "UserPlaylistController_tracks",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "playlistId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": "100",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "offset",
-            "required": false,
-            "schema": {
-              "default": "0",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "sessionToken",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "get.api.me.playlists.playlistId.tracks",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "UserPlaylistController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java:44"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/me/playlists/{playlistId}/tracks/batch": {
       "post": {
-        "operationId": "UserPlaylistController_addTracks",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "playlistId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "sessionToken",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "post.api.me.playlists.playlistId.tracks.batch",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "UserPlaylistController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java:52"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/me/playlists/{playlistId}/tracks/reorder": {
       "post": {
-        "operationId": "UserPlaylistController_reorder",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "playlistId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "sessionToken",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "post.api.me.playlists.playlistId.tracks.reorder",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "UserPlaylistController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java:64"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/me/playlists/{playlistId}/tracks/{trackId}": {
       "delete": {
-        "operationId": "UserPlaylistController_deleteTrack",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "playlistId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "trackId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "sessionToken",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "delete.api.me.playlists.playlistId.tracks.trackId",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "UserPlaylistController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/UserPlaylistController.java:59"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/music/lyric-detail/{platform}/{musicId}": {
       "get": {
-        "operationId": "ApiController_getLyricDetail",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "platform",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "musicId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.music.lyric_detail.platform.musicId",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "ApiController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/ApiController.java:226"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/music/lyric/{platform}/{musicId}": {
       "get": {
-        "operationId": "ApiController_getLyric",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "platform",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "musicId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.music.lyric.platform.musicId",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "ApiController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/ApiController.java:215"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
-    "/api/navidrome/cover/{coverArtId}": {
+    "/api/navidrome/cover/{coverId}": {
       "get": {
-        "operationId": "NavidromeProxyController_coverArt",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "coverArtId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "token",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.navidrome.cover.coverId",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "NavidromeProxyController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/NavidromeProxyController.java:118"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/navidrome/stream/{songId}": {
       "get": {
-        "operationId": "NavidromeProxyController_streamSong",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "songId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "token",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.navidrome.stream.songId",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "NavidromeProxyController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/NavidromeProxyController.java:52"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/netease/stream/{songId}": {
       "get": {
-        "operationId": "NeteaseProxyController_streamSong",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "songId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "token",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.netease.stream.songId",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "NeteaseProxyController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/NeteaseProxyController.java:63"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/platforms": {
       "get": {
-        "operationId": "ApiController_getPlatforms",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "roomId",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "token",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.platforms",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "ApiController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/ApiController.java:65"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/playlist/songs/{platform}/{playlistId}": {
       "get": {
-        "operationId": "ApiController_getPlaylistSongs",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "platform",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "playlistId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": "20",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "offset",
-            "required": false,
-            "schema": {
-              "default": "0",
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.playlist.songs.platform.playlistId",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "ApiController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/ApiController.java:150"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/rooms": {
       "get": {
-        "operationId": "RoomController_listRooms",
-        "parameters": [],
+        "operationId": "get.api.rooms",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "RoomController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/RoomController.java:66"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/rooms/{roomId}": {
       "delete": {
-        "operationId": "RoomController_deleteRoomRequest",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "roomId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "delete.api.rooms.roomId",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "RoomController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/RoomController.java:97"
+        "x-go-source": "backend-go/internal/httpapi"
       },
       "put": {
-        "operationId": "RoomController_updateRoom",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "roomId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "put.api.rooms.roomId",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "RoomController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/RoomController.java:73"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/rooms/{roomId}/invites": {
       "get": {
-        "operationId": "RoomMembershipController_listInvites",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "roomId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.rooms.roomId.invites",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "RoomMembershipController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/RoomMembershipController.java:30"
+        "x-go-source": "backend-go/internal/httpapi"
       },
       "post": {
-        "operationId": "RoomMembershipController_createInvite",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "roomId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": false
-        },
+        "operationId": "post.api.rooms.roomId.invites",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "RoomMembershipController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/RoomMembershipController.java:24"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/rooms/{roomId}/invites/{inviteId}": {
       "delete": {
-        "operationId": "RoomMembershipController_revokeInvite",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "roomId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "inviteId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "delete.api.rooms.roomId.invites.inviteId",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "RoomMembershipController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/RoomMembershipController.java:34"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/rooms/{roomId}/members": {
       "get": {
-        "operationId": "RoomMembershipController_members",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "roomId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.rooms.roomId.members",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "RoomMembershipController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/RoomMembershipController.java:35"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/rooms/{roomId}/members/{publicId}": {
       "delete": {
-        "operationId": "RoomMembershipController_removeMember",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "roomId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "publicId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "delete.api.rooms.roomId.members.publicId",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "RoomMembershipController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/RoomMembershipController.java:36"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/rooms/{roomId}/owners/{publicId}": {
       "delete": {
-        "operationId": "RoomMembershipController_removeOwner",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "roomId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "publicId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "delete.api.rooms.roomId.owners.publicId",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "RoomMembershipController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/RoomMembershipController.java:38"
+        "x-go-source": "backend-go/internal/httpapi"
       },
       "post": {
-        "operationId": "RoomMembershipController_makeOwner",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "roomId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "publicId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "post.api.rooms.roomId.owners.publicId",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "RoomMembershipController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/RoomMembershipController.java:37"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/rooms/{roomId}/playlists": {
       "get": {
-        "operationId": "RoomPlaylistController_list",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "roomId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.rooms.roomId.playlists",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "RoomPlaylistController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/RoomPlaylistController.java:30"
+        "x-go-source": "backend-go/internal/httpapi"
+      },
+      "post": {
+        "operationId": "post.api.rooms.roomId.playlists",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/rooms/{roomId}/playlists/{playlistId}": {
       "delete": {
-        "operationId": "RoomPlaylistController_delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "roomId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "playlistId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "offset",
-            "required": false,
-            "schema": {
-              "default": "0",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "roomAccessToken",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "sessionToken",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "delete.api.rooms.roomId.playlists.playlistId",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "RoomPlaylistController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/RoomPlaylistController.java:54"
+        "x-go-source": "backend-go/internal/httpapi"
       },
       "patch": {
-        "operationId": "RoomPlaylistController_rename",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "roomId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "playlistId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "roomAccessToken",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "sessionToken",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "patch.api.rooms.roomId.playlists.playlistId",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "RoomPlaylistController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/RoomPlaylistController.java:44"
-      },
-      "post": {
-        "operationId": "RoomPlaylistController_create",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "roomId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "playlistId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "roomAccessToken",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "sessionToken",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Java baseline success response"
-          },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
-          }
-        },
-        "tags": [
-          "RoomPlaylistController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/RoomPlaylistController.java:35"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/rooms/{roomId}/playlists/{playlistId}/export": {
       "get": {
-        "operationId": "RoomPlaylistController_export",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "roomId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "playlistId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "format",
-            "required": false,
-            "schema": {
-              "default": "txt",
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.rooms.roomId.playlists.playlistId.export",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "RoomPlaylistController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/RoomPlaylistController.java:112"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/rooms/{roomId}/playlists/{playlistId}/import": {
       "post": {
-        "operationId": "RoomPlaylistController_importPlaylist",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "roomId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "playlistId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "roomAccessToken",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "sessionToken",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "token",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "post.api.rooms.roomId.playlists.playlistId.import",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "RoomPlaylistController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/RoomPlaylistController.java:101"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/rooms/{roomId}/playlists/{playlistId}/tracks": {
       "get": {
-        "operationId": "RoomPlaylistController_tracks",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "roomId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "playlistId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": "100",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "offset",
-            "required": false,
-            "schema": {
-              "default": "0",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "sessionToken",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "get.api.rooms.roomId.playlists.playlistId.tracks",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "RoomPlaylistController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/RoomPlaylistController.java:63"
+        "x-go-source": "backend-go/internal/httpapi"
       },
       "post": {
-        "operationId": "RoomPlaylistController_addTrack",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "roomId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "playlistId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "roomAccessToken",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "sessionToken",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "post.api.rooms.roomId.playlists.playlistId.tracks",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "RoomPlaylistController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/RoomPlaylistController.java:71"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/rooms/{roomId}/playlists/{playlistId}/tracks/reorder": {
       "post": {
-        "operationId": "RoomPlaylistController_reorder",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "roomId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "playlistId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "roomAccessToken",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "sessionToken",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {}
-            }
-          },
-          "required": true
-        },
+        "operationId": "post.api.rooms.roomId.playlists.playlistId.tracks.reorder",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "RoomPlaylistController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/RoomPlaylistController.java:91"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/rooms/{roomId}/playlists/{playlistId}/tracks/{trackId}": {
       "delete": {
-        "operationId": "RoomPlaylistController_deleteTrack",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "roomId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "playlistId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "trackId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "roomAccessToken",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "sessionToken",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "delete.api.rooms.roomId.playlists.playlistId.tracks.trackId",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "RoomPlaylistController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/RoomPlaylistController.java:81"
+        "x-go-source": "backend-go/internal/httpapi"
+      }
+    },
+    "/api/rooms/{roomId}/verify": {
+      "post": {
+        "operationId": "post.api.rooms.roomId.verify",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/search/{platform}/{keyword}": {
       "get": {
-        "operationId": "ApiController_searchMusic",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "platform",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "keyword",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": "20",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "offset",
-            "required": false,
-            "schema": {
-              "default": "0",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "roomId",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "token",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.search.platform.keyword",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "ApiController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/ApiController.java:113"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
-    "/api/subsonic/{roomId}/{sourceId}/cover/{coverArtId}": {
+    "/api/subsonic/{roomId}/{sourceId}/cover/{coverId}": {
       "get": {
-        "operationId": "SubsonicProxyController_coverArt",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "roomId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "sourceId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "coverArtId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "token",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.subsonic.roomId.sourceId.cover.coverId",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "SubsonicProxyController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/SubsonicProxyController.java:136"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/subsonic/{roomId}/{sourceId}/stream/{songId}": {
       "get": {
-        "operationId": "SubsonicProxyController_streamSong",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "roomId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "sourceId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "songId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "token",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.subsonic.roomId.sourceId.stream.songId",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "SubsonicProxyController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/SubsonicProxyController.java:53"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
-    "/api/subsonic/{sourceId}/cover/{coverArtId}": {
+    "/api/subsonic/{sourceId}/cover/{coverId}": {
       "get": {
-        "operationId": "SubsonicProxyController_coverArt",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "sourceId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "coverArtId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "token",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.subsonic.sourceId.cover.coverId",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "SubsonicProxyController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/SubsonicProxyController.java:126"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/subsonic/{sourceId}/stream/{songId}": {
       "get": {
-        "operationId": "SubsonicProxyController_streamSong",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "sourceId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "songId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "token",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.subsonic.sourceId.stream.songId",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "SubsonicProxyController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/SubsonicProxyController.java:42"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/theme/extract-cover-color": {
       "get": {
-        "operationId": "ApiController_extractCoverColor",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "url",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.theme.extract_cover_color",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "ApiController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/ApiController.java:243"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/user/playlists/{platform}/{userId}": {
       "get": {
-        "operationId": "ApiController_getUserPlaylists",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "platform",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "userId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.user.playlists.platform.userId",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "ApiController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/ApiController.java:142"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
     "/api/user/search/{platform}/{keyword}": {
       "get": {
-        "operationId": "ApiController_searchUsers",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "platform",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "keyword",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.user.search.platform.keyword",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "ApiController"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/controller/ApiController.java:207"
+        "x-go-source": "backend-go/internal/httpapi"
       }
     },
-    "/{path}": {
+    "/api/youtube/stream/{videoId}": {
       "get": {
-        "description": "SPA fallback for extensionless non-api, non-ws paths",
-        "operationId": "SpaRedirectController_fallback",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "get.api.youtube.stream.videoId",
         "responses": {
           "200": {
-            "description": "Java baseline success response"
+            "description": "Success"
           },
-          "204": {
-            "description": "Java baseline success without a body"
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "500": {
-            "$ref": "#/components/responses/InternalError"
+          "default": {
+            "$ref": "#/components/responses/Error"
           }
         },
-        "tags": [
-          "Static"
-        ],
-        "x-java-source": "src/main/java/org/thornex/musicparty/config/SpaRedirectController.java:19",
-        "x-spring-catch-all": true
+        "x-go-source": "backend-go/internal/httpapi"
+      }
+    },
+    "/ws": {
+      "get": {
+        "operationId": "get.ws",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
       }
     }
-  },
-  "servers": [
-    {
-      "url": "http://localhost:8080"
-    }
-  ],
-  "x-contract-rules": {
-    "preserveArrayOrder": true,
-    "preserveErrorType": true,
-    "preserveMissingFields": true,
-    "preserveStatus": true
   }
 }

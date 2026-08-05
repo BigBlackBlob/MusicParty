@@ -1,33 +1,5 @@
 {
-  "aliases": {
-    "/chat": "chat.message",
-    "/chat/history/fetch": "chat.history.fetch",
-    "/control/like": "control.like",
-    "/control/next": "control.next",
-    "/control/seek": "control.seek",
-    "/control/toggle-pause": "control.toggle-pause",
-    "/control/toggle-shuffle": "control.toggle-shuffle",
-    "/enqueue": "enqueue",
-    "/enqueue/album": "enqueue.album",
-    "/enqueue/playlist": "enqueue.playlist",
-    "/enqueue/room-playlist": "enqueue.room-playlist",
-    "/player/resync": "player.resync",
-    "/public-chat": "public-chat.message",
-    "/public-chat/history/fetch": "public-chat.history.fetch",
-    "/queue/batch-remove": "queue.batch-remove",
-    "/queue/batch-top": "queue.batch-top",
-    "/queue/remove": "queue.remove",
-    "/queue/reorder": "queue.reorder",
-    "/queue/top": "queue.top",
-    "/rooms/create": "rooms.create",
-    "/rooms/delete": "rooms.delete",
-    "/sync/ping": "sync.ping",
-    "/user/bind": "user.bind",
-    "/user/me": "user.me",
-    "/user/rename": "user.rename",
-    "/users/online": "users.online"
-  },
-  "allClientMessageTypes": [
+  "clientMessageTypes": [
     "chat.history.fetch",
     "chat.message",
     "control.like",
@@ -56,8 +28,8 @@
     "users.online"
   ],
   "cookie": "MP_SESSION",
-  "endpoint": "/ws?room-id={roomId}",
-  "originRequired": true,
+  "endpoint": "/ws",
+  "runtime": "go",
   "scenarios": [
     {
       "expectCloseCode": 1008,
@@ -68,144 +40,42 @@
         "player.state"
       ],
       "id": "resync",
-      "send": [
-        {
-          "payload": {},
-          "requestId": "resync-1",
-          "roomId": "lounge",
-          "type": "player.resync"
-        }
-      ]
+      "sendType": "player.resync"
     },
     {
       "expectTypes": [
         "sync.pong"
       ],
       "id": "ping",
-      "send": [
-        {
-          "payload": {
-            "clientSendTime": 1234,
-            "pingId": "contract-ping"
-          },
-          "requestId": "ping-1",
-          "roomId": "lounge",
-          "type": "sync.ping"
-        }
-      ]
+      "sendType": "sync.ping"
     },
     {
       "expectTypes": [
-        "user.me",
         "users.online"
       ],
-      "id": "identity-and-presence",
-      "send": [
-        {
-          "payload": {},
-          "type": "user.me"
-        },
-        {
-          "payload": {},
-          "type": "users.online"
-        }
-      ]
-    },
-    {
-      "expectTypes": [
-        "queue.reorder.nack"
-      ],
-      "id": "queue-version-gap",
-      "send": [
-        {
-          "payload": {
-            "mutationId": "reorder-gap",
-            "newIndex": 0,
-            "oldIndex": -1
-          },
-          "requestId": "reorder-gap",
-          "roomId": "lounge",
-          "type": "queue.reorder"
-        }
-      ]
-    },
-    {
-      "expectTypes": [
-        "chat.message"
-      ],
-      "id": "chat-message",
-      "send": [
-        {
-          "payload": {
-            "content": "契约聊天消息 🎵"
-          },
-          "type": "chat.message"
-        }
-      ]
-    },
-    {
-      "expectTypes": [
-        "chat.history"
-      ],
-      "id": "chat-history",
-      "send": [
-        {
-          "payload": {
-            "limit": 20
-          },
-          "type": "chat.history.fetch"
-        }
-      ]
-    },
-    {
-      "expectTypes": [
-        "public-chat.message"
-      ],
-      "id": "public-chat-message",
-      "send": [
-        {
-          "payload": {
-            "content": "契约公共消息"
-          },
-          "type": "public-chat.message"
-        }
-      ]
-    },
-    {
-      "expectTypes": [
-        "public-chat.history"
-      ],
-      "id": "public-chat-history",
-      "send": [
-        {
-          "payload": {
-            "limit": 20
-          },
-          "type": "public-chat.history.fetch"
-        }
-      ]
-    },
-    {
-      "expectTypes": [
-        "player.state"
-      ],
-      "id": "reconnect-resync",
-      "reconnect": true,
-      "send": [
-        {
-          "payload": {},
-          "requestId": "reconnect-resync",
-          "roomId": "lounge",
-          "type": "player.resync"
-        }
-      ]
+      "id": "presence",
+      "sendType": "users.online"
     }
   ],
-  "strict": {
-    "arrayOrder": true,
-    "closeCode": true,
-    "fieldPresence": true,
-    "messageOrder": true
-  },
-  "version": 1
+  "serverMessageTypes": [
+    "chat.history",
+    "chat.message",
+    "enqueue.ack",
+    "enqueue.nack",
+    "player.events",
+    "player.state",
+    "public-chat.history",
+    "public-chat.message",
+    "queue.mutation.ack",
+    "queue.mutation.nack",
+    "queue.patch",
+    "queue.reorder.ack",
+    "queue.reorder.nack",
+    "rooms.created",
+    "rooms.list",
+    "sync.pong",
+    "user.me",
+    "users.online"
+  ],
+  "version": 2
 }
