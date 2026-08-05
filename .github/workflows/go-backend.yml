@@ -125,6 +125,8 @@ jobs:
       - name: Install Chromium
         working-directory: music-party-web
         run: pnpm exec playwright install --with-deps chromium
+      - name: Install local media transcoder
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Build frontend
         working-directory: music-party-web
         run: pnpm build
