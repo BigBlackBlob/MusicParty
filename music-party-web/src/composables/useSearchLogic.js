@@ -3,18 +3,17 @@ import { useI18n } from 'vue-i18n';
 import { useToast } from './useToast';
 import { musicApi } from '../api/music.js';
 import { extractErrorMessage } from '../utils/errors.js';
-import { useUserStore } from '../stores/user.js';
-import { usePlayerStore } from '../stores/player.js';
+import { useRoomCommandStore } from '../domains/realtime/roomCommandStore';
 import { useRoomStore } from '../stores/room.js';
 import { usePlatforms } from './usePlatforms.js';
 import { useExternalPlaylist, parseNeteasePlaylistId } from './useExternalPlaylist.js';
-import { safeJsonStorage } from '../utils/safeJsonStorage.js';
+import { queryKeys } from '../domains/queryKeys';
+import { queryClient } from '../app/providers';
 
 export function useSearchLogic() {
     const { success, error } = useToast();
     const { t } = useI18n();
-    const userStore = useUserStore();
-    const playerStore = usePlayerStore();
+    const playerStore = useRoomCommandStore();
     const roomStore = useRoomStore();
 
     const SONGS_CACHE_KEY = 'mp_search_songs';
@@ -23,8 +22,10 @@ export function useSearchLogic() {
     const platform = ref('netease');
     const { platforms, supportsAlbumSearch, loadPlatforms } = usePlatforms(platform);
     const keyword = ref('');
-    const songs = ref(safeJsonStorage.read(SONGS_CACHE_KEY, [], { validate: Array.isArray }));
-    const albums = ref(safeJsonStorage.read(ALBUMS_CACHE_KEY, [], { validate: Array.isArray }));
+    localStorage.removeItem(SONGS_CACHE_KEY);
+    localStorage.removeItem(ALBUMS_CACHE_KEY);
+    const songs = ref([]);
+    const albums = ref([]);
     const {
         playlistSongs,
         playlistId,
@@ -57,6 +58,7 @@ export function useSearchLogic() {
 
 const doSearch = async (page = 1) => {
         const requestSeq = ++searchRequestSeq;
+        await queryClient.cancelQueries({ queryKey: ['search'] });
         const val = keyword.value.trim();
         const isLocal = platform.value === 'local';
         if (!val && searchType.value !== 'playlist' && !isLocal) return;
@@ -101,16 +103,20 @@ const doSearch = async (page = 1) => {
         
         try {
             if (searchType.value === 'album' && supportsAlbumSearch.value) {
-                const data = await musicApi.searchAlbums(platform.value, val, userStore.sessionToken, roomStore.currentRoomId);
+                const data = await queryClient.fetchQuery({
+                    queryKey: queryKeys.search.albums(roomStore.currentRoomId, platform.value, val),
+                    queryFn: ({ signal }) => musicApi.searchAlbums(platform.value, val, roomStore.currentRoomId, signal)
+                });
                 if (requestSeq !== searchRequestSeq) return;
                 albums.value = data;
-                safeJsonStorage.write(ALBUMS_CACHE_KEY, data, { maxLength: 128 * 1024 });
                 canGoNext.value = false;
             } else {
-                const data = await musicApi.search(platform.value, effectiveKeyword, userStore.sessionToken, offset, SEARCH_LIMIT, roomStore.currentRoomId);
+                const data = await queryClient.fetchQuery({
+                    queryKey: queryKeys.search.tracks(roomStore.currentRoomId, platform.value, effectiveKeyword, page),
+                    queryFn: ({ signal }) => musicApi.search(platform.value, effectiveKeyword, offset, SEARCH_LIMIT, roomStore.currentRoomId, signal)
+                });
                 if (requestSeq !== searchRequestSeq) return;
                 songs.value = data;
-                safeJsonStorage.write(SONGS_CACHE_KEY, data, { maxLength: 128 * 1024 });
                 
                 // 如果返回的数量达到 Limit，假设还有下一页
                 canGoNext.value = data.length === SEARCH_LIMIT;
@@ -188,7 +194,10 @@ const doSearch = async (page = 1) => {
 
         try {
             loadingAlbumIds.value.add(albumId);
-            const data = await musicApi.getAlbumSongs(platform.value, albumId, userStore.sessionToken, roomStore.currentRoomId);
+            const data = await queryClient.fetchQuery({
+                queryKey: queryKeys.search.albumTracks(roomStore.currentRoomId, platform.value, albumId),
+                queryFn: ({ signal }) => musicApi.getAlbumSongs(platform.value, albumId, roomStore.currentRoomId, signal)
+            });
             albumSongs.value[albumId] = data;
         } catch (e) {
             console.error('Failed to load album songs:', e);

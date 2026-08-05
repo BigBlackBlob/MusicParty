@@ -1,29 +1,9 @@
-export const withPlaybackToken = (music, sessionToken) => {
+export const withPlaybackToken = (music) => {
   const url = music?.url || '';
-  if (!url || !requiresResourceToken(music?.platform, url)) return url;
-  if (!sessionToken) return '';
-  const sep = url.includes('?') ? '&' : '?';
-  return `${url}${sep}token=${encodeURIComponent(sessionToken)}`;
+  return url;
 };
 
-export const withNavidromeResourceToken = (url, sessionToken) => {
+export const withNavidromeResourceToken = (url) => {
   if (!url || typeof url !== 'string') return '';
-  if (!url.startsWith('/api/navidrome/') && !url.startsWith('/api/subsonic/')) return url;
-  if (!sessionToken) return '';
-  const sep = url.includes('?') ? '&' : '?';
-  return `${url}${sep}token=${encodeURIComponent(sessionToken)}`;
+  return url;
 };
-
-export const isSubsonicPlatform = (platform) => platform === 'navidrome' || String(platform || '').startsWith('subsonic-');
-
-const requiresResourceToken = (platform, url) => (
-  isSubsonicPlatform(platform)
-  || platform === 'netease'
-  || platform === 'bilibili'
-  || platform === 'local'
-  || String(url || '').startsWith('/api/navidrome/')
-  || String(url || '').startsWith('/api/subsonic/')
-  || String(url || '').startsWith('/api/netease/')
-  || String(url || '').startsWith('/api/bilibili/')
-  || String(url || '').startsWith('/api/local/')
-);

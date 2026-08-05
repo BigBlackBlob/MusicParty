@@ -242,7 +242,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { usePlayerStore } from '../stores/player';
+import { useRoomCommandStore } from '../domains/realtime/roomCommandStore';
 import { useUserPlaylistsStore } from '../stores/userPlaylists';
 import { useSearchLogic } from '../composables/useSearchLogic';
 import { useToast } from '../composables/useToast';
@@ -259,7 +259,7 @@ import {
 
 defineProps(['isOpen']);
 const emit = defineEmits(['close']);
-const playerStore = usePlayerStore();
+const playerStore = useRoomCommandStore();
 const userPlaylistsStore = useUserPlaylistsStore();
 const { t } = useI18n();
 const SONG_SEARCH_TYPE = 'song';

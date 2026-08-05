@@ -127,8 +127,14 @@
 
     <div
         v-if="!isMobile || !chatStore.isOpen"
+        role="button"
+        tabindex="0"
+        :aria-label="t('chat.title')"
+        :title="t('chat.title')"
         @pointerdown="handlePointerDown"
         @click="handleClick"
+        @keydown.enter.prevent="handleClick"
+        @keydown.space.prevent="handleClick"
         class="pointer-events-auto relative flex h-11 w-11 select-none items-center justify-center overflow-hidden rounded-lg border border-border-default bg-surface-overlay/90 text-[var(--text-secondary)] shadow-lg backdrop-blur-xl transition-colors hover:bg-[var(--surface-3)] hover:text-[var(--text-primary)] active:scale-[0.96]"
         :class="totalUnreadCount > 0 ? 'border-[var(--accent)] text-[var(--accent)]' : ''"
     >
@@ -190,7 +196,7 @@ const handleClick = (e) => {
   const dy = Math.abs(e.clientY - startDragPos.y);
   if (dx > 5 || dy > 5) return;
 
-  if (userStore.isGuest) {
+  if (!userStore.hasDisplayName) {
     userStore.setPostNameAction(() => {
       if (!chatStore.isOpen) chatStore.toggleChat();
     });

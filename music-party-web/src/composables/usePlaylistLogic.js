@@ -1,7 +1,7 @@
 import { ref, computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useUserStore } from '../stores/user.js';
-import { usePlayerStore } from '../stores/player.js';
+import { useRoomRealtimeCoordinator } from '../domains/realtime/roomRealtimeCoordinator';
 import { musicApi } from '../api/music.js';
 import { useDebounceFn } from '@vueuse/core';
 import { useToast } from './useToast';
@@ -9,7 +9,7 @@ import { extractErrorMessage } from '../utils/errors.js';
 
 export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef) {
     const userStore = useUserStore();
-    const playerStore = usePlayerStore();
+    const playerStore = useRoomRealtimeCoordinator();
     const { error } = useToast();
     const { t } = useI18n();
 

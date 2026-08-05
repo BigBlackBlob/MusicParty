@@ -209,7 +209,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { usePlayerStore } from '../../stores/player';
+import { useRoomCommandStore } from '../../domains/realtime/roomCommandStore';
 import { useSearchLogic } from '../../composables/useSearchLogic';
 import CoverImage from '../CoverImage.vue';
 import {
@@ -222,7 +222,7 @@ import {
 } from '../../utils/selection';
 
 const { t } = useI18n();
-const player = usePlayerStore();
+const player = useRoomCommandStore();
 const {
   platform,
   platforms,
