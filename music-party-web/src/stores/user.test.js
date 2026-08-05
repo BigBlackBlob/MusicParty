@@ -30,7 +30,6 @@ describe('user store account actions', () => {
       role: 'USER',
       guest: false
     });
-    user.setOnlineUsers([{ publicId: 'u_a', name: 'Alice' }]);
     authApi.updateAccountProfile.mockResolvedValueOnce({
       sessionToken: 'token-a',
       publicId: 'u_a',
@@ -44,7 +43,6 @@ describe('user store account actions', () => {
 
     expect(authApi.updateAccountProfile).toHaveBeenCalledWith('Alice Cooper');
     expect(user.currentUser.name).toBe('Alice Cooper');
-    expect(user.onlineUsers[0].name).toBe('Alice Cooper');
     expect(user.publicId).toBe('u_a');
   });
 
@@ -57,7 +55,7 @@ describe('user store account actions', () => {
     expect(localStorage.getItem(STORAGE_KEYS.BINDINGS)).toBeNull();
   });
 
-  it('recognizes an admin role even when the REST session has no admin flag', () => {
+  it('recognizes the Go platform administrator role', () => {
     const user = useUserStore();
 
     user.initAccount({
@@ -65,7 +63,7 @@ describe('user store account actions', () => {
       publicId: 'u_admin',
       username: 'admin',
       displayName: 'Admin',
-      role: 'ADMIN',
+      role: 'PLATFORM_ADMIN',
       guest: false
     });
 
@@ -73,17 +71,27 @@ describe('user store account actions', () => {
     expect(user.isAdmin).toBe(true);
   });
 
-  it('keeps the WebSocket session token for authenticated stream URLs', () => {
+  it('never exposes a session token in the user store', () => {
     const user = useUserStore();
 
-    user.initUser('stream-token', 'u_listener', 'Listener', false, 'MEMBER', false);
+    user.initUser('u_listener', 'Listener', false, 'MEMBER', false);
 
-    expect(user.sessionToken).toBe('stream-token');
-    expect(localStorage.getItem(STORAGE_KEYS.SESSION_TOKEN)).toBeNull();
+    expect(user.sessionToken).toBeUndefined();
+    expect(localStorage.getItem('mp_session_token')).toBeNull();
+  });
 
-    user.initUser('', 'u_listener', 'Listener', false, 'MEMBER', false);
+  it('releases pending actions when a guest nickname is confirmed by the server', () => {
+    const user = useUserStore();
+    const callback = vi.fn();
+    user.setPostNameAction(callback);
+    user.showNameModal = true;
 
-    expect(user.sessionToken).toBe('stream-token');
+    user.initUser('guest_a', 'Named guest', true);
+
+    expect(user.isGuest).toBe(true);
+    expect(user.hasDisplayName).toBe(true);
+    expect(user.showNameModal).toBe(false);
+    expect(callback).toHaveBeenCalledOnce();
   });
 
   it('logs out and clears persisted account identity', async () => {
@@ -100,10 +108,10 @@ describe('user store account actions', () => {
     await user.logout();
 
     expect(authApi.logoutAccount).toHaveBeenCalledWith();
-    expect(user.sessionToken).toBe('');
+    expect(user.sessionToken).toBeUndefined();
     expect(user.role).toBe('GUEST');
-    expect(localStorage.getItem(STORAGE_KEYS.SESSION_TOKEN)).toBeNull();
-    expect(localStorage.getItem(STORAGE_KEYS.ACCOUNT_USERNAME)).toBeNull();
+    expect(localStorage.getItem('mp_session_token')).toBeNull();
+    expect(localStorage.getItem('mp_account_username')).toBeNull();
   });
 
   it('clears local account identity even when logout request fails', async () => {
@@ -120,8 +128,8 @@ describe('user store account actions', () => {
 
     await expect(user.logout()).rejects.toThrow('offline');
 
-    expect(user.sessionToken).toBe('');
+    expect(user.sessionToken).toBeUndefined();
     expect(user.publicId).toBe('');
-    expect(localStorage.getItem(STORAGE_KEYS.SESSION_TOKEN)).toBeNull();
+    expect(localStorage.getItem('mp_session_token')).toBeNull();
   });
 });
