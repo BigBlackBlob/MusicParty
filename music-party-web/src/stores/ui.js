@@ -2,9 +2,8 @@
 import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
 import { STORAGE_KEYS } from '../constants/keys';
-import client from '../api/client';
+import { httpClient as client } from '../transport/httpClient';
 import { musicApi } from '../api/music';
-import { useUserStore } from './user';
 import { withNavidromeResourceToken } from '../utils/audioUrl';
 
 export const useUiStore = defineStore('ui', () => {
@@ -239,8 +238,7 @@ export const useUiStore = defineStore('ui', () => {
             return;
         }
 
-        const userStore = useUserStore();
-        const requestUrl = withNavidromeResourceToken(coverUrl, userStore.sessionToken);
+        const requestUrl = withNavidromeResourceToken(coverUrl);
 
         if (requestUrl === lastAccentCoverUrl.value && dynamicAccent.value) {
             return;

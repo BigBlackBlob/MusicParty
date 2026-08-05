@@ -5,12 +5,12 @@
         <p class="personal-info__eyebrow">{{ t('settings.account.kicker') }}</p>
         <h3 class="personal-info__title">{{ t('settings.account.title') }}</h3>
       </div>
-      <span class="personal-info__role" :class="{ 'personal-info__role--admin': userStore.isAdmin }">
+      <span class="personal-info__role" :class="{ 'personal-info__role--admin': userStore.accountType === 'admin' }">
         {{ roleLabel }}
       </span>
     </header>
 
-    <div v-if="!userStore.sessionToken" class="personal-info__empty">
+    <div v-if="!userStore.isSignedIn" class="personal-info__empty">
       <span class="material-symbols-outlined">lock</span>
       <strong>{{ t('settings.account.signedOut') }}</strong>
       <p>{{ t('settings.account.signedOutDesc') }}</p>
@@ -67,67 +67,18 @@
 
       <section class="personal-info__section">
         <h4>{{ t('settings.account.security') }}</h4>
-        <form class="personal-info__form personal-info__form--password" @submit.prevent="changePassword">
-          <label for="account-current-password">
-            <span>{{ t('settings.account.currentPassword') }}</span>
-            <input
-              id="account-current-password"
-              v-model="passwordForm.currentPassword"
-              type="password"
-              required
-              autocomplete="current-password"
-              :aria-invalid="Boolean(passwordError)"
-              aria-describedby="account-password-status"
-            />
-          </label>
-          <label for="account-new-password">
-            <span>{{ t('settings.account.newPassword') }}</span>
-            <input
-              id="account-new-password"
-              v-model="passwordForm.newPassword"
-              type="password"
-              required
-              minlength="8"
-              autocomplete="new-password"
-              :aria-invalid="Boolean(passwordError)"
-              aria-describedby="account-password-status"
-            />
-          </label>
-          <label for="account-confirm-password">
-            <span>{{ t('settings.account.confirmPassword') }}</span>
-            <input
-              id="account-confirm-password"
-              v-model="passwordForm.confirmPassword"
-              type="password"
-              required
-              minlength="8"
-              autocomplete="new-password"
-              :aria-invalid="Boolean(passwordError)"
-              aria-describedby="account-password-status"
-            />
-          </label>
-          <div class="personal-info__actions">
-            <button type="submit" :disabled="changingPassword || !canSubmitPassword">
-              {{ changingPassword ? t('settings.account.saving') : t('settings.account.changePassword') }}
-            </button>
-            <button
-              type="button"
-              class="personal-info__secondary"
-              :class="{ 'personal-info__secondary--danger': confirmingLogout }"
-              @click="requestLogout"
-            >
-              {{ confirmingLogout ? t('settings.account.confirmLogout') : t('settings.account.logout') }}
-            </button>
-          </div>
-        </form>
-        <p
-          id="account-password-status"
-          class="personal-info__status"
-          :class="{ 'personal-info__status--error': passwordError }"
-          aria-live="polite"
-        >
-          {{ passwordError || t('settings.account.passwordHint') }}
-        </p>
+        <p class="personal-info__access-copy">{{ t(securityAccessCopyKey) }}</p>
+        <p class="personal-info__status">{{ t('settings.account.browserSession') }}</p>
+        <div class="personal-info__actions">
+          <button
+            type="button"
+            class="personal-info__secondary"
+            :class="{ 'personal-info__secondary--danger': confirmingLogout }"
+            @click="requestLogout"
+          >
+            {{ confirmingLogout ? t('settings.account.confirmLogout') : t('settings.account.logout') }}
+          </button>
+        </div>
       </section>
 
       <section class="personal-info__stats" :aria-label="t('settings.account.personalDataSummary')">
@@ -169,12 +120,13 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useToast } from '../composables/useToast';
-import { usePlayerStore } from '../stores/player';
+import { useLikedSongsStore } from '../domains/playback/likedSongs';
 import { useUserStore } from '../stores/user';
 import { useUserPlaylistsStore } from '../stores/userPlaylists';
+import { useRoomRealtimeCoordinator } from '../domains/realtime/roomRealtimeCoordinator';
 import { extractErrorMessage } from '../utils/errors';
 
 const emit = defineEmits(['logged-out']);
@@ -182,23 +134,22 @@ const emit = defineEmits(['logged-out']);
 const { t } = useI18n();
 const { success, error } = useToast();
 const userStore = useUserStore();
-const playerStore = usePlayerStore();
+const playerStore = useLikedSongsStore();
 const userPlaylistsStore = useUserPlaylistsStore();
+const realtimeCoordinator = useRoomRealtimeCoordinator();
 
 const displayName = ref(userStore.currentUser.name || '');
 const savingProfile = ref(false);
-const changingPassword = ref(false);
 const confirmingLogout = ref(false);
 const profileError = ref('');
-const passwordError = ref('');
-const passwordForm = reactive({
-  currentPassword: '',
-  newPassword: '',
-  confirmPassword: ''
-});
 
-const roleLabel = computed(() => userStore.isAdmin ? t('settings.account.adminRole') : t('settings.account.userRole'));
-const accountUsername = computed(() => localStorage.getItem('mp_account_username') || userStore.currentUser.name);
+const roleLabel = computed(() => userStore.accountType === 'admin' ? t('settings.account.adminRole') : t('settings.account.userRole'));
+const securityAccessCopyKey = computed(() => {
+  if (userStore.accountType === 'admin') return 'settings.account.adminPasswordAccess';
+  if (userStore.accountType === 'guest') return 'settings.account.guestAccess';
+  return 'settings.account.inviteMemberAccess';
+});
+const accountUsername = computed(() => userStore.currentUser.name);
 const bindingEntries = computed(() => Object.entries(userStore.bindings || {}).filter(([, value]) => value));
 const initials = computed(() => {
   const name = userStore.currentUser.name || accountUsername.value || '';
@@ -208,14 +159,8 @@ const formattedLastLogin = computed(() => {
   const value = userStore.accountLastLoginAt;
   return value ? new Date(value).toLocaleString() : t('settings.account.notAvailable');
 });
-const canSubmitPassword = computed(() => (
-  passwordForm.currentPassword.length > 0 &&
-  passwordForm.newPassword.length >= 8 &&
-  passwordForm.confirmPassword.length >= 8
-));
-
 onMounted(() => {
-  if (!userStore.sessionToken) return;
+  if (!userStore.isSignedIn) return;
   userStore.refreshAccount()
     .then(session => {
       if (session?.displayName) displayName.value = session.displayName;
@@ -243,31 +188,6 @@ const saveProfile = async () => {
   }
 };
 
-const changePassword = async () => {
-  passwordError.value = '';
-  if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-    passwordError.value = t('settings.account.passwordMismatch');
-    error(passwordError.value);
-    return;
-  }
-  if (passwordForm.newPassword.length < 8) {
-    passwordError.value = t('settings.account.passwordTooShort');
-    error(passwordError.value);
-    return;
-  }
-  changingPassword.value = true;
-  try {
-    await userStore.changePassword(passwordForm.currentPassword, passwordForm.newPassword);
-    success(t('settings.account.passwordChanged'));
-    emit('logged-out');
-  } catch (e) {
-    passwordError.value = extractErrorMessage(e, t('settings.account.passwordChangeFailed'));
-    error(passwordError.value);
-  } finally {
-    changingPassword.value = false;
-  }
-};
-
 const requestLogout = async () => {
   if (!confirmingLogout.value) {
     confirmingLogout.value = true;
@@ -280,6 +200,7 @@ const requestLogout = async () => {
 };
 
 const logout = async () => {
+  realtimeCoordinator.disconnectForLogout();
   await userStore.logout();
   success(t('settings.account.loggedOut'));
   emit('logged-out');
@@ -527,6 +448,19 @@ const logout = async () => {
   display: flex;
   align-items: end;
   gap: 8px;
+}
+
+.personal-info__access-copy {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Keep the security actions explicit: --primary is not a theme token. */
+.personal-info__actions > .personal-info__secondary {
+  border-color: var(--border-default);
+  background: var(--surface-2);
+  color: var(--text-primary);
 }
 
 .personal-info__secondary {

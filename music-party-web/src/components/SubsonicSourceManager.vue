@@ -75,10 +75,11 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { authApi } from '../api/auth';
-import { useMusicStore } from '../stores/music';
+import { useQuery, useQueryClient } from '@tanstack/vue-query';
+import { queryKeys } from '../domains/queryKeys';
 import { useRoomStore } from '../stores/room';
 import { useUserStore } from '../stores/user';
 import { useToast } from '../composables/useToast';
@@ -87,14 +88,19 @@ import { extractErrorMessage } from '../utils/errors';
 const { t } = useI18n();
 const { success, error } = useToast();
 const roomStore = useRoomStore();
-const musicStore = useMusicStore();
+const queryClient = useQueryClient();
 const userStore = useUserStore();
 
 const open = ref(false);
 const busy = ref(false);
-const loadingSources = ref(false);
 const adminUnlocked = ref(false);
-const sources = ref([]);
+const sourcesQuery = useQuery({
+  queryKey: computed(() => queryKeys.admin.subsonic(roomStore.currentRoomId)),
+  queryFn: () => authApi.listSubsonicSources(roomStore.currentRoomId),
+  enabled: false
+});
+const sources = computed(() => sourcesQuery.data.value ?? []);
+const loadingSources = computed(() => sourcesQuery.isFetching.value);
 
 const defaultForm = () => ({
   id: 'navidrome-custom',
@@ -110,7 +116,7 @@ const defaultForm = () => ({
 const form = ref(defaultForm());
 
 const requireAdmin = () => {
-  if (userStore.isAdmin) return true;
+  if (userStore.capabilities.canManageSite) return true;
   error(t('settings.admin.passwordRequired'));
   return false;
 };
@@ -172,16 +178,13 @@ const runCleanupAction = async (action, message) => {
 
 const loadSources = async () => {
   if (!requireAdmin()) return;
-  loadingSources.value = true;
   try {
-    const data = await authApi.listSubsonicSources(userStore.sessionToken, roomStore.currentRoomId);
-    sources.value = Array.isArray(data) ? data : [];
+    const result = await sourcesQuery.refetch();
+    if (result.error) throw result.error;
     adminUnlocked.value = true;
   } catch (e) {
     adminUnlocked.value = false;
     error(extractErrorMessage(e, t('settings.admin.sourcesLoadFailed')));
-  } finally {
-    loadingSources.value = false;
   }
 };
 
@@ -190,8 +193,9 @@ const unlockAdmin = async () => {
 };
 
 const refreshEverything = async () => {
-  await loadSources();
-  await musicStore.refreshPlatforms();
+  await queryClient.invalidateQueries({ queryKey: queryKeys.admin.subsonic(roomStore.currentRoomId) });
+  await sourcesQuery.refetch();
+  await queryClient.invalidateQueries({ queryKey: ['platforms'] });
 };
 
 const editSource = (source) => {
@@ -214,7 +218,7 @@ const resetForm = () => {
 };
 
 const saveSource = () => runAdmin(async () => {
-  await authApi.saveSubsonicSource(userStore.sessionToken, roomStore.currentRoomId, {
+  await authApi.saveSubsonicSource(roomStore.currentRoomId, {
     id: form.value.id.trim(),
     label: form.value.label.trim() || form.value.id.trim(),
     baseUrl: buildBaseUrl(),
@@ -227,16 +231,16 @@ const saveSource = () => runAdmin(async () => {
 }, t('settings.admin.sourceSaved'));
 
 const testSource = () => runAdmin(
-  () => authApi.testSubsonicSource(userStore.sessionToken, roomStore.currentRoomId, form.value.id.trim()),
+  () => authApi.testSubsonicSource(roomStore.currentRoomId, form.value.id.trim()),
   t('settings.admin.sourceTested')
 );
 
 const removeSource = () => runCleanupAction(async () => {
-  await authApi.removeSubsonicSource(userStore.sessionToken, roomStore.currentRoomId, form.value.id.trim());
+  await authApi.removeSubsonicSource(roomStore.currentRoomId, form.value.id.trim());
 }, t('settings.admin.sourceRemoved'));
 
 const removeSourceById = (id) => runCleanupAction(async () => {
-  await authApi.removeSubsonicSource(userStore.sessionToken, roomStore.currentRoomId, id);
+  await authApi.removeSubsonicSource(roomStore.currentRoomId, id);
   if (form.value.id === id) resetForm();
 }, t('settings.admin.sourceRemoved'));
 
@@ -245,8 +249,8 @@ const moveSource = (index, direction) => runAdmin(async () => {
   const current = sources.value[index];
   const target = sources.value[nextIndex];
   if (!current || !target) return;
-  await authApi.reorderSubsonicSource(userStore.sessionToken, roomStore.currentRoomId, current.id, target.sortOrder);
-  await authApi.reorderSubsonicSource(userStore.sessionToken, roomStore.currentRoomId, target.id, current.sortOrder);
+  await authApi.reorderSubsonicSource(roomStore.currentRoomId, current.id, target.sortOrder);
+  await authApi.reorderSubsonicSource(roomStore.currentRoomId, target.id, current.sortOrder);
 }, t('settings.admin.sourceOrderSaved'));
 </script>
 

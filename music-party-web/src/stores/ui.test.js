@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setActivePinia, createPinia } from 'pinia';
 
 // Mock the API client and music API
-vi.mock('../api/client', () => ({ default: { get: vi.fn() } }));
+vi.mock('../transport/httpClient', () => ({ httpClient: { get: vi.fn() } }));
 vi.mock('../api/music', () => ({
     musicApi: {
         extractCoverColor: vi.fn().mockResolvedValue({ accent: '#ff0000', borderAccent: '#cc0000' }),

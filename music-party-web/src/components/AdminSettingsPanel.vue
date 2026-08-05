@@ -1,7 +1,7 @@
 <template>
   <div class="admin-settings-section">
     <div class="admin-auth-strip">
-      <div class="admin-session-pill">{{ userStore.role }}</div>
+      <div class="admin-session-pill">{{ userStore.accountType }}</div>
       <input
         v-model="targetUser"
         type="text"
@@ -271,11 +271,12 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { authApi } from '../api/auth';
 import { useToast } from '../composables/useToast';
-import { useMusicStore } from '../stores/music';
+import { useQuery, useQueryClient } from '@tanstack/vue-query';
+import { queryKeys } from '../domains/queryKeys';
 import { useRoomStore } from '../stores/room';
 import { useUserStore } from '../stores/user';
 import { readAudioTagsFromFile } from '../utils/id3Tags';
@@ -283,7 +284,7 @@ import { extractErrorMessage } from '../utils/errors';
 
 const { t } = useI18n();
 const { success, error } = useToast();
-const musicStore = useMusicStore();
+const queryClient = useQueryClient();
 const roomStore = useRoomStore();
 const userStore = useUserStore();
 const props = defineProps({
@@ -294,15 +295,12 @@ const props = defineProps({
 });
 
 const targetUser = ref(userStore.currentUser?.name || '');
-const localTracks = ref([]);
 const neteaseCredential = ref('');
 const bilibiliCredential = ref('');
-const loadingLocalTracks = ref(false);
 const localFiles = ref([]);
 const localFileInput = ref(null);
 const readingLocalTags = ref(false);
 const localTagHint = ref('');
-const localUploadUsers = ref([]);
 const localAccessUser = ref('');
 const localForm = ref({
   title: '',
@@ -322,15 +320,35 @@ const defaultNavidromeForm = () => ({
   enabled: true
 });
 const navidromeForm = ref(defaultNavidromeForm());
-const subsonicSources = ref([]);
-const loadingSources = ref(false);
 const busy = ref(false);
+const canLoadAdminResources = computed(() => userStore.capabilities.canManageSite);
+const localTracksQuery = useQuery({
+  queryKey: queryKeys.admin.localTracks(),
+  queryFn: async () => (await authApi.listLocalTracks()).map(track => ({
+    ...track,
+    artistsText: Array.isArray(track.artists) ? track.artists.join(', ') : ''
+  })),
+  enabled: computed(() => canLoadAdminResources.value && props.section === 'library')
+});
+const localUploadAccessQuery = useQuery({
+  queryKey: queryKeys.admin.localUploadAccess(),
+  queryFn: () => authApi.listLocalUploadAccess(),
+  enabled: computed(() => canLoadAdminResources.value && props.section === 'library')
+});
+const subsonicSourcesQuery = useQuery({
+  queryKey: computed(() => queryKeys.admin.subsonic(roomStore.currentRoomId)),
+  queryFn: () => authApi.listSubsonicSources(roomStore.currentRoomId),
+  enabled: computed(() => canLoadAdminResources.value && props.section === 'sources')
+});
+const localTracks = computed(() => localTracksQuery.data.value ?? []);
+const loadingLocalTracks = computed(() => localTracksQuery.isFetching.value);
+const localUploadUsers = computed(() => localUploadAccessQuery.data.value ?? []);
+const subsonicSources = computed(() => subsonicSourcesQuery.data.value ?? []);
+const loadingSources = computed(() => subsonicSourcesQuery.isFetching.value);
 
 const currentTargetUser = () => (targetUser.value || userStore.currentUser?.name || '').trim();
-const adminSessionToken = () => userStore.sessionToken;
-
 const runAdminAction = async (action, successMessage = t('settings.admin.commandExecuted')) => {
-  if (!userStore.isAdmin) {
+  if (!userStore.capabilities.canManageSite) {
     error(t('settings.admin.passwordRequired'));
     return;
   }
@@ -338,7 +356,7 @@ const runAdminAction = async (action, successMessage = t('settings.admin.command
   try {
     await action();
     success(successMessage);
-    await musicStore.refreshPlatforms();
+    await queryClient.invalidateQueries({ queryKey: ['platforms'] });
   } catch (e) {
     error(extractErrorMessage(e, t('settings.admin.commandFailed')));
   } finally {
@@ -347,47 +365,36 @@ const runAdminAction = async (action, successMessage = t('settings.admin.command
 };
 
 const loadSubsonicSources = async () => {
-  if (!userStore.isAdmin) {
+  if (!userStore.capabilities.canManageSite) {
     error(t('settings.admin.passwordRequired'));
     return;
   }
-  loadingSources.value = true;
   try {
-    const data = await authApi.listSubsonicSources(adminSessionToken(), roomStore.currentRoomId);
-    subsonicSources.value = Array.isArray(data) ? data : [];
+    const result = await subsonicSourcesQuery.refetch();
+    if (result.error) throw result.error;
   } catch (e) {
     error(extractErrorMessage(e, t('settings.admin.sourcesLoadFailed')));
-  } finally {
-    loadingSources.value = false;
   }
 };
 
-const normalizeLocalTrack = (track) => ({
-  ...track,
-  artistsText: Array.isArray(track.artists) ? track.artists.join(', ') : ''
-});
-
 const loadLocalTracks = async () => {
-  if (!userStore.isAdmin) {
+  if (!userStore.capabilities.canManageSite) {
     error(t('settings.admin.passwordRequired'));
     return;
   }
-  loadingLocalTracks.value = true;
   try {
-    const data = await authApi.listLocalTracks(adminSessionToken());
-    localTracks.value = Array.isArray(data) ? data.map(normalizeLocalTrack) : [];
+    const result = await localTracksQuery.refetch();
+    if (result.error) throw result.error;
   } catch (e) {
     error(extractErrorMessage(e, t('settings.admin.localTracksLoadFailed')));
-  } finally {
-    loadingLocalTracks.value = false;
   }
 };
 
 const loadLocalUploadAccess = async () => {
-  if (!userStore.isAdmin) return;
+  if (!userStore.capabilities.canManageSite) return;
   try {
-    const data = await authApi.listLocalUploadAccess(adminSessionToken());
-    localUploadUsers.value = Array.isArray(data) ? data : [];
+    const result = await localUploadAccessQuery.refetch();
+    if (result.error) throw result.error;
   } catch (e) {
     error(extractErrorMessage(e, t('settings.admin.localAccessLoadFailed')));
   }
@@ -428,7 +435,7 @@ const runUploadLocalTrack = () => runAdminAction(
   async () => {
     if (localFiles.value.length === 0) return;
     for (const file of localFiles.value) {
-      await authApi.uploadLocalTrack(adminSessionToken(), file, localForm.value);
+      await authApi.uploadLocalTrack(file, localForm.value);
     }
     localFiles.value = [];
     localForm.value = { title: '', artists: '', album: '' };
@@ -440,7 +447,7 @@ const runUploadLocalTrack = () => runAdminAction(
 
 const runUpdateLocalTrack = (track) => runAdminAction(
   async () => {
-    await authApi.updateLocalTrack(adminSessionToken(), track.id, {
+    await authApi.updateLocalTrack(track.id, {
       title: track.title,
       artists: String(track.artistsText || '').split(',').map(item => item.trim()).filter(Boolean),
       album: track.album || ''
@@ -452,7 +459,7 @@ const runUpdateLocalTrack = (track) => runAdminAction(
 
 const runDeleteLocalTrack = (track) => runAdminAction(
   async () => {
-    await authApi.deleteLocalTrack(adminSessionToken(), track.id);
+    await authApi.deleteLocalTrack(track.id);
     await loadLocalTracks();
   },
   t('settings.admin.localTrackDeleted')
@@ -460,7 +467,7 @@ const runDeleteLocalTrack = (track) => runAdminAction(
 
 const runGrantLocalUpload = () => runAdminAction(
   async () => {
-    await authApi.grantLocalUploadAccess(adminSessionToken(), localAccessUser.value.trim());
+    await authApi.grantLocalUploadAccess(localAccessUser.value.trim());
     localAccessUser.value = '';
     await loadLocalUploadAccess();
   },
@@ -469,7 +476,7 @@ const runGrantLocalUpload = () => runAdminAction(
 
 const runRevokeLocalUpload = (name) => runAdminAction(
   async () => {
-    await authApi.revokeLocalUploadAccess(adminSessionToken(), name);
+    await authApi.revokeLocalUploadAccess(name);
     await loadLocalUploadAccess();
   },
   t('settings.admin.localUploadRevoked')
@@ -520,12 +527,12 @@ const buildSourceBaseUrl = () => {
 };
 
 const runGrantNavidrome = () => runAdminAction(
-  () => authApi.grantNavidrome(adminSessionToken(), currentTargetUser(), roomStore.currentRoomId),
+  () => authApi.grantNavidrome(currentTargetUser(), roomStore.currentRoomId),
   t('settings.admin.navidromeGranted')
 );
 
 const runRevokeNavidrome = () => runAdminAction(
-  () => authApi.revokeNavidrome(adminSessionToken(), currentTargetUser(), roomStore.currentRoomId),
+  () => authApi.revokeNavidrome(currentTargetUser(), roomStore.currentRoomId),
   t('settings.admin.navidromeRevoked')
 );
 
@@ -541,7 +548,7 @@ const updatePlatformCredential = (platform) => runAdminAction(
 
 const runSaveCustomNavidrome = () => runAdminAction(
   async () => {
-    await authApi.saveSubsonicSource(adminSessionToken(), roomStore.currentRoomId, {
+    await authApi.saveSubsonicSource(roomStore.currentRoomId, {
       id: navidromeForm.value.id.trim(),
       label: navidromeForm.value.label.trim() || navidromeForm.value.id.trim(),
       baseUrl: buildSourceBaseUrl(),
@@ -558,7 +565,7 @@ const runSaveCustomNavidrome = () => runAdminAction(
 
 const runRemoveCustomNavidrome = () => runAdminAction(
   async () => {
-    await authApi.removeSubsonicSource(adminSessionToken(), roomStore.currentRoomId, navidromeForm.value.id.trim());
+    await authApi.removeSubsonicSource(roomStore.currentRoomId, navidromeForm.value.id.trim());
     resetNavidromeForm();
     await loadSubsonicSources();
   },
@@ -566,14 +573,14 @@ const runRemoveCustomNavidrome = () => runAdminAction(
 );
 
 const runTestCustomNavidrome = () => runAdminAction(
-  () => authApi.testSubsonicSource(adminSessionToken(), roomStore.currentRoomId, navidromeForm.value.id.trim()),
+  () => authApi.testSubsonicSource(roomStore.currentRoomId, navidromeForm.value.id.trim()),
   t('settings.admin.sourceTested')
 );
 
 watch(
-  () => [props.section, userStore.role],
+  () => [props.section, userStore.capabilities.canManageSite],
   async ([section]) => {
-    if (!userStore.isAdmin) return;
+    if (!userStore.capabilities.canManageSite) return;
     if (section === 'library') {
       await Promise.all([loadLocalTracks(), loadLocalUploadAccess()]);
     }

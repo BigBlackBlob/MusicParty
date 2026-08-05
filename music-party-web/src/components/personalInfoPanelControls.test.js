@@ -11,7 +11,8 @@ describe('personal info account controls', () => {
     expect(source).toContain("class=\"personal-info__secondary\"");
     expect(source).toContain("'personal-info__secondary--danger': confirmingLogout");
     expect(source).toContain('border-color: var(--border-default);');
-    expect(source).toContain('background: var(--surface-control);');
+    expect(source).toContain('.personal-info__actions > .personal-info__secondary');
+    expect(source).toContain('background: var(--surface-2);');
     expect(source).toContain('color: var(--text-primary);');
     expect(source).toContain('.personal-info__secondary--danger');
   });

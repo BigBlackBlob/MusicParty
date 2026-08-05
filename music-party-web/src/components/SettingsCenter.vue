@@ -92,6 +92,35 @@
             <PersonalInfoPanel @logged-out="$emit('close')" />
           </section>
 
+          <section v-else-if="activeSection === 'room'" class="settings-section">
+            <h3 class="settings-section__title">{{ t('settings.currentRoom') }}</h3>
+            <div class="settings-control-block">
+              <label class="settings-control-block__header" for="settings-room-name">
+                <span>{{ t('settings.roomName') }}</span>
+              </label>
+              <input id="settings-room-name" v-model="roomForm.name" class="settings-input" maxlength="64" />
+            </div>
+            <label class="settings-row">
+              <span>{{ t('rooms.createPrivate') }}</span>
+              <input v-model="roomForm.isPrivate" type="checkbox" class="settings-checkbox" />
+            </label>
+            <div v-if="roomForm.isPrivate" class="settings-control-block">
+              <label class="settings-control-block__header" for="settings-room-password">
+                <span>{{ t('rooms.password') }}</span>
+              </label>
+              <input id="settings-room-password" v-model="roomForm.password" type="password" class="settings-input" :placeholder="t('settings.keepRoomPassword')" />
+              <label v-if="room.currentRoom.privateRoom" class="settings-row">
+                <span>{{ t('settings.keepExistingPassword') }}</span>
+                <input v-model="roomForm.keepExistingPassword" type="checkbox" class="settings-checkbox" />
+              </label>
+            </div>
+            <p v-if="roomError" class="text-sm text-error">{{ roomError }}</p>
+            <button class="settings-row" type="button" :disabled="savingRoom || !roomForm.name.trim()" @click="saveRoom">
+              <span>{{ t('settings.saveRoom') }}</span>
+              <strong>{{ savingRoom ? t('settings.saving') : t('common.done') }}</strong>
+            </button>
+          </section>
+
           <section v-else-if="activeSection === 'invites'" class="settings-section">
             <InviteManager />
           </section>
@@ -106,13 +135,16 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import AdminSettingsPanel from './AdminSettingsPanel.vue';
 import InviteManager from './InviteManager.vue';
 import PersonalInfoPanel from './PersonalInfoPanel.vue';
 import { useUiStore } from '../stores/ui';
 import { useUserStore } from '../stores/user';
+import { useRoomStore } from '../stores/room';
+import { useRoomPresenceStore } from '../domains/realtime/roomPresenceStore';
+import { extractErrorMessage } from '../utils/errors';
 
 defineProps({
   mobile: {
@@ -126,7 +158,14 @@ defineEmits(['close']);
 const { t } = useI18n();
 const ui = useUiStore();
 const user = useUserStore();
+const room = useRoomStore();
+const presence = useRoomPresenceStore();
 const activeSection = ref('account');
+const savingRoom = ref(false);
+const roomError = ref('');
+const roomForm = ref({ name: '', isPrivate: false, password: '', keepExistingPassword: true });
+const currentRoomCapabilities = computed(() => user.capabilitiesForRoom(room.currentRoom.creatorPublicId));
+const canManageCurrentRoom = computed(() => !room.currentRoom.system && currentRoomCapabilities.value.canManageCurrentRoom);
 
 const sections = computed(() => {
   const baseSections = [
@@ -134,22 +173,47 @@ const sections = computed(() => {
     { id: 'general', icon: 'tune', label: t('settings.general') },
     { id: 'members', icon: 'group', label: t('settings.onlineMembers') }
   ];
-  if (!user.isAdmin) return baseSections;
-  return [
-    baseSections[0],
-    baseSections[1],
+  const result = [...baseSections];
+  if (canManageCurrentRoom.value) {
+    result.push({ id: 'room', icon: 'meeting_room', label: t('settings.currentRoom') });
+    if (currentRoomCapabilities.value.canManageInvites) result.push({ id: 'invites', icon: 'link', label: t('settings.invites.nav') });
+  }
+  if (user.capabilities.canManageSite) result.push(
     { id: 'library', icon: 'library_music', label: t('settings.admin.localLibrary') },
     { id: 'sources', icon: 'dns', label: t('settings.admin.sourceManager') },
-    { id: 'invites', icon: 'link', label: t('settings.invites.nav') },
-    { id: 'admin', icon: 'admin_panel_settings', label: t('settings.admin.title') },
-    baseSections[2]
-  ];
+    { id: 'admin', icon: 'admin_panel_settings', label: t('settings.admin.title') }
+  );
+  return result;
 });
 
-const displayMembers = computed(() => {
-  if (user.onlineUsers.length) return user.onlineUsers;
-  return [{ name: user.currentUser.name, publicId: user.publicId, isGuest: user.isGuest }];
-});
+watch(() => room.currentRoom, (current) => {
+  roomForm.value = {
+    name: current.name || '',
+    isPrivate: Boolean(current.privateRoom),
+    password: '',
+    keepExistingPassword: Boolean(current.privateRoom)
+  };
+}, { immediate: true });
+
+const saveRoom = async () => {
+  if (!canManageCurrentRoom.value) return;
+  roomError.value = '';
+  savingRoom.value = true;
+  try {
+    await room.updateRoom(room.currentRoomId, {
+      name: roomForm.value.name.trim(),
+      isPrivate: roomForm.value.isPrivate,
+      password: roomForm.value.password || undefined,
+      keepExistingPassword: roomForm.value.keepExistingPassword
+    });
+  } catch (error) {
+    roomError.value = extractErrorMessage(error, t('settings.roomSaveFailed'));
+  } finally {
+    savingRoom.value = false;
+  }
+};
+
+const displayMembers = computed(() => presence.users);
 
 const getInitials = (name = '') => {
   const normalized = String(name).trim();
@@ -290,6 +354,20 @@ const getInitials = (name = '') => {
   color: var(--text-primary);
 }
 
+.settings-input {
+  width: 100%;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  padding: 10px 12px;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.settings-input:focus {
+  border-color: var(--primary);
+}
+
 .settings-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -405,6 +483,7 @@ const getInitials = (name = '') => {
 
   .settings-center__nav {
     display: flex;
+    align-items: center;
     gap: 8px;
     overflow-x: auto;
     border-right: 0;
@@ -412,6 +491,7 @@ const getInitials = (name = '') => {
   }
 
   .settings-center__nav-item {
+    flex: 0 0 auto;
     width: auto;
     white-space: nowrap;
   }

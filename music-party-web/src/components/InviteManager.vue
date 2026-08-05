@@ -58,11 +58,14 @@
   </section>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useQuery, useQueryClient } from '@tanstack/vue-query';
 import { authApi } from '../api/auth';
 import { useToast } from '../composables/useToast';
+import type { RoomInvite } from '../contracts/generated/models';
+import { queryKeys } from '../domains/queryKeys';
 import { useRoomStore } from '../stores/room';
 import { buildInviteUrl, getInviteStatus } from '../utils/invites';
 import { extractErrorMessage } from '../utils/errors';
@@ -70,32 +73,31 @@ import { extractErrorMessage } from '../utils/errors';
 const { t } = useI18n();
 const { error } = useToast();
 const roomStore = useRoomStore();
+const queryClient = useQueryClient();
 const selectedRoomId = ref(roomStore.currentRoomId);
 const label = ref('');
-const invites = ref([]);
 const createdUrl = ref('');
 const creating = ref(false);
 const copying = ref(false);
-const loading = ref(false);
-const loadError = ref('');
 const revokingId = ref('');
 const selectedRoom = computed(() => roomStore.rooms.find(room => room.roomId === selectedRoomId.value));
+const invitesQuery = useQuery({
+    queryKey: computed(() => queryKeys.invites.room(selectedRoomId.value)),
+    queryFn: () => authApi.listInvites(selectedRoomId.value),
+    enabled: computed(() => Boolean(selectedRoomId.value))
+});
+const invites = computed(() => invitesQuery.data.value ?? []);
+const loading = computed(() => invitesQuery.isFetching.value);
+const loadError = computed(() => invitesQuery.error.value
+    ? extractErrorMessage(invitesQuery.error.value, t('settings.invites.loadFailed'))
+    : '');
 
-const statusLabel = invite => t(`settings.invites.status.${getInviteStatus(invite)}`);
-const expiryLabel = invite => invite.permanent ? t('settings.invites.permanent') : new Date(invite.expiresAt).toLocaleString();
+const statusLabel = (invite: RoomInvite) => t(`settings.invites.status.${getInviteStatus(invite)}`);
+const expiryLabel = (invite: RoomInvite) => invite.permanent ? t('settings.invites.permanent') : new Date(invite.expiresAt).toLocaleString();
 
 const loadInvites = async () => {
     if (!selectedRoomId.value) return;
-    loading.value = true;
-    loadError.value = '';
-    try {
-        const data = await authApi.listInvites(selectedRoomId.value);
-        invites.value = Array.isArray(data) ? data : [];
-    } catch (e) {
-        loadError.value = extractErrorMessage(e, t('settings.invites.loadFailed'));
-    } finally {
-        loading.value = false;
-    }
+    await invitesQuery.refetch();
 };
 
 const createInvite = async () => {
@@ -103,9 +105,10 @@ const createInvite = async () => {
     createdUrl.value = '';
     try {
         const invite = await authApi.createInvite(selectedRoomId.value, label.value.trim());
+        if (!invite.secret) throw new Error(t('settings.invites.createFailed'));
         createdUrl.value = buildInviteUrl(invite.secret);
         label.value = '';
-        await loadInvites();
+        await queryClient.invalidateQueries({ queryKey: queryKeys.invites.room(selectedRoomId.value) });
     } catch (e) {
         error(extractErrorMessage(e, t('settings.invites.createFailed')));
     } finally {
@@ -124,12 +127,12 @@ const copyUrl = async () => {
     }
 };
 
-const revokeInvite = async invite => {
+const revokeInvite = async (invite: RoomInvite) => {
     if (!window.confirm(t('settings.invites.confirmRevoke'))) return;
     revokingId.value = invite.id;
     try {
         await authApi.revokeInvite(selectedRoomId.value, invite.id);
-        await loadInvites();
+        await queryClient.invalidateQueries({ queryKey: queryKeys.invites.room(selectedRoomId.value) });
     } catch (e) {
         error(extractErrorMessage(e, t('settings.invites.revokeFailed')));
     } finally {
@@ -139,13 +142,10 @@ const revokeInvite = async invite => {
 
 watch(selectedRoomId, () => {
     createdUrl.value = '';
-    invites.value = [];
-    void loadInvites();
 });
 watch(() => roomStore.currentRoomId, value => {
     if (!selectedRoom.value) selectedRoomId.value = value;
 });
-void loadInvites();
 </script>
 
 <style scoped>
