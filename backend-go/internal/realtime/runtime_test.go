@@ -56,7 +56,7 @@ func realtimeStore(t *testing.T) *storesqlite.Store {
 func TestRoomRuntimeSerializesConcurrentMutationsAndDeduplicates(t *testing.T) {
 	store := realtimeStore(t)
 	broadcaster := &recordingBroadcaster{}
-	manager := NewManager(store, 100, 5*time.Second, time.Hour, broadcaster, nil)
+	manager := NewManager(store, 100, 5*time.Second, time.Hour, broadcaster)
 	t.Cleanup(manager.Close)
 	runtime, err := manager.Room(context.Background(), "lounge")
 	require.NoError(t, err)
@@ -90,7 +90,7 @@ func TestRoomRuntimeSerializesConcurrentMutationsAndDeduplicates(t *testing.T) {
 func TestRoomRuntimeProgressAutoAdvanceAndIdleEviction(t *testing.T) {
 	store := realtimeStore(t)
 	broadcaster := &recordingBroadcaster{}
-	manager := NewManager(store, 10, time.Second, 1200*time.Millisecond, broadcaster, nil)
+	manager := NewManager(store, 10, time.Second, 1200*time.Millisecond, broadcaster)
 	t.Cleanup(manager.Close)
 	runtime, err := manager.Room(context.Background(), "lounge")
 	require.NoError(t, err)
@@ -121,7 +121,7 @@ func TestRoomRuntimeProgressAutoAdvanceAndIdleEviction(t *testing.T) {
 
 func TestPauseFreezesCurrentPosition(t *testing.T) {
 	store := realtimeStore(t)
-	manager := NewManager(store, 10, time.Second, time.Hour, &recordingBroadcaster{}, nil)
+	manager := NewManager(store, 10, time.Second, time.Hour, &recordingBroadcaster{})
 	t.Cleanup(manager.Close)
 	runtime, err := manager.Room(context.Background(), "lounge")
 	require.NoError(t, err)

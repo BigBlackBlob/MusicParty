@@ -50,20 +50,17 @@ func (api *WebSocketAPI) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := sessionToken(r)
-	if token == "" {
-		token = r.URL.Query().Get("sessionToken")
-	}
 	session, err := api.accounts.Resolve(r.Context(), token)
 	if err != nil {
 		_ = connection.Close(websocket.StatusPolicyViolation, "Unknown session token")
 		return
 	}
 	roomID := defaultValue(r.URL.Query().Get("room-id"), "lounge")
-	if !api.canEnterRoom(r.Context(), roomID, session) {
+	if !api.canEnterRoom(r, roomID, session) {
 		_ = connection.Close(websocket.StatusPolicyViolation, "Forbidden")
 		return
 	}
-	client := api.hub.Register(connection, roomID, session)
+	client := api.hub.RegisterSession(connection, roomID, session, token)
 	runtime, err := api.runtimes.Room(r.Context(), roomID)
 	if err != nil {
 		client.Close(websocket.StatusInternalError, "Room unavailable")
@@ -81,6 +78,7 @@ func (api *WebSocketAPI) handle(w http.ResponseWriter, r *http.Request) {
 	writeDone := make(chan error, 1)
 	go func() { writeDone <- client.WriteLoop(ctx) }()
 	api.sendInitial(ctx, client, runtime)
+	api.hub.BroadcastRoom(roomID, "users.online", api.hub.Presence(roomID))
 	for {
 		var envelope inboundEnvelope
 		err := wsruntime.ReadJSON(ctx, connection, &envelope)
@@ -95,12 +93,12 @@ func (api *WebSocketAPI) handle(w http.ResponseWriter, r *http.Request) {
 	case <-time.After(time.Second):
 	}
 	api.hub.Unregister(client)
-	api.hub.BroadcastRoom(roomID, "users.online", api.hub.Online(roomID))
 }
 
-func (api *WebSocketAPI) canEnterRoom(ctx context.Context, roomID string, session account.Session) bool {
+func (api *WebSocketAPI) canEnterRoom(r *http.Request, roomID string, session account.Session) bool {
 	var visibility string
-	err := api.store.Reader().QueryRowContext(ctx, "select visibility from room where id=? and deleted_at is null", roomID).Scan(&visibility)
+	var passwordVersion int
+	err := api.store.Reader().QueryRowContext(r.Context(), "select visibility,password_version from room where id=? and deleted_at is null", roomID).Scan(&visibility, &passwordVersion)
 	if err != nil {
 		return false
 	}
@@ -108,8 +106,12 @@ func (api *WebSocketAPI) canEnterRoom(ctx context.Context, roomID string, sessio
 		return true
 	}
 	var count int
-	_ = api.store.Reader().QueryRowContext(ctx, "select count(1) from room_membership where room_id=? and public_id=?", roomID, session.PublicID).Scan(&count)
-	return count > 0
+	_ = api.store.Reader().QueryRowContext(r.Context(), "select count(1) from room_membership where room_id=? and public_id=?", roomID, session.PublicID).Scan(&count)
+	if count > 0 {
+		return true
+	}
+	proof, _ := r.Cookie(RoomAccessCookieName)
+	return validRoomAccessToken(roomAccessSecret(api.cfg.Auth.RoomAccessTokenSecret), cookieValue(proof), roomID, session.PublicID, passwordVersion, time.Now())
 }
 func (api *WebSocketAPI) sendInitial(ctx context.Context, client *wsruntime.Client, runtime *realtime.RoomRuntime) {
 	snapshot, err := runtime.Snapshot(ctx)
@@ -118,7 +120,7 @@ func (api *WebSocketAPI) sendInitial(ctx context.Context, client *wsruntime.Clie
 	}
 }
 func (api *WebSocketAPI) currentUser(session account.Session) map[string]any {
-	result := map[string]any{"sessionToken": session.SessionToken, "publicId": session.PublicID, "name": session.DisplayName, "isGuest": session.Guest, "role": session.Role, "isAdmin": session.Admin()}
+	result := map[string]any{"publicId": session.PublicID, "name": session.DisplayName, "isGuest": session.Guest, "role": session.Role, "isAdmin": session.Admin()}
 	return result
 }
 
@@ -149,7 +151,7 @@ func (api *WebSocketAPI) dispatch(ctx context.Context, client *wsruntime.Client,
 			}](envelope.Payload)
 			api.nack(client, "queue.reorder.nack", request.MutationID, errors.New("guest"))
 		} else {
-			api.event(client, "CONTROL_DENIED", "请先设置昵称再执行此操作")
+			api.eventWithMetadata(client, "CONTROL_DENIED", "请先设置昵称再执行此操作", map[string]any{"requiresDisplayName": true})
 		}
 		return
 	}
@@ -165,7 +167,7 @@ func (api *WebSocketAPI) dispatch(ctx context.Context, client *wsruntime.Client,
 	case "user.me":
 		_ = client.Send("user.me", "", api.currentUser(session))
 	case "users.online":
-		_ = client.Send("users.online", client.RoomID, api.hub.Online(client.RoomID))
+		_ = client.Send("users.online", client.RoomID, api.hub.Presence(client.RoomID))
 	case "enqueue":
 		api.enqueue(ctx, client, runtime, envelope)
 	case "enqueue.playlist", "enqueue.album":
@@ -260,8 +262,7 @@ func (api *WebSocketAPI) dispatch(ctx context.Context, client *wsruntime.Client,
 			updated, updateErr := api.accounts.UpdateProfile(ctx, session.SessionToken, request.NewName)
 			err = updateErr
 			if err == nil {
-				client.UpdateSession(updated)
-				api.hub.BroadcastRoom(client.RoomID, "users.online", api.hub.Online(client.RoomID))
+				api.hub.UpdateUserSession(updated)
 			}
 		}
 		if err != nil {
@@ -327,6 +328,7 @@ func (api *WebSocketAPI) scheduleResync(ctx context.Context, client *wsruntime.C
 			_ = client.Send("rooms.list", "", rooms)
 		}
 		_ = client.Send("player.state", client.RoomID, snapshot)
+		_ = client.Send("users.online", client.RoomID, api.hub.Presence(client.RoomID))
 	}()
 }
 
@@ -471,7 +473,14 @@ func (api *WebSocketAPI) nack(client *wsruntime.Client, kind, mutationID string,
 	_ = client.Send(kind, "", payload)
 }
 func (api *WebSocketAPI) event(client *wsruntime.Client, action, message string) {
-	_ = client.Send("player.events", client.RoomID, map[string]any{"type": "ERROR", "action": action, "userId": "SYSTEM", "message": message, "payload": ""})
+	api.eventWithMetadata(client, action, message, nil)
+}
+func (api *WebSocketAPI) eventWithMetadata(client *wsruntime.Client, code, message string, metadata map[string]any) {
+	payload := map[string]any{"code": code, "severity": "error", "message": message}
+	if len(metadata) > 0 {
+		payload["metadata"] = metadata
+	}
+	_ = client.Send("player.events", client.RoomID, payload)
 }
 func (api *WebSocketAPI) createRoom(ctx context.Context, client *wsruntime.Client, envelope inboundEnvelope) {
 	session := client.SessionSnapshot()
@@ -518,7 +527,7 @@ func (api *WebSocketAPI) createRoom(ctx context.Context, client *wsruntime.Clien
 		api.event(client, "ROOM_CREATE_FAILED", err.Error())
 		return
 	}
-	room := roomdomain.Info{RoomID: roomID, Name: request.Name, CreatorPublicID: session.PublicID, CreatedAt: now, PrivateRoom: request.IsPrivate}
+	room := roomdomain.Info{RoomID: roomID, Name: request.Name, CreatorPublicID: session.PublicID, CreatedAt: now, PrivateRoom: request.IsPrivate, AccessGranted: true}
 	_ = client.Send("rooms.created", "", room)
 	if rooms, err := api.rooms.List(ctx, session.SessionToken); err == nil {
 		api.hub.BroadcastAll("rooms.list", rooms)

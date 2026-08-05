@@ -28,7 +28,7 @@ func websocketTestServer(t *testing.T) (*httptest.Server, *wsruntime.Hub) {
 	rooms := roomdomain.New(store, accounts)
 	cfg := testConfig(t)
 	hub := wsruntime.NewHub(256)
-	manager := realtime.NewManager(store, 100, 5*time.Second, time.Hour, hub, hub.Online)
+	manager := realtime.NewManager(store, 100, 5*time.Second, time.Hour, hub)
 	api := NewWebSocketAPI(cfg, store, accounts, rooms, hub, manager, NewPlatformAPI(cfg, fixturePlatform{}))
 	server := httptest.NewServer(NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api))
 	t.Cleanup(func() {
@@ -72,13 +72,18 @@ func TestWebSocketInitialStateAliasEnqueueAckAndResync(t *testing.T) {
 	connection := dialWebSocket(t, server, "member-token", "lounge")
 	state := readUntilType(t, connection, "player.state")
 	require.Nil(t, state.RoomID)
+	_, hasLegacyOnlineUsers := state.Payload.(map[string]any)["onlineUsers"]
+	require.False(t, hasLegacyOnlineUsers)
+	initialPresence := readUntilType(t, connection, "users.online")
+	require.Equal(t, "lounge", initialPresence.RoomID)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	require.NoError(t, connection.Write(ctx, websocket.MessageText, []byte(`{"type":"user.me","payload":{}}`)))
 	user := readUntilType(t, connection, "user.me")
 	userPayload := user.Payload.(map[string]any)
 	require.Equal(t, "member", userPayload["publicId"])
-	require.Equal(t, "member-token", userPayload["sessionToken"])
+	_, leaksSessionToken := userPayload["sessionToken"]
+	require.False(t, leaksSessionToken)
 	require.Eventually(t, func() bool { return hub.Count() == 1 }, time.Second, 10*time.Millisecond)
 
 	require.NoError(t, connection.Write(ctx, websocket.MessageText, []byte(`{"type":"/enqueue","requestId":"r1","roomId":"lounge","payload":{"platform":"local","musicId":"track","mutationId":"m1"}}`)))
@@ -94,6 +99,23 @@ func TestWebSocketInitialStateAliasEnqueueAckAndResync(t *testing.T) {
 	require.Equal(t, []any{"Resolved Artist"}, music["artists"])
 	require.Equal(t, float64(60_000), music["duration"])
 	require.Equal(t, "/api/local/media/track", music["url"])
+	resyncPresence := readUntilType(t, connection, "users.online")
+	require.Equal(t, "lounge", resyncPresence.RoomID)
+	require.Equal(t, "lounge", resyncPresence.Payload.(map[string]any)["roomId"])
+}
+
+func TestWebSocketJoinBroadcastsVersionedPresence(t *testing.T) {
+	server, _ := websocketTestServer(t)
+	first := dialWebSocket(t, server, "member-token", "lounge")
+	_ = readUntilType(t, first, "player.state")
+
+	second := dialWebSocket(t, server, "member-token", "lounge")
+	presence := readUntilType(t, second, "users.online")
+	payload := presence.Payload.(map[string]any)
+	require.Equal(t, "lounge", payload["roomId"])
+	require.Equal(t, float64(2), payload["revision"])
+	users := payload["users"].([]any)
+	require.Len(t, users, 1, "multiple tabs for one account must remain one online user")
 }
 
 func TestWebSocketRejectsUnknownSessionWithPolicyViolation(t *testing.T) {

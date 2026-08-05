@@ -5,11 +5,12 @@ import (
 	"testing"
 
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/domain/account"
+	storesqlite "github.com/BigBlackBlob/MusicParty/backend-go/internal/store/sqlite"
 	"github.com/stretchr/testify/require"
 )
 
 func TestClientQueuePreservesReliableFIFOAndCoalescesLatestState(t *testing.T) {
-	client := newClient(nil, "lounge", account.Session{PublicID: "user"}, 4)
+	client := newClient(nil, "lounge", account.Session{PublicID: "user"}, 4, "")
 	require.NoError(t, client.Send("chat.message", "lounge", map[string]any{"value": 1}))
 	require.NoError(t, client.Send("player.state", "lounge", map[string]any{"version": 1}))
 	require.NoError(t, client.Send("player.state", "lounge", map[string]any{"version": 2}))
@@ -32,7 +33,7 @@ func TestClientQueuePreservesReliableFIFOAndCoalescesLatestState(t *testing.T) {
 }
 
 func TestReliableMessagesAreNotEvictedByStateAndFullQueueClosesClient(t *testing.T) {
-	client := newClient(nil, "lounge", account.Session{}, 2)
+	client := newClient(nil, "lounge", account.Session{}, 2, "")
 	require.NoError(t, client.Send("chat.message", "lounge", 1))
 	require.NoError(t, client.Send("queue.mutation.ack", "lounge", 2))
 	require.Error(t, client.Send("player.state", "lounge", 3))
@@ -50,11 +51,33 @@ func TestHubOnlineDeduplicatesAndSessionUpdateIsVisible(t *testing.T) {
 	first := hub.Register(nil, "lounge", account.Session{PublicID: "user", DisplayName: "Old"})
 	second := hub.Register(nil, "lounge", account.Session{PublicID: "user", DisplayName: "Old"})
 	require.Len(t, hub.Online("lounge"), 1)
-	first.UpdateSession(account.Session{PublicID: "user", DisplayName: "New"})
+	hub.UpdateUserSession(account.Session{PublicID: "user", DisplayName: "New"})
 	online := hub.Online("lounge")
 	require.Len(t, online, 1)
 	require.Contains(t, []string{"New", "Old"}, online[0].Name)
 	hub.Unregister(first)
 	hub.Unregister(second)
 	require.Zero(t, hub.Count())
+}
+
+func TestHubPresenceIsVersionedAndLogoutRemovesOnlyMatchingSession(t *testing.T) {
+	hub := NewHub(4)
+	first := hub.RegisterSession(nil, "lounge", account.Session{PublicID: "first", DisplayName: "First"}, "session-one")
+	firstPresence := hub.Presence("lounge")
+	require.Equal(t, uint64(1), firstPresence.Revision)
+	require.Equal(t, []storesqlite.UserSummary{{PublicID: "first", Name: "First"}}, firstPresence.Users)
+
+	hub.RegisterSession(nil, "lounge", account.Session{PublicID: "second", DisplayName: "Second"}, "session-two")
+	secondPresence := hub.Presence("lounge")
+	require.Equal(t, uint64(2), secondPresence.Revision)
+	require.Len(t, secondPresence.Users, 2)
+
+	hub.CloseSession("session-one")
+	afterLogout := hub.Presence("lounge")
+	require.Equal(t, uint64(3), afterLogout.Revision)
+	require.Equal(t, []storesqlite.UserSummary{{PublicID: "second", Name: "Second"}}, afterLogout.Users)
+	require.Equal(t, 1, hub.Count())
+
+	hub.Unregister(first)
+	require.Equal(t, uint64(3), hub.Presence("lounge").Revision, "already detached clients must not advance presence")
 }

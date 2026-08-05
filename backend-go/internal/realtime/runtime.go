@@ -29,22 +29,19 @@ type Broadcaster interface {
 	BroadcastAll(string, any)
 }
 
-type OnlineProvider func(string) []storesqlite.UserSummary
-
 type Manager struct {
 	store       *storesqlite.Store
 	queueSize   int
 	timeout     time.Duration
 	idle        time.Duration
 	broadcaster Broadcaster
-	online      OnlineProvider
 	mu          sync.Mutex
 	runtimes    map[string]*RoomRuntime
 	closed      bool
 }
 
-func NewManager(store *storesqlite.Store, queueSize int, timeout, idle time.Duration, broadcaster Broadcaster, online OnlineProvider) *Manager {
-	return &Manager{store: store, queueSize: max(1, queueSize), timeout: timeout, idle: idle, broadcaster: broadcaster, online: online, runtimes: map[string]*RoomRuntime{}}
+func NewManager(store *storesqlite.Store, queueSize int, timeout, idle time.Duration, broadcaster Broadcaster) *Manager {
+	return &Manager{store: store, queueSize: max(1, queueSize), timeout: timeout, idle: idle, broadcaster: broadcaster, runtimes: map[string]*RoomRuntime{}}
 }
 
 func (m *Manager) Room(ctx context.Context, roomID string) (*RoomRuntime, error) {
@@ -56,7 +53,7 @@ func (m *Manager) Room(ctx context.Context, roomID string) (*RoomRuntime, error)
 	if runtime := m.runtimes[roomID]; runtime != nil {
 		return runtime, nil
 	}
-	runtime, err := newRoomRuntime(ctx, m.store, roomID, m.queueSize, m.timeout, m.idle, m.broadcaster, m.online, func() {
+	runtime, err := newRoomRuntime(ctx, m.store, roomID, m.queueSize, m.timeout, m.idle, m.broadcaster, func() {
 		m.mu.Lock()
 		delete(m.runtimes, roomID)
 		m.mu.Unlock()
@@ -106,7 +103,6 @@ type RoomRuntime struct {
 	done           chan struct{}
 	timeout        time.Duration
 	broadcaster    Broadcaster
-	online         OnlineProvider
 	mutations      map[string]struct{}
 	idle           time.Duration
 	lastActivity   time.Time
@@ -116,7 +112,7 @@ type RoomRuntime struct {
 	closeOnce      sync.Once
 }
 
-func newRoomRuntime(ctx context.Context, store *storesqlite.Store, roomID string, capacity int, timeout, idle time.Duration, broadcaster Broadcaster, online OnlineProvider, onClose func()) (*RoomRuntime, error) {
+func newRoomRuntime(ctx context.Context, store *storesqlite.Store, roomID string, capacity int, timeout, idle time.Duration, broadcaster Broadcaster, onClose func()) (*RoomRuntime, error) {
 	queueRepo := storesqlite.NewQueueRepository(store, time.Now)
 	queue, err := queueRepo.LoadQueue(ctx, roomID)
 	if err != nil {
@@ -132,7 +128,7 @@ func newRoomRuntime(ctx context.Context, store *storesqlite.Store, roomID string
 		state = &storesqlite.PlaybackState{RoomID: roomID, LikedUserIDs: map[string]struct{}{}, LikeMarkers: []int64{}, LastPersistedAt: now}
 	}
 	runtimeCtx, cancel := context.WithCancel(context.Background())
-	r := &RoomRuntime{roomID: roomID, queueRepo: queueRepo, stateRepo: stateRepo, realtimeRepo: storesqlite.NewRealtimeRepository(store, time.Now), chatRepo: storesqlite.NewChatRepository(store), queue: queue, state: *state, commands: make(chan command, capacity), ctx: runtimeCtx, cancel: cancel, done: make(chan struct{}), timeout: timeout, broadcaster: broadcaster, online: online, mutations: map[string]struct{}{}, idle: idle, lastActivity: time.Now(), onClose: onClose}
+	r := &RoomRuntime{roomID: roomID, queueRepo: queueRepo, stateRepo: stateRepo, realtimeRepo: storesqlite.NewRealtimeRepository(store, time.Now), chatRepo: storesqlite.NewChatRepository(store), queue: queue, state: *state, commands: make(chan command, capacity), ctx: runtimeCtx, cancel: cancel, done: make(chan struct{}), timeout: timeout, broadcaster: broadcaster, mutations: map[string]struct{}{}, idle: idle, lastActivity: time.Now(), onClose: onClose}
 	go r.loop()
 	return r, nil
 }
@@ -663,11 +659,7 @@ func (r *RoomRuntime) snapshot() map[string]any {
 	if r.state.CurrentMusic != nil {
 		nowPlaying = map[string]any{"music": r.state.CurrentMusic, "currentPosition": position(r.state, time.Now().UnixMilli()), "enqueuedById": r.state.CurrentEnqueuerID, "enqueuedByName": r.state.CurrentEnqueuerName, "likedUserIds": setValues(r.state.LikedUserIDs), "likeMarkers": r.state.LikeMarkers, "playEpoch": r.state.PlayEpoch, "positionUpdatedAt": r.state.PositionUpdatedAt}
 	}
-	online := []storesqlite.UserSummary{}
-	if r.online != nil {
-		online = r.online(r.roomID)
-	}
-	return map[string]any{"nowPlaying": nowPlaying, "queue": r.queue, "isShuffle": r.state.Shuffle, "onlineUsers": online, "isPaused": r.state.Paused, "isPauseLocked": r.state.PauseLocked, "isSkipLocked": r.state.SkipLocked, "isShuffleLocked": r.state.ShuffleLocked, "isLoading": r.state.Loading, "serverTimestamp": time.Now().UnixMilli(), "stateVersion": r.state.StateVersion, "playEpoch": r.state.PlayEpoch, "queueVersion": r.queueVersion}
+	return map[string]any{"nowPlaying": nowPlaying, "queue": r.queue, "isShuffle": r.state.Shuffle, "isPaused": r.state.Paused, "isPauseLocked": r.state.PauseLocked, "isSkipLocked": r.state.SkipLocked, "isShuffleLocked": r.state.ShuffleLocked, "isLoading": r.state.Loading, "serverTimestamp": time.Now().UnixMilli(), "stateVersion": r.state.StateVersion, "playEpoch": r.state.PlayEpoch, "queueVersion": r.queueVersion}
 }
 func (r *RoomRuntime) broadcastState() {
 	r.broadcast("player.state", r.snapshot())
