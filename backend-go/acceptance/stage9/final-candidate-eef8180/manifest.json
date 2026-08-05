@@ -32,7 +32,7 @@
     "frontend": "PASS - strict typecheck, lint, Vitest, production build and Playwright core flows",
     "javaCompatibility": "PASS - Maven quality suite"
   },
-  "releaseLabel": "go-v1.0.0-rc3",
+  "releaseLabel": "go-v1.0.0-rc4",
   "productionEnvironmentTouched": false,
   "containsCredentials": false,
   "containsDatabase": false,
