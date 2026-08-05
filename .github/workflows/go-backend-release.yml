@@ -118,6 +118,7 @@ jobs:
         working-directory: music-party-web
         run: |
           pnpm install --frozen-lockfile
+          pnpm typecheck
           pnpm test:run
           pnpm lint
           pnpm build

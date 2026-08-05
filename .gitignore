@@ -51,9 +51,12 @@ build/
 /music_party/cached_media/
 /music_party/backups/
 /backend-go/data/
+/backend-go/coverage.out
 ### Go rewrite acceptance runtime artifacts ###
 /backend-go/acceptance/stage8/*.*
 /backend-go/acceptance/**/*.exe
 /backend-go/acceptance/**/*-linux-amd64
 /backend-go/acceptance/**/*.db
 /backend-go/acceptance/**/*.log
+/music-party-web/playwright-report/
+/music-party-web/test-results/
