@@ -54,7 +54,7 @@ jobs:
         run: |
           go run ./cmd/contractgen -check -repo ..
           go test ./internal/contractspec
-          git diff --exit-code
+          git -C .. diff --exit-code -- contracts music-party-web/src/contracts/generated
 
   go:
     runs-on: ubuntu-latest
