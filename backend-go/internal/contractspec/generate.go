@@ -85,6 +85,7 @@ func Generate(repositoryRoot string) ([]GeneratedFile, error) {
 		}
 		files = append(files, GeneratedFile{Path: asset.path, Content: append(content, '\n')})
 	}
+	files = append(files, goFrontendFiles()...)
 	return files, nil
 }
 

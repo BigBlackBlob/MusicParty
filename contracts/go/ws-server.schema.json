@@ -1,0 +1,769 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "items": {
+            "type": "object",
+            "x-typescript-type": "ChatMessage"
+          },
+          "type": "array"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "chat.history"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "type": "object",
+          "x-typescript-type": "ChatMessage"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "chat.message"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "accepted": {
+              "type": "boolean"
+            },
+            "count": {
+              "type": "number"
+            },
+            "mutationId": {
+              "type": "string"
+            },
+            "queueId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "accepted",
+            "mutationId"
+          ],
+          "type": "object"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "enqueue.ack"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "accepted": {
+              "type": "boolean"
+            },
+            "mutationId": {
+              "type": "string"
+            },
+            "queueVersion": {
+              "type": "number"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "mutationId",
+            "reason"
+          ],
+          "type": "object"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "enqueue.nack"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "type": "object",
+          "x-typescript-type": "PlayerEvent"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "player.events"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "isLoading": {
+              "type": "boolean"
+            },
+            "isPauseLocked": {
+              "type": "boolean"
+            },
+            "isPaused": {
+              "type": "boolean"
+            },
+            "isShuffle": {
+              "type": "boolean"
+            },
+            "isShuffleLocked": {
+              "type": "boolean"
+            },
+            "isSkipLocked": {
+              "type": "boolean"
+            },
+            "nowPlaying": {
+              "type": "object",
+              "x-typescript-type": "NowPlaying"
+            },
+            "playEpoch": {
+              "type": "number"
+            },
+            "queue": {
+              "items": {
+                "type": "object",
+                "x-typescript-type": "QueueItem"
+              },
+              "type": "array"
+            },
+            "queueVersion": {
+              "type": "number"
+            },
+            "serverTimestamp": {
+              "type": "number"
+            },
+            "stateVersion": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "isLoading",
+            "isPauseLocked",
+            "isPaused",
+            "isShuffle",
+            "isShuffleLocked",
+            "isSkipLocked",
+            "playEpoch",
+            "queue",
+            "queueVersion",
+            "serverTimestamp",
+            "stateVersion"
+          ],
+          "type": "object"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "player.state"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "items": {
+            "type": "object",
+            "x-typescript-type": "ChatMessage"
+          },
+          "type": "array"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "public-chat.history"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "type": "object",
+          "x-typescript-type": "ChatMessage"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "public-chat.message"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "mutationId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "mutationId"
+          ],
+          "type": "object"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "queue.mutation.ack"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "mutationId": {
+              "type": "string"
+            },
+            "queueVersion": {
+              "type": "number"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "mutationId",
+            "reason"
+          ],
+          "type": "object"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "queue.mutation.nack"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "item": {
+              "type": "object",
+              "x-typescript-type": "Partial\u003cQueueItem\u003e"
+            },
+            "items": {
+              "items": {
+                "type": "object",
+                "x-typescript-type": "QueueItem"
+              },
+              "type": "array"
+            },
+            "operation": {
+              "type": "object",
+              "x-typescript-type": "QueuePatchOperation"
+            },
+            "position": {
+              "type": "string"
+            },
+            "queue": {
+              "items": {
+                "type": "object",
+                "x-typescript-type": "QueueItem"
+              },
+              "type": "array"
+            },
+            "queueId": {
+              "type": "string"
+            },
+            "queueIds": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "queueVersion": {
+              "type": "number"
+            },
+            "status": {
+              "type": "string"
+            },
+            "targetQueueId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "operation",
+            "queueVersion"
+          ],
+          "type": "object"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "queue.patch"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "mutationId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "mutationId"
+          ],
+          "type": "object"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "queue.reorder.ack"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "mutationId": {
+              "type": "string"
+            },
+            "queueVersion": {
+              "type": "number"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "mutationId",
+            "reason"
+          ],
+          "type": "object"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "queue.reorder.nack"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "type": "object",
+          "x-typescript-type": "RoomSummary"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "rooms.created"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "items": {
+            "type": "object",
+            "x-typescript-type": "RoomSummary"
+          },
+          "type": "array"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "rooms.list"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "clientSendTime": {
+              "type": "number"
+            },
+            "pingId": {
+              "type": "string"
+            },
+            "serverReceiveTime": {
+              "type": "number"
+            },
+            "serverSendTime": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "clientSendTime",
+            "pingId",
+            "serverReceiveTime",
+            "serverSendTime"
+          ],
+          "type": "object"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "sync.pong"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "isAdmin": {
+              "type": "boolean"
+            },
+            "isGuest": {
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string"
+            },
+            "publicId": {
+              "type": "string"
+            },
+            "role": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "isAdmin",
+            "isGuest",
+            "name",
+            "publicId",
+            "role"
+          ],
+          "type": "object"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "user.me"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "type": "object",
+          "x-typescript-type": "PresenceSnapshot"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "users.online"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "MusicParty Go WebSocket server messages",
+  "version": "2.0.0"
+}

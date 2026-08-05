@@ -1,0 +1,36 @@
+{
+  "authentication": {
+    "browserReadableTokens": false,
+    "csrf": "MP_CSRF cookie and X-CSRF-Token header",
+    "session": "HttpOnly MP_SESSION cookie"
+  },
+  "error": {
+    "optional": [
+      "requestId",
+      "fieldErrors"
+    ],
+    "required": [
+      "status",
+      "code",
+      "message"
+    ]
+  },
+  "models": [
+    "Session",
+    "AccountStatus",
+    "RoomSummary",
+    "RoomAccessResult",
+    "RoomUpdateInput",
+    "RoomMember",
+    "RoomInvite",
+    "PlatformDescriptor",
+    "Music",
+    "PlaylistSummary",
+    "PlaylistTrack",
+    "LocalTrack",
+    "PresenceSnapshot",
+    "APIError"
+  ],
+  "runtime": "go",
+  "version": "2.0.0"
+}
