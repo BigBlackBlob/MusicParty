@@ -25,14 +25,12 @@ MUSIC_PARTY_IMAGE=crpi-533x5q1t88ew0x21.cn-hangzhou.personal.cr.aliyuncs.com/nrt
 
 ## Permissions
 
-`NAVIDROME_ALLOWED_USERS` is a lightweight username whitelist, not strong authentication. It is suitable for trusted rooms, but it is not recommended for exposing a private library in a fully public room.
-
-Use names that are not easy to guess. Whitelisted users should enter the room first and occupy their username before opening the room to others.
+`NAVIDROME_ALLOWED_USERS` is a compatibility allowlist for persistent MusicParty accounts. Platform-administrator configuration and room capabilities remain the authoritative management boundary.
 
 Rules:
 
 - Only non-guest MusicParty users can use Navidrome.
-- Usernames are trimmed and matched case-insensitively.
+- Account names are trimmed and matched case-insensitively.
 - Empty `NAVIDROME_ALLOWED_USERS` means no regular user can use Navidrome, even when `NAVIDROME_ENABLED=true`.
 - The admin password does not grant Navidrome access.
 
@@ -40,7 +38,7 @@ Rules:
 
 This integration is intentionally lightweight:
 
-- MusicParty usernames are used as a trusted-room whitelist. They are not a strong identity or permission system.
+- MusicParty persistent account names may be used as an additional allowlist; authentication still comes from the HttpOnly MusicParty session.
 - Navidrome stream proxy requests require the MusicParty user token.
 - Navidrome cover proxy requests are not token-checked in this version. They do not expose Subsonic credentials, but cover art should not be treated as strongly private.
 
@@ -59,10 +57,10 @@ rm -f /tmp/musicparty-io-test
 Open the room in a browser, set your MusicParty username to a whitelisted name, then check:
 
 ```bash
-curl "http://127.0.0.1:8848/api/platforms?token=<your-token>"
+curl --cookie /path/to/non-production-session-cookie http://127.0.0.1:8848/api/platforms
 ```
 
-Authorized users should see `navidrome` in the platform list. Unauthorized users and guests should not.
+Authorized members should see `navidrome` in the platform list. Unauthorized users and guests should not.
 
 Navidrome audio URLs exposed to the browser should use MusicParty paths like `/api/navidrome/stream/...`; Navidrome `/rest/stream.view` URLs and Navidrome credentials should never be sent to the browser.
 
@@ -80,6 +78,6 @@ Edit `.env.local`, then start MusicParty from Git Bash:
 ./start-dev.sh --navidrome-local
 ```
 
-The script reads `.env.local` automatically, points Navidrome to `http://127.0.0.1:4533`, and runs a Subsonic `ping.view` precheck before starting the backend. Use `--env-file <path>` when you want a different local profile.
+The script reads `.env.local` automatically and points Navidrome to `http://127.0.0.1:4533`. Verify the source through the administrator settings after startup. Use `--env-file <path>` for a different local profile.
 
 In this version, stream proxy requests require the MusicParty user token, while cover proxy requests are intentionally not token-checked. This is part of the lightweight trusted-room model and should not be treated as strong access control.

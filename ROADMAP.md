@@ -1,36 +1,32 @@
-# MusicParty NRT Roadmap
+# MusicParty engineering roadmap
 
-## Audio and Synchronization
+This roadmap tracks reliability work. It deliberately avoids unconfirmed product features and dates.
 
-- Add seek smoothing for the web player:
-  - Fade volume down before applying `audio.currentTime`.
-  - Wait for `seeked` or `canplay`.
-  - Fade volume back in after the target range is playable.
-  - Skip hard seeking for very small drift and let the player converge naturally.
+## Now
 
-- Improve multi-device synchronization:
-  - Add ping/pong RTT measurement for each client.
-  - Smooth server clock offset instead of using only the latest `serverTimestamp`.
-  - Use playback-rate correction for small drift, hard seek only for large drift.
-  - Trigger immediate resync after visibility restore, network restore, and reconnect.
-  - Add a playback epoch/state version so stale state packets cannot override newer playback state.
+- Complete repository history scrubbing and rotate external platform credentials.
+- Remove remaining inactive Java and migration-era names and development entry points.
+- Finish the TypeScript boundary migration for transports, generated contracts, realtime reducers, stores and composables.
+- Make an explicit Go `RouteSpec` the shared source for HTTP registration and contract generation.
+- Make a Go `EnvironmentSpec` the shared source for configuration loading and generated environment documentation.
+- Establish the first Go-owned, versioned SQLite migration framework.
 
-- Add web-player track transition fades for NetEase and Bilibili playback:
-  - Fade out near the end of the current track.
-  - Fade in after the next track is ready.
-  - Keep this scoped to browser playback. The HTTP live stream path should not get crossfade unless the server-side ffmpeg pipeline is redesigned.
+## Next
 
-## Mobile UI/UX
+- Test every database migration from the frozen legacy schema to the current schema.
+- Add a maintained Go-only load-test entry point to replace one-off Stage 8 tooling.
+- Rehearse backup, restore and immutable-digest rollback procedures.
+- Consolidate Prometheus metrics, alert rules and operational runbooks.
+- Reduce remaining oversized frontend stores and compatibility-era naming.
+- Stabilize Linux CI and Windows local visual-baseline maintenance.
+- Remove the `musicparty-go` GHCR compatibility alias in `v1.1.0`.
 
-- Redesign the mobile experience separately from the current desktop-first layout:
-  - Dedicated mobile now-playing screen.
-  - Bottom player sized for thumb use.
-  - Separate queue, chat, member, search, and lyric flows.
-  - Avoid compressing desktop sidebars into mobile overlays without a mobile-specific information architecture.
+## Later
 
-## Streaming
+- Establish long-running memory, goroutine, WebSocket and SQLite-contention baselines.
+- Repeat capacity validation at 100 or more concurrent users.
+- Evaluate multi-instance deployment only when real scale requires distributed state.
+- Automate disaster-recovery verification.
+- Add stronger supply-chain signing, SBOM and provenance guarantees.
 
-- Revisit the HTTP stream broadcaster later:
-  - Isolate each listener with its own bounded writer queue.
-  - Drop slow clients instead of blocking all listeners.
-  - Add better stream keepalive behavior for paused playback if target clients require it.
+Not planned here: microservice commitments, a mobile app, AI recommendation or lyric-translation products, a brand redesign, or unconfirmed commercial release dates.

@@ -30,7 +30,7 @@ This document is mandatory context for agents touching `music-party-web/src/comp
 
 Before handing off mobile UI changes:
 
-- Run `npm run build` in `music-party-web`.
+- Run `pnpm build` in `music-party-web`.
 - Check mobile preview at `http://127.0.0.1:5173/?mobilePreview=1` with at least 390x844.
 - Verify these screens: Now Playing, full lyrics overlay, Queue, Search, Chat.
 - In Now Playing, confirm the album art, mini lyrics, progress scrubber, transport controls, and bottom nav are all visible.

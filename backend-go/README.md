@@ -6,15 +6,7 @@
 
 ```powershell
 cd backend-go
-gofmt -w .
-go mod tidy
-go run ./cmd/contractgen -check -repo ..
-go vet ./...
-go test -count=1 ./...
-go test -race -count=1 ./...
-go run honnef.co/go/tools/cmd/staticcheck@v0.7.0 ./...
-go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
-go build -trimpath ./...
+./ci/verify.sh
 ```
 
 The generated HTTP, WebSocket and environment contracts are owned by Go. The SQLite compatibility suite keeps the frozen 23-table production schema and legacy-upgraded fixture readable without invoking a Java process.
@@ -49,4 +41,4 @@ Never point tests or contract generators at the production database.
 
 The root `Dockerfile` is the only image definition. `.github/workflows/ci.yml` verifies the application and publishes a single verified image to GHCR and Aliyun ACR after a green `NRT-Base` push. See `docs/release-process.md` and `backend-go/deploy/README.md`.
 
-`acceptance/stage8` and `acceptance/stage9` are archived migration evidence. They are not active release gates and no new manifests should be added.
+The former Stage 8/9 candidate directories are summarized in `docs/migration-archive-summary.md`; they are not active release gates.

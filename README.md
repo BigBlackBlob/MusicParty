@@ -190,21 +190,17 @@ Windows 本地推荐使用 Git Bash：
 ./start-dev.sh --start-netease-api
 ```
 
-本地启动脚本默认会尝试展示 Navidrome 源：`NAVIDROME_ENABLED=true`、`NAVIDROME_BASE_URL=http://127.0.0.1:4533`、`NAVIDROME_ALLOWED_USERS=*`。Navidrome 鉴权可放在 `.env.local`、环境变量或 `cookies.json`。临时关闭可用：
-
-```bash
-./start-dev.sh --no-navidrome
-```
+Navidrome 鉴权优先放在 `.env.local`；`cookies.json` 仅作为被 Git 忽略的本地兼容入口。需要本地 Navidrome 时显式传入 `--navidrome-local`。
 
 默认启动：
 
 ```text
-后端：http://localhost:8080
+后端：http://127.0.0.1:18081
 前端：http://127.0.0.1:5173
 网易云 API：http://127.0.0.1:3000
 ```
 
-Windows fresh start 可先清理 8080/5173/3000 上的旧 Java/Node/Vite 进程，再启动同一套开发服务：
+Windows fresh start 只会读取 `.dev-logs/pids`，验证命令行属于当前仓库后停止旧的 Go/Vite/Netease 子进程：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\fresh-start.ps1 -StartNeteaseApi
@@ -252,11 +248,7 @@ export NETEASE_COOKIE="MUSIC_U=xxxx...; __csrf=xxxx..."
 ./start-dev.sh --start-netease-api
 ```
 
-运行中也可以用管理员命令动态更新：
-
-```text
-//COOKIE netease MUSIC_U=xxxx...; __csrf=xxxx...
-```
+运行时平台凭据请通过管理员设置保存；不要把凭据写入聊天、日志或版本控制文件。
 
 ### 手动启动
 
