@@ -10,7 +10,11 @@ Rewrite only `NRT-Base` and the annotated tags `go-rewrite-baseline-v1` and `leg
 music_party/data/musicparty.db
 music_party/cached_media/BV1JR4y117KH.m4a
 backend-go/bin/musicparty.exe
+cached_media/BV1jh2fYSEJE.m4a
+cookies.example.json
 ```
+
+The final scan also redacts reusable long-form `SESSDATA`, YouTube API key, bearer-token and literal Navidrome/Squidify password assignments from reachable text history. Placeholder/interpolated configuration remains intact.
 
 Preserve tag names and messages. Existing signatures cannot be preserved. Published images and the running VPS are out of scope.
 
