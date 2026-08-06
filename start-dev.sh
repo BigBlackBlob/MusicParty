@@ -104,7 +104,7 @@ export NETEASE_COOKIE="${NETEASE_COOKIE:-$(read_cookie_field neteaseCookie)}"
 export BILIBILI_SESSDATA="${BILIBILI_SESSDATA:-$(read_cookie_field bilibiliSessdata)}"
 export NAVIDROME_BASE_URL="${NAVIDROME_BASE_URL:-$(read_cookie_field navidrome.baseUrl)}"
 export NAVIDROME_USERNAME="${NAVIDROME_USERNAME:-$(read_cookie_field navidrome.username)}"
-export NAVIDROME_PASSWORD=[REDACTED] navidrome.password)}"
+export NAVIDROME_PASSWORD="${NAVIDROME_PASSWORD:-$(read_cookie_field navidrome.password)}"
 if [[ "$NAVIDROME_LOCAL" == true ]]; then
   export NAVIDROME_ENABLED=true
   export NAVIDROME_BASE_URL="${NAVIDROME_BASE_URL:-http://127.0.0.1:4533}"
