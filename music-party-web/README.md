@@ -1,5 +1,42 @@
-# Vue 3 + Vite
+# MusicParty web frontend
 
-This template should help get you started developing with Vue 3 in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+This Vue 3 application supports the MusicParty Go backend only. HTTP and WebSocket boundaries are generated from the Go-owned contracts under `src/contracts/generated/`.
 
-Learn more about IDE Support for Vue in the [Vue Docs Scaling up Guide](https://vuejs.org/guide/scaling-up/tooling.html#ide-support).
+## Toolchain
+
+- Node.js 22
+- pnpm 11.10.0
+
+## Development
+
+From the repository root, the preferred launcher starts the Go API on port 18081 and Vite on port 5173:
+
+```bash
+./start-dev.sh
+```
+
+To run only the frontend against an existing backend:
+
+```bash
+./start-dev.sh --frontend-only
+```
+
+You can also work directly in this directory:
+
+```bash
+pnpm install --frozen-lockfile
+VITE_BACKEND_URL=http://127.0.0.1:18081 pnpm dev
+```
+
+## Checks
+
+```bash
+pnpm typecheck
+pnpm lint
+pnpm test:run
+pnpm build
+pnpm test:e2e
+pnpm audit --audit-level=moderate --registry=https://registry.npmjs.org
+```
+
+Do not hand-edit generated contracts, introduce browser-readable authentication tokens, duplicate Vue Query resources in Pinia, or update visual snapshots without reviewing the rendered change.
