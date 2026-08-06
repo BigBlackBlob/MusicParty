@@ -2,595 +2,188 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKEND_DIR="$ROOT_DIR/backend-go"
 FRONTEND_DIR="$ROOT_DIR/music-party-web"
 LOG_DIR="$ROOT_DIR/.dev-logs"
+RUNTIME_DIR="$LOG_DIR/runtime"
+PID_DIR="$LOG_DIR/pids"
 COOKIE_FILE="$ROOT_DIR/cookies.json"
-ENV_FILE="$ROOT_DIR/.env.local"
-HOST_TEMP_DIR=""
-HOST_TEMP_DIR_WIN=""
-
-for ((i = 1; i <= $#; i++)); do
-  if [[ "${!i}" == "--env-file" ]]; then
-    next=$((i + 1))
-    ENV_FILE="${!next:-}"
-  fi
-done
-
-if [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then
-  set -a
-  # shellcheck disable=SC1090
-  source "$ENV_FILE"
-  set +a
-fi
 
 START_NETEASE_API=false
-BACKEND_PORT=8080
-ADMIN_PASSWORD="${ADMIN_PASSWORD:-dev-admin-pass-2026}"
-FRONTEND_HOST=127.0.0.1
-FRONTEND_PORT=5173
-NETEASE_API_PORT=3000
-NETEASE_API_URL="${NETEASE_API_URL:-}"
+NAVIDROME_LOCAL=false
 SKIP_BROWSER=false
-NAVIDROME_ENABLED="${NAVIDROME_ENABLED:-true}"
-NAVIDROME_BASE_URL="${NAVIDROME_BASE_URL:-}"
-NAVIDROME_USERNAME="${NAVIDROME_USERNAME:-}"
-NAVIDROME_PASSWORD=[REDACTED]
-NAVIDROME_ALLOWED_USERS="${NAVIDROME_ALLOWED_USERS:-}"
-SQUIDIFY_ENABLED="${SQUIDIFY_ENABLED:-true}"
-SQUIDIFY_BASE_URL="${SQUIDIFY_BASE_URL:-}"
-SQUIDIFY_USERNAME="${SQUIDIFY_USERNAME:-}"
-SQUIDIFY_PASSWORD=[REDACTED]
-SQUIDIFY_ALLOWED_USERS="${SQUIDIFY_ALLOWED_USERS:-}"
-LOCAL_LIBRARY_ENABLED="${LOCAL_LIBRARY_ENABLED:-true}"
-LOCAL_LIBRARY_PATH="${LOCAL_LIBRARY_PATH:-data/local-library}"
-LOCAL_LIBRARY_ALLOWED_USERS="${LOCAL_LIBRARY_ALLOWED_USERS:-}"
-LOCAL_LIBRARY_MAX_UPLOAD_BYTES="${LOCAL_LIBRARY_MAX_UPLOAD_BYTES:-209715200}"
-MULTIPART_MAX_FILE_SIZE="${MULTIPART_MAX_FILE_SIZE:-200MB}"
-MULTIPART_MAX_REQUEST_SIZE="${MULTIPART_MAX_REQUEST_SIZE:-220MB}"
+BACKEND_ONLY=false
+FRONTEND_ONLY=false
+ENV_FILE="$ROOT_DIR/.env.local"
+BACKEND_PORT="${SERVER_PORT:-18081}"
+FRONTEND_PORT="${VITE_PORT:-5173}"
+NETEASE_API_PORT="${API_PORT:-3000}"
 STARTED_PIDS=()
 
-info() {
-  printf '[dev] %s\n' "$*"
-}
-
-warn() {
-  printf '[dev][warn] %s\n' "$*" >&2
-}
-
-die() {
-  printf '[dev][error] %s\n' "$*" >&2
-  exit 1
-}
+info() { printf '[dev] %s\n' "$*"; }
+warn() { printf '[dev][warn] %s\n' "$*" >&2; }
+die() { printf '[dev][error] %s\n' "$*" >&2; exit 1; }
 
 usage() {
   cat <<'EOF'
-Usage:
-  ./start-dev.sh [options]
+Usage: ./start-dev.sh [options]
 
-Options:
-  --start-netease-api           Start local NeteaseCloudMusicApi on port 3000.
-  --backend-port <port>         Backend port. Default: 8080.
-  --frontend-port <port>        Frontend port. Default: 5173.
-  --api-port <port>             Local Netease API port. Default: 3000.
-  --netease-api-url <url>       Use an existing Netease API URL instead of http://127.0.0.1:<api-port>.
-  --env-file <path>             Load local environment file. Default: ./.env.local if present.
-  --navidrome-local             Enable Navidrome at http://127.0.0.1:4533; credentials come from env file or env vars.
-  --no-navidrome                Disable Navidrome for this local run.
-  --navidrome-base-url <url>    Enable Navidrome and use this base URL.
-  --navidrome-username <name>   Navidrome username.
-  --navidrome-password <pass>   Navidrome password.
-  --navidrome-allowed-users <names>
-                                MusicParty usernames allowed to use Navidrome, comma-separated.
-  --no-local-library            Disable local upload/transcode library for this local run.
-  --local-library-path <path>   Local library storage path. Default: data/local-library.
-  --local-library-allowed-users <names>
-                                MusicParty usernames allowed to upload, comma-separated. Admin can always upload.
-  --local-library-max-upload-bytes <bytes>
-                                Max upload size. Default: 209715200 (200 MiB).
-  --multipart-max-file-size <size>
-                                Spring multipart file limit. Default: 200MB.
-  --multipart-max-request-size <size>
-                                Spring multipart request limit. Default: 220MB.
-  --skip-browser                Do not open frontend URL after startup.
-  -h, --help                    Show this help.
-
-Cookie:
-  The script reads ./cookies.json if present:
-  {
-    "neteaseCookie": "MUSIC_U=xxxx...; __csrf=xxxx...",
-    "bilibiliSessdata": "",
-    "navidrome": {
-      "baseUrl": "http://127.0.0.1:4533",
-      "username": "admin",
-      "password": "secret",
-      "allowedUsers": "*"
-    },
-    "squidify": {
-      "baseUrl": "https://example.com",
-      "username": "guest",
-      "password": "guest",
-      "allowedUsers": "*"
-    }
-  }
+  --start-netease-api  Start the pinned local Netease API package.
+  --navidrome-local    Use http://127.0.0.1:4533 for Navidrome.
+  --skip-browser       Do not open the frontend after readiness succeeds.
+  --backend-only       Start only the Go backend.
+  --frontend-only      Start only Vite; use VITE_BACKEND_URL for its backend.
+  --env-file <path>    Load a local environment file instead of .env.local.
+  -h, --help           Show this help.
 EOF
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --start-netease-api)
-      START_NETEASE_API=true
-      shift
-      ;;
-    --backend-port)
-      BACKEND_PORT="${2:-}"
-      [[ -n "$BACKEND_PORT" ]] || die "--backend-port requires a value"
-      shift 2
-      ;;
-    --frontend-port)
-      FRONTEND_PORT="${2:-}"
-      [[ -n "$FRONTEND_PORT" ]] || die "--frontend-port requires a value"
-      shift 2
-      ;;
-    --api-port)
-      NETEASE_API_PORT="${2:-}"
-      [[ -n "$NETEASE_API_PORT" ]] || die "--api-port requires a value"
-      shift 2
-      ;;
-    --netease-api-url)
-      NETEASE_API_URL="${2:-}"
-      [[ -n "$NETEASE_API_URL" ]] || die "--netease-api-url requires a value"
-      shift 2
-      ;;
+    --start-netease-api) START_NETEASE_API=true; shift ;;
+    --navidrome-local) NAVIDROME_LOCAL=true; shift ;;
+    --skip-browser) SKIP_BROWSER=true; shift ;;
+    --backend-only) BACKEND_ONLY=true; shift ;;
+    --frontend-only) FRONTEND_ONLY=true; shift ;;
     --env-file)
-      ENV_FILE="${2:-}"
-      [[ -n "$ENV_FILE" ]] || die "--env-file requires a value"
-      shift 2
-      ;;
-    --navidrome-local)
-      NAVIDROME_ENABLED=true
-      NAVIDROME_BASE_URL="${NAVIDROME_BASE_URL:-http://127.0.0.1:4533}"
-      shift
-      ;;
-    --no-navidrome)
-      NAVIDROME_ENABLED=false
-      shift
-      ;;
-    --navidrome-base-url)
-      NAVIDROME_ENABLED=true
-      NAVIDROME_BASE_URL="${2:-}"
-      [[ -n "$NAVIDROME_BASE_URL" ]] || die "--navidrome-base-url requires a value"
-      shift 2
-      ;;
-    --navidrome-username)
-      NAVIDROME_USERNAME="${2:-}"
-      [[ -n "$NAVIDROME_USERNAME" ]] || die "--navidrome-username requires a value"
-      shift 2
-      ;;
-    --navidrome-password)
-      NAVIDROME_PASSWORD="${2:-}"
-      [[ -n "$NAVIDROME_PASSWORD" ]] || die "--navidrome-password requires a value"
-      shift 2
-      ;;
-    --navidrome-allowed-users)
-      NAVIDROME_ALLOWED_USERS="${2:-}"
-      [[ -n "$NAVIDROME_ALLOWED_USERS" ]] || die "--navidrome-allowed-users requires a value"
-      shift 2
-      ;;
-    --no-local-library)
-      LOCAL_LIBRARY_ENABLED=false
-      shift
-      ;;
-    --local-library-path)
-      LOCAL_LIBRARY_PATH="${2:-}"
-      [[ -n "$LOCAL_LIBRARY_PATH" ]] || die "--local-library-path requires a value"
-      shift 2
-      ;;
-    --local-library-allowed-users)
-      LOCAL_LIBRARY_ALLOWED_USERS="${2:-}"
-      [[ -n "$LOCAL_LIBRARY_ALLOWED_USERS" ]] || die "--local-library-allowed-users requires a value"
-      shift 2
-      ;;
-    --local-library-max-upload-bytes)
-      LOCAL_LIBRARY_MAX_UPLOAD_BYTES="${2:-}"
-      [[ -n "$LOCAL_LIBRARY_MAX_UPLOAD_BYTES" ]] || die "--local-library-max-upload-bytes requires a value"
-      shift 2
-      ;;
-    --multipart-max-file-size)
-      MULTIPART_MAX_FILE_SIZE="${2:-}"
-      [[ -n "$MULTIPART_MAX_FILE_SIZE" ]] || die "--multipart-max-file-size requires a value"
-      shift 2
-      ;;
-    --multipart-max-request-size)
-      MULTIPART_MAX_REQUEST_SIZE="${2:-}"
-      [[ -n "$MULTIPART_MAX_REQUEST_SIZE" ]] || die "--multipart-max-request-size requires a value"
-      shift 2
-      ;;
-    --skip-browser)
-      SKIP_BROWSER=true
-      shift
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    *)
-      die "Unknown option: $1"
-      ;;
+      [[ $# -ge 2 ]] || die "--env-file requires a path"
+      ENV_FILE="$2"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) die "unknown option: $1" ;;
   esac
 done
 
-command -v node >/dev/null 2>&1 || die "node is required"
-command -v npm >/dev/null 2>&1 || die "npm is required"
-command -v npx >/dev/null 2>&1 || die "npx is required"
-if [[ "$LOCAL_LIBRARY_ENABLED" == true ]] && ! command -v ffmpeg >/dev/null 2>&1; then
-  warn "ffmpeg is not on PATH; local uploads can be accepted but transcoding will fail until ffmpeg is installed"
+if [[ "$BACKEND_ONLY" == true && "$FRONTEND_ONLY" == true ]]; then
+  die "--backend-only and --frontend-only are mutually exclusive"
+fi
+if [[ "$BACKEND_ONLY" == true ]]; then
+  SKIP_BROWSER=true
 fi
 
-ensure_java_home() {
-  local candidate=""
-
-  if [[ -n "${JAVA_HOME:-}" && -x "$JAVA_HOME/bin/java" && -x "$JAVA_HOME/bin/javac" ]]; then
-    return 0
-  fi
-
-  for candidate in \
-    /c/Program\ Files/Microsoft/jdk-* \
-    /c/Program\ Files/Java/jdk-* \
-    /c/Users/"$USERNAME"/Downloads/graalvm-jdk-*/graalvm-jdk-*; do
-    if [[ -x "$candidate/bin/java" && -x "$candidate/bin/javac" ]]; then
-      export JAVA_HOME="$candidate"
-      export PATH="$JAVA_HOME/bin:$PATH"
-      info "detected JAVA_HOME: $JAVA_HOME"
-      return 0
-    fi
-  done
-
-  if command -v java >/dev/null 2>&1 && command -v javac >/dev/null 2>&1; then
-    return 0
-  fi
-
-  die "java/javac not found. Set JAVA_HOME or add a JDK bin directory to PATH."
-}
-
-ensure_java_home
-
-if command -v mvn >/dev/null 2>&1; then
-  MVN_CMD=(mvn)
-elif [[ -x "$ROOT_DIR/mvnw" ]]; then
-  MVN_CMD=("$ROOT_DIR/mvnw")
-else
-  die "mvn or ./mvnw is required"
+[[ -f "$BACKEND_DIR/go.mod" ]] || die "missing backend-go/go.mod"
+[[ -f "$FRONTEND_DIR/package.json" ]] || die "missing music-party-web/package.json"
+command -v node >/dev/null 2>&1 || die "Node.js 22 is required"
+command -v pnpm >/dev/null 2>&1 || die "pnpm 11.10.0 is required"
+if [[ "$FRONTEND_ONLY" == false ]]; then
+  command -v go >/dev/null 2>&1 || die "Go is required"
 fi
 
-mkdir -p "$LOG_DIR"
-mkdir -p "$LOG_DIR/tmp"
-HOST_TEMP_DIR="$LOG_DIR/host-temp"
-mkdir -p "$HOST_TEMP_DIR"
-if command -v cygpath >/dev/null 2>&1; then
-  HOST_TEMP_DIR_WIN="$(cygpath -aw "$HOST_TEMP_DIR")"
-else
-  HOST_TEMP_DIR_WIN="$HOST_TEMP_DIR"
-fi
-export TMPDIR="$HOST_TEMP_DIR"
-export TEMP="$HOST_TEMP_DIR_WIN"
-export TMP="$HOST_TEMP_DIR_WIN"
-export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-}"
-if [[ "$JAVA_TOOL_OPTIONS" != *"-Djava.io.tmpdir="* ]]; then
-  if [[ -n "$JAVA_TOOL_OPTIONS" ]]; then
-    export JAVA_TOOL_OPTIONS="-Djava.io.tmpdir=$LOG_DIR/tmp $JAVA_TOOL_OPTIONS"
-  else
-    export JAVA_TOOL_OPTIONS="-Djava.io.tmpdir=$LOG_DIR/tmp"
+NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
+[[ "$NODE_MAJOR" == 22 ]] || die "Node.js 22 is required (found $(node --version))"
+PNPM_VERSION="$(pnpm --version)"
+[[ "$PNPM_VERSION" == 11.10.0 ]] || die "pnpm 11.10.0 is required (found $PNPM_VERSION)"
+
+if [[ -n "$ENV_FILE" ]]; then
+  [[ -f "$ENV_FILE" ]] || { [[ "$ENV_FILE" == "$ROOT_DIR/.env.local" ]] || die "env file not found: $ENV_FILE"; }
+  if [[ -f "$ENV_FILE" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+    set +a
+    info "loaded local environment: $ENV_FILE"
   fi
 fi
 
-read_json_field() {
-  local file="$1"
-  local field="$2"
-
-  if [[ ! -f "$file" ]]; then
-    return 0
-  fi
-
-  node -e "
-const fs = require('fs');
-const file = process.argv[1];
-const field = process.argv[2];
+read_cookie_field() {
+  local field="$1"
+  [[ -f "$COOKIE_FILE" ]] || return 0
+  node - "$COOKIE_FILE" "$field" <<'NODE'
+const fs = require('node:fs');
+const [file, field] = process.argv.slice(2);
 try {
   const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-  const value = field.split('.').reduce((current, key) => {
-    if (current && Object.prototype.hasOwnProperty.call(current, key)) {
-      return current[key];
-    }
-    return undefined;
-  }, data);
-  if (value !== undefined && value !== null) {
-    process.stdout.write(String(value));
-  }
-} catch (error) {
-  process.stderr.write('Failed to read ' + file + ': ' + error.message + '\n');
-  process.exit(2);
+  const value = field.split('.').reduce((item, key) => item?.[key], data);
+  if (typeof value === 'string') process.stdout.write(value);
+} catch {
+  process.stderr.write('[dev][warn] cookies.json could not be parsed\n');
 }
-" "$file" "$field"
+NODE
 }
 
-port_open() {
-  local host="$1"
-  local port="$2"
+export NETEASE_COOKIE="${NETEASE_COOKIE:-$(read_cookie_field neteaseCookie)}"
+export BILIBILI_SESSDATA="${BILIBILI_SESSDATA:-$(read_cookie_field bilibiliSessdata)}"
+export NAVIDROME_BASE_URL="${NAVIDROME_BASE_URL:-$(read_cookie_field navidrome.baseUrl)}"
+export NAVIDROME_USERNAME="${NAVIDROME_USERNAME:-$(read_cookie_field navidrome.username)}"
+export NAVIDROME_PASSWORD=[REDACTED] navidrome.password)}"
+if [[ "$NAVIDROME_LOCAL" == true ]]; then
+  export NAVIDROME_ENABLED=true
+  export NAVIDROME_BASE_URL="${NAVIDROME_BASE_URL:-http://127.0.0.1:4533}"
+fi
 
-  node -e "
-const net = require('net');
-const socket = net.createConnection({ host: process.argv[1], port: Number(process.argv[2]), timeout: 800 });
-socket.on('connect', () => { socket.destroy(); process.exit(0); });
-socket.on('timeout', () => { socket.destroy(); process.exit(1); });
-socket.on('error', () => process.exit(1));
-" "$host" "$port" >/dev/null 2>&1
+mkdir -p "$LOG_DIR" "$RUNTIME_DIR" "$PID_DIR"
+rm -f "$PID_DIR"/*.pid
+
+cleanup() {
+  local pid
+  for pid in "${STARTED_PIDS[@]:-}"; do
+    kill "$pid" >/dev/null 2>&1 || true
+  done
+  wait >/dev/null 2>&1 || true
+  rm -f "$PID_DIR"/*.pid
+}
+trap cleanup EXIT INT TERM
+
+start_process() {
+  local name="$1"
+  local workdir="$2"
+  shift 2
+  (
+    cd "$workdir"
+    exec "$@"
+  ) >>"$LOG_DIR/$name.log" 2>&1 &
+  local pid=$!
+  STARTED_PIDS+=("$pid")
+  printf '%s\n' "$pid" >"$PID_DIR/$name.pid"
+  info "started $name (pid $pid, log $LOG_DIR/$name.log)"
 }
 
-wait_for_port() {
-  local host="$1"
-  local port="$2"
-  local name="$3"
-  local attempts="${4:-45}"
-
-  for ((i = 1; i <= attempts; i++)); do
-    if port_open "$host" "$port"; then
-      info "$name is listening on $host:$port"
+wait_for_url() {
+  local url="$1"
+  local name="$2"
+  local attempt
+  for attempt in $(seq 1 60); do
+    if curl --fail --silent --show-error "$url" >/dev/null 2>&1; then
+      info "$name is ready"
       return 0
     fi
     sleep 1
   done
-
-  return 1
+  die "$name did not become ready; inspect $LOG_DIR"
 }
-
-check_navidrome() {
-  node -e "
-const crypto = require('crypto');
-const baseUrl = process.env.NAVIDROME_BASE_URL;
-const username = process.env.NAVIDROME_USERNAME;
-const password = process.env.NAVIDROME_PASSWORD;
-if (!baseUrl || !username || !password) {
-  console.error('missing Navidrome base URL, username, or password');
-  process.exit(2);
-}
-const salt = crypto.randomBytes(4).toString('hex');
-const token = crypto.createHash('md5').update(password + salt).digest('hex');
-const url = new URL('/rest/ping.view', baseUrl);
-url.searchParams.set('u', username);
-url.searchParams.set('s', salt);
-url.searchParams.set('t', token);
-url.searchParams.set('v', process.env.NAVIDROME_API_VERSION || '1.16.1');
-url.searchParams.set('c', process.env.NAVIDROME_CLIENT || 'musicparty-dev');
-url.searchParams.set('f', 'json');
-fetch(url)
-  .then(async response => {
-    if (!response.ok) throw new Error('HTTP ' + response.status);
-    const body = await response.json();
-    const status = body?.['subsonic-response']?.status;
-    if (status !== 'ok') {
-      const error = body?.['subsonic-response']?.error;
-      throw new Error(error?.message || 'Subsonic ping failed');
-    }
-  })
-  .catch(error => {
-    console.error(error.message);
-    process.exit(1);
-  });
-"
-}
-
-cleanup() {
-  if [[ ${#STARTED_PIDS[@]} -gt 0 ]]; then
-    info "stopping child processes: ${STARTED_PIDS[*]}"
-    kill "${STARTED_PIDS[@]}" >/dev/null 2>&1 || true
-  fi
-}
-
-NETEASE_COOKIE="${NETEASE_COOKIE:-$(read_json_field "$COOKIE_FILE" neteaseCookie)}"
-BILIBILI_SESSDATA="${BILIBILI_SESSDATA:-$(read_json_field "$COOKIE_FILE" bilibiliSessdata)}"
-COOKIE_NAVIDROME_BASE_URL="$(read_json_field "$COOKIE_FILE" navidromeBaseUrl)"
-if [[ -z "$COOKIE_NAVIDROME_BASE_URL" ]]; then
-  COOKIE_NAVIDROME_BASE_URL="$(read_json_field "$COOKIE_FILE" navidrome.baseUrl)"
-fi
-COOKIE_NAVIDROME_USERNAME="$(read_json_field "$COOKIE_FILE" navidromeUsername)"
-if [[ -z "$COOKIE_NAVIDROME_USERNAME" ]]; then
-  COOKIE_NAVIDROME_USERNAME="$(read_json_field "$COOKIE_FILE" navidrome.username)"
-fi
-COOKIE_NAVIDROME_PASSWORD=[REDACTED] "$COOKIE_FILE" navidromePassword)"
-if [[ -z "$COOKIE_NAVIDROME_PASSWORD" ]]; then
-  COOKIE_NAVIDROME_PASSWORD=[REDACTED] "$COOKIE_FILE" navidrome.password)"
-fi
-COOKIE_NAVIDROME_ALLOWED_USERS="$(read_json_field "$COOKIE_FILE" navidromeAllowedUsers)"
-if [[ -z "$COOKIE_NAVIDROME_ALLOWED_USERS" ]]; then
-  COOKIE_NAVIDROME_ALLOWED_USERS="$(read_json_field "$COOKIE_FILE" navidrome.allowedUsers)"
-fi
-
-NAVIDROME_BASE_URL="${NAVIDROME_BASE_URL:-${COOKIE_NAVIDROME_BASE_URL:-http://127.0.0.1:4533}}"
-NAVIDROME_USERNAME="${NAVIDROME_USERNAME:-$COOKIE_NAVIDROME_USERNAME}"
-NAVIDROME_PASSWORD=[REDACTED]
-NAVIDROME_ALLOWED_USERS="${NAVIDROME_ALLOWED_USERS:-${COOKIE_NAVIDROME_ALLOWED_USERS:-*}}"
-COOKIE_SQUIDIFY_BASE_URL="$(read_json_field "$COOKIE_FILE" squidifyBaseUrl)"
-if [[ -z "$COOKIE_SQUIDIFY_BASE_URL" ]]; then
-  COOKIE_SQUIDIFY_BASE_URL="$(read_json_field "$COOKIE_FILE" squidify.baseUrl)"
-fi
-COOKIE_SQUIDIFY_USERNAME="$(read_json_field "$COOKIE_FILE" squidifyUsername)"
-if [[ -z "$COOKIE_SQUIDIFY_USERNAME" ]]; then
-  COOKIE_SQUIDIFY_USERNAME="$(read_json_field "$COOKIE_FILE" squidify.username)"
-fi
-COOKIE_SQUIDIFY_PASSWORD=[REDACTED] "$COOKIE_FILE" squidifyPassword)"
-if [[ -z "$COOKIE_SQUIDIFY_PASSWORD" ]]; then
-  COOKIE_SQUIDIFY_PASSWORD=[REDACTED] "$COOKIE_FILE" squidify.password)"
-fi
-COOKIE_SQUIDIFY_ALLOWED_USERS="$(read_json_field "$COOKIE_FILE" squidifyAllowedUsers)"
-if [[ -z "$COOKIE_SQUIDIFY_ALLOWED_USERS" ]]; then
-  COOKIE_SQUIDIFY_ALLOWED_USERS="$(read_json_field "$COOKIE_FILE" squidify.allowedUsers)"
-fi
-
-SQUIDIFY_BASE_URL="${SQUIDIFY_BASE_URL:-$COOKIE_SQUIDIFY_BASE_URL}"
-SQUIDIFY_USERNAME="${SQUIDIFY_USERNAME:-$COOKIE_SQUIDIFY_USERNAME}"
-SQUIDIFY_PASSWORD=[REDACTED]
-SQUIDIFY_ALLOWED_USERS="${SQUIDIFY_ALLOWED_USERS:-${COOKIE_SQUIDIFY_ALLOWED_USERS:-*}}"
-
-if [[ -z "$NETEASE_API_URL" ]]; then
-  NETEASE_API_URL="http://127.0.0.1:$NETEASE_API_PORT"
-fi
-
-BACKEND_LOG="$LOG_DIR/backend-dev.log"
-FRONTEND_LOG="$LOG_DIR/frontend-dev.log"
-NETEASE_LOG="$LOG_DIR/netease-api.log"
-
-{
-  echo "========== $(date '+%Y-%m-%d %H:%M:%S') dev start =========="
-  echo "root: $ROOT_DIR"
-  echo "cookie-config-path: $COOKIE_FILE"
-  echo "effective-netease-cookie-length: ${#NETEASE_COOKIE}"
-  echo "effective-bilibili-sessdata-length: ${#BILIBILI_SESSDATA}"
-  echo "netease-api-url: $NETEASE_API_URL"
-  echo "backend-port: $BACKEND_PORT"
-  echo "frontend-url: http://$FRONTEND_HOST:$FRONTEND_PORT"
-  echo "host-temp-dir: $HOST_TEMP_DIR_WIN"
-  echo "navidrome-enabled: $NAVIDROME_ENABLED"
-  echo "navidrome-base-url: $NAVIDROME_BASE_URL"
-  echo "navidrome-allowed-users: $NAVIDROME_ALLOWED_USERS"
-  echo "squidify-enabled: $SQUIDIFY_ENABLED"
-  echo "squidify-base-url: $SQUIDIFY_BASE_URL"
-  echo "local-library-enabled: $LOCAL_LIBRARY_ENABLED"
-  echo "local-library-path: $LOCAL_LIBRARY_PATH"
-  echo "local-library-allowed-users: $LOCAL_LIBRARY_ALLOWED_USERS"
-  echo "local-library-max-upload-bytes: $LOCAL_LIBRARY_MAX_UPLOAD_BYTES"
-  echo "multipart-max-file-size: $MULTIPART_MAX_FILE_SIZE"
-  echo "multipart-max-request-size: $MULTIPART_MAX_REQUEST_SIZE"
-} >> "$BACKEND_LOG"
-
-info "root: $ROOT_DIR"
-info "logs: $LOG_DIR"
-info "host temp dir: $HOST_TEMP_DIR_WIN"
-if [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then
-  info "env file: $ENV_FILE"
-fi
-info "netease cookie length: ${#NETEASE_COOKIE}"
-info "netease api url: $NETEASE_API_URL"
-info "navidrome enabled: $NAVIDROME_ENABLED"
-if [[ "$NAVIDROME_ENABLED" == true ]]; then
-  info "navidrome base url: $NAVIDROME_BASE_URL"
-  info "navidrome allowed users: $NAVIDROME_ALLOWED_USERS"
-fi
-info "squidify enabled: $SQUIDIFY_ENABLED"
-if [[ "$SQUIDIFY_ENABLED" == true ]]; then
-  info "squidify base url: $SQUIDIFY_BASE_URL"
-fi
-info "local library enabled: $LOCAL_LIBRARY_ENABLED"
-if [[ "$LOCAL_LIBRARY_ENABLED" == true ]]; then
-  info "local library path: $LOCAL_LIBRARY_PATH"
-  info "local library upload allowlist: ${LOCAL_LIBRARY_ALLOWED_USERS:-admin-only until changed in Settings}"
-  info "multipart upload limits: file=$MULTIPART_MAX_FILE_SIZE request=$MULTIPART_MAX_REQUEST_SIZE"
-fi
-
-trap cleanup EXIT INT TERM
 
 if [[ "$START_NETEASE_API" == true ]]; then
-  if port_open 127.0.0.1 "$NETEASE_API_PORT"; then
-    warn "port $NETEASE_API_PORT is already open; not starting another Netease API"
-  else
-    info "starting Netease API in background"
-    (
-      cd "$ROOT_DIR"
-      API_PORT="$NETEASE_API_PORT" NETEASE_COOKIE="$NETEASE_COOKIE" ./start-netease-api.sh
-    ) &
-    STARTED_PIDS+=("$!")
-  fi
-
-  if ! wait_for_port 127.0.0.1 "$NETEASE_API_PORT" "Netease API" 60; then
-    warn "Netease API did not open port $NETEASE_API_PORT within 60s"
-    warn "check $NETEASE_LOG"
-  fi
-else
-  if ! port_open 127.0.0.1 "$NETEASE_API_PORT"; then
-    warn "local Netease API port $NETEASE_API_PORT is not open"
-    warn "run ./start-dev.sh --start-netease-api or start your own API and pass --netease-api-url"
-  fi
+  API_PORT="$NETEASE_API_PORT" start_process netease-api "$ROOT_DIR" "$ROOT_DIR/start-netease-api.sh"
+  wait_for_url "http://127.0.0.1:$NETEASE_API_PORT" "Netease API"
 fi
 
-if [[ "$NAVIDROME_ENABLED" == true ]]; then
-  info "checking Navidrome connectivity"
-  if ! NAVIDROME_BASE_URL="$NAVIDROME_BASE_URL" \
-      NAVIDROME_USERNAME="$NAVIDROME_USERNAME" \
-      NAVIDROME_PASSWORD=[REDACTED] \
-      NAVIDROME_API_VERSION="${NAVIDROME_API_VERSION:-1.16.1}" \
-      NAVIDROME_CLIENT="${NAVIDROME_CLIENT:-musicparty-dev}" \
-      check_navidrome; then
-    warn "Navidrome precheck failed; backend will still start"
-    warn "check base URL, credentials, and that the Windows Navidrome service is running"
-  else
-    info "Navidrome ping succeeded"
-  fi
+if [[ "$FRONTEND_ONLY" == false ]]; then
+  export SERVER_PORT="$BACKEND_PORT"
+  export BASE_URL="${BASE_URL:-http://127.0.0.1:$BACKEND_PORT}"
+  export ALLOWED_ORIGINS="${ALLOWED_ORIGINS:-http://127.0.0.1:$FRONTEND_PORT,http://localhost:$FRONTEND_PORT}"
+  export DB_ENABLED="${DB_ENABLED:-true}"
+  export DB_INIT_SCHEMA="${DB_INIT_SCHEMA:-true}"
+  export DB_PATH="${DB_PATH:-$RUNTIME_DIR/musicparty.db}"
+  export STATIC_PATH="${STATIC_PATH:-$ROOT_DIR/music-party-web/dist}"
+  export AUTH_SECURE_COOKIES="${AUTH_SECURE_COOKIES:-false}"
+  export NETEASE_API_URL="${NETEASE_API_URL:-http://127.0.0.1:$NETEASE_API_PORT}"
+  start_process backend "$ROOT_DIR" go run "$BACKEND_DIR/cmd/musicparty"
+  wait_for_url "http://127.0.0.1:$BACKEND_PORT/actuator/health/readiness" "Go backend"
 fi
 
-info "starting backend in background"
-(
-  cd "$ROOT_DIR"
-  SERVER_PORT="$BACKEND_PORT" \
-    ADMIN_PASSWORD="$ADMIN_PASSWORD" \
-    NETEASE_API_URL="$NETEASE_API_URL" \
-    NETEASE_COOKIE="$NETEASE_COOKIE" \
-    BILIBILI_SESSDATA="$BILIBILI_SESSDATA" \
-    NAVIDROME_ENABLED="$NAVIDROME_ENABLED" \
-    NAVIDROME_BASE_URL="$NAVIDROME_BASE_URL" \
-    NAVIDROME_USERNAME="$NAVIDROME_USERNAME" \
-    NAVIDROME_PASSWORD=[REDACTED] \
-    NAVIDROME_CLIENT="${NAVIDROME_CLIENT:-musicparty}" \
-    NAVIDROME_API_VERSION="${NAVIDROME_API_VERSION:-1.16.1}" \
-    NAVIDROME_ALLOWED_USERS="$NAVIDROME_ALLOWED_USERS" \
-    SQUIDIFY_ENABLED="$SQUIDIFY_ENABLED" \
-    SQUIDIFY_BASE_URL="$SQUIDIFY_BASE_URL" \
-    SQUIDIFY_USERNAME="$SQUIDIFY_USERNAME" \
-    SQUIDIFY_PASSWORD=[REDACTED] \
-    SQUIDIFY_ALLOWED_USERS="$SQUIDIFY_ALLOWED_USERS" \
-    LOCAL_LIBRARY_ENABLED="$LOCAL_LIBRARY_ENABLED" \
-    LOCAL_LIBRARY_PATH="$LOCAL_LIBRARY_PATH" \
-    LOCAL_LIBRARY_ALLOWED_USERS="$LOCAL_LIBRARY_ALLOWED_USERS" \
-    LOCAL_LIBRARY_MAX_UPLOAD_BYTES="$LOCAL_LIBRARY_MAX_UPLOAD_BYTES" \
-    MULTIPART_MAX_FILE_SIZE="$MULTIPART_MAX_FILE_SIZE" \
-    MULTIPART_MAX_REQUEST_SIZE="$MULTIPART_MAX_REQUEST_SIZE" \
-    "${MVN_CMD[@]}" spring-boot:run 2>&1 | tee -a "$BACKEND_LOG"
-) &
-STARTED_PIDS+=("$!")
-
-if ! wait_for_port 127.0.0.1 "$BACKEND_PORT" "Backend" 60; then
-  warn "backend did not open port $BACKEND_PORT within 60s"
-  warn "check $BACKEND_LOG"
+if [[ "$BACKEND_ONLY" == false ]]; then
+  export VITE_BACKEND_URL="${VITE_BACKEND_URL:-http://127.0.0.1:$BACKEND_PORT}"
+  start_process frontend "$ROOT_DIR" pnpm --dir "$FRONTEND_DIR" dev --host 127.0.0.1 --port "$FRONTEND_PORT" --strictPort
+  wait_for_url "http://127.0.0.1:$FRONTEND_PORT" "Vite frontend"
 fi
 
-info "starting frontend in background"
-(
-  cd "$FRONTEND_DIR"
-  VITE_BACKEND_URL="http://127.0.0.1:$BACKEND_PORT" \
-    npm run dev -- --host "$FRONTEND_HOST" --port "$FRONTEND_PORT" --strictPort 2>&1 | tee -a "$FRONTEND_LOG"
-) &
-STARTED_PIDS+=("$!")
-
-if [[ "$SKIP_BROWSER" == false ]]; then
-  FRONTEND_URL="http://$FRONTEND_HOST:$FRONTEND_PORT"
+if [[ "$SKIP_BROWSER" == false && "$BACKEND_ONLY" == false ]]; then
+  URL="http://127.0.0.1:$FRONTEND_PORT"
   if command -v cmd.exe >/dev/null 2>&1; then
-    cmd.exe //c start "" "$FRONTEND_URL" >/dev/null 2>&1 || true
+    cmd.exe //c start "" "$URL" >/dev/null 2>&1 || true
+  elif command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$URL" >/dev/null 2>&1 || true
   fi
 fi
 
-cat <<EOF
-
-Started dev processes in this Git Bash session.
-
-Logs:
-  Netease API: $NETEASE_LOG
-  Backend:     $BACKEND_LOG
-  Frontend:    $FRONTEND_LOG
-
-URLs:
-  Frontend:    http://$FRONTEND_HOST:$FRONTEND_PORT
-  Backend:     http://127.0.0.1:$BACKEND_PORT
-  Netease API: $NETEASE_API_URL
-
-Press Ctrl+C in this terminal to stop processes started by this script.
-EOF
-
+info "development processes are running; press Ctrl+C to stop only these child processes"
 wait

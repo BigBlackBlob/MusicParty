@@ -4,3 +4,6 @@
 /backend-go/** text eol=lf
 /music-party-web/src/contracts/generated/** text eol=lf
 /.github/workflows/go-backend*.yml text eol=lf
+/start-dev.sh text eol=lf
+/start-netease-api.sh text eol=lf
+/local-verification.sh text eol=lf

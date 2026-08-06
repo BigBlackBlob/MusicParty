@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	databasePath := flag.String("db", "", "path to a Java-initialized SQLite database")
+	databasePath := flag.String("db", "", "path to a frozen or migration fixture SQLite database")
 	outputDirectory := flag.String("out", "", "directory for schema.sql, schema.json, and schema.sha256")
 	flag.Parse()
 	if *databasePath == "" || *outputDirectory == "" {
