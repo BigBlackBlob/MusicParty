@@ -33,16 +33,12 @@ build/
 /data/
 /cached_media/
 /packaging/
-/music_party/data/*
-/music_party/cached_media/
+/music_party/data/**
+/music_party/cached_media/**
 /music_party/backups/
+/backend-go/bin/
 /backend-go/data/
 /backend-go/coverage.out
-### Go rewrite acceptance runtime artifacts ###
-/backend-go/acceptance/stage8/*.*
-/backend-go/acceptance/**/*.exe
-/backend-go/acceptance/**/*-linux-amd64
-/backend-go/acceptance/**/*.db
-/backend-go/acceptance/**/*.log
+/playwright-acceptance.png
 /music-party-web/playwright-report/
 /music-party-web/test-results/
