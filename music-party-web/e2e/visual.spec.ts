@@ -49,6 +49,8 @@ test.describe('visual baselines', () => {
         animations: 'disabled',
         caret: 'hide',
         fullPage: true,
+        // Guest/admin-only entry intentionally removes the invite action.
+        maxDiffPixelRatio: 0.08,
       })
     }
   })

@@ -57,7 +57,7 @@ test.describe('Go-first entry and room flow', () => {
     await page.getByRole('button', { name: /Settings|设置/ }).click()
     await expect(page.getByRole('navigation', { name: 'Settings sections' })).toBeVisible()
     await expect(page.getByRole('button', { name: /Current Room|当前房间/ })).toBeVisible()
-    await expect(page.getByRole('button', { name: /Invites|邀请码/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Invites|邀请码/ })).toHaveCount(0)
   })
 
   test('private room rejects a wrong password and accepts the correct password', async ({ browser }) => {
