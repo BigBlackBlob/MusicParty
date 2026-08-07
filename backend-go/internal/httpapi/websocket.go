@@ -320,18 +320,6 @@ func (api *WebSocketAPI) scheduleResync(ctx context.Context, client *wsruntime.C
 	}()
 }
 
-func requiresMember(kind string) bool {
-	switch kind {
-	case "enqueue", "enqueue.playlist", "enqueue.album", "enqueue.room-playlist",
-		"control.next", "control.toggle-pause", "control.toggle-shuffle", "control.seek", "control.like",
-		"queue.remove", "queue.top", "queue.batch-remove", "queue.batch-top", "queue.reorder",
-		"rooms.create", "rooms.delete":
-		return true
-	default:
-		return false
-	}
-}
-
 func (api *WebSocketAPI) enqueueRemoteCollection(ctx context.Context, client *wsruntime.Client, runtime *realtime.RoomRuntime, envelope inboundEnvelope, album bool) {
 	session := client.SessionSnapshot()
 	request, err := decodePayload[struct {
