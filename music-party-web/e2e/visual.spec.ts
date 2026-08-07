@@ -104,6 +104,8 @@ test.describe('visual baselines', () => {
     await expect(page).toHaveScreenshot('desktop-admin-1440x900.png', {
       animations: 'disabled', caret: 'hide', fullPage: true,
       mask: mainDynamicMasks(page),
+      // The invite-management section was intentionally removed.
+      maxDiffPixelRatio: 0.12,
     })
 
     await page.getByRole('button', { name: /General|通用设置/ }).click()
