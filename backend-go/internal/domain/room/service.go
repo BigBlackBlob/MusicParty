@@ -107,12 +107,7 @@ func (s *Service) CanManage(ctx context.Context, roomID, token string) (account.
 	if err != nil {
 		return account.Session{}, false
 	}
-	if session.Admin() {
-		return session, true
-	}
-	var role string
-	err = s.store.Reader().QueryRowContext(ctx, "select role from room_membership where room_id=? and public_id=?", roomID, session.PublicID).Scan(&role)
-	return session, err == nil && role == "OWNER"
+	return session, session.Admin()
 }
 func (s *Service) Update(ctx context.Context, roomID, token, name string) (Info, error) {
 	metadata, err := s.Access(ctx, roomID)

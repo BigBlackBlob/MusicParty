@@ -1,15 +1,8 @@
-import type { AccountStatus, LocalTrack, RoomInvite, RoomMember, Session } from '../contracts/generated/models'
+import type { AccountStatus, LocalTrack, RoomMember, Session } from '../contracts/generated/models'
 import { httpClient as client } from '../transport/httpClient'
 
 const accountRequestOptions = { timeout: 60_000 }
 const id = (value: string) => encodeURIComponent(value)
-
-export interface InviteMetadata {
-  roomId: string
-  roomName: string
-  expiresAt: number
-  valid: boolean
-}
 
 export interface SubsonicSource {
   id: string
@@ -43,21 +36,12 @@ export const authApi = {
   getAccountStatus: () => client.get<AccountStatus>('/api/account/status'),
   createGuestSession: (displayName: string) =>
     client.post<Session, { displayName: string }>('/api/account/guest', { displayName }, accountRequestOptions),
-  upgradeGuestToUser: (secret: string) =>
-    client.post<Session, { secret: string }>('/api/account/upgrade', { secret }, accountRequestOptions),
   loginAccount: (username: string, password: string) =>
     client.post<Session, { username: string; password: string }>('/api/account/login', { username, password }, accountRequestOptions),
   getAccountMe: () => client.get<Session>('/api/account/me', accountRequestOptions),
   updateAccountProfile: (displayName: string) =>
     client.put<Session, { displayName: string }>('/api/account/profile', { displayName }, accountRequestOptions),
   logoutAccount: () => client.post<void>('/api/account/logout', undefined, accountRequestOptions),
-  inviteMetadata: (secret: string) => client.get<InviteMetadata>(`/api/join/${id(secret)}/metadata`),
-  redeemInvite: (secret: string, displayName: string) =>
-    client.post<Session, { secret: string; displayName: string }>('/api/invites/redeem', { secret, displayName }, accountRequestOptions),
-  createInvite: (roomId: string, label = '') =>
-    client.post<RoomInvite, { label: string }>(`/api/rooms/${id(roomId)}/invites`, { label }),
-  listInvites: (roomId: string) => client.get<RoomInvite[]>(`/api/rooms/${id(roomId)}/invites`),
-  revokeInvite: (roomId: string, inviteId: string) => client.delete<void>(`/api/rooms/${id(roomId)}/invites/${id(inviteId)}`),
   updatePlatformCredential: (platform: string, credential: string) =>
     client.post<void, { platform: string; credential: string }>('/api/admin/platform-credentials', { platform, credential }),
   listRoomMembers: (roomId: string) => client.get<RoomMember[]>(`/api/rooms/${id(roomId)}/members`),

@@ -13,9 +13,6 @@
           <button type="button" class="min-h-[40px] w-full rounded-md bg-[var(--accent)] font-semibold text-[var(--text-inverse)]" @click="mode = 'guest'">
             以访客身份进入
           </button>
-          <button type="button" class="min-h-[40px] w-full rounded-md bg-[var(--surface-control-active)] font-semibold text-[var(--text-primary)]" @click="mode = 'invite'">
-            使用邀请码加入
-          </button>
           <button type="button" class="min-h-[40px] w-full rounded-md border border-[var(--border-default)] text-sm font-semibold text-[var(--text-secondary)] hover:bg-[var(--surface-3)] hover:text-[var(--text-primary)]" @click="mode = 'admin'">
             平台管理员登录
           </button>
@@ -42,31 +39,6 @@
           </button>
           <button type="button" class="w-full text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
             @click="mode = 'entry'">
-            返回进入方式
-          </button>
-        </form>
-      </template>
-
-      <!-- 邀请码模式 -->
-      <template v-else-if="mode === 'invite'">
-        <h1 class="text-xl font-semibold text-[var(--text-primary)]">加入 {{ roomName || 'MusicParty' }}</h1>
-        <p class="mt-2 text-sm text-[var(--text-secondary)]">填写显示名即可在这台设备上加入。</p>
-        <form class="mt-6 space-y-3" @submit.prevent="redeem">
-          <template v-if="!inviteFromUrl">
-            <label class="block text-sm text-[var(--text-secondary)]" for="invite-secret">邀请码</label>
-            <input id="invite-secret" v-model.trim="inviteSecret" autocomplete="one-time-code"
-              class="w-full rounded-md bg-[var(--surface-2)] px-3 py-2 text-[var(--text-primary)] outline-none focus:ring-2 focus:ring-[var(--accent-muted)]"
-              placeholder="输入邀请链接中的代码" />
-          </template>
-          <label class="block text-sm text-[var(--text-secondary)]" for="invite-display-name">显示名</label>
-          <input id="invite-display-name" v-model.trim="displayName" autofocus maxlength="32" autocomplete="nickname"
-            class="w-full rounded-md bg-[var(--surface-2)] px-3 py-2 text-[var(--text-primary)] outline-none focus:ring-2 focus:ring-[var(--accent-muted)]"
-            placeholder="你想被怎样称呼" />
-          <button class="min-h-[40px] w-full rounded-md bg-[var(--accent)] font-semibold text-[var(--text-inverse)] disabled:opacity-50"
-            :disabled="loading || !displayName || !inviteSecret">
-            {{ loading ? '正在加入…' : '使用邀请码加入' }}
-          </button>
-          <button v-if="!inviteFromUrl" type="button" class="w-full text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]" @click="mode = 'entry'">
             返回进入方式
           </button>
         </form>
@@ -110,13 +82,9 @@ import type { Session } from '../contracts/generated/models';
 import { isAPIError } from '../transport/errors';
 
 const userStore = useUserStore();
-type EntryMode = 'loading' | 'entry' | 'guest' | 'invite' | 'admin' | 'error';
+type EntryMode = 'loading' | 'entry' | 'guest' | 'admin' | 'error';
 const mode = ref<EntryMode>('loading');
-const inviteSecret = ref('');
-const inviteFromUrl = ref(false);
-const roomName = ref('');
 const guestName = ref('');
-const displayName = ref('');
 const adminUsername = ref('');
 const adminPassword = ref('');
 const loading = ref(false);
@@ -124,11 +92,6 @@ const errorMessage = ref('');
 
 const finish = (session: Session) => {
   userStore.initAccount(session);
-};
-
-const secretFromLocation = () => {
-  const match = window.location.pathname.match(/^\/join\/([^/]+)$/);
-  return match?.[1] ? decodeURIComponent(match[1]) : '';
 };
 
 const load = async () => {
@@ -149,24 +112,7 @@ const load = async () => {
     userStore.status = 'anonymous';
   }
 
-  // 检查是否有邀请码
-  inviteSecret.value = secretFromLocation();
-  inviteFromUrl.value = Boolean(inviteSecret.value);
-  if (inviteSecret.value) {
-    mode.value = 'invite';
-    try {
-      const metadata = await authApi.inviteMetadata(inviteSecret.value);
-      roomName.value = metadata.roomName || '';
-    } catch {
-      errorMessage.value = '这个邀请无效或已失效。';
-      inviteSecret.value = '';
-      inviteFromUrl.value = false;
-      mode.value = 'entry';
-    }
-  } else {
-    // 默认访客模式
-    mode.value = 'entry';
-  }
+  mode.value = 'entry';
 };
 
 const enterAsGuest = async () => {
@@ -179,21 +125,6 @@ const enterAsGuest = async () => {
   } catch (err) {
     errorMessage.value = '创建访客会话失败，请重试。';
     console.error('Guest session error:', err);
-  } finally {
-    loading.value = false;
-  }
-};
-
-const redeem = async () => {
-  if (!displayName.value || !inviteSecret.value || loading.value) return;
-  loading.value = true;
-  errorMessage.value = '';
-  try {
-    const session = await authApi.redeemInvite(inviteSecret.value, displayName.value);
-    window.history.replaceState({}, '', '/');
-    finish(session);
-  } catch {
-    errorMessage.value = '这个邀请无效、已失效，或已被使用。';
   } finally {
     loading.value = false;
   }

@@ -146,7 +146,7 @@ func (s *Service) Login(ctx context.Context, username, password string) (Session
 	var account storesqlite.UserAccount
 	var last sql.NullInt64
 	err = s.store.Reader().QueryRowContext(ctx, `select username,public_id,password_hash,role,enabled,created_at,updated_at,last_login_at from user_account where username=?`, username).Scan(&account.Username, &account.PublicID, &account.PasswordHash, &account.Role, &account.Enabled, &account.CreatedAt, &account.UpdatedAt, &last)
-	if err != nil || !account.Enabled || !security.CheckPassword(account.PasswordHash, password) {
+	if err != nil || !account.Enabled || (account.Role != "PLATFORM_ADMIN" && account.Role != "ADMIN") || !security.CheckPassword(account.PasswordHash, password) {
 		return Session{}, ErrInvalidLogin
 	}
 	now := s.now().UnixMilli()
@@ -191,7 +191,7 @@ func (s *Service) UpdateProfile(ctx context.Context, token, displayName string) 
 	}
 	now := s.now().UnixMilli()
 	if err := s.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, "update user_profile set display_name=?,is_guest=0,last_seen_at=? where public_id=?", displayName, now, session.PublicID)
+		_, err := tx.ExecContext(ctx, "update user_profile set display_name=?,last_seen_at=? where public_id=?", displayName, now, session.PublicID)
 		return err
 	}); err != nil {
 		return Session{}, err

@@ -44,16 +44,12 @@ func (api *AuthAPI) SetSessionCloser(closer sessionCloser) { api.sessionCloser =
 func (api *AuthAPI) SetSessionPresenceUpdater(updater sessionPresenceUpdater) { api.presence = updater }
 func (api *AuthAPI) Routes(r chi.Router) {
 	r.Get("/api/account/status", Adapt(api.status))
-	r.Post("/api/account/register", Adapt(api.register))
 	r.Post("/api/account/login", Adapt(api.login))
 	r.Post("/api/account/guest", Adapt(api.createGuest))
-	r.Post("/api/account/upgrade", Adapt(api.upgradeGuest))
 	r.Get("/api/account/me", Adapt(api.me))
 	r.Post("/api/account/logout", Adapt(api.logout))
 	r.Post("/api/account/change-password", Adapt(api.changePassword))
 	r.Put("/api/account/profile", Adapt(api.profile))
-	r.Get("/api/join/{secret}/metadata", Adapt(api.inviteMetadata))
-	r.Post("/api/invites/redeem", Adapt(api.redeem))
 }
 func (api *AuthAPI) status(w http.ResponseWriter, r *http.Request) error {
 	value, err := api.service.Status(r.Context())
@@ -61,10 +57,6 @@ func (api *AuthAPI) status(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	writeJSON(w, value)
-	return nil
-}
-func (*AuthAPI) register(w http.ResponseWriter, _ *http.Request) error {
-	writeErrorJSON(w, http.StatusGone, map[string]string{"message": "Member passwords were replaced by invitation links"})
 	return nil
 }
 func (api *AuthAPI) createGuest(w http.ResponseWriter, r *http.Request) error {
@@ -90,38 +82,6 @@ func (api *AuthAPI) createGuest(w http.ResponseWriter, r *http.Request) error {
 	writeJSON(w, session)
 	return nil
 }
-func (api *AuthAPI) upgradeGuest(w http.ResponseWriter, r *http.Request) error {
-	var request struct {
-		Secret string `json:"secret"`
-	}
-	if err := decodeJSONBody(r, &request); err != nil {
-		return &APIError{Status: http.StatusBadRequest, Message: "Invalid request body"}
-	}
-	session, err := api.service.UpgradeGuestToUser(r.Context(), sessionToken(r), request.Secret)
-	if err != nil {
-		status := http.StatusBadRequest
-		if err.Error() == "Unknown session token" {
-			status = http.StatusUnauthorized
-		} else if err.Error() == "session is already a registered user" {
-			status = http.StatusConflict
-		} else if err.Error() == "Invitation is invalid or expired" {
-			status = http.StatusUnauthorized
-		}
-		writeErrorJSON(w, status, map[string]string{"message": err.Error()})
-		return nil
-	}
-	cookies, err := api.cookies.EstablishMember(r, session.SessionToken)
-	if err != nil {
-		return err
-	}
-	for _, cookie := range cookies {
-		http.SetCookie(w, cookie)
-	}
-	session.SessionToken = ""
-	writeJSON(w, session)
-	return nil
-}
-
 func (api *AuthAPI) login(w http.ResponseWriter, r *http.Request) error {
 	ip := ClientIP(r)
 	if retry, blocked := api.limiter.blocked(ip); blocked {
@@ -237,38 +197,6 @@ func (api *AuthAPI) profile(w http.ResponseWriter, r *http.Request) error {
 		api.presence.UpdateUserSession(session)
 	}
 	writeJSON(w, session)
-	return nil
-}
-func (api *AuthAPI) inviteMetadata(w http.ResponseWriter, r *http.Request) error {
-	value := api.service.InviteMetadata(r.Context(), chi.URLParam(r, "secret"))
-	if !value.Valid {
-		writeJSONStatus(w, http.StatusNotFound, map[string]bool{"valid": false})
-		return nil
-	}
-	writeJSON(w, value)
-	return nil
-}
-func (api *AuthAPI) redeem(w http.ResponseWriter, r *http.Request) error {
-	var request struct {
-		Secret      string `json:"secret"`
-		DisplayName string `json:"displayName"`
-	}
-	if err := decodeJSONBody(r, &request); err != nil {
-		return &APIError{Status: 400, Message: "Invalid request body"}
-	}
-	session, err := api.service.RedeemInvite(r.Context(), request.Secret, request.DisplayName)
-	if err != nil {
-		writeErrorJSON(w, http.StatusUnauthorized, map[string]string{"message": "Invitation is invalid or expired"})
-		return nil
-	}
-	cookies, err := api.cookies.EstablishMember(r, session.SessionToken)
-	if err != nil {
-		return err
-	}
-	for _, cookie := range cookies {
-		http.SetCookie(w, cookie)
-	}
-	writeJSON(w, map[string]any{"publicId": session.PublicID, "displayName": session.DisplayName, "role": session.Role, "guest": session.Guest, "enabled": session.Enabled, "lastLoginAt": session.LastLoginAt})
 	return nil
 }
 func decodeJSONBody(r *http.Request, target any) error {

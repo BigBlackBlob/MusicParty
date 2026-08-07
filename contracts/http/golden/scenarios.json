@@ -24,12 +24,6 @@
       "id": "rooms-list",
       "method": "GET",
       "path": "/api/rooms"
-    },
-    {
-      "expectedStatus": 404,
-      "id": "invite-not-found",
-      "method": "GET",
-      "path": "/api/join/not-a-real-invite/metadata"
     }
   ],
   "version": 2

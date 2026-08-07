@@ -284,37 +284,9 @@
         "x-go-source": "backend-go/internal/httpapi"
       }
     },
-    "/api/account/register": {
-      "post": {
-        "operationId": "post.api.account.register",
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "default": {
-            "$ref": "#/components/responses/Error"
-          }
-        },
-        "x-go-source": "backend-go/internal/httpapi"
-      }
-    },
     "/api/account/status": {
       "get": {
         "operationId": "get.api.account.status",
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "default": {
-            "$ref": "#/components/responses/Error"
-          }
-        },
-        "x-go-source": "backend-go/internal/httpapi"
-      }
-    },
-    "/api/account/upgrade": {
-      "post": {
-        "operationId": "post.api.account.upgrade",
         "responses": {
           "200": {
             "description": "Success"
@@ -483,34 +455,6 @@
     "/api/config": {
       "get": {
         "operationId": "get.api.config",
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "default": {
-            "$ref": "#/components/responses/Error"
-          }
-        },
-        "x-go-source": "backend-go/internal/httpapi"
-      }
-    },
-    "/api/invites/redeem": {
-      "post": {
-        "operationId": "post.api.invites.redeem",
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "default": {
-            "$ref": "#/components/responses/Error"
-          }
-        },
-        "x-go-source": "backend-go/internal/httpapi"
-      }
-    },
-    "/api/join/{secret}/metadata": {
-      "get": {
-        "operationId": "get.api.join.secret.metadata",
         "responses": {
           "200": {
             "description": "Success"
@@ -989,46 +933,6 @@
       },
       "put": {
         "operationId": "put.api.rooms.roomId",
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "default": {
-            "$ref": "#/components/responses/Error"
-          }
-        },
-        "x-go-source": "backend-go/internal/httpapi"
-      }
-    },
-    "/api/rooms/{roomId}/invites": {
-      "get": {
-        "operationId": "get.api.rooms.roomId.invites",
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "default": {
-            "$ref": "#/components/responses/Error"
-          }
-        },
-        "x-go-source": "backend-go/internal/httpapi"
-      },
-      "post": {
-        "operationId": "post.api.rooms.roomId.invites",
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "default": {
-            "$ref": "#/components/responses/Error"
-          }
-        },
-        "x-go-source": "backend-go/internal/httpapi"
-      }
-    },
-    "/api/rooms/{roomId}/invites/{inviteId}": {
-      "delete": {
-        "operationId": "delete.api.rooms.roomId.invites.inviteId",
         "responses": {
           "200": {
             "description": "Success"

@@ -36,16 +36,13 @@ export const useUserStore = defineStore('user', () => {
   }))
   const accountLastLoginAt = computed(() => account.value?.lastLoginAt ?? null)
   const hasDisplayName = computed(() => Boolean(currentUser.value.name.trim() && currentUser.value.name !== '游客'))
-  const accountType = computed<'guest' | 'member' | 'admin'>(() => {
-    if (isAdmin.value) return 'admin'
-    return isGuest.value ? 'guest' : 'member'
-  })
+  const accountType = computed<'guest' | 'admin'>(() => isAdmin.value ? 'admin' : 'guest')
   const capabilities = computed<Capabilities>(() => ({
     canUseRoom: status.value === 'authenticated',
-    canCreateRoom: !isGuest.value,
+    canCreateRoom: isAdmin.value,
     canManageCurrentRoom: isAdmin.value,
     canManageMembers: isAdmin.value,
-    canManageInvites: !isGuest.value,
+    canManageInvites: false,
     canManageSite: isAdmin.value,
     canUploadLocalMedia: isAdmin.value
   }))
@@ -53,16 +50,15 @@ export const useUserStore = defineStore('user', () => {
   const isAuthPassed = computed(() => status.value === 'authenticated')
   const isSignedIn = computed(() => status.value === 'authenticated' && Boolean(publicId.value))
   const canManageRooms = computed(() => capabilities.value.canManageCurrentRoom)
-  const canCreatePlaylists = computed(() => !isGuest.value)
+  const canCreatePlaylists = computed(() => isSignedIn.value)
 
-  function capabilitiesForRoom(creatorPublicId?: string): Capabilities {
-    const ownsRoom = Boolean(creatorPublicId && creatorPublicId === publicId.value)
-    const managesRoom = isAdmin.value || ownsRoom
+  function capabilitiesForRoom(_creatorPublicId?: string): Capabilities {
+    const managesRoom = isAdmin.value
     return {
       ...capabilities.value,
       canManageCurrentRoom: managesRoom,
       canManageMembers: managesRoom,
-      canManageInvites: managesRoom
+      canManageInvites: false
     }
   }
 
@@ -79,7 +75,7 @@ export const useUserStore = defineStore('user', () => {
       publicId: session.publicId,
       username: session.username || '',
       displayName: session.displayName || session.username || '',
-      role: session.role || (session.guest ? 'GUEST' : 'MEMBER'),
+      role: session.role || 'GUEST',
       guest: session.guest,
       enabled: session.enabled ?? true,
       lastLoginAt: session.lastLoginAt ?? null

@@ -478,12 +478,7 @@ func (r *RoomRuntime) advance(ctx context.Context) error {
 		nextState.CurrentEnqueuerName = nil
 		nextState.Paused = true
 	} else {
-		index := 0
-		if nextState.Shuffle {
-			index = rand.IntN(len(nextQueue))
-		}
-		item := nextQueue[index]
-		nextQueue = slices.Delete(nextQueue, index, index+1)
+		item := takeNext(&nextState, &nextQueue)
 		nextState.CurrentMusic = playableMusic(item.Music)
 		nextState.CurrentEnqueuerID = &item.EnqueuedBy.PublicID
 		nextState.CurrentEnqueuerName = &item.EnqueuedBy.Name
@@ -573,8 +568,7 @@ func startFirst(state *storesqlite.PlaybackState, queue *[]storesqlite.QueueItem
 	if state.CurrentMusic != nil || len(*queue) == 0 {
 		return false
 	}
-	item := (*queue)[0]
-	*queue = slices.Delete(*queue, 0, 1)
+	item := takeNext(state, queue)
 	now := time.Now().UnixMilli()
 	state.CurrentMusic = playableMusic(item.Music)
 	state.CurrentEnqueuerID = &item.EnqueuedBy.PublicID
@@ -587,6 +581,18 @@ func startFirst(state *storesqlite.PlaybackState, queue *[]storesqlite.QueueItem
 	state.StateVersion++
 	state.LastPersistedAt = now
 	return true
+}
+
+// takeNext selects and removes one item while preserving the order of the
+// remaining visible queue.
+func takeNext(state *storesqlite.PlaybackState, queue *[]storesqlite.QueueItem) storesqlite.QueueItem {
+	index := 0
+	if state.Shuffle {
+		index = rand.IntN(len(*queue))
+	}
+	item := (*queue)[index]
+	*queue = slices.Delete(*queue, index, index+1)
+	return item
 }
 
 func playableMusic(music storesqlite.Music) *storesqlite.PlayableMusic {

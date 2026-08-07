@@ -105,11 +105,6 @@ func (api *WebSocketAPI) canEnterRoom(r *http.Request, roomID string, session ac
 	if visibility != "PRIVATE" || session.Admin() {
 		return true
 	}
-	var count int
-	_ = api.store.Reader().QueryRowContext(r.Context(), "select count(1) from room_membership where room_id=? and public_id=?", roomID, session.PublicID).Scan(&count)
-	if count > 0 {
-		return true
-	}
 	proof, _ := r.Cookie(RoomAccessCookieName)
 	return validRoomAccessToken(roomAccessSecret(api.cfg.Auth.RoomAccessTokenSecret), cookieValue(proof), roomID, session.PublicID, passwordVersion, time.Now())
 }
@@ -144,15 +139,8 @@ func decodePayload[T any](raw json.RawMessage) (T, error) {
 func (api *WebSocketAPI) dispatch(ctx context.Context, client *wsruntime.Client, runtime *realtime.RoomRuntime, envelope inboundEnvelope) {
 	kind := canonical(envelope.Type)
 	session := client.SessionSnapshot()
-	if session.Guest && requiresMember(kind) {
-		if kind == "queue.reorder" {
-			request, _ := decodePayload[struct {
-				MutationID string `json:"mutationId"`
-			}](envelope.Payload)
-			api.nack(client, "queue.reorder.nack", request.MutationID, errors.New("guest"))
-		} else {
-			api.eventWithMetadata(client, "CONTROL_DENIED", "请先设置昵称再执行此操作", map[string]any{"requiresDisplayName": true})
-		}
+	if (kind == "rooms.create" || kind == "rooms.delete") && !session.Admin() {
+		api.event(client, "CONTROL_DENIED", "administrator required")
 		return
 	}
 	switch kind {

@@ -1,5 +1,5 @@
 {
-  "routeCount": 97,
+  "routeCount": 90,
   "routes": [
     {
       "method": "GET",
@@ -104,21 +104,9 @@
       "source": "backend-go/internal/httpapi"
     },
     {
-      "method": "POST",
-      "path": "/api/account/register",
-      "operationId": "post.api.account.register",
-      "source": "backend-go/internal/httpapi"
-    },
-    {
       "method": "GET",
       "path": "/api/account/status",
       "operationId": "get.api.account.status",
-      "source": "backend-go/internal/httpapi"
-    },
-    {
-      "method": "POST",
-      "path": "/api/account/upgrade",
-      "operationId": "post.api.account.upgrade",
       "source": "backend-go/internal/httpapi"
     },
     {
@@ -191,18 +179,6 @@
       "method": "GET",
       "path": "/api/config",
       "operationId": "get.api.config",
-      "source": "backend-go/internal/httpapi"
-    },
-    {
-      "method": "POST",
-      "path": "/api/invites/redeem",
-      "operationId": "post.api.invites.redeem",
-      "source": "backend-go/internal/httpapi"
-    },
-    {
-      "method": "GET",
-      "path": "/api/join/{secret}/metadata",
-      "operationId": "get.api.join.secret.metadata",
       "source": "backend-go/internal/httpapi"
     },
     {
@@ -413,24 +389,6 @@
       "method": "PUT",
       "path": "/api/rooms/{roomId}",
       "operationId": "put.api.rooms.roomId",
-      "source": "backend-go/internal/httpapi"
-    },
-    {
-      "method": "GET",
-      "path": "/api/rooms/{roomId}/invites",
-      "operationId": "get.api.rooms.roomId.invites",
-      "source": "backend-go/internal/httpapi"
-    },
-    {
-      "method": "POST",
-      "path": "/api/rooms/{roomId}/invites",
-      "operationId": "post.api.rooms.roomId.invites",
-      "source": "backend-go/internal/httpapi"
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/rooms/{roomId}/invites/{inviteId}",
-      "operationId": "delete.api.rooms.roomId.invites.inviteId",
       "source": "backend-go/internal/httpapi"
     },
     {

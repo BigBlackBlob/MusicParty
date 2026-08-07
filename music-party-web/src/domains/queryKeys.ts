@@ -24,9 +24,6 @@ export const queryKeys = {
   members: {
     room: (roomId: string) => ['members', roomId] as const
   },
-  invites: {
-    room: (roomId: string) => ['invites', roomId] as const
-  },
   admin: {
     subsonic: (roomId: string) => ['admin', 'subsonic', roomId] as const,
     localTracks: () => ['admin', 'local-tracks'] as const,

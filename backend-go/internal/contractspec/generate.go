@@ -180,7 +180,6 @@ func goHTTPScenarios() map[string]any {
 			map[string]any{"id": "account-status", "method": "GET", "path": "/api/account/status", "expectedStatus": 200},
 			map[string]any{"id": "account-me-unauthenticated", "method": "GET", "path": "/api/account/me", "expectedStatus": 401},
 			map[string]any{"id": "rooms-list", "method": "GET", "path": "/api/rooms", "expectedStatus": 200},
-			map[string]any{"id": "invite-not-found", "method": "GET", "path": "/api/join/not-a-real-invite/metadata", "expectedStatus": 404},
 		},
 	}
 }

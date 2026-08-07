@@ -41,20 +41,14 @@ func (api *RoomAPI) Routes(r chi.Router) {
 	if api.authService != nil {
 		r.With(RequireSession(api.authService)).Put("/api/rooms/{roomId}", Adapt(api.update))
 		r.With(RequireSession(api.authService)).Delete("/api/rooms/{roomId}", Adapt(api.delete))
-		r.With(RequireSession(api.authService)).Post("/api/rooms/{roomId}/invites", Adapt(api.createInvite))
-		r.With(RequireSession(api.authService)).Get("/api/rooms/{roomId}/invites", Adapt(api.invites))
-		r.With(RequireSession(api.authService)).Delete("/api/rooms/{roomId}/invites/{inviteId}", Adapt(api.revokeInvite))
-		r.With(RequireSession(api.authService)).Get("/api/rooms/{roomId}/members", Adapt(api.members))
-		r.With(RequireSession(api.authService)).Delete("/api/rooms/{roomId}/members/{publicId}", Adapt(api.removeMember))
+		r.With(RequireAdmin(api.authService)).Get("/api/rooms/{roomId}/members", Adapt(api.members))
+		r.With(RequireAdmin(api.authService)).Delete("/api/rooms/{roomId}/members/{publicId}", Adapt(api.removeMember))
 		r.With(RequireAdmin(api.authService)).Post("/api/rooms/{roomId}/owners/{publicId}", Adapt(api.makeOwner))
 		r.With(RequireAdmin(api.authService)).Delete("/api/rooms/{roomId}/owners/{publicId}", Adapt(api.removeOwner))
 	} else {
 		// Fallback if auth service not set
 		r.Put("/api/rooms/{roomId}", Adapt(api.update))
 		r.Delete("/api/rooms/{roomId}", Adapt(api.delete))
-		r.Post("/api/rooms/{roomId}/invites", Adapt(api.createInvite))
-		r.Get("/api/rooms/{roomId}/invites", Adapt(api.invites))
-		r.Delete("/api/rooms/{roomId}/invites/{inviteId}", Adapt(api.revokeInvite))
 		r.Get("/api/rooms/{roomId}/members", Adapt(api.members))
 		r.Delete("/api/rooms/{roomId}/members/{publicId}", Adapt(api.removeMember))
 		r.Post("/api/rooms/{roomId}/owners/{publicId}", Adapt(api.makeOwner))
@@ -159,34 +153,6 @@ func (api *RoomAPI) delete(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 	writeJSON(w, map[string]string{"message": "ROOM DELETED"})
-	return nil
-}
-func (api *RoomAPI) createInvite(w http.ResponseWriter, r *http.Request) error {
-	var request struct {
-		Label string `json:"label"`
-	}
-	if r.ContentLength != 0 {
-		if err := decodeJSONBody(r, &request); err != nil {
-			return &APIError{Status: 400, Message: "Invalid request body"}
-		}
-	}
-	value, err := api.service.CreateInvite(r.Context(), chi.URLParam(r, "roomId"), sessionToken(r), request.Label)
-	return roomResult(w, value, err)
-}
-func (api *RoomAPI) invites(w http.ResponseWriter, r *http.Request) error {
-	value, err := api.service.ListInvites(r.Context(), chi.URLParam(r, "roomId"), sessionToken(r))
-	return roomResult(w, value, err)
-}
-func (api *RoomAPI) revokeInvite(w http.ResponseWriter, r *http.Request) error {
-	changed, err := api.service.RevokeInvite(r.Context(), chi.URLParam(r, "roomId"), chi.URLParam(r, "inviteId"), sessionToken(r))
-	if err != nil {
-		return roomResult(w, nil, err)
-	}
-	if !changed {
-		w.WriteHeader(http.StatusNotFound)
-	} else {
-		w.WriteHeader(http.StatusNoContent)
-	}
 	return nil
 }
 func (api *RoomAPI) members(w http.ResponseWriter, r *http.Request) error {

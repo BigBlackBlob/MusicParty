@@ -121,10 +121,6 @@
             </button>
           </section>
 
-          <section v-else-if="activeSection === 'invites'" class="settings-section">
-            <InviteManager />
-          </section>
-
           <section v-else class="settings-section">
             <AdminSettingsPanel :section="activeSection" />
           </section>
@@ -138,7 +134,6 @@
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import AdminSettingsPanel from './AdminSettingsPanel.vue';
-import InviteManager from './InviteManager.vue';
 import PersonalInfoPanel from './PersonalInfoPanel.vue';
 import { useUiStore } from '../stores/ui';
 import { useUserStore } from '../stores/user';
@@ -177,7 +172,6 @@ const sections = computed(() => {
   if (canManageCurrentRoom.value) {
     result.push({ id: 'room', icon: 'meeting_room', label: t('settings.currentRoom') });
   }
-  if (currentRoomCapabilities.value.canManageInvites) result.push({ id: 'invites', icon: 'link', label: t('settings.invites.nav') });
   if (user.capabilities.canManageSite) result.push(
     { id: 'library', icon: 'library_music', label: t('settings.admin.localLibrary') },
     { id: 'sources', icon: 'dns', label: t('settings.admin.sourceManager') },

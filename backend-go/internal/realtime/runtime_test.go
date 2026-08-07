@@ -136,3 +136,31 @@ func TestPauseFreezesCurrentPosition(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, first["nowPlaying"].(map[string]any)["currentPosition"], second["nowPlaying"].(map[string]any)["currentPosition"])
 }
+
+func TestTakeNextPreservesListAndShuffleQueueSemantics(t *testing.T) {
+	items := []storesqlite.QueueItem{
+		{QueueID: "a"}, {QueueID: "b"}, {QueueID: "c"}, {QueueID: "d"},
+	}
+	state := storesqlite.PlaybackState{}
+	selected := takeNext(&state, &items)
+	require.Equal(t, "a", selected.QueueID)
+	require.Equal(t, []string{"b", "c", "d"}, queueIDs(items))
+
+	items = []storesqlite.QueueItem{{QueueID: "a"}, {QueueID: "b"}, {QueueID: "c"}, {QueueID: "d"}}
+	state.Shuffle = true
+	selected = takeNext(&state, &items)
+	require.NotContains(t, queueIDs(items), selected.QueueID)
+	require.Len(t, items, 3)
+	originalOrder := map[string]int{"a": 0, "b": 1, "c": 2, "d": 3}
+	for index := 1; index < len(items); index++ {
+		require.Less(t, originalOrder[items[index-1].QueueID], originalOrder[items[index].QueueID])
+	}
+}
+
+func queueIDs(items []storesqlite.QueueItem) []string {
+	ids := make([]string, len(items))
+	for index := range items {
+		ids[index] = items[index].QueueID
+	}
+	return ids
+}

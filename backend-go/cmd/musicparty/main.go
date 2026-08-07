@@ -105,6 +105,9 @@ func run() error {
 				return fmt.Errorf("bootstrap administrator: %w", err)
 			}
 		}
+		if err := storesqlite.MigrateMemberAccountsToGuests(applicationContext, databaseStore); err != nil {
+			return fmt.Errorf("migrate guest-only authentication: %w", err)
+		}
 		authAPI = httpapi.NewAuthAPI(cfg, accountService)
 		roomService := roomdomain.New(databaseStore, accountService)
 		roomAPI = httpapi.NewRoomAPI(roomService, cfg)

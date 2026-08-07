@@ -11,11 +11,6 @@
     <!-- 2. 启动页 (Start Screen) -->
     <!-- 注意：点击 Connect 后，我们先不销毁它，直到 socket 连接成功，或者直接切换布局 -->
     <div v-if="userStore.isAuthPassed && !hasStarted" class="absolute inset-0 z-[var(--z-overlay)] bg-[radial-gradient(circle_at_top,rgba(211,194,243,0.08),transparent_42%),var(--surface-0)] flex flex-col items-center justify-center space-y-8">
-      <!-- 访客升级横幅 -->
-      <div v-if="userStore.accountType === 'guest'" class="w-full max-w-2xl px-4">
-        <GuestUpgradeBanner />
-      </div>
-
       <div class="text-4xl md:text-5xl font-bold tracking-tight text-[var(--text-primary)]">MUSIC PARTY</div>
       <div class="font-mono text-xs text-[var(--text-tertiary)] tracking-[0.3em]">准备就绪</div>
       <div class="w-full max-w-md rounded-2xl border border-[var(--border-default)] bg-[var(--surface-4)]/80 p-4 shadow-lg backdrop-blur">
@@ -196,7 +191,6 @@ import MainLayout from './components/layout/MainLayout.vue';
 import LayoutRenderer from './layouts/LayoutRenderer.vue';
 import AudioEngine from './components/AudioEngine.vue';
 import AuthOverlay from './components/AuthOverlay.vue';
-import GuestUpgradeBanner from './components/GuestUpgradeBanner.vue';
 import SearchModal from './components/SearchModal.vue';
 import NamePromptModal from './components/NamePromptModal.vue';
 import ChatOverlay from './components/ChatOverlay.vue';

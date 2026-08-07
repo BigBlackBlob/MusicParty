@@ -146,8 +146,7 @@ const profileError = ref('');
 const roleLabel = computed(() => userStore.accountType === 'admin' ? t('settings.account.adminRole') : t('settings.account.userRole'));
 const securityAccessCopyKey = computed(() => {
   if (userStore.accountType === 'admin') return 'settings.account.adminPasswordAccess';
-  if (userStore.accountType === 'guest') return 'settings.account.guestAccess';
-  return 'settings.account.inviteMemberAccess';
+  return 'settings.account.guestAccess';
 });
 const accountUsername = computed(() => userStore.currentUser.name);
 const bindingEntries = computed(() => Object.entries(userStore.bindings || {}).filter(([, value]) => value));
