@@ -280,6 +280,7 @@ export default {
     next: 'Next',
     prev: 'Prev',
     shuffle: 'Shuffle',
+    listPlayback: 'List playback',
     like: 'Like',
     unlike: 'Remove from liked',
     volume: 'Volume',

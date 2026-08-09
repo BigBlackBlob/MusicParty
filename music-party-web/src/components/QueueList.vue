@@ -151,13 +151,13 @@ onMounted(() => {
   initSortable();
 });
 
-watch([activeView, selectionMode, queueListRef, () => user.isGuest], async () => {
+watch([activeView, selectionMode, queueListRef], async () => {
   await nextTick();
   if (activeView.value === 'queue') {
     if (!sortableInstance) {
       initSortable();
     } else if (sortableInstance) {
-      sortableInstance.option('disabled', selectionMode.value || user.isGuest);
+      sortableInstance.option('disabled', selectionMode.value);
     }
   } else {
     destroySortable();
@@ -175,7 +175,7 @@ const initSortable = () => {
   sortableInstance = new Sortable(queueListRef.value, {
     animation: 150,
     ghostClass: 'opacity-40',
-    disabled: selectionMode.value || user.isGuest,
+    disabled: selectionMode.value,
     onStart: (evt) => { dragStartedInInteractiveZone = evt.oldIndex < 50; },
     onMove: (evt) => dragStartedInInteractiveZone && [...queueListRef.value.children].indexOf(evt.related) < 50,
     onEnd: (evt) => {

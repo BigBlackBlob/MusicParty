@@ -118,7 +118,7 @@
             class="w-[44px] h-[44px] flex items-center justify-center transition-colors active:scale-90"
             :class="player.isShuffle ? 'text-primary' : 'text-text-secondary hover:text-primary'"
           >
-            <span class="material-symbols-outlined text-[24px]">shuffle</span>
+            <span class="material-symbols-outlined text-[24px]" :aria-label="playModeLabel" :title="playModeLabel">shuffle</span>
           </button>
         </div>
 
@@ -205,6 +205,7 @@ const {
 
 const volumePanelOpen = ref(false);
 const volumePanelContainerRef = ref(null);
+const playModeLabel = computed(() => player.isShuffle ? t('player.shuffle') : t('player.listPlayback'));
 
 const toggleVolumePanel = () => {
   volumePanelOpen.value = !volumePanelOpen.value;

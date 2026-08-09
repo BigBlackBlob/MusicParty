@@ -280,6 +280,7 @@ export default {
     next: '下一首',
     prev: '上一首',
     shuffle: '随机播放',
+    listPlayback: '列表播放',
     like: '喜欢',
     unlike: '取消喜欢',
     volume: '音量',

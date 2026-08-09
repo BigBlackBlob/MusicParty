@@ -460,6 +460,10 @@ func (api *WebSocketAPI) eventWithMetadata(client *wsruntime.Client, code, messa
 }
 func (api *WebSocketAPI) createRoom(ctx context.Context, client *wsruntime.Client, envelope inboundEnvelope) {
 	session := client.SessionSnapshot()
+	if !session.Admin() {
+		api.event(client, "ROOM_CREATE_FAILED", "Only platform administrators can create rooms")
+		return
+	}
 	request, err := decodePayload[struct {
 		Name, Password string
 		IsPrivate      bool `json:"isPrivate"`

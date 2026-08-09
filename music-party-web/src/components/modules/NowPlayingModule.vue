@@ -72,7 +72,7 @@
             :aria-label="t('player.shuffle')"
             :title="t('player.shuffle')"
           >
-            <span class="material-symbols-outlined text-[20px]">shuffle</span>
+            <span class="material-symbols-outlined text-[20px]" :aria-label="playModeLabel" :title="playModeLabel">shuffle</span>
           </button>
           <button class="flex h-12 w-12 cursor-not-allowed items-center justify-center rounded-full text-text-secondary opacity-35" :aria-label="t('player.prevUnavailable')" :title="t('player.prevUnavailable')">
             <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">skip_previous</span>
@@ -210,6 +210,7 @@ const volumeValueVisible = ref(false);
 let volumeValueTimer;
 
 const isQueuePlaced = computed(() => layoutStore.placedModuleIds.includes('queue'));
+const playModeLabel = computed(() => player.isShuffle ? t('player.shuffle') : t('player.listPlayback'));
 
 const toggleQueueModule = () => {
   if (isQueuePlaced.value) {
