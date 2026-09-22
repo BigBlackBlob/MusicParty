@@ -61,20 +61,31 @@ func httpContract() map[string]any {
 
 func clientMessageSpecs() []messageSpec {
 	return []messageSpec{
+		{"client.hello", fields("apiVersion", "string", "clientVersion", "string")},
 		{"chat.history.fetch", fields("offset", "number?", "limit", "number?")},
 		{"chat.message", fields("content", "string")},
-		{"control.like", fields()}, {"control.next", fields()},
-		{"control.seek", fields("positionMs", "number")},
-		{"control.toggle-pause", fields()}, {"control.toggle-shuffle", fields()},
+		{"control.like", controlFields("expectedPlayEpoch", "number?")}, {"control.next", controlFields()},
+		{"control.previous", controlFields("expectedPlayEpoch", "number?")},
+		{"control.seek", controlFields("expectedPlayEpoch", "number?", "positionMs", "number")},
+		{"control.toggle-pause", controlFields()}, {"control.toggle-shuffle", controlFields()},
 		{"enqueue", fields("platform", "string", "musicId", "string", "mutationId", "string")},
 		{"enqueue.album", fields("platform", "string", "albumId", "string", "mutationId", "string")},
 		{"enqueue.playlist", fields("platform", "string", "playlistId", "string", "mutationId", "string")},
 		{"enqueue.room-playlist", fields("playlistId", "string", "mutationId", "string")},
 		{"player.resync", fields()},
+		{"playlist.add-items", fields("scope", "string", "playlistId", "string", "mutationId", "string", "items", "Music[]")},
+		{"playlist.create", fields("scope", "string", "name", "string", "mutationId", "string")},
+		{"playlist.delete", fields("scope", "string", "playlistId", "string", "mutationId", "string")},
+		{"playlist.enqueue", fields("scope", "string", "playlistId", "string", "mutationId", "string")},
+		{"playlist.get", fields("scope", "string", "playlistId", "string", "offset", "number?", "limit", "number?")},
+		{"playlist.list", fields("scope", "string")},
+		{"playlist.remove-items", fields("scope", "string", "playlistId", "string", "trackIds", "string[]", "mutationId", "string")},
+		{"playlist.rename", fields("scope", "string", "playlistId", "string", "name", "string", "mutationId", "string")},
 		{"public-chat.history.fetch", fields("offset", "number?", "limit", "number?")},
 		{"public-chat.message", fields("content", "string")},
 		{"queue.batch-remove", fields("queueIds", "string[]", "mutationId", "string")},
 		{"queue.batch-top", fields("queueIds", "string[]", "mutationId", "string")},
+		{"queue.clear", fields("mutationId", "string")},
 		{"queue.remove", fields("queueId", "string", "mutationId", "string")},
 		{"queue.reorder", fields("mutationId", "string", "oldIndex", "number?", "newIndex", "number?", "queueId", "string?", "targetQueueId", "string?", "position", "string?")},
 		{"queue.top", fields("queueId", "string", "mutationId", "string")},
@@ -88,12 +99,17 @@ func clientMessageSpecs() []messageSpec {
 
 func serverMessageSpecs() []messageSpec {
 	return []messageSpec{
+		{"server.hello", fields("apiVersion", "string", "minimumClientVersion", "string")},
 		directMessage("chat.history", "ChatMessage[]"),
 		directMessage("chat.message", "ChatMessage"),
+		{"control.ack", fields("outcome", "ControlAckOutcome", "code", "string?", "committed", "ControlAckCommitted?", "mutationId", "string?", "replayed", "boolean?")},
 		{"enqueue.ack", fields("accepted", "boolean", "count", "number?", "queueId", "string?", "mutationId", "string")},
 		{"enqueue.nack", fields("accepted", "boolean?", "mutationId", "string", "reason", "string", "queueVersion", "number?")},
 		directMessage("player.events", "PlayerEvent"),
-		{"player.state", fields("nowPlaying", "NowPlaying?", "queue", "QueueItem[]", "isShuffle", "boolean", "isPaused", "boolean", "isPauseLocked", "boolean", "isSkipLocked", "boolean", "isShuffleLocked", "boolean", "isLoading", "boolean", "serverTimestamp", "number", "stateVersion", "number", "playEpoch", "number", "queueVersion", "number")},
+		{"player.state", fields("nowPlaying", "NowPlaying?", "queue", "QueueItem[]", "isShuffle", "boolean", "isPaused", "boolean", "isPauseLocked", "boolean", "isSkipLocked", "boolean", "isShuffleLocked", "boolean", "isLoading", "boolean", "serverTimestamp", "number", "stateVersion", "number", "playEpoch", "number", "queueVersion", "number", "historyCursor", "number", "idempotencyScopeId", "string?", "idempotencyTtlMs", "number?")},
+		{"playlist.ack", fields("operation", "string", "scope", "string", "mutationId", "string", "playlist", "PlaylistSummary?", "playlistId", "string?", "playlists", "PlaylistSummary[]?", "tracks", "PlaylistTrack[]?", "addedCount", "number?", "skippedCount", "number?", "removedCount", "number?", "count", "number?")},
+		{"playlist.data", fields("operation", "string", "scope", "string", "playlists", "PlaylistSummary[]?", "playlistId", "string?", "tracks", "PlaylistTrack[]?")},
+		{"playlist.nack", fields("operation", "string", "reason", "string", "scope", "string?", "mutationId", "string?")},
 		directMessage("public-chat.history", "ChatMessage[]"),
 		directMessage("public-chat.message", "ChatMessage"),
 		{"queue.mutation.ack", fields("mutationId", "string")},
@@ -126,6 +142,10 @@ func fields(values ...string) map[string]fieldSpec {
 	return result
 }
 
+func controlFields(values ...string) map[string]fieldSpec {
+	return fields(append(values, "mutationId", "string?", "idempotencyScopeId", "string?")...)
+}
+
 func websocketSchema(title string, messages []messageSpec) map[string]any {
 	variants := make([]any, 0, len(messages))
 	for _, message := range messages {
@@ -148,6 +168,18 @@ func websocketSchema(title string, messages []messageSpec) map[string]any {
 			properties["payload"] = schemaForType(payloadType)
 		} else {
 			properties["payload"] = map[string]any{"type": "object", "additionalProperties": false, "properties": payloadProperties, "required": requiredPayload}
+			if strings.HasPrefix(message.Name, "control.") && message.Name != "control.ack" {
+				payload := properties["payload"].(map[string]any)
+				payload["dependentRequired"] = map[string]any{"mutationId": []string{"idempotencyScopeId"}, "idempotencyScopeId": []string{"mutationId"}}
+				for _, field := range []string{"mutationId", "idempotencyScopeId"} {
+					payloadProperties[field] = map[string]any{"type": "string", "minLength": 1, "maxLength": 128}
+				}
+				for _, field := range []string{"positionMs", "expectedPlayEpoch"} {
+					if _, ok := payloadProperties[field]; ok {
+						payloadProperties[field] = map[string]any{"type": "integer"}
+					}
+				}
+			}
 		}
 		variants = append(variants, map[string]any{"type": "object", "additionalProperties": false, "required": []string{"type", "payload"}, "properties": properties})
 	}
@@ -187,6 +219,8 @@ func generatedModels() string {
 	return `// Code generated by backend-go/cmd/contractgen. DO NOT EDIT.
 export type AccountType = 'guest' | 'member' | 'admin'
 export type QueuePatchOperation = 'append' | 'remove' | 'move' | 'snapshot' | 'status' | 'clear'
+export type ControlAckOutcome = 'applied' | 'noop' | 'rejected'
+export interface ControlAckCommitted { stateVersion: number; playEpoch: number; queueVersion: number }
 
 export interface Session { publicId: string; username: string; displayName: string; role: string; guest: boolean; enabled: boolean; lastLoginAt: number | null }
 export interface AccountStatus { requiresSetup: boolean }
@@ -221,7 +255,7 @@ export type { AccountStatus, APIError, LocalTrack, Music, PlatformDescriptor, Pl
 func generatedWebSocket(client, server []messageSpec) string {
 	var output strings.Builder
 	output.WriteString("// Code generated by backend-go/cmd/contractgen. DO NOT EDIT.\n")
-	output.WriteString("import type { ChatMessage, NowPlaying, PlayerEvent, PresenceSnapshot, QueueItem, QueuePatchOperation, RoomSummary, UserSummary } from './models'\n\n")
+	output.WriteString("import type { ChatMessage, ControlAckCommitted, ControlAckOutcome, NowPlaying, PlayerEvent, PresenceSnapshot, QueueItem, QueuePatchOperation, RoomSummary, UserSummary } from './models'\n\n")
 	writeEnvelopeTypes(&output, client, "Client")
 	writeEnvelopeTypes(&output, server, "Server")
 	return output.String()

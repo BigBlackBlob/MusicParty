@@ -15,9 +15,9 @@ func TestMappedErrorsMatchJavaShapes(t *testing.T) {
 		wantStatus int
 		want       map[string]any
 	}{
-		{name: "upstream", err: BadGateway("upstream failed"), wantStatus: 502, want: map[string]any{"message": "upstream failed", "status": float64(502)}},
-		{name: "upload", err: UploadTooLarge("MaxUploadSizeExceededException"), wantStatus: 413, want: map[string]any{"message": uploadTooLargeMessage, "error": "MaxUploadSizeExceededException", "status": float64(413)}},
-		{name: "generic", err: errors.New("boom"), wantStatus: 500, want: map[string]any{"message": "An unexpected internal server error occurred.", "error": "InternalServerError", "status": float64(500)}},
+		{name: "upstream", err: BadGateway("upstream failed"), wantStatus: 502, want: map[string]any{"code":"internal-server-error", "message": "upstream failed", "status": float64(502)}},
+		{name: "upload", err: UploadTooLarge("MaxUploadSizeExceededException"), wantStatus: 413, want: map[string]any{"code":"MaxUploadSizeExceededException", "message": uploadTooLargeMessage, "error": "MaxUploadSizeExceededException", "status": float64(413)}},
+		{name: "generic", err: errors.New("boom"), wantStatus: 500, want: map[string]any{"code":"internal-server-error", "message": "An unexpected internal server error occurred.", "error": "InternalServerError", "status": float64(500)}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

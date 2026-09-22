@@ -24,6 +24,19 @@ func TestGoRouteCatalogIsUniqueAndComplete(t *testing.T) {
 	}
 	require.Contains(t, seen, "GET /api/rooms")
 	require.Contains(t, seen, "GET /ws")
+	for _, route := range []string{
+		"GET /api/desktop/v1/health",
+		"GET /api/desktop/v1/ws",
+		"GET /api/desktop/v1/music/{platform}/{songId}/lyrics",
+		"GET /api/desktop/v1/capabilities",
+		"POST /api/desktop/v1/invites/redeem",
+		"GET /api/desktop/v1/search/{platform}",
+		"GET /api/desktop/v1/media/{platform}/{songId}/resolve",
+		"GET /api/desktop/v1/media/{platform}/{songId}/cover",
+		"GET /api/desktop/v1/media/{platform}/{songId}/lyrics",
+	} {
+		require.Contains(t, seen, route)
+	}
 	require.Contains(t, seen, "GET /actuator/health/readiness")
 }
 

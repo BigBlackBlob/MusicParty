@@ -194,6 +194,12 @@ func goWebSocketScenarios() map[string]any {
 			map[string]any{"id": "resync", "sendType": "player.resync", "expectTypes": []string{"player.state"}},
 			map[string]any{"id": "ping", "sendType": "sync.ping", "expectTypes": []string{"sync.pong"}},
 			map[string]any{"id": "presence", "sendType": "users.online", "expectTypes": []string{"users.online"}},
+			map[string]any{"id": "control-toggle-pause-ack", "sendType": "control.toggle-pause", "expectTypes": []string{"control.ack"}},
+			map[string]any{"id": "control-seek-ack", "sendType": "control.seek", "expectTypes": []string{"control.ack"}},
+			map[string]any{"id": "control-like-ack", "sendType": "control.like", "expectTypes": []string{"control.ack"}},
+			map[string]any{"id": "control-mutation-replay", "sendType": "control.toggle-pause", "expectTypes": []string{"control.ack"}},
+			map[string]any{"id": "control-mutation-conflict", "sendType": "control.seek", "expectTypes": []string{"control.ack"}},
+			map[string]any{"id": "control-mutation-scope", "sendType": "control.next", "expectTypes": []string{"control.ack"}},
 		},
 	}
 }

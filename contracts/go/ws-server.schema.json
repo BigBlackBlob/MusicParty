@@ -5,6 +5,47 @@
       "additionalProperties": false,
       "properties": {
         "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "apiVersion": {
+              "type": "string"
+            },
+            "minimumClientVersion": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "apiVersion",
+            "minimumClientVersion"
+          ],
+          "type": "object"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "server.hello"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
           "items": {
             "type": "object",
             "x-typescript-type": "ChatMessage"
@@ -54,6 +95,57 @@
         },
         "type": {
           "const": "chat.message"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "committed": {
+              "type": "object",
+              "x-typescript-type": "ControlAckCommitted"
+            },
+            "mutationId": {
+              "type": "string"
+            },
+            "outcome": {
+              "type": "object",
+              "x-typescript-type": "ControlAckOutcome"
+            },
+            "replayed": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "outcome"
+          ],
+          "type": "object"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "control.ack"
         }
       },
       "required": [
@@ -191,6 +283,15 @@
         "payload": {
           "additionalProperties": false,
           "properties": {
+            "historyCursor": {
+              "type": "number"
+            },
+            "idempotencyScopeId": {
+              "type": "string"
+            },
+            "idempotencyTtlMs": {
+              "type": "number"
+            },
             "isLoading": {
               "type": "boolean"
             },
@@ -234,6 +335,7 @@
             }
           },
           "required": [
+            "historyCursor",
             "isLoading",
             "isPauseLocked",
             "isPaused",
@@ -262,6 +364,189 @@
         },
         "type": {
           "const": "player.state"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "addedCount": {
+              "type": "number"
+            },
+            "count": {
+              "type": "number"
+            },
+            "mutationId": {
+              "type": "string"
+            },
+            "operation": {
+              "type": "string"
+            },
+            "playlist": {
+              "type": "object",
+              "x-typescript-type": "PlaylistSummary"
+            },
+            "playlistId": {
+              "type": "string"
+            },
+            "playlists": {
+              "items": {
+                "type": "object",
+                "x-typescript-type": "PlaylistSummary"
+              },
+              "type": "array"
+            },
+            "removedCount": {
+              "type": "number"
+            },
+            "scope": {
+              "type": "string"
+            },
+            "skippedCount": {
+              "type": "number"
+            },
+            "tracks": {
+              "items": {
+                "type": "object",
+                "x-typescript-type": "PlaylistTrack"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "mutationId",
+            "operation",
+            "scope"
+          ],
+          "type": "object"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "playlist.ack"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "operation": {
+              "type": "string"
+            },
+            "playlistId": {
+              "type": "string"
+            },
+            "playlists": {
+              "items": {
+                "type": "object",
+                "x-typescript-type": "PlaylistSummary"
+              },
+              "type": "array"
+            },
+            "scope": {
+              "type": "string"
+            },
+            "tracks": {
+              "items": {
+                "type": "object",
+                "x-typescript-type": "PlaylistTrack"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "operation",
+            "scope"
+          ],
+          "type": "object"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "playlist.data"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "mutationId": {
+              "type": "string"
+            },
+            "operation": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "operation",
+            "reason"
+          ],
+          "type": "object"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "playlist.nack"
         }
       },
       "required": [

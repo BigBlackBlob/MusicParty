@@ -41,6 +41,7 @@ func ContractRoutes() ([]ContractRoute, error) {
 		&AdminAPI{accounts: new(account.Service)},
 		&MediaAPI{},
 		&WebSocketAPI{},
+		&DesktopAPI{},
 		&StaticAPI{},
 	}
 	for _, api := range apis {

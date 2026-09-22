@@ -224,5 +224,9 @@ func isSafeMethod(method string) bool {
 func writeError(w http.ResponseWriter, status int, code, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": code, "message": message})
+	// Keep every router-level error on the same envelope as Adapt errors.
+	// `error` remains for compatibility with older clients; `code` is the
+	// canonical contract field and `status` avoids making clients infer it
+	// from the HTTP response alone.
+	_ = json.NewEncoder(w).Encode(map[string]any{"code": code, "error": code, "message": message, "status": status})
 }

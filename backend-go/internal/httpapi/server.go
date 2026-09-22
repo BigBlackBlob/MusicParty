@@ -18,7 +18,7 @@ func NewHandler(cfg config.Config, logger *slog.Logger, health *observability.He
 	router.Use(Recover(logger))
 	router.Use(AccessLog(logger, metrics))
 	router.Use(CORS(cfg.Application.AllowedOrigins))
-	router.Use(CSRF(map[string]struct{}{"/api/account/login": {}, "/api/account/guest": {}, "/api/admin/auth/login": {}}))
+	router.Use(CSRF(map[string]struct{}{"/api/account/login": {}, "/api/account/guest": {}, "/api/admin/auth/login": {}, "/api/desktop/v1/invites/redeem": {}, "/api/dev/rooms/": {}}))
 
 	router.Get("/actuator/health", health.Actuator)
 	router.Get("/actuator/health/liveness", health.Liveness)

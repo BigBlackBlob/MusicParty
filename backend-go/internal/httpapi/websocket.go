@@ -23,19 +23,24 @@ import (
 )
 
 type WebSocketAPI struct {
-	cfg       config.Config
-	store     *storesqlite.Store
-	accounts  *account.Service
-	rooms     *roomdomain.Service
-	hub       *wsruntime.Hub
-	runtimes  *realtime.Manager
-	platforms *PlatformAPI
+	cfg           config.Config
+	store         *storesqlite.Store
+	accounts      *account.Service
+	rooms         *roomdomain.Service
+	hub           *wsruntime.Hub
+	runtimes      *realtime.Manager
+	platforms     *PlatformAPI
+	userPlaylists *storesqlite.UserPlaylistRepository
+	roomPlaylists *storesqlite.RoomPlaylistRepository
 }
 
 func NewWebSocketAPI(cfg config.Config, store *storesqlite.Store, accounts *account.Service, rooms *roomdomain.Service, hub *wsruntime.Hub, runtimes *realtime.Manager, platforms *PlatformAPI) *WebSocketAPI {
-	return &WebSocketAPI{cfg: cfg, store: store, accounts: accounts, rooms: rooms, hub: hub, runtimes: runtimes, platforms: platforms}
+	return &WebSocketAPI{cfg: cfg, store: store, accounts: accounts, rooms: rooms, hub: hub, runtimes: runtimes, platforms: platforms, userPlaylists: storesqlite.NewUserPlaylistRepository(store, time.Now, nil), roomPlaylists: storesqlite.NewRoomPlaylistRepository(store, time.Now, nil)}
 }
-func (api *WebSocketAPI) Routes(r chi.Router) { r.Get("/ws", api.handle) }
+func (api *WebSocketAPI) Routes(r chi.Router) {
+	r.Get("/ws", api.handle)
+	r.Get("/api/desktop/v1/ws", api.handle)
+}
 
 type inboundEnvelope struct {
 	Type      string          `json:"type"`
@@ -56,8 +61,15 @@ func (api *WebSocketAPI) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	roomID := defaultValue(r.URL.Query().Get("room-id"), "lounge")
+	desktop := r.URL.Path == "/api/desktop/v1/ws"
+	if desktop {
+		roomID = defaultValue(r.URL.Query().Get("roomId"), "lounge")
+	}
 	if !api.canEnterRoom(r, roomID, session) {
 		_ = connection.Close(websocket.StatusPolicyViolation, "Forbidden")
+		return
+	}
+	if desktop && !desktopHandshake(r.Context(), connection, roomID) {
 		return
 	}
 	client := api.hub.RegisterSession(connection, roomID, session, token)
@@ -162,23 +174,41 @@ func (api *WebSocketAPI) dispatch(ctx context.Context, client *wsruntime.Client,
 		api.enqueueRemoteCollection(ctx, client, runtime, envelope, kind == "enqueue.album")
 	case "enqueue.room-playlist":
 		api.enqueueRoomPlaylist(ctx, client, runtime, envelope)
-	case "control.next":
-		api.control(client, envelope.RequestID, runtime.Next(ctx))
-	case "control.toggle-pause":
-		api.control(client, envelope.RequestID, runtime.TogglePause(ctx))
-	case "control.toggle-shuffle":
-		api.control(client, envelope.RequestID, runtime.ToggleShuffle(ctx))
-	case "control.seek":
-		request, err := decodePayload[struct {
-			PositionMS int64 `json:"positionMs"`
-		}](envelope.Payload)
-		if err != nil {
-			api.nack(client, "queue.mutation.nack", "", err)
+	case "control.next", "control.previous", "control.toggle-pause", "control.toggle-shuffle", "control.seek", "control.like":
+		if !validControlPayload(kind, envelope.Payload) {
+			api.controlAck(client, envelope.RequestID, "rejected", "PAYLOAD_INVALID", nil)
 			return
 		}
-		api.control(client, envelope.RequestID, runtime.Seek(ctx, request.PositionMS, session.PublicID, session.Admin()))
-	case "control.like":
-		api.control(client, envelope.RequestID, runtime.Like(ctx, session.PublicID))
+		request, err := decodePayload[struct {
+			PositionMS        *int64  `json:"positionMs"`
+			ExpectedPlayEpoch *int64  `json:"expectedPlayEpoch"`
+			MutationID        *string `json:"mutationId"`
+			ScopeID           *string `json:"idempotencyScopeId"`
+		}](envelope.Payload)
+		if err != nil || (kind == "control.seek" && request.PositionMS == nil) || (request.MutationID == nil) != (request.ScopeID == nil) || (request.MutationID != nil && (*request.MutationID == "" || *request.ScopeID == "" || len(*request.MutationID) > 128 || len(*request.ScopeID) > 128)) {
+			api.controlAck(client, envelope.RequestID, "rejected", "PAYLOAD_INVALID", nil)
+			return
+		}
+		var mutation []realtime.ControlMutation
+		if request.MutationID != nil {
+			mutation = append(mutation, realtime.ControlMutation{ScopeID: *request.ScopeID, MutationID: *request.MutationID, ActorID: session.PublicID})
+		}
+		var result realtime.ControlResult
+		switch kind {
+		case "control.next":
+			result, err = runtime.Next(ctx, mutation...)
+		case "control.previous":
+			result, err = runtime.Previous(ctx, request.ExpectedPlayEpoch, mutation...)
+		case "control.toggle-pause":
+			result, err = runtime.TogglePause(ctx, mutation...)
+		case "control.toggle-shuffle":
+			result, err = runtime.ToggleShuffle(ctx, mutation...)
+		case "control.seek":
+			result, err = runtime.Seek(ctx, *request.PositionMS, session.PublicID, session.Admin(), request.ExpectedPlayEpoch, mutation...)
+		case "control.like":
+			result, err = runtime.Like(ctx, session.PublicID, request.ExpectedPlayEpoch, mutation...)
+		}
+		api.control(client, envelope.RequestID, kind, result, err)
 	case "queue.remove", "queue.top":
 		request, err := decodePayload[struct{ QueueID, MutationID string }](envelope.Payload)
 		if err != nil {
@@ -220,6 +250,14 @@ func (api *WebSocketAPI) dispatch(ctx context.Context, client *wsruntime.Client,
 			}
 		}
 		api.mutationResult(client, request.MutationID, err, true)
+	case "queue.clear":
+		request, err := decodePayload[struct{ MutationID string }](envelope.Payload)
+		if err == nil {
+			err = runtime.Clear(ctx, request.MutationID)
+		}
+		api.mutationResult(client, request.MutationID, err, false)
+	case "playlist.list", "playlist.get", "playlist.create", "playlist.rename", "playlist.delete", "playlist.add-items", "playlist.remove-items", "playlist.enqueue":
+		api.playlistCommand(ctx, client, runtime, envelope, kind, session)
 	case "chat.message", "public-chat.message":
 		request, err := decodePayload[struct{ Content, Message string }](envelope.Payload)
 		if err == nil {
@@ -424,12 +462,100 @@ func (api *WebSocketAPI) mutationResult(client *wsruntime.Client, mutationID str
 	}
 	_ = client.Send(kind, client.RoomID, map[string]any{"mutationId": mutationID})
 }
-func (api *WebSocketAPI) control(client *wsruntime.Client, requestID string, err error) {
+func (api *WebSocketAPI) control(client *wsruntime.Client, requestID string, kind string, result realtime.ControlResult, err error) {
 	if err != nil {
-		api.event(client, "CONTROL_DENIED", err.Error())
+		if code, ok := controlRejectionCode(kind, err); ok {
+			api.controlAck(client, requestID, "rejected", code, nil, result)
+			api.event(client, "CONTROL_DENIED", err.Error())
+			return
+		}
 		return
 	}
-	_ = client.Send("queue.mutation.ack", "", map[string]any{})
+	if !result.Applied {
+		api.controlAck(client, requestID, "noop", "", result.Committed, result)
+		return
+	}
+	api.controlAck(client, requestID, "applied", "", result.Committed, result)
+}
+
+// Validate field presence before decoding pointers, so explicit null cannot
+// silently opt out of idempotency or playback-instance preconditions.
+func validControlPayload(kind string, payload json.RawMessage) bool {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(payload, &fields) != nil || fields == nil {
+		return false
+	}
+	for name, value := range fields {
+		if string(value) == "null" {
+			return false
+		}
+		switch name {
+		case "mutationId", "idempotencyScopeId":
+		case "positionMs":
+			if kind != "control.seek" {
+				return false
+			}
+		case "expectedPlayEpoch":
+			if kind != "control.seek" && kind != "control.like" && kind != "control.previous" {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func controlRejectionCode(kind string, err error) (string, bool) {
+	switch {
+	case errors.Is(err, realtime.ErrMutationConflict):
+		return "MUTATION_CONFLICT", true
+	case errors.Is(err, realtime.ErrMutationScope):
+		return "IDEMPOTENCY_SCOPE_MISMATCH", true
+	case errors.Is(err, realtime.ErrMutationCapacity):
+		return "IDEMPOTENCY_CAPACITY", true
+	case errors.Is(err, realtime.ErrMutationInvalid):
+		return "PAYLOAD_INVALID", true
+	case errors.Is(err, realtime.ErrControlLocked):
+		switch kind {
+		case "control.toggle-pause":
+			return "PAUSE_LOCKED", true
+		case "control.next", "control.previous":
+			return "SKIP_LOCKED", true
+		case "control.toggle-shuffle":
+			return "SHUFFLE_LOCKED", true
+		}
+	case errors.Is(err, realtime.ErrControlDenied):
+		return "NO_CURRENT_TRACK", true
+	case errors.Is(err, realtime.ErrNoHistory):
+		return "NO_HISTORY", true
+	case errors.Is(err, realtime.ErrSeekForbidden):
+		return "SEEK_FORBIDDEN", true
+	case errors.Is(err, realtime.ErrPreconditionFailed):
+		return "PRECONDITION_FAILED", true
+	case errors.Is(err, realtime.ErrCommandQueueFull):
+		return "COMMAND_REJECTED", true
+	}
+	return "", false
+}
+
+func (api *WebSocketAPI) controlAck(client *wsruntime.Client, requestID, outcome, code string, committed *realtime.CommittedWatermark, results ...realtime.ControlResult) {
+	payload := map[string]any{"outcome": outcome}
+	if len(results) > 0 && results[0].MutationID != "" {
+		payload["mutationId"] = results[0].MutationID
+		payload["replayed"] = results[0].Replayed
+	}
+	if code != "" {
+		payload["code"] = code
+	}
+	if committed != nil {
+		payload["committed"] = map[string]any{"stateVersion": committed.StateVersion, "playEpoch": committed.PlayEpoch, "queueVersion": committed.QueueVersion}
+	}
+	envelope := wsruntime.Envelope{Type: "control.ack", RoomID: client.RoomID, Payload: payload}
+	if requestID != "" {
+		envelope.RequestID = requestID
+	}
+	_ = client.Direct(envelope)
 }
 func (api *WebSocketAPI) nack(client *wsruntime.Client, kind, mutationID string, err error) {
 	reason := "PERSISTENCE_FAILED"

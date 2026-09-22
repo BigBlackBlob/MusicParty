@@ -1,0 +1,21 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MusicParty 阶段 1 服务端契约</title><style>body{background:#000;color:#fff;font:16px/1.65 system-ui;margin:24px auto;max-width:1080px;padding:0 18px}h2{border-top:1px solid #444;padding-top:16px}table{width:100%;border-collapse:collapse}td,th{text-align:left;vertical-align:top;padding:8px;border-bottom:1px solid #444}code,pre{white-space:pre-wrap;overflow-wrap:anywhere;color:#b9e5ff}</style></head><body>
+<h1>阶段 1 · MusicParty 服务端契约</h1><p>2026-09-12。本页描述当前实现与客户端接入要求。原生播放、Rust WS 和 TLS 实机联调由 WatchParty 负责，未以服务端测试替代。</p>
+<h2>版本与 HTTP</h2><p>API 版本 2026-01；最低客户端 0.2.0。只接受无前导零的三段非负整数版本，不接受预发布。受保护桌面 HTTP 请求携带 X-Desktop-API-Version 和 X-Desktop-Client-Version；不兼容返回 426，error 为 version-incompatible，并携带 apiVersion、minimumClientVersion。health/capabilities 不要求版本头。生成契约版本 2.0.0 与 API 版本不同。</p>
+<table><tr><th>方法与路径</th><th>请求与响应</th></tr>
+<tr><td>GET /api/desktop/v1/health<br>GET /api/desktop/v1/capabilities</td><td>发现服务、版本、providers、features；provider 注册不等于其真实媒体可用。</td></tr>
+<tr><td>POST /api/desktop/v1/invites/redeem</td><td>JSON {code, displayName?}；返回 roomId、roomName、membership、apiVersion，使用 Set-Cookie 建立会话。无效邀请返回 400 invite-invalid。邀请码不能重复作为稳定测试凭据。</td></tr>
+<tr><td>GET /api/desktop/v1/search/{platform}?q=…&amp;offset=0&amp;limit=20</td><td>返回 {items,offset,limit}，必须有会话。客户端现有 /api/search/{platform}/{keyword} 返回数组，与此格式不同。</td></tr>
+<tr><td>GET /api/desktop/v1/media/{platform}/{songId}/resolve</td><td>返回 {url,expiresAt,contentType,resolvedAt,music}。resolvedAt 为 Unix 毫秒；expiresAt/contentType 当前为 null，表示未知。不能假定 URL 永不过期。</td></tr>
+<tr><td>GET /api/desktop/v1/media/{platform}/{songId}/cover</td><td>返回 {url}。</td></tr>
+<tr><td>GET /api/desktop/v1/media/{platform}/{songId}/lyrics</td><td>返回包含原文与翻译的 JSON。</td></tr>
+<tr><td>GET /api/desktop/v1/music/{platform}/{songId}/lyrics</td><td>兼容现有客户端 response.text()，返回 text/plain 原文 LRC。鉴权和版本要求同上。</td></tr></table>
+<h2>桌面 WebSocket</h2><p>入口 /api/desktop/v1/ws?roomId={roomId}，默认 lounge。Rust 发送当前服务的 Cookie 与匹配服务 origin 的 Origin。禁止将长期凭据放入 URL。Origin 缺失或不允许时，升级前 HTTP 403；未知会话或无房间权限在升级后关闭 1008。</p>
+<pre>{"type":"client.hello","payload":{"apiVersion":"2026-01","clientVersion":"0.2.0"}}
+{"type":"server.hello","requestId":null,"roomId":"lounge","payload":{"apiVersion":"2026-01","minimumClientVersion":"0.2.0"}}</pre>
+<p>客户端必须在连接后 5 秒内发送 hello。错误版本、无效 hello 或把业务命令作为首帧，关闭 1008，原因为 version-incompatible。读取超时或损坏帧断开连接，不承诺关闭帧。成功时先 server.hello，再 player.state 与在线成员。协商完成前不注册在线成员、不执行命令、不发送快照。每次重连重新协商，再以服务端快照恢复；不重放离线命令。客户端仅在 hello 成功后进入 ready，版本拒绝不得无限重试。</p>
+<p>既有 Web /ws?room-id= 保持原行为，不含桌面版本协商。hello 只用于桌面入口；生成的事件类型见 contracts/ws。初始 player.state 的 roomId/requestId 可能为 null，绑定当前连接上下文。时钟和播放位置采用毫秒，stateVersion、queueVersion、playEpoch 不互相替代。服务端负责队列和播放裁决。</p>
+<h2>Cookie、CSRF 与隔离</h2><p>MP_SESSION 为 HttpOnly，MP_CSRF 可读取，Path=/，SameSite=Lax；成员 Cookie Max-Age 为 90 天，不代表服务端永不撤销。Secure 根据配置和请求 HTTPS 判断。Rust 保留 Set-Cookie、过期和清除语义，凭据按服务 origin 隔离，禁止进入 WebView、日志和诊断。</p>
+<p>邀请兑换豁免 CSRF。其他非安全且未豁免请求要求 MP_CSRF 与 X-CSRF-Token 匹配；当前拒绝为无 JSON 的 403，客户端不得假设所有错误均为 JSON。POST /api/account/logout 要求 CSRF，撤销服务端会话并关闭其实时连接，清除 Cookie。仅清理本机存储不等于服务端注销。</p>
+<p>私有房间还需 POST /api/rooms/{roomId}/verify，JSON {password} 和 CSRF；成功设置 HttpOnly MP_ROOM_ACCESS，有效期 5 分钟，绑定用户、房间和密码版本。邀请兑换不绕过私有房间验证。Rust 必须处理该 Cookie；重连时授权过期应重新验证。</p>
+<h2>客户端实现边界与后续联调</h2><ul><li>Rust 持有 HTTP/WS 凭据，向 WebView 转发脱敏事件。Windows 安全存储保存凭据，设置与缓存位于桌面应用数据目录；目录名称与迁移由客户端确定，服务端无本机路径依赖。</li><li>按服务配置自签名证书信任，同时保持主机名校验。HTTP、WS 与 libmpv 应遵循同一信任范围，不全局关闭 TLS 验证。</li><li>音频统一 Rust/libmpv，按服务端快照执行，桌面壳管理唯一音频焦点。歌词/封面失败不影响音频。单客户端音频失败不直接改写全房间状态。</li><li>媒体相对 URL 按服务 origin 解析。Cookie 只发往授权服务，不随跨域重定向转发；第三方平台凭据由服务端管理。原生媒体头与有效期、Range/seek 和真实平台成功/失败属于下一阶段验证。</li><li>客户端仍须适配搜索 artists 数组、coverUrl 字段，以及 Rust Cookie 保留、私有房间验证和注销 IPC 白名单。</li></ul>
+<h2>本轮验证</h2><p>HTTP、契约、集成测试通过；覆盖桌面握手成功/版本拒绝/首帧命令拒绝、Origin/会话/房间拒绝、歌词双格式与鉴权。contractgen -check 检查 14 个生成文件通过。未部署远程服务，未验证真实原生播放器。</p></body></html>

@@ -1,0 +1,7 @@
+{
+  "rooms": [
+    {"id": "lounge", "visibility": "PUBLIC"},
+    {"id": "private-room", "visibility": "PRIVATE", "password": "secret", "passwordVersion": 1}
+  ],
+  "media": {"platform": "local", "songId": "track", "contentType": "audio/mpeg", "supportsRange": true}
+}

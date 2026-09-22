@@ -1,5 +1,5 @@
 {
-  "routeCount": 90,
+  "routeCount": 100,
   "routes": [
     {
       "method": "GET",
@@ -179,6 +179,66 @@
       "method": "GET",
       "path": "/api/config",
       "operationId": "get.api.config",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "GET",
+      "path": "/api/desktop/v1/capabilities",
+      "operationId": "get.api.desktop.v1.capabilities",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "GET",
+      "path": "/api/desktop/v1/health",
+      "operationId": "get.api.desktop.v1.health",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "POST",
+      "path": "/api/desktop/v1/invites/redeem",
+      "operationId": "post.api.desktop.v1.invites.redeem",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "GET",
+      "path": "/api/desktop/v1/media/{platform}/{songId}/cover",
+      "operationId": "get.api.desktop.v1.media.platform.songId.cover",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "GET",
+      "path": "/api/desktop/v1/media/{platform}/{songId}/lyrics",
+      "operationId": "get.api.desktop.v1.media.platform.songId.lyrics",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "GET",
+      "path": "/api/desktop/v1/media/{platform}/{songId}/resolve",
+      "operationId": "get.api.desktop.v1.media.platform.songId.resolve",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "GET",
+      "path": "/api/desktop/v1/music/{platform}/{songId}/lyrics",
+      "operationId": "get.api.desktop.v1.music.platform.songId.lyrics",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "GET",
+      "path": "/api/desktop/v1/search/{platform}",
+      "operationId": "get.api.desktop.v1.search.platform",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "GET",
+      "path": "/api/desktop/v1/ws",
+      "operationId": "get.api.desktop.v1.ws",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "POST",
+      "path": "/api/dev/rooms/{roomId}/invites",
+      "operationId": "post.api.dev.rooms.roomId.invites",
       "source": "backend-go/internal/httpapi"
     },
     {

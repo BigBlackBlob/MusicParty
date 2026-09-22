@@ -44,6 +44,9 @@ func (api *RoomAPI) Routes(r chi.Router) {
 		r.With(RequireAdmin(api.authService)).Get("/api/rooms/{roomId}/members", Adapt(api.members))
 		r.With(RequireAdmin(api.authService)).Delete("/api/rooms/{roomId}/members/{publicId}", Adapt(api.removeMember))
 		r.With(RequireAdmin(api.authService)).Post("/api/rooms/{roomId}/owners/{publicId}", Adapt(api.makeOwner))
+		if !api.cfg.Application.Production {
+			r.With(RequireAdmin(api.authService)).Post("/api/dev/rooms/{roomId}/invites", Adapt(api.createDevelopmentInvite))
+		}
 		r.With(RequireAdmin(api.authService)).Delete("/api/rooms/{roomId}/owners/{publicId}", Adapt(api.removeOwner))
 	} else {
 		// Fallback if auth service not set
@@ -54,6 +57,21 @@ func (api *RoomAPI) Routes(r chi.Router) {
 		r.Post("/api/rooms/{roomId}/owners/{publicId}", Adapt(api.makeOwner))
 		r.Delete("/api/rooms/{roomId}/owners/{publicId}", Adapt(api.removeOwner))
 	}
+}
+
+func (api *RoomAPI) createDevelopmentInvite(w http.ResponseWriter, r *http.Request) error {
+	var request struct {
+		Label string `json:"label"`
+	}
+	if err := decodeJSONBody(r, &request); err != nil {
+		return &APIError{Status: http.StatusBadRequest, Name: "invalid-request", Message: "Invalid request body"}
+	}
+	invite, err := api.service.CreateInvite(r.Context(), chi.URLParam(r, "roomId"), sessionToken(r), request.Label)
+	if err != nil {
+		return err
+	}
+	writeJSON(w, map[string]any{"id": invite.ID, "code": invite.Secret, "roomId": invite.RoomID, "expiresAt": invite.ExpiresAt, "developmentOnly": true})
+	return nil
 }
 func (api *RoomAPI) list(w http.ResponseWriter, r *http.Request) error {
 	value, err := api.service.List(r.Context(), sessionToken(r))

@@ -10,6 +10,7 @@ const uploadTooLargeMessage = "Upload is too large. Increase MULTIPART_MAX_FILE_
 
 type APIError struct {
 	Status  int
+	Code    string
 	Message string
 	Name    string
 }
@@ -37,7 +38,10 @@ func Adapt(handler ErrorHandler) http.HandlerFunc {
 func WriteMappedError(w http.ResponseWriter, err error) {
 	var apiError *APIError
 	if errors.As(err, &apiError) {
-		body := map[string]any{"message": apiError.Message, "status": apiError.Status}
+		code := apiError.Code
+		if code == "" { code = apiError.Name }
+		if code == "" { code = statusCode(apiError.Status) }
+		body := map[string]any{"code": code, "message": apiError.Message, "status": apiError.Status}
 		if apiError.Name != "" {
 			body["error"] = apiError.Name
 		}
@@ -45,10 +49,22 @@ func WriteMappedError(w http.ResponseWriter, err error) {
 		return
 	}
 	writeErrorJSON(w, http.StatusInternalServerError, map[string]any{
+		"code":    "internal-server-error",
 		"message": "An unexpected internal server error occurred.",
 		"error":   "InternalServerError",
 		"status":  http.StatusInternalServerError,
 	})
+}
+
+func statusCode(status int) string {
+	if status == http.StatusBadRequest { return "bad-request" }
+	if status == http.StatusUnauthorized { return "unauthorized" }
+	if status == http.StatusForbidden { return "forbidden" }
+	if status == http.StatusNotFound { return "not-found" }
+	if status == http.StatusConflict { return "conflict" }
+	if status == http.StatusTooManyRequests { return "rate-limited" }
+	if status >= 500 { return "internal-server-error" }
+	return "http-error"
 }
 
 func writeErrorJSON(w http.ResponseWriter, status int, body any) {

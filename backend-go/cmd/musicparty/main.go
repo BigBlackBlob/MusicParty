@@ -98,8 +98,10 @@ func run() error {
 	var webSocketAPI *httpapi.WebSocketAPI
 	var realtimeManager *realtime.Manager
 	var socketHub *wsruntime.Hub
+	var accountService *accountdomain.Service
+	var roomService *roomdomain.Service
 	if databaseStore != nil {
-		accountService := accountdomain.New(databaseStore)
+		accountService = accountdomain.New(databaseStore)
 		if cfg.Application.BootstrapAdminUsername != "" || cfg.Application.BootstrapAdminPassword != "" {
 			if err := accountService.Bootstrap(applicationContext, cfg.Application.BootstrapAdminUsername, cfg.Application.BootstrapAdminPassword); err != nil {
 				return fmt.Errorf("bootstrap administrator: %w", err)
@@ -109,7 +111,7 @@ func run() error {
 			return fmt.Errorf("migrate guest-only authentication: %w", err)
 		}
 		authAPI = httpapi.NewAuthAPI(cfg, accountService)
-		roomService := roomdomain.New(databaseStore, accountService)
+		roomService = roomdomain.New(databaseStore, accountService)
 		roomAPI = httpapi.NewRoomAPI(roomService, cfg)
 		roomAPI.SetAuthService(accountService)
 		playlistAPI = httpapi.NewPlaylistAPI(cfg, databaseStore, accountService, roomService, platformAPI)
@@ -162,13 +164,17 @@ func run() error {
 		webSocketAPI = httpapi.NewWebSocketAPI(cfg, databaseStore, accountService, roomService, socketHub, realtimeManager, platformAPI)
 	}
 	var handler http.Handler
+	var desktopAPI *httpapi.DesktopAPI
+	if accountService != nil {
+		desktopAPI = httpapi.NewDesktopAPI(cfg, accountService, roomService, platformAPI)
+	}
 	staticRoot := os.Getenv("STATIC_PATH")
 	if staticRoot == "" {
 		staticRoot = "static"
 	}
 	staticAPI := httpapi.NewStaticAPI(staticRoot)
 	if authAPI != nil {
-		handler = httpapi.NewHandler(cfg, logger, health, metrics, platformAPI, authAPI, roomAPI, playlistAPI, adminAPI, mediaAPI, webSocketAPI, staticAPI)
+		handler = httpapi.NewHandler(cfg, logger, health, metrics, platformAPI, authAPI, roomAPI, playlistAPI, adminAPI, mediaAPI, webSocketAPI, desktopAPI, staticAPI)
 	} else {
 		handler = httpapi.NewHandler(cfg, logger, health, metrics, platformAPI, staticAPI)
 	}

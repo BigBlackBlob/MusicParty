@@ -466,6 +466,146 @@
         "x-go-source": "backend-go/internal/httpapi"
       }
     },
+    "/api/desktop/v1/capabilities": {
+      "get": {
+        "operationId": "get.api.desktop.v1.capabilities",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
+      }
+    },
+    "/api/desktop/v1/health": {
+      "get": {
+        "operationId": "get.api.desktop.v1.health",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
+      }
+    },
+    "/api/desktop/v1/invites/redeem": {
+      "post": {
+        "operationId": "post.api.desktop.v1.invites.redeem",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
+      }
+    },
+    "/api/desktop/v1/media/{platform}/{songId}/cover": {
+      "get": {
+        "operationId": "get.api.desktop.v1.media.platform.songId.cover",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
+      }
+    },
+    "/api/desktop/v1/media/{platform}/{songId}/lyrics": {
+      "get": {
+        "operationId": "get.api.desktop.v1.media.platform.songId.lyrics",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
+      }
+    },
+    "/api/desktop/v1/media/{platform}/{songId}/resolve": {
+      "get": {
+        "operationId": "get.api.desktop.v1.media.platform.songId.resolve",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
+      }
+    },
+    "/api/desktop/v1/music/{platform}/{songId}/lyrics": {
+      "get": {
+        "operationId": "get.api.desktop.v1.music.platform.songId.lyrics",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
+      }
+    },
+    "/api/desktop/v1/search/{platform}": {
+      "get": {
+        "operationId": "get.api.desktop.v1.search.platform",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
+      }
+    },
+    "/api/desktop/v1/ws": {
+      "get": {
+        "operationId": "get.api.desktop.v1.ws",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
+      }
+    },
+    "/api/dev/rooms/{roomId}/invites": {
+      "post": {
+        "operationId": "post.api.dev.rooms.roomId.invites",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
+      }
+    },
     "/api/local/cover/{id}": {
       "get": {
         "operationId": "get.api.local.cover.id",

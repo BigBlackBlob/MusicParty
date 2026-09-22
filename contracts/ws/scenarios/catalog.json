@@ -2,8 +2,10 @@
   "clientMessageTypes": [
     "chat.history.fetch",
     "chat.message",
+    "client.hello",
     "control.like",
     "control.next",
+    "control.previous",
     "control.seek",
     "control.toggle-pause",
     "control.toggle-shuffle",
@@ -12,10 +14,19 @@
     "enqueue.playlist",
     "enqueue.room-playlist",
     "player.resync",
+    "playlist.add-items",
+    "playlist.create",
+    "playlist.delete",
+    "playlist.enqueue",
+    "playlist.get",
+    "playlist.list",
+    "playlist.remove-items",
+    "playlist.rename",
     "public-chat.history.fetch",
     "public-chat.message",
     "queue.batch-remove",
     "queue.batch-top",
+    "queue.clear",
     "queue.remove",
     "queue.reorder",
     "queue.top",
@@ -55,15 +66,61 @@
       ],
       "id": "presence",
       "sendType": "users.online"
+    },
+    {
+      "expectTypes": [
+        "control.ack"
+      ],
+      "id": "control-toggle-pause-ack",
+      "sendType": "control.toggle-pause"
+    },
+    {
+      "expectTypes": [
+        "control.ack"
+      ],
+      "id": "control-seek-ack",
+      "sendType": "control.seek"
+    },
+    {
+      "expectTypes": [
+        "control.ack"
+      ],
+      "id": "control-like-ack",
+      "sendType": "control.like"
+    },
+    {
+      "expectTypes": [
+        "control.ack"
+      ],
+      "id": "control-mutation-replay",
+      "sendType": "control.toggle-pause"
+    },
+    {
+      "expectTypes": [
+        "control.ack"
+      ],
+      "id": "control-mutation-conflict",
+      "sendType": "control.seek"
+    },
+    {
+      "expectTypes": [
+        "control.ack"
+      ],
+      "id": "control-mutation-scope",
+      "sendType": "control.next"
     }
   ],
   "serverMessageTypes": [
     "chat.history",
     "chat.message",
+    "control.ack",
     "enqueue.ack",
     "enqueue.nack",
     "player.events",
     "player.state",
+    "playlist.ack",
+    "playlist.data",
+    "playlist.nack",
     "public-chat.history",
     "public-chat.message",
     "queue.mutation.ack",
@@ -73,6 +130,7 @@
     "queue.reorder.nack",
     "rooms.created",
     "rooms.list",
+    "server.hello",
     "sync.pong",
     "user.me",
     "users.online"
