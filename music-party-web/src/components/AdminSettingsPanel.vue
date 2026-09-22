@@ -231,6 +231,7 @@
     </section>
 
     <section v-else class="admin-page">
+      <DesktopDebugInvite />
       <div class="admin-page-header">
         <div>
           <h3>{{ t('settings.admin.title') }}</h3>
@@ -271,6 +272,7 @@
 </template>
 
 <script setup>
+import DesktopDebugInvite from './DesktopDebugInvite.vue';
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { authApi } from '../api/auth';

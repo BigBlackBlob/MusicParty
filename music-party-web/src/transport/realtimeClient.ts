@@ -248,8 +248,11 @@ export class RealtimeClient {
       case 'rooms.created': handlers['rooms.created']?.(envelope.payload, envelope); return
       case 'rooms.list': handlers['rooms.list']?.(envelope.payload, envelope); return
       case 'sync.pong': handlers['sync.pong']?.(envelope.payload, envelope); return
+      case 'server.hello': handlers['server.hello']?.(envelope.payload, envelope); return
       case 'user.me': handlers['user.me']?.(envelope.payload, envelope); return
       case 'users.online': handlers['users.online']?.(envelope.payload, envelope); return
+      // additive server frame; the web UI reacts to broadcasts and resolves nothing from acks yet
+      case 'control.ack': return
       default: assertNever(envelope)
     }
   }
