@@ -42,3 +42,11 @@ build/
 /playwright-acceptance.png
 /music-party-web/playwright-report/
 /music-party-web/test-results/
+
+# local runtime data, scratch and captured cookies (never commit)
+/.env
+/.tmp/
+/member-cookies.txt
+/test-cookies.txt
+/music_party/data-fresh/
+/music_party/cached_media-fresh/

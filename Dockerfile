@@ -5,7 +5,7 @@ RUN corepack enable && pnpm install --frozen-lockfile
 COPY music-party-web/ ./
 RUN pnpm build
 
-FROM golang:1.26.5-alpine AS backend-builder
+FROM golang:1.27.1-alpine AS backend-builder
 WORKDIR /src/backend-go
 COPY backend-go/go.mod backend-go/go.sum ./
 RUN go mod download
