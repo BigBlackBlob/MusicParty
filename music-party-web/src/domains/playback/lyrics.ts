@@ -3,7 +3,14 @@ import { ref } from 'vue'
 import type { Music } from '../../contracts/generated/models'
 import { musicApi, type LyricDetail } from '../../api/music'
 
-const emptyLyrics = (): Required<LyricDetail> => ({ lyric: '', translatedLyric: '', romanizedLyric: '' })
+const emptyLyrics = (): Required<LyricDetail> => ({
+  lyric: '',
+  translatedLyric: '',
+  romanizedLyric: '',
+  wordLyric: '',
+  wordTranslatedLyric: '',
+  wordRomanizedLyric: ''
+})
 
 export const useLyricsStore = defineStore('lyrics', () => {
   const lyricText = ref('')
@@ -34,12 +41,15 @@ export const useLyricsStore = defineStore('lyrics', () => {
       result = {
         lyric: detail.lyric ?? '',
         translatedLyric: detail.translatedLyric ?? '',
-        romanizedLyric: detail.romanizedLyric ?? ''
+        romanizedLyric: detail.romanizedLyric ?? '',
+        wordLyric: detail.wordLyric ?? '',
+        wordTranslatedLyric: detail.wordTranslatedLyric ?? '',
+        wordRomanizedLyric: detail.wordRomanizedLyric ?? ''
       }
     } catch (detailError) {
       console.error('Lyrics Error', detailError)
       try {
-        result = { lyric: await musicApi.getLyric(music.platform, music.id), translatedLyric: '', romanizedLyric: '' }
+        result = { ...emptyLyrics(), lyric: await musicApi.getLyric(music.platform, music.id) }
       } catch (fallbackError) {
         console.error('Lyrics Fallback Error', fallbackError)
         return

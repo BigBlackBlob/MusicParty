@@ -20,6 +20,9 @@ export interface LyricDetail {
   lyric?: string
   translatedLyric?: string
   romanizedLyric?: string
+  wordLyric?: string
+  wordTranslatedLyric?: string
+  wordRomanizedLyric?: string
   [key: string]: string | undefined
 }
 

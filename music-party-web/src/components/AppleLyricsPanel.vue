@@ -33,8 +33,18 @@
                 :class="[getLineClass(index), alignmentClass]"
                 :style="getLineStyle(index)"
               >
-                <span class="lyrics-line__primary">{{ line.text }}</span>
+                <span v-if="index === activeIndex && line.segments" class="lyrics-line__primary lyrics-line__words">
+                  <span
+                    v-for="(segment, segmentIndex) in line.segments"
+                    :key="segmentIndex"
+                    class="lyrics-word"
+                    :class="wordStateClass(segment)"
+                    :style="wordStateStyle(segment)"
+                  >{{ segment.text }}</span>
+                </span>
+                <span v-else class="lyrics-line__primary">{{ line.text }}</span>
                 <span v-if="line.translation" class="lyrics-line__translation">{{ line.translation }}</span>
+                <span v-if="line.romanization" class="lyrics-line__romanization">{{ line.romanization }}</span>
               </div>
               </div>
               <div class="lyrics-scroll__spacer w-full shrink-0"></div>
@@ -62,6 +72,18 @@
             >
               {{ t('lyrics.translation') }}
             </button>
+            <button
+              v-if="hasRomanization"
+              class="lyrics-control lyrics-control--text"
+              type="button"
+              :class="showRomanization ? 'lyrics-control--active' : ''"
+              :aria-pressed="showRomanization"
+              :aria-label="t('lyrics.romanization')"
+              :title="t('lyrics.romanization')"
+              @click="$emit('toggle-romanization')"
+            >
+              {{ t('lyrics.romanization') }}
+            </button>
           </div>
         </template>
       </div>
@@ -72,7 +94,8 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { mergeTranslatedLyrics } from '../utils/parser';
+import { mergeTranslatedLyrics, parseLyrics } from '../utils/parser';
+import { pairByTime, parseYrc } from '../utils/yrc';
 import { useUiStore } from '../stores/ui';
 
 const uiStore = useUiStore();
@@ -87,9 +110,29 @@ const props = defineProps({
     type: String,
     default: ''
   },
+  romanizedLyrics: {
+    type: String,
+    default: ''
+  },
+  wordLyric: {
+    type: String,
+    default: ''
+  },
+  wordTranslatedLyric: {
+    type: String,
+    default: ''
+  },
+  wordRomanizedLyric: {
+    type: String,
+    default: ''
+  },
   showTranslation: {
     type: Boolean,
     default: true
+  },
+  showRomanization: {
+    type: Boolean,
+    default: false
   },
   currentTime: {
     type: Number,
@@ -120,13 +163,40 @@ const props = defineProps({
     default: false
   }
 });
-defineEmits(['toggle-translation']);
+defineEmits(['toggle-translation', 'toggle-romanization']);
 
 const MIN_DISPLAY_LYRIC_LINES = 5;
-const lines = computed(() => mergeTranslatedLyrics(
-  props.lyrics,
-  props.showTranslation ? props.translatedLyrics : ''
-));
+const wordLines = computed(() => parseYrc(props.wordLyric));
+const hasRomanization = computed(() =>
+  parseYrc(props.wordRomanizedLyric).length > 0 || parseLyrics(props.romanizedLyrics).length > 0
+);
+const lines = computed(() => {
+  if (wordLines.value.length) {
+    const translations = props.showTranslation ? pairByTime(wordLines.value, parseYrc(props.wordTranslatedLyric)) : [];
+    const romanizations = props.showRomanization ? pairByTime(wordLines.value, parseYrc(props.wordRomanizedLyric)) : [];
+    // Netease often leaves ytlrc/yromalrc empty or serves them as plain LRC;
+    // fill any word line still missing its extra track from the legacy
+    // line-level fields, paired by the same time-window rule.
+    const legacyTranslations = props.showTranslation && translations.some((text) => !text)
+      ? pairByTime(wordLines.value, parseYrc(props.translatedLyrics)) : null;
+    const legacyRomanizations = props.showRomanization && romanizations.some((text) => !text)
+      ? pairByTime(wordLines.value, parseYrc(props.romanizedLyrics)) : null;
+    return wordLines.value.map((line, index) => ({
+      time: line.start,
+      text: line.text,
+      translation: translations[index] || (legacyTranslations ? legacyTranslations[index] : '') || '',
+      romanization: romanizations[index] || (legacyRomanizations ? legacyRomanizations[index] : '') || '',
+      segments: line.segments
+    }));
+  }
+  const plain = mergeTranslatedLyrics(
+    props.lyrics,
+    props.showTranslation ? props.translatedLyrics : ''
+  );
+  if (!props.showRomanization || !plain.length) return plain;
+  const romanByTime = new Map(parseLyrics(props.romanizedLyrics).map((line) => [line.time, line.text]));
+  return plain.map((line) => ({ ...line, romanization: romanByTime.get(line.time) || '' }));
+});
 const displayLines = computed(() => lines.value.length >= MIN_DISPLAY_LYRIC_LINES ? lines.value : []);
 const showEmptyState = computed(() => props.lyricsLoaded && !displayLines.value.length);
 const activeTimeMs = computed(() => {
@@ -184,6 +254,7 @@ const scaledFont = (base) => `${Math.max(10, Math.round(base + fontScale.value *
 
 const shellStyle = computed(() => ({
   '--lyrics-text-active': props.isDarkMode ? 'rgba(255,255,255,0.98)' : 'rgba(26,26,26,0.98)',
+  '--lyrics-word-todo': props.isDarkMode ? 'rgba(255,255,255,0.38)' : 'rgba(26,26,26,0.32)',
   '--lyrics-text-mid': props.isDarkMode ? 'rgba(255,255,255,0.6)' : 'rgba(26,26,26,0.6)',
   '--lyrics-text-low': props.isDarkMode ? 'rgba(255,255,255,0.3)' : 'rgba(26,26,26,0.3)',
   '--lyrics-translation-active': props.isDarkMode ? 'rgba(255,255,255,0.68)' : 'rgba(26,26,26,0.58)',
@@ -419,7 +490,63 @@ const decreaseFont = () => {
   syncActiveLine(true);
 };
 
-watch(() => [activeTimeMs.value, props.showTranslation], () => {
+// The room clock ticks at ~200ms cadence, too coarse for a word sweep.
+// While the active line has word segments, extrapolate from the last tick with
+// a requestAnimationFrame anchor; each new tick re-bases the anchor.
+const karaokeNow = ref(activeTimeMs.value);
+let karaokeAnchor = activeTimeMs.value;
+let karaokeAnchorWall = 0;
+let karaokeFrame = null;
+
+const karaokeTicking = computed(() => {
+  if (!props.isPlaying || activeIndex.value < 0) return false;
+  return !!displayLines.value[activeIndex.value]?.segments;
+});
+
+const advanceKaraoke = () => {
+  if (!karaokeTicking.value) {
+    karaokeFrame = null;
+    karaokeAnchor = activeTimeMs.value;
+    karaokeAnchorWall = performance.now();
+    karaokeNow.value = karaokeAnchor;
+    return;
+  }
+  karaokeNow.value = karaokeAnchor + (performance.now() - karaokeAnchorWall);
+  karaokeFrame = requestAnimationFrame(advanceKaraoke);
+};
+
+watch(activeTimeMs, (value) => {
+  karaokeAnchor = value;
+  karaokeAnchorWall = performance.now();
+  if (!karaokeTicking.value) karaokeNow.value = value;
+}, { immediate: true });
+
+watch(karaokeTicking, (ticking) => {
+  if (ticking && karaokeFrame === null) {
+    karaokeFrame = requestAnimationFrame(advanceKaraoke);
+  } else if (!ticking && karaokeFrame !== null) {
+    cancelAnimationFrame(karaokeFrame);
+    karaokeFrame = null;
+    karaokeNow.value = activeTimeMs.value;
+  }
+});
+
+const wordStateClass = (segment) => {
+  const now = karaokeNow.value;
+  if (segment.dur <= 0) return now > segment.start ? 'lyrics-word--done' : 'lyrics-word--todo';
+  if (now >= segment.end) return 'lyrics-word--done';
+  if (now >= segment.start) return 'lyrics-word--active';
+  return 'lyrics-word--todo';
+};
+
+const wordStateStyle = (segment) => {
+  const now = karaokeNow.value;
+  if (segment.dur <= 0 || now < segment.start || now >= segment.end) return null;
+  const ratio = Math.min(1, Math.max(0, (now - segment.start) / segment.dur));
+  return { '--word-fill': `${(ratio * 100).toFixed(1)}%` };
+};
+
+watch(() => [activeTimeMs.value, props.showTranslation, props.showRomanization], () => {
   syncActiveLine();
 }, { immediate: true });
 
@@ -441,6 +568,7 @@ onBeforeUnmount(() => {
   clearManualTimer();
   clearControlsTimer();
   if (scrollFrameId !== null) cancelAnimationFrame(scrollFrameId);
+  if (karaokeFrame !== null) cancelAnimationFrame(karaokeFrame);
 });
 </script>
 
@@ -484,6 +612,37 @@ onBeforeUnmount(() => {
   overflow-wrap: anywhere;
   word-break: break-word;
   letter-spacing: 0;
+}
+
+.lyrics-line__words {
+  white-space: pre-wrap;
+}
+
+.lyrics-word {
+  display: inline;
+}
+
+.lyrics-word--done {
+  color: var(--lyrics-text-active);
+}
+
+.lyrics-word--todo {
+  color: var(--lyrics-word-todo);
+}
+
+.lyrics-word--active {
+  background-image: linear-gradient(90deg, var(--lyrics-text-active) var(--word-fill, 0%), var(--lyrics-word-todo) var(--word-fill, 0%));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.lyrics-line__romanization {
+  color: var(--lyrics-translation-color);
+  font-size: var(--lyrics-translation-size);
+  font-weight: 500;
+  line-height: 1.3;
+  opacity: 0.75;
 }
 
 .lyrics-shell--mobile .lyrics-shell__inner {

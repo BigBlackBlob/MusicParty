@@ -440,6 +440,7 @@ export default {
     increaseFont: 'Increase lyric size',
     toggleTranslation: 'Toggle translation',
     translation: 'Translation',
+    romanization: 'Romaji',
     open: 'Open lyrics'
   },
   platforms: {

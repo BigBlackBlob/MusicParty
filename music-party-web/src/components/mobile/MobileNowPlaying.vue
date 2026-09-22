@@ -157,13 +157,19 @@
             class="h-full"
             :lyrics="player.lyricDetail.lyric || player.lyricText"
             :translated-lyrics="player.lyricDetail.translatedLyric"
+            :romanized-lyrics="player.lyricDetail.romanizedLyric"
+            :word-lyric="player.lyricDetail.wordLyric"
+            :word-translated-lyric="player.lyricDetail.wordTranslatedLyric"
+            :word-romanized-lyric="player.lyricDetail.wordRomanizedLyric"
             :show-translation="ui.showLyricTranslation"
+            :show-romanization="ui.showLyricRomanization"
             :current-time-ms="player.playbackPositionMs"
             :is-playing="!player.isPaused"
             :is-dark-mode="ui.isDarkMode"
             :bg-color="'transparent'"
             mobile
             @toggle-translation="ui.toggleLyricTranslation"
+            @toggle-romanization="ui.toggleLyricRomanization"
           />
         </div>
 

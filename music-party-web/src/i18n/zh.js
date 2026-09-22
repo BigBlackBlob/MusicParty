@@ -439,6 +439,7 @@ export default {
     increaseFont: '增大歌词字号',
     toggleTranslation: '切换译文显示',
     translation: '译文',
+    romanization: '罗马音',
     open: '打开歌词'
   },
   platforms: {

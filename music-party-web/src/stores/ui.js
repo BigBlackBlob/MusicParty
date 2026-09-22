@@ -20,6 +20,7 @@ export const useUiStore = defineStore('ui', () => {
     const globalZoomLevel = ref(Number(localStorage.getItem('mp_global_zoom_level') || 1));
     const volume = ref(parseFloat(localStorage.getItem(STORAGE_KEYS.VOLUME) || '0.5'));
     const showLyricTranslation = ref(localStorage.getItem(STORAGE_KEYS.LYRIC_TRANSLATION) !== 'false');
+    const showLyricRomanization = ref(localStorage.getItem(STORAGE_KEYS.LYRIC_ROMANIZATION) === 'true');
     const lyricAlignment = ref(localStorage.getItem('mp_lyric_alignment') || 'center');
     const autoLiteMode = ref(localStorage.getItem('mp_auto_lite_mode') === 'true'); // 默认 false
 
@@ -184,6 +185,14 @@ export const useUiStore = defineStore('ui', () => {
         showLyricTranslation.value = !!val;
     };
 
+    const toggleLyricRomanization = () => {
+        showLyricRomanization.value = !showLyricRomanization.value;
+    };
+
+    const setLyricRomanization = (val) => {
+        showLyricRomanization.value = !!val;
+    };
+
     const setLyricAlignment = (val) => {
         if (['left', 'center', 'right'].includes(val)) {
             lyricAlignment.value = val;
@@ -275,6 +284,10 @@ export const useUiStore = defineStore('ui', () => {
         localStorage.setItem(STORAGE_KEYS.LYRIC_TRANSLATION, newVal.toString());
     });
 
+    watch(showLyricRomanization, (newVal) => {
+        localStorage.setItem(STORAGE_KEYS.LYRIC_ROMANIZATION, newVal.toString());
+    });
+
     watch(autoLiteMode, (newVal) => {
         localStorage.setItem('mp_auto_lite_mode', newVal.toString());
     });
@@ -336,6 +349,9 @@ export const useUiStore = defineStore('ui', () => {
         setVolume,
         showLyricTranslation,
         toggleLyricTranslation,
+        showLyricRomanization,
+        toggleLyricRomanization,
+        setLyricRomanization,
         setLyricTranslation,
         lyricAlignment,
         setLyricAlignment,

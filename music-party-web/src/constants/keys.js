@@ -4,5 +4,6 @@ export const STORAGE_KEYS = {
     ROOM_ID: 'mp_room_id',
     VOLUME: 'mp_volume',
     LIKED_SONGS: 'mp_liked_songs',
-    LYRIC_TRANSLATION: 'mp_lyric_translation'
+    LYRIC_TRANSLATION: 'mp_lyric_translation',
+    LYRIC_ROMANIZATION: 'mp_lyric_romanization'
 };
