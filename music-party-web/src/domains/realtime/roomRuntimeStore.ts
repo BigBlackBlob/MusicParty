@@ -28,6 +28,7 @@ export const useRoomRuntimeStore = defineStore('room-runtime', () => {
   const isSkipLocked = ref(false)
   const isShuffleLocked = ref(false)
   const isLoading = ref(false)
+  const historyCursor = ref(0)
   const lastStateVersion = ref(0)
   const lastQueueVersion = ref(0)
   const lastPlayEpoch = ref(0)
@@ -93,6 +94,7 @@ export const useRoomRuntimeStore = defineStore('room-runtime', () => {
     isSkipLocked.value = false
     isShuffleLocked.value = false
     isLoading.value = false
+    historyCursor.value = 0
     lastStateVersion.value = 0
     lastQueueVersion.value = 0
     lastPlayEpoch.value = 0
@@ -105,7 +107,7 @@ export const useRoomRuntimeStore = defineStore('room-runtime', () => {
 
   return {
     nowPlaying, queue, isPaused, isShuffle,
-    isPauseLocked, isSkipLocked, isShuffleLocked, isLoading,
+    isPauseLocked, isSkipLocked, isShuffleLocked, isLoading, historyCursor,
     lastStateVersion, lastQueueVersion, lastPlayEpoch, lastServerTimestamp,
     remotePosition, lastSyncTime, serverClockOffset, hasClockSample,
     replaceQueue, applyQueuePatch,

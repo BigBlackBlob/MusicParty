@@ -42,6 +42,7 @@ export function useNowPlayingViewModel(options: { artistSeparator?: string } = {
     get isSkipLocked() { return runtime.isSkipLocked },
     get isShuffleLocked() { return runtime.isShuffleLocked },
     get isLoading() { return runtime.isLoading },
+    get historyCursor() { return runtime.historyCursor },
     get playbackPositionMs() { return audio.playbackPositionMs },
     get bufferedMs() { return audio.bufferedMs },
     get isBuffering() { return audio.isBuffering },
@@ -53,6 +54,7 @@ export function useNowPlayingViewModel(options: { artistSeparator?: string } = {
     toggleShuffle: commands.toggleShuffle,
     togglePause: commands.togglePause,
     playNext: commands.playNext,
+    playPrevious: commands.playPrevious,
   })
 
   const nowPlaying = computed(() => runtime.nowPlaying)

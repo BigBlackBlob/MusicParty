@@ -74,7 +74,13 @@
           >
             <span class="material-symbols-outlined text-[20px]" :aria-label="playModeLabel" :title="playModeLabel">shuffle</span>
           </button>
-          <button class="flex h-12 w-12 cursor-not-allowed items-center justify-center rounded-full text-text-secondary opacity-35" :aria-label="t('player.prevUnavailable')" :title="t('player.prevUnavailable')">
+          <button
+            class="flex h-12 w-12 items-center justify-center rounded-full text-text-secondary transition-all hover:bg-[var(--surface-control-hover)] hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-35"
+            :disabled="player.isSkipLocked || !player.historyCursor"
+            @click="player.playPrevious"
+            :aria-label="player.historyCursor ? t('player.prev') : t('player.prevUnavailable')"
+            :title="player.historyCursor ? t('player.prev') : t('player.prevUnavailable')"
+          >
             <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">skip_previous</span>
           </button>
           <button

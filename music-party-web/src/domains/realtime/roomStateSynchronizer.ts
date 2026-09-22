@@ -17,6 +17,7 @@ export const useRoomStateSynchronizer = defineStore('room-state-synchronizer', (
   const commands = useRoomCommandStore()
   const {
     nowPlaying, isPaused, isShuffle, isPauseLocked, isSkipLocked, isShuffleLocked, isLoading,
+    historyCursor,
     lastStateVersion, lastPlayEpoch, lastServerTimestamp, remotePosition, lastSyncTime,
     serverClockOffset, hasClockSample,
   } = storeToRefs(runtime)
@@ -64,6 +65,7 @@ export const useRoomStateSynchronizer = defineStore('room-state-synchronizer', (
     isSkipLocked.value = state.isSkipLocked
     isShuffleLocked.value = state.isShuffleLocked
     isLoading.value = state.isLoading
+    historyCursor.value = Number.isFinite(state.historyCursor) ? Math.max(0, state.historyCursor) : 0
 
     const receivedAt = Date.now()
     if (!hasClockSample.value) {

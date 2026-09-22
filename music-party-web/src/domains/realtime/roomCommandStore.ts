@@ -127,7 +127,7 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
     return true
   }
 
-  function sendControl<T extends 'control.next' | 'control.toggle-pause' | 'control.toggle-shuffle' | 'control.seek'>(
+  function sendControl<T extends 'control.next' | 'control.previous' | 'control.toggle-pause' | 'control.toggle-shuffle' | 'control.seek'>(
     destination: T,
     payload: ClientPayload<T>,
     cooldown = true,
@@ -146,6 +146,7 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
   }
 
   const playNext = (): boolean => sendControl('control.next', {})
+  const playPrevious = (): boolean => sendControl('control.previous', {})
   const togglePause = (): boolean => sendControl('control.toggle-pause', {})
   const toggleShuffle = (): boolean => sendControl('control.toggle-shuffle', {})
   const seek = (positionMs: number): boolean => sendControl('control.seek', { positionMs }, false)
@@ -231,7 +232,7 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
   return {
     requireAuth,
     setQueue, applyQueuePatch, settleQueueReorder, settleQueueMutation, settleEnqueue,
-    requestResync, playNext, togglePause, toggleShuffle, seek, toggleLike,
+    requestResync, playNext, playPrevious, togglePause, toggleShuffle, seek, toggleLike,
     enqueue, enqueuePlaylist, enqueueAlbum, topSong, removeSong, topSongs, removeSongs, reorderQueue,
     reset,
   }

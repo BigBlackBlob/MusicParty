@@ -30,6 +30,7 @@ export function useAudioPlayerAdapter() {
     getCurrentProgress: synchronizer.getCurrentProgress,
     togglePause: commands.togglePause,
     playNext: commands.playNext,
+    playPrevious: commands.playPrevious,
     tryReconnect: coordinator.tryReconnect,
     requestSyncRefresh: coordinator.requestSyncRefresh,
   })

@@ -338,7 +338,7 @@ const clearStalledWatchdog = () => {
         try {
             navigator.mediaSession.setActionHandler('play', () => playerStore.togglePause());
             navigator.mediaSession.setActionHandler('pause', () => playerStore.togglePause());
-            navigator.mediaSession.setActionHandler('previoustrack', null); // 暂不支持上一首
+            navigator.mediaSession.setActionHandler('previoustrack', () => playerStore.playPrevious?.());
             navigator.mediaSession.setActionHandler('nexttrack', () => playerStore.playNext());
         } catch (e) {
             console.warn('Media Session actions warning:', e);

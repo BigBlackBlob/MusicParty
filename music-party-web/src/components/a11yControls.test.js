@@ -21,7 +21,7 @@ describe('accessible control semantics', () => {
 
     expect(source).toContain(':aria-label="t(\'player.seek\')"');
     expect(source).toContain(':aria-label="t(\'player.shuffle\')"');
-    expect(source).toContain(':aria-label="t(\'player.prevUnavailable\')"');
+    expect(source).toContain(':aria-label="player.historyCursor ? t(\'player.prev\') : t(\'player.prevUnavailable\')"');
     expect(source).toContain(':aria-label="player.isPaused ? t(\'player.play\') : t(\'player.pause\')"');
     expect(source).toContain(':aria-label="t(\'player.next\')"');
     expect(source).toContain(':aria-label="isLiked ? t(\'player.unlike\') : t(\'player.like\')"');
