@@ -50,6 +50,9 @@ type Lyric struct {
 	Lyric           string `json:"lyric"`
 	TranslatedLyric string `json:"translatedLyric"`
 	RomanizedLyric  string `json:"romanizedLyric"`
+	WordLyric       string `json:"wordLyric,omitempty"`           // 原始 YRC 文本（逐字）
+	WordTranslated  string `json:"wordTranslatedLyric,omitempty"` // 逐字译文（ytlrc）
+	WordRomanized   string `json:"wordRomanizedLyric,omitempty"`  // 逐字罗马音（yromalrc）
 }
 
 type Service interface {

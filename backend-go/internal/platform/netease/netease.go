@@ -137,13 +137,32 @@ func (s *Service) SearchUsers(ctx context.Context, keyword string) ([]platform.U
 	return result, err
 }
 func (s *Service) Lyric(ctx context.Context, musicID string) (platform.Lyric, error) {
-	var response struct {
+	var lineLevel struct {
 		LRC, TLyric, RomaLRC struct {
 			Lyric string `json:"lyric"`
 		}
 	}
-	err := s.get(ctx, "/lyric", url.Values{"id": {musicID}}, &response)
-	return platform.Lyric{Lyric: response.LRC.Lyric, TranslatedLyric: response.TLyric.Lyric, RomanizedLyric: response.RomaLRC.Lyric}, err
+	err := s.get(ctx, "/lyric", url.Values{"id": {musicID}}, &lineLevel)
+	if err != nil {
+		return platform.Lyric{}, err
+	}
+	value := platform.Lyric{Lyric: lineLevel.LRC.Lyric, TranslatedLyric: lineLevel.TLyric.Lyric, RomanizedLyric: lineLevel.RomaLRC.Lyric}
+	// Word-level lyrics are an optional augmentation only. Measured live 2026-09-22:
+	// /lyric/new rewrites lrc/tlyric credits as JSON lines, so its line-level slots
+	// would drift the pure-LRC compatibility routes; only yrc/ytlrc/yromalrc are
+	// consumed, verbatim (zero-duration segments and credit lines survive untouched),
+	// and any failure degrades to "no word lyrics" without erroring.
+	var wordLevel struct {
+		YRC, YTLRC, YROMALRC struct {
+			Lyric string `json:"lyric"`
+		}
+	}
+	if s.get(ctx, "/lyric/new", url.Values{"id": {musicID}}, &wordLevel) == nil {
+		value.WordLyric = wordLevel.YRC.Lyric
+		value.WordTranslated = wordLevel.YTLRC.Lyric
+		value.WordRomanized = wordLevel.YROMALRC.Lyric
+	}
+	return value, nil
 }
 
 func (s *Service) StreamURL(ctx context.Context, musicID string) (string, error) {

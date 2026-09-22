@@ -2,8 +2,10 @@ package netease
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform"
@@ -24,15 +26,61 @@ func TestSearchMapsJavaCompatibleMusic(t *testing.T) {
 	require.Equal(t, "42", songs[0].ID)
 	require.Equal(t, "https://img.test/a.jpg?param=1000y1000", songs[0].CoverURL)
 }
-func TestLyricDetailMapsAllVariants(t *testing.T) {
+
+// Line-level slots must always come from legacy /lyric (the live /lyric/new
+// rewrites credits as JSON lines), while /lyric/new only augments word fields.
+func TestLyricMapsLineLevelFromLegacyAndWordLevelFromNew(t *testing.T) {
+	const line = `{"lrc":{"lyric":"a"},"tlyric":{"lyric":"b"},"romalrc":{"lyric":"c"}}`
+	cases := []struct {
+		name     string
+		lineBody string
+		wordBody string
+		want     platform.Lyric
+		wantKey  bool
+	}{
+		{name: "all-variants", lineBody: line, wordBody: `{"lrc":{"lyric":"drift"},"yrc":{"lyric":"[0,4440](0,1320,0)Lately"},"ytlrc":{"lyric":"[0,4440](0,1320,0)最近"},"yromalrc":{"lyric":"[0,4440](0,1320,0)lieshi"}}`,
+			want: platform.Lyric{Lyric: "a", TranslatedLyric: "b", RomanizedLyric: "c", WordLyric: "[0,4440](0,1320,0)Lately", WordTranslated: "[0,4440](0,1320,0)最近", WordRomanized: "[0,4440](0,1320,0)lieshi"}, wantKey: true},
+		{name: "line-level-only", lineBody: line, wordBody: `{"lrc":{"lyric":"drift"}}`,
+			want: platform.Lyric{Lyric: "a", TranslatedLyric: "b", RomanizedLyric: "c"}},
+		{name: "yrc-without-word-translation", lineBody: line, wordBody: `{"yrc":{"lyric":"w"}}`,
+			want: platform.Lyric{Lyric: "a", TranslatedLyric: "b", RomanizedLyric: "c", WordLyric: "w"}, wantKey: true},
+		{name: "empty-response", lineBody: `{}`, wordBody: `{}`, want: platform.Lyric{}},
+		{name: "new-route-unknown-degrades-silently", lineBody: line, wordBody: `{"code":400,"message":"unknown uri"}`,
+			want: platform.Lyric{Lyric: "a", TranslatedLyric: "b", RomanizedLyric: "c"}},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			var paths []string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				paths = append(paths, r.URL.Path)
+				if r.URL.Path == "/lyric" {
+					_, _ = w.Write([]byte(test.lineBody))
+				} else {
+					_, _ = w.Write([]byte(test.wordBody))
+				}
+			}))
+			defer server.Close()
+			service := New(&platform.Client{HTTP: server.Client(), Retries: 0, MaxBody: 4096}, server.URL, "secret")
+			value, err := service.Lyric(context.Background(), "1")
+			require.NoError(t, err)
+			require.Equal(t, test.want, value)
+			require.Equal(t, []string{"/lyric", "/lyric/new"}, paths)
+			encoded, err := json.Marshal(value)
+			require.NoError(t, err)
+			require.Equal(t, test.wantKey, strings.Contains(string(encoded), `"wordLyric"`))
+			require.Contains(t, string(encoded), `"lyric"`)
+		})
+	}
+}
+
+func TestLyricPropagatesLegacyRouteFailure(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"lrc":{"lyric":"a"},"tlyric":{"lyric":"b"},"romalrc":{"lyric":"c"}}`))
+		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer server.Close()
-	service := New(&platform.Client{HTTP: server.Client(), Retries: 0, MaxBody: 1024}, server.URL, "secret")
-	value, err := service.Lyric(context.Background(), "1")
-	require.NoError(t, err)
-	require.Equal(t, platform.Lyric{Lyric: "a", TranslatedLyric: "b", RomanizedLyric: "c"}, value)
+	service := New(&platform.Client{HTTP: server.Client(), Retries: 0, MaxBody: 4096}, server.URL, "secret")
+	_, err := service.Lyric(context.Background(), "1")
+	require.Error(t, err)
 }
 
 func TestResolvePlayableReturnsCanonicalMetadataAndProxyURL(t *testing.T) {
