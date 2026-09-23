@@ -31,6 +31,8 @@ var (
 	//lint:ignore ST1005 Java-compatible API message.
 	ErrInvalidRoomPassword = errors.New("Invalid room password")
 	ErrForbidden           = errors.New("Forbidden")
+	//lint:ignore ST1005 Java-compatible API message.
+	ErrRoomNameExists = errors.New("Room name already exists")
 )
 
 type Info struct {
@@ -49,6 +51,12 @@ type UpdateInput struct {
 	Private              bool
 	Password             string
 	KeepExistingPassword bool
+}
+
+type CreateInput struct {
+	Name     string
+	Private  bool
+	Password string
 }
 
 type AccessMetadata struct {
@@ -108,6 +116,52 @@ func (s *Service) CanManage(ctx context.Context, roomID, token string) (account.
 		return account.Session{}, false
 	}
 	return session, session.Admin()
+}
+
+func (s *Service) Create(ctx context.Context, token string, input CreateInput) (Info, error) {
+	session, err := s.accounts.Resolve(ctx, token)
+	if err != nil {
+		return Info{}, err
+	}
+	name := strings.TrimSpace(input.Name)
+	if name == "" || len([]rune(name)) > 64 {
+		return Info{}, ErrInvalidRoomName
+	}
+	private := input.Private
+	if private && strings.TrimSpace(input.Password) == "" {
+		return Info{}, ErrPrivatePasswordRequired
+	}
+	var duplicates int
+	if err := s.store.Reader().QueryRowContext(ctx, "select count(1) from room where lower(name)=lower(?) and deleted_at is null", name).Scan(&duplicates); err != nil {
+		return Info{}, err
+	}
+	if duplicates > 0 {
+		return Info{}, ErrRoomNameExists
+	}
+	roomID := "room-" + uuid.NewString()[:8]
+	visibility := "PUBLIC"
+	passwordVersion := 0
+	var passwordHash any
+	if private {
+		visibility = "PRIVATE"
+		hash, hashErr := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+		if hashErr != nil {
+			return Info{}, hashErr
+		}
+		passwordHash = string(hash)
+		passwordVersion = 1
+	}
+	now := s.now().UnixMilli()
+	if err := s.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, "insert into room(id,name,owner_public_id,visibility,password_hash,password_version,system,created_at,last_active_at) values(?,?,?,?,?,?,0,?,?)", roomID, name, session.PublicID, visibility, passwordHash, passwordVersion, now, now); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, "insert into room_membership(room_id,public_id,role,created_at,updated_at) values(?,?,'OWNER',?,?)", roomID, session.PublicID, now, now)
+		return err
+	}); err != nil {
+		return Info{}, err
+	}
+	return Info{RoomID: roomID, Name: name, CreatorPublicID: session.PublicID, CreatedAt: now, PrivateRoom: private, AccessGranted: true}, nil
 }
 func (s *Service) Update(ctx context.Context, roomID, token, name string) (Info, error) {
 	metadata, err := s.Access(ctx, roomID)

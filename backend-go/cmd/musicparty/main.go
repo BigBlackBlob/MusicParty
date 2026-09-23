@@ -166,7 +166,7 @@ func run() error {
 	var handler http.Handler
 	var desktopAPI *httpapi.DesktopAPI
 	if accountService != nil {
-		desktopAPI = httpapi.NewDesktopAPI(cfg, accountService, roomService, platformAPI)
+		desktopAPI = httpapi.NewDesktopAPI(cfg, accountService, roomService, socketHub, platformAPI)
 	}
 	staticRoot := os.Getenv("STATIC_PATH")
 	if staticRoot == "" {

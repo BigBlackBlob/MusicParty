@@ -1,5 +1,5 @@
 {
-  "routeCount": 100,
+  "routeCount": 101,
   "routes": [
     {
       "method": "GET",
@@ -221,6 +221,12 @@
       "method": "GET",
       "path": "/api/desktop/v1/music/{platform}/{songId}/lyrics",
       "operationId": "get.api.desktop.v1.music.platform.songId.lyrics",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "POST",
+      "path": "/api/desktop/v1/rooms",
+      "operationId": "post.api.desktop.v1.rooms",
       "source": "backend-go/internal/httpapi"
     },
     {

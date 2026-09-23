@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -18,8 +17,6 @@ import (
 	wsruntime "github.com/BigBlackBlob/MusicParty/backend-go/internal/ws"
 	"github.com/coder/websocket"
 	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type WebSocketAPI struct {
@@ -597,43 +594,11 @@ func (api *WebSocketAPI) createRoom(ctx context.Context, client *wsruntime.Clien
 	if err != nil {
 		return
 	}
-	request.Name = strings.TrimSpace(request.Name)
-	if request.Name == "" || (request.IsPrivate && strings.TrimSpace(request.Password) == "") {
-		api.event(client, "ROOM_CREATE_FAILED", "Room name and private room password are required")
-		return
-	}
-	var duplicate int
-	if err := api.store.Reader().QueryRowContext(ctx, "select count(1) from room where lower(name)=lower(?) and deleted_at is null", request.Name).Scan(&duplicate); err != nil || duplicate > 0 {
-		api.event(client, "ROOM_CREATE_FAILED", "Room name already exists")
-		return
-	}
-	roomID := "room-" + uuid.NewString()[:8]
-	visibility := "PUBLIC"
-	var passwordHash any
-	passwordVersion := 0
-	if request.IsPrivate {
-		visibility = "PRIVATE"
-		hash, hashErr := bcrypt.GenerateFromPassword([]byte(request.Password), bcrypt.DefaultCost)
-		if hashErr != nil {
-			api.event(client, "ROOM_CREATE_FAILED", hashErr.Error())
-			return
-		}
-		passwordHash = string(hash)
-		passwordVersion = 1
-	}
-	now := time.Now().UnixMilli()
-	err = api.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, "insert into room(id,name,owner_public_id,visibility,password_hash,password_version,system,created_at,last_active_at) values(?,?,?,?,?,?,0,?,?)", roomID, request.Name, session.PublicID, visibility, passwordHash, passwordVersion, now, now); err != nil {
-			return err
-		}
-		_, err := tx.ExecContext(ctx, "insert into room_membership(room_id,public_id,role,created_at,updated_at) values(?,?,'OWNER',?,?)", roomID, session.PublicID, now, now)
-		return err
-	})
+	room, err := api.rooms.Create(ctx, session.SessionToken, roomdomain.CreateInput{Name: request.Name, Private: request.IsPrivate, Password: request.Password})
 	if err != nil {
 		api.event(client, "ROOM_CREATE_FAILED", err.Error())
 		return
 	}
-	room := roomdomain.Info{RoomID: roomID, Name: request.Name, CreatorPublicID: session.PublicID, CreatedAt: now, PrivateRoom: request.IsPrivate, AccessGranted: true}
 	_ = client.Send("rooms.created", "", room)
 	if rooms, err := api.rooms.List(ctx, session.SessionToken); err == nil {
 		api.hub.BroadcastAll("rooms.list", rooms)

@@ -70,7 +70,7 @@ func TestControlProcessHelper(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, 18081, listener.Addr().(*net.TCPAddr).Port)
 	server := &http.Server{Handler: NewHandler(cfg, logger, observability.NewHealth(), observability.NewMetrics(),
-		auth, api, NewDesktopAPI(cfg, accounts, rooms, platforms)), ReadHeaderTimeout: 5 * time.Second}
+		auth, api, NewDesktopAPI(cfg, accounts, rooms, hub, platforms)), ReadHeaderTimeout: 5 * time.Second}
 	done := make(chan error, 1)
 	go func() { done <- server.Serve(listener) }()
 	// stdout is a machine control channel, not a service log. It never carries

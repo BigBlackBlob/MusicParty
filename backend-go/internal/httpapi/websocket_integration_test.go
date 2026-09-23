@@ -338,3 +338,53 @@ func TestDesktopWebSocketRequiresOriginSessionAndRoom(t *testing.T) {
 		cancel()
 	}
 }
+
+// Room creation moved into the room domain service so the desktop can create
+// rooms over HTTP; this keeps the WebSocket path pinned to the same behaviour.
+func TestWebSocketAdminRoomCreationAndFailures(t *testing.T) {
+	store := httpStore(t)
+	insertStage5User(t, store, "admin-token", "admin", "PLATFORM_ADMIN")
+	insertStage5User(t, store, "member-token", "member", "MEMBER")
+	insertStage5Room(t, store, "lounge", "PUBLIC", 0)
+	accounts := account.New(store)
+	cfg := testConfig(t)
+	hub := wsruntime.NewHub(256)
+	manager := realtime.NewManager(store, 100, 5*time.Second, time.Hour, hub)
+	api := NewWebSocketAPI(cfg, store, accounts, roomdomain.New(store, accounts), hub, manager, NewPlatformAPI(cfg, fixturePlatform{}))
+	server := httptest.NewServer(NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api))
+	t.Cleanup(func() {
+		server.Close()
+		hub.Close()
+		manager.Close()
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	admin := dialWebSocket(t, server, "admin-token", "lounge")
+	readUntilType(t, admin, "player.state")
+	require.NoError(t, admin.Write(ctx, websocket.MessageText, []byte(`{"type":"rooms.create","payload":{"name":"WS Created","isPrivate":true,"password":"secret"}}`)))
+	created := readUntilType(t, admin, "rooms.created")
+	payload := created.Payload.(map[string]any)
+	require.Equal(t, "WS Created", payload["name"])
+	require.Equal(t, true, payload["privateRoom"])
+	require.Equal(t, true, payload["accessGranted"])
+	require.True(t, strings.HasPrefix(payload["roomId"].(string), "room-"))
+	listed := readUntilType(t, admin, "rooms.list").Payload.([]any)
+	names := make([]string, 0, len(listed))
+	for _, item := range listed {
+		names = append(names, item.(map[string]any)["name"].(string))
+	}
+	require.Contains(t, names, "WS Created")
+
+	require.NoError(t, admin.Write(ctx, websocket.MessageText, []byte(`{"type":"rooms.create","payload":{"name":"ws created"}}`)))
+	failed := readUntilType(t, admin, "player.events")
+	event := failed.Payload.(map[string]any)
+	require.Equal(t, "ROOM_CREATE_FAILED", event["code"])
+	require.Equal(t, "Room name already exists", event["message"])
+
+	member := dialWebSocket(t, server, "member-token", "lounge")
+	readUntilType(t, member, "player.state")
+	require.NoError(t, member.Write(ctx, websocket.MessageText, []byte(`{"type":"rooms.create","payload":{"name":"Member Room"}}`)))
+	denied := readUntilType(t, member, "player.events")
+	require.Equal(t, "CONTROL_DENIED", denied.Payload.(map[string]any)["code"])
+}

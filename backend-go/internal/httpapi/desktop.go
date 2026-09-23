@@ -12,6 +12,7 @@ import (
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/config"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/domain/account"
 	roomdomain "github.com/BigBlackBlob/MusicParty/backend-go/internal/domain/room"
+	"github.com/BigBlackBlob/MusicParty/backend-go/internal/realtime"
 	wsruntime "github.com/BigBlackBlob/MusicParty/backend-go/internal/ws"
 	"github.com/coder/websocket"
 	"github.com/go-chi/chi/v5"
@@ -67,12 +68,13 @@ type DesktopAPI struct {
 	cfg       config.Config
 	accounts  *account.Service
 	rooms     *roomdomain.Service
+	hub       realtime.Broadcaster
 	platforms *PlatformAPI
 	cookies   CookieFactory
 }
 
-func NewDesktopAPI(cfg config.Config, accounts *account.Service, rooms *roomdomain.Service, platforms *PlatformAPI) *DesktopAPI {
-	return &DesktopAPI{cfg: cfg, accounts: accounts, rooms: rooms, platforms: platforms, cookies: CookieFactory{SecureCookies: cfg.Auth.SecureCookies}}
+func NewDesktopAPI(cfg config.Config, accounts *account.Service, rooms *roomdomain.Service, hub realtime.Broadcaster, platforms *PlatformAPI) *DesktopAPI {
+	return &DesktopAPI{cfg: cfg, accounts: accounts, rooms: rooms, hub: hub, platforms: platforms, cookies: CookieFactory{SecureCookies: cfg.Auth.SecureCookies}}
 }
 
 func (api *DesktopAPI) Routes(r chi.Router) {
@@ -86,6 +88,56 @@ func (api *DesktopAPI) Routes(r chi.Router) {
 	r.With(desktopGuard).Get("/api/desktop/v1/media/{platform}/{songId}/lyrics", Adapt(api.lyrics))
 	r.With(desktopGuard).Get("/api/desktop/v1/music/{platform}/{songId}/lyrics", Adapt(api.lyrics))
 	r.With(desktopGuard).Get("/api/desktop/v1/search/{platform}", Adapt(api.searchDesktop))
+	r.With(desktopGuard, RequireSession(api.accounts)).Post("/api/desktop/v1/rooms", Adapt(api.createRoom))
+}
+
+// createRoom lets a signed-in desktop client open a room without the web page.
+// Room ownership is recorded, but the existing management routes still require a
+// platform admin, so the creator cannot rename or delete it through this API.
+func (api *DesktopAPI) createRoom(w http.ResponseWriter, r *http.Request) error {
+	token := sessionToken(r)
+	session, err := api.accounts.Resolve(r.Context(), token)
+	if err != nil {
+		return &APIError{Status: http.StatusUnauthorized, Name: "unauthorized", Message: "Authentication required"}
+	}
+	var request struct {
+		Name      string `json:"name"`
+		IsPrivate bool   `json:"isPrivate"`
+		Password  string `json:"password"`
+	}
+	if err := decodeJSONBody(r, &request); err != nil {
+		return &APIError{Status: http.StatusBadRequest, Name: "invalid-request", Message: "Invalid request body"}
+	}
+	room, err := api.rooms.Create(r.Context(), token, roomdomain.CreateInput{Name: request.Name, Private: request.IsPrivate, Password: request.Password})
+	if err != nil {
+		return desktopRoomError(err)
+	}
+	if room.PrivateRoom {
+		metadata, accessErr := api.rooms.Access(r.Context(), room.RoomID)
+		if accessErr != nil {
+			return &APIError{Status: http.StatusInternalServerError, Name: "internal-server-error", Message: "Room access could not be established"}
+		}
+		expiresAt := time.Now().Add(time.Duration(roomAccessSeconds) * time.Second).UnixMilli()
+		http.SetCookie(w, api.cookies.EstablishRoomAccess(r, signRoomAccessToken(roomAccessSecret(api.cfg.Auth.RoomAccessTokenSecret), room.RoomID, session.PublicID, expiresAt, metadata.PasswordVersion)))
+	}
+	if rooms, listErr := api.rooms.List(r.Context(), token); listErr == nil {
+		api.hub.BroadcastAll("rooms.list", rooms)
+	}
+	writeJSON(w, room)
+	return nil
+}
+
+func desktopRoomError(err error) error {
+	switch {
+	case errors.Is(err, account.ErrUnknownSession):
+		return &APIError{Status: http.StatusUnauthorized, Name: "unauthorized", Message: "Authentication required"}
+	case errors.Is(err, roomdomain.ErrInvalidRoomName), errors.Is(err, roomdomain.ErrPrivatePasswordRequired):
+		return &APIError{Status: http.StatusBadRequest, Name: "invalid-request", Message: err.Error()}
+	case errors.Is(err, roomdomain.ErrRoomNameExists):
+		return &APIError{Status: http.StatusConflict, Name: "room-name-exists", Message: err.Error()}
+	default:
+		return err
+	}
 }
 
 // Negotiate before registering presence or exposing room state. Each reconnect
@@ -125,7 +177,7 @@ func (api *DesktopAPI) capabilities(w http.ResponseWriter, _ *http.Request) {
 		"authentication": "cookie", "reconnect": "snapshot", "eventReplay": false, "providers": providers,
 		// Proven live 2026-09-22: the deployed netease-api (moefurina/ncm-api) serves
 		// /lyric/new with yrc; clients may rely on the wordLyric fields when present.
-		"features": map[string]bool{"inviteRedeem": true, "mediaResolve": true, "queue": true, "chat": true, "lyrics": true, "controlAck": true, "controlPreconditions": true, "controlIdempotency": true, "lyricsWordLevel": true}})
+		"features": map[string]bool{"inviteRedeem": true, "roomCreate": true, "mediaResolve": true, "queue": true, "chat": true, "lyrics": true, "controlAck": true, "controlPreconditions": true, "controlIdempotency": true, "lyricsWordLevel": true}})
 }
 
 func (api *DesktopAPI) redeemInvite(w http.ResponseWriter, r *http.Request) error {
@@ -138,11 +190,11 @@ func (api *DesktopAPI) redeemInvite(w http.ResponseWriter, r *http.Request) erro
 	}
 	metadata := api.accounts.InviteMetadata(r.Context(), request.Code)
 	if metadata.RoomID == "" {
-		return &APIError{Status: http.StatusBadRequest, Name: "invite-invalid", Message: "邀请码无效"}
+		return &APIError{Status: http.StatusBadRequest, Name: "invite-invalid", Message: "邀请码无效或已使用"}
 	}
 	session, err := api.accounts.RedeemInvite(r.Context(), request.Code, request.DisplayName)
 	if err != nil {
-		return &APIError{Status: http.StatusBadRequest, Name: "invite-invalid", Message: "邀请码无效"}
+		return &APIError{Status: http.StatusBadRequest, Name: "invite-invalid", Message: "邀请码无效、已使用或已过期"}
 	}
 	cookies, cookieErr := api.cookies.EstablishMember(r, session.SessionToken)
 	if cookieErr != nil {

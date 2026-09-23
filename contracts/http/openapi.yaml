@@ -564,6 +564,20 @@
         "x-go-source": "backend-go/internal/httpapi"
       }
     },
+    "/api/desktop/v1/rooms": {
+      "post": {
+        "operationId": "post.api.desktop.v1.rooms",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
+      }
+    },
     "/api/desktop/v1/search/{platform}": {
       "get": {
         "operationId": "get.api.desktop.v1.search.platform",
