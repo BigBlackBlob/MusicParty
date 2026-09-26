@@ -24,6 +24,32 @@ type Config struct {
 	LocalLibrary LocalLibrary
 	Database     Database
 	Auth         Auth
+	// Status reports how settings were provisioned. It is the only part of the
+	// configuration that desktop readiness may expose, and it holds no values.
+	Status ConfigStatus
+}
+
+// Provisioning says whether a value came from the environment or from a
+// built-in default. Readiness must not derive this from the resolved Config:
+// NETEASE_API_URL has a compose-only default that is wrong for a local
+// desktop stack, so "non-empty" would claim everything is configured.
+type Provisioning string
+
+const (
+	ProvisionExplicit Provisioning = "explicit"
+	ProvisionDefault  Provisioning = "default"
+	ProvisionMissing  Provisioning = "missing"
+)
+
+type ConfigStatus struct {
+	Netease NeteaseStatus
+}
+
+type NeteaseStatus struct {
+	// json:"url" is part of the readiness wire contract: encoding/json would
+	// otherwise emit the field name "URL", and Go's case-insensitive unmarshal
+	// hides that from same-language tests but not from the desktop client.
+	URL Provisioning `json:"url"`
 }
 
 type Server struct {
@@ -244,6 +270,9 @@ func Load(lookup LookupEnv) (Config, error) {
 		LocalLibrary: LocalLibrary{Enabled: r.bool("LOCAL_LIBRARY_ENABLED", true), Path: r.string("LOCAL_LIBRARY_PATH", "data/local-library"), AllowedUsers: r.string("LOCAL_LIBRARY_ALLOWED_USERS", ""), MaxUploadBytes: r.int64("LOCAL_LIBRARY_MAX_UPLOAD_BYTES", 209_715_200), MaxEmbeddedCoverBytes: r.int64("LOCAL_LIBRARY_MAX_EMBEDDED_COVER_BYTES", 1_048_576)},
 		Database:     Database{Enabled: r.bool("DB_ENABLED", true), Path: r.string("DB_PATH", "data/musicparty.db"), InitSchema: r.bool("DB_INIT_SCHEMA", true), MaxPoolSize: r.int("DB_MAX_POOL_SIZE", 1), MinIdle: r.int("DB_MIN_IDLE", 1), ConnectionTimeout: r.durationMS("DB_CONNECTION_TIMEOUT_MS", 5000), BusyTimeout: r.durationMS("SQLITE_BUSY_TIMEOUT_MS", 5000)},
 		Auth:         Auth{RateLimitEnabled: r.bool("AUTH_RATE_LIMIT_ENABLED", true), MaxAttempts: r.int("AUTH_MAX_ATTEMPTS", 5), Window: r.durationSeconds("AUTH_WINDOW_SECONDS", 60), BlockDuration: r.durationSeconds("AUTH_BLOCK_DURATION", 300), MaxTrackedIPs: r.int("AUTH_MAX_TRACKED_IPS", 10_000), TrustedProxyCIDRs: r.list("TRUSTED_PROXY_CIDRS"), RoomAccessTokenTTL: r.durationMS("ROOM_ACCESS_TOKEN_TTL_MS", 300_000), RoomAccessTokenSecret: r.string("ROOM_ACCESS_TOKEN_SECRET", ""), SecureCookies: r.bool("AUTH_SECURE_COOKIES", true)},
+		Status: ConfigStatus{
+			Netease: NeteaseStatus{URL: r.provisioning("NETEASE_API_URL", true)},
+		},
 	}
 	cfg.Application.Production = looksLikeProduction(
 		cfg.Application,
@@ -353,6 +382,26 @@ func (r *reader) string(name, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+// provisioning classifies how `name` was supplied, mirroring what string()
+// actually resolves: absent falls back, present-but-blank yields a blank value
+// (so it is "missing", not "default"), and only a real value is "explicit".
+// hasDefault says whether a built-in fallback exists at all; it is a bool
+// rather than the fallback text because contractgen scrapes defaults from the
+// literal in the string() call, and a second copy would drift.
+func (r *reader) provisioning(name string, hasDefault bool) Provisioning {
+	value, ok := r.raw(name)
+	if !ok {
+		if !hasDefault {
+			return ProvisionMissing
+		}
+		return ProvisionDefault
+	}
+	if value == "" {
+		return ProvisionMissing
+	}
+	return ProvisionExplicit
 }
 
 func (r *reader) list(name string) []string {

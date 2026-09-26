@@ -75,12 +75,19 @@ func (s *Service) ResolvePlayable(ctx context.Context, id string) (platform.Play
 	streamPrefix := strings.TrimSuffix(strings.TrimRight(s.cfg.ProxyPrefix, "/"), "/cover") + "/stream"
 	return platform.PlayableMusic{Music: items[0], URL: streamPrefix + "/" + url.PathEscape(id)}, nil
 }
-func (s *Service) SearchAlbums(ctx context.Context, keyword string) ([]platform.Album, error) {
+
+// SearchAlbums pages through search3's offset/albumCount. The response carries no total that this
+// client parses, so Total stays 0 ("unknown") and callers must fall back to a full-page heuristic.
+func (s *Service) SearchAlbums(ctx context.Context, keyword string, offset, limit int) (platform.AlbumSearchResult, error) {
+	pageSize := limit
+	if pageSize <= 0 {
+		pageSize = 50 // the historic fixed page the web route always got
+	}
 	var r response
-	err := s.get(ctx, "search3.view", url.Values{"query": {keyword}, "songCount": {"0"}, "albumCount": {"50"}, "artistCount": {"0"}}, &r)
-	out := make([]platform.Album, 0, len(r.Body.Search.Albums))
+	err := s.get(ctx, "search3.view", url.Values{"query": {keyword}, "songCount": {"0"}, "albumCount": {strconv.Itoa(pageSize)}, "artistCount": {"0"}, "offset": {strconv.Itoa(max(0, offset))}}, &r)
+	out := platform.AlbumSearchResult{Items: make([]platform.Album, 0, len(r.Body.Search.Albums))}
 	for _, a := range r.Body.Search.Albums {
-		out = append(out, platform.Album{ID: a.ID, Name: a.Name, ArtistName: a.Artist, CoverURL: s.cover(a.CoverArt), TrackCount: a.SongCount, Platform: s.cfg.ID})
+		out.Items = append(out.Items, platform.Album{ID: a.ID, Name: a.Name, ArtistName: a.Artist, CoverURL: s.cover(a.CoverArt), TrackCount: a.SongCount, Platform: s.cfg.ID})
 	}
 	return out, err
 }

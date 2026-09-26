@@ -59,3 +59,45 @@ func TestMigrateMemberAccountsToGuestsPreservesPublicIDData(t *testing.T) {
 	require.Zero(t, invites)
 	require.Equal(t, "admin", owner)
 }
+
+// The guest-only switch is a one-time repair of a legacy database, not a recurring sweep: the
+// migration_state row makes every later start a no-op. That is what lets a room created by an
+// invite-redeemed member keep its owner across restarts, which CanEdit and the desktop lobby
+// both depend on.
+func TestGuestOnlyMigrationNeverRevisitsLaterMembers(t *testing.T) {
+	ctx := context.Background()
+	store, err := OpenStore(ctx, StoreConfig{Path: filepath.Join(t.TempDir(), "one-shot.db"), BusyTimeout: time.Second, ReadConnections: 2})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, store.Close()) })
+	require.NoError(t, EnsureCompatibleSchema(ctx, store, true))
+	require.NoError(t, store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, "insert into user_profile(public_id,display_name,is_guest,current_room_id,created_at,last_seen_at) values('admin','Admin',0,'lounge',1,1)")
+		if err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx, "insert into user_account(username,public_id,password_hash,role,enabled,created_at,updated_at) values('admin','admin','hash','PLATFORM_ADMIN',1,1,1)")
+		return err
+	}))
+	require.NoError(t, MigrateMemberAccountsToGuests(ctx, store))
+
+	require.NoError(t, store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, "insert into user_profile(public_id,display_name,is_guest,current_room_id,created_at,last_seen_at) values('later','Later Member',0,'room-later',1,1)"); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, "insert into user_account(username,public_id,password_hash,role,enabled,created_at,updated_at) values('later','later','hash','MEMBER',1,1,1)"); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, "insert into room(id,name,owner_public_id,visibility,system,created_at,last_active_at) values('room-later','Later Room','later','PUBLIC',0,1,1)")
+		return err
+	}))
+	require.NoError(t, MigrateMemberAccountsToGuests(ctx, store))
+
+	var accounts, guests int
+	var owner string
+	require.NoError(t, store.Reader().QueryRowContext(ctx, "select count(1) from user_account where public_id='later' and role='MEMBER'").Scan(&accounts))
+	require.NoError(t, store.Reader().QueryRowContext(ctx, "select is_guest from user_profile where public_id='later'").Scan(&guests))
+	require.NoError(t, store.Reader().QueryRowContext(ctx, "select owner_public_id from room where id='room-later'").Scan(&owner))
+	require.Equal(t, 1, accounts, "a member created after the repair must keep its account")
+	require.Zero(t, guests, "a member created after the repair must not be downgraded")
+	require.Equal(t, "later", owner, "the room must keep the member as its owner so CanEdit still matches")
+}

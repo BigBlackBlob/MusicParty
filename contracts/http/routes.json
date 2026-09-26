@@ -1,5 +1,5 @@
 {
-  "routeCount": 101,
+  "routeCount": 104,
   "routes": [
     {
       "method": "GET",
@@ -183,6 +183,18 @@
     },
     {
       "method": "GET",
+      "path": "/api/desktop/v1/albums/{platform}",
+      "operationId": "get.api.desktop.v1.albums.platform",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "GET",
+      "path": "/api/desktop/v1/albums/{platform}/{albumId}/songs",
+      "operationId": "get.api.desktop.v1.albums.platform.albumId.songs",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "GET",
       "path": "/api/desktop/v1/capabilities",
       "operationId": "get.api.desktop.v1.capabilities",
       "source": "backend-go/internal/httpapi"
@@ -221,6 +233,12 @@
       "method": "GET",
       "path": "/api/desktop/v1/music/{platform}/{songId}/lyrics",
       "operationId": "get.api.desktop.v1.music.platform.songId.lyrics",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "GET",
+      "path": "/api/desktop/v1/readiness",
+      "operationId": "get.api.desktop.v1.readiness",
       "source": "backend-go/internal/httpapi"
     },
     {

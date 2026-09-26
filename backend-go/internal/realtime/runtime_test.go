@@ -2,6 +2,7 @@ package realtime
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -327,6 +328,86 @@ func TestConcurrentClientsQueueConflictAndDeduplication(t *testing.T) {
 	wg.Wait()
 	_, err = r.Enqueue(context.Background(), s, storesqlite.Music{ID: "dup", Name: "dup"}, "client-a")
 	require.ErrorIs(t, err, ErrDuplicate)
+}
+
+func TestLikesBelongToThePlayingTrackAndMirrorThePersonalLikedList(t *testing.T) {
+	ctx := context.Background()
+	store := realtimeStore(t)
+	now := time.Now().UnixMilli()
+	require.NoError(t, storesqlite.NewUserProfileRepository(store, time.Now).UpsertProfile(ctx, storesqlite.UserProfile{PublicID: "mate", DisplayName: "Mate", CurrentRoomID: "lounge", CreatedAt: now, LastSeenAt: now}))
+	manager := NewManager(store, 10, time.Second, time.Hour, &recordingBroadcaster{})
+	t.Cleanup(manager.Close)
+	runtime, err := manager.Room(ctx, "lounge")
+	require.NoError(t, err)
+	likedList := storesqlite.NewUserPlaylistRepository(store, time.Now, nil)
+	session := account.Session{PublicID: "user", DisplayName: "User"}
+	for index, id := range []string{"a", "b"} {
+		_, err = runtime.Enqueue(ctx, session, storesqlite.Music{ID: id, Name: strings.ToUpper(id), Duration: 60_000, Platform: "local"}, fmt.Sprintf("m%d", index))
+		require.NoError(t, err)
+	}
+
+	result, err := runtime.Unlike(ctx, "user", nil)
+	require.NoError(t, err)
+	require.False(t, result.Applied)
+	_, err = likedList.FindSystemPlaylist(ctx, "user", LikedSongsSystemKey)
+	require.ErrorIs(t, err, sql.ErrNoRows, "withdrawing a like nobody gave must not create the list")
+
+	result, err = runtime.Like(ctx, "user", nil)
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+	result, err = runtime.Like(ctx, "user", nil)
+	require.NoError(t, err)
+	require.False(t, result.Applied)
+	result, err = runtime.Like(ctx, "mate", nil)
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+	require.Equal(t, []string{"mate", "user"}, likedIDs(t, runtime))
+	require.Len(t, nowPlaying(t, runtime)["likeMarkers"], 2)
+	require.Equal(t, []string{"a"}, likedTrackIDs(t, likedList, ctx, "user"))
+
+	result, err = runtime.Unlike(ctx, "user", nil)
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+	require.Equal(t, []string{"mate"}, likedIDs(t, runtime))
+	require.Len(t, nowPlaying(t, runtime)["likeMarkers"], 1)
+	require.Empty(t, likedTrackIDs(t, likedList, ctx, "user"))
+	require.Equal(t, []string{"a"}, likedTrackIDs(t, likedList, ctx, "mate"))
+	result, err = runtime.Unlike(ctx, "user", nil)
+	require.NoError(t, err)
+	require.False(t, result.Applied)
+
+	_, err = runtime.Next(ctx)
+	require.NoError(t, err)
+	require.Empty(t, likedIDs(t, runtime), "a like describes the track that was playing")
+	_, err = runtime.Like(ctx, "user", nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{"b"}, likedTrackIDs(t, likedList, ctx, "user"))
+}
+
+func nowPlaying(t *testing.T, runtime *RoomRuntime) map[string]any {
+	t.Helper()
+	snapshot, err := runtime.Snapshot(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, snapshot["nowPlaying"])
+	return snapshot["nowPlaying"].(map[string]any)
+}
+
+func likedIDs(t *testing.T, runtime *RoomRuntime) []string {
+	t.Helper()
+	return nowPlaying(t, runtime)["likedUserIds"].([]string)
+}
+
+func likedTrackIDs(t *testing.T, repository *storesqlite.UserPlaylistRepository, ctx context.Context, owner string) []string {
+	t.Helper()
+	playlist, err := repository.FindSystemPlaylist(ctx, owner, LikedSongsSystemKey)
+	require.NoError(t, err)
+	tracks, err := repository.ListTracks(ctx, owner, playlist.ID, 0, 10)
+	require.NoError(t, err)
+	ids := make([]string, len(tracks))
+	for index, track := range tracks {
+		ids[index] = track.Music.ID
+	}
+	return ids
 }
 
 func queueIDs(items []storesqlite.QueueItem) []string {

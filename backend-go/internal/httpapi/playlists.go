@@ -267,14 +267,14 @@ func (api *PlaylistAPI) userExport(w http.ResponseWriter, r *http.Request) error
 	return exportTracks(w, r, values, err)
 }
 func (api *PlaylistAPI) liked(w http.ResponseWriter, r *http.Request, session account.Session) (storesqlite.Playlist, error) {
-	value, err := api.users.FindSystemPlaylist(r.Context(), session.PublicID, "liked-songs")
+	value, err := api.users.FindSystemPlaylist(r.Context(), session.PublicID, realtime.LikedSongsSystemKey)
 	if err == nil {
 		return *value, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return storesqlite.Playlist{}, err
 	}
-	return api.users.CreateSystemPlaylist(r.Context(), session.PublicID, "喜欢的歌曲", "liked-songs")
+	return api.users.CreateSystemPlaylist(r.Context(), session.PublicID, realtime.LikedSongsName, realtime.LikedSongsSystemKey)
 }
 func (api *PlaylistAPI) likedSongs(w http.ResponseWriter, r *http.Request) error {
 	session, err := api.user(r)

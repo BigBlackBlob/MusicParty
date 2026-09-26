@@ -83,6 +83,12 @@ func (api *WebSocketAPI) playlistCommand(ctx context.Context, client *wsruntime.
 		return api.roomPlaylists.FindPlaylist(ctx, roomID, request.PlaylistID)
 	}
 	writable := func(playlist *storesqlite.Playlist) bool { return playlist.SystemKey == nil }
+	// The personal liked list is the one system playlist a member may take rows out
+	// of: that is what 取消喜欢 means once the track has stopped being the current
+	// one, when `control.unlike` can no longer reach it.
+	removable := func(playlist *storesqlite.Playlist) bool {
+		return writable(playlist) || (request.Scope == "user" && playlist.SystemKey != nil && *playlist.SystemKey == realtime.LikedSongsSystemKey)
+	}
 	view := func(playlist storesqlite.Playlist) playlistView {
 		if request.Scope == "user" {
 			return userPlaylist(playlist)
@@ -102,7 +108,11 @@ func (api *WebSocketAPI) playlistCommand(ctx context.Context, client *wsruntime.
 		var values []storesqlite.Playlist
 		var err error
 		if request.Scope == "user" {
-			values, err = api.userPlaylists.ListPlaylists(ctx, owner)
+			// The personal liked list is created on first sight, the same way
+			// GET /api/me/playlists does, so an empty one still shows up.
+			if _, err = runtime.EnsureLikedSongs(ctx, owner); err == nil {
+				values, err = api.userPlaylists.ListPlaylists(ctx, owner)
+			}
 		} else {
 			values, err = api.roomPlaylists.ListPlaylists(ctx, roomID)
 		}
@@ -241,7 +251,7 @@ func (api *WebSocketAPI) playlistCommand(ctx context.Context, client *wsruntime.
 			nack(nackForPlaylistError(err, notFound))
 			return
 		}
-		if !writable(playlist) {
+		if !removable(playlist) {
 			nack("SYSTEM_READONLY")
 			return
 		}

@@ -39,8 +39,12 @@ func WriteMappedError(w http.ResponseWriter, err error) {
 	var apiError *APIError
 	if errors.As(err, &apiError) {
 		code := apiError.Code
-		if code == "" { code = apiError.Name }
-		if code == "" { code = statusCode(apiError.Status) }
+		if code == "" {
+			code = apiError.Name
+		}
+		if code == "" {
+			code = statusCode(apiError.Status)
+		}
 		body := map[string]any{"code": code, "message": apiError.Message, "status": apiError.Status}
 		if apiError.Name != "" {
 			body["error"] = apiError.Name
@@ -57,13 +61,27 @@ func WriteMappedError(w http.ResponseWriter, err error) {
 }
 
 func statusCode(status int) string {
-	if status == http.StatusBadRequest { return "bad-request" }
-	if status == http.StatusUnauthorized { return "unauthorized" }
-	if status == http.StatusForbidden { return "forbidden" }
-	if status == http.StatusNotFound { return "not-found" }
-	if status == http.StatusConflict { return "conflict" }
-	if status == http.StatusTooManyRequests { return "rate-limited" }
-	if status >= 500 { return "internal-server-error" }
+	if status == http.StatusBadRequest {
+		return "bad-request"
+	}
+	if status == http.StatusUnauthorized {
+		return "unauthorized"
+	}
+	if status == http.StatusForbidden {
+		return "forbidden"
+	}
+	if status == http.StatusNotFound {
+		return "not-found"
+	}
+	if status == http.StatusConflict {
+		return "conflict"
+	}
+	if status == http.StatusTooManyRequests {
+		return "rate-limited"
+	}
+	if status >= 500 {
+		return "internal-server-error"
+	}
 	return "http-error"
 }
 

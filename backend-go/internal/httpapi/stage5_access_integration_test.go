@@ -84,6 +84,57 @@ func TestRoomMutationDistinguishesUnauthorizedAndForbidden(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, request(http.MethodDelete, "/api/rooms/managed-room", "", true))
 }
 
+// Creators own the rooms they opened: renaming and deleting belong to them, while member, owner
+// and invite administration stays with platform admins.
+func TestRoomCreatorCanRenameAndDeleteOwnRoom(t *testing.T) {
+	store := httpStore(t)
+	accounts := account.New(store)
+	rooms := roomdomain.New(store, accounts)
+	cfg := testConfig(t)
+	insertStage5User(t, store, "creator-token", "creator", "MEMBER")
+	insertStage5User(t, store, "stranger-token", "stranger", "MEMBER")
+	now := time.Now().UnixMilli()
+	for _, room := range []struct {
+		id, owner string
+		system    bool
+	}{
+		{id: "creator-room", owner: "creator"},
+		{id: "legacy-room", owner: "creator", system: true},
+	} {
+		flag := 0
+		if room.system {
+			flag = 1
+		}
+		require.NoError(t, store.Write(context.Background(), func(ctx context.Context, tx *sql.Tx) error {
+			_, err := tx.ExecContext(ctx, "insert into room(id,name,owner_public_id,visibility,password_version,system,created_at,last_active_at) values(?,?,?,'PUBLIC',0,?,?,?)", room.id, room.id, room.owner, flag, now, now)
+			return err
+		}))
+	}
+	roomAPI := NewRoomAPI(rooms, cfg)
+	roomAPI.SetAuthService(accounts)
+	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), roomAPI)
+
+	request := func(method, path, body, token string) int {
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		r.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: "test-csrf"})
+		r.Header.Set(CSRFHeaderName, "test-csrf")
+		if token != "" {
+			r.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})
+		}
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		return w.Code
+	}
+	require.Equal(t, http.StatusUnauthorized, request(http.MethodPut, "/api/rooms/creator-room", `{"name":"renamed"}`, ""))
+	require.Equal(t, http.StatusForbidden, request(http.MethodPut, "/api/rooms/creator-room", `{"name":"renamed"}`, "stranger-token"))
+	require.Equal(t, http.StatusOK, request(http.MethodPut, "/api/rooms/creator-room", `{"name":"renamed"}`, "creator-token"))
+	require.Equal(t, http.StatusForbidden, request(http.MethodDelete, "/api/rooms/legacy-room", "", "creator-token"), "system rooms stay admin-only even for their recorded owner")
+	require.Equal(t, http.StatusForbidden, request(http.MethodDelete, "/api/rooms/creator-room", "", "stranger-token"))
+	require.Equal(t, http.StatusOK, request(http.MethodDelete, "/api/rooms/creator-room", "", "creator-token"))
+	require.Equal(t, http.StatusForbidden, request(http.MethodDelete, "/api/rooms/creator-room", "", "creator-token"), "a deleted room is not deletable a second time")
+}
+
 func TestPrivateRoomVerificationEstablishesCookieOnlyAccessProof(t *testing.T) {
 	store := httpStore(t)
 	accounts := account.New(store)

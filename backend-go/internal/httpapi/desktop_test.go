@@ -213,3 +213,155 @@ func TestDesktopRoomCreation(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, post("creator-token", "creator-csrf", `{"name":"Missing Secret","isPrivate":true}`, true).Code)
 	require.Equal(t, broadcaster.kinds, []string{"rooms.list", "rooms.list"})
 }
+
+// R5-1 裁决 ②: opening a room takes a registered account, not just any session. Redeeming an
+// invite is the only way a desktop user ever gets one, so that path has to stay open, and the
+// refusal needs a code the shell can name instead of guessing from prose.
+func TestDesktopRoomCreationRequiresRegisteredAccount(t *testing.T) {
+	store := httpStore(t)
+	insertStage5User(t, store, "admin-token", "seed-admin", "ADMIN")
+	cfg := testConfig(t)
+	accounts := account.New(store)
+	rooms := roomdomain.New(store, accounts)
+	api := NewDesktopAPI(cfg, accounts, rooms, &recordingBroadcaster{}, NewPlatformAPI(cfg, fixturePlatform{}))
+	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
+
+	post := func(token string, body string, withVersion bool) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, "/api/desktop/v1/rooms", strings.NewReader(body))
+		request.Header.Set("X-Desktop-API-Version", desktopAPIVersion)
+		request.Header.Set("X-Desktop-Client-Version", "0.2.0")
+		if !withVersion {
+			request.Header.Del("X-Desktop-API-Version")
+		}
+		request.Header.Set("Content-Type", "application/json")
+		request.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: "member-csrf"})
+		request.Header.Set(CSRFHeaderName, "member-csrf")
+		if token != "" {
+			request.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response
+	}
+
+	seed, err := rooms.Create(context.Background(), "admin-token", roomdomain.CreateInput{Name: "Seed Room"})
+	require.NoError(t, err)
+	invite, err := rooms.CreateInvite(context.Background(), seed.RoomID, "admin-token", "desktop")
+	require.NoError(t, err)
+	member, err := accounts.RedeemInvite(context.Background(), invite.Secret, "受邀成员")
+	require.NoError(t, err)
+	require.False(t, member.Guest)
+
+	memberResponse := post(member.SessionToken, `{"name":"Member Owned"}`, true)
+	require.Equal(t, http.StatusOK, memberResponse.Code, memberResponse.Body.String())
+	var created roomdomain.Info
+	require.NoError(t, json.Unmarshal(memberResponse.Body.Bytes(), &created))
+	require.Equal(t, member.PublicID, created.CreatorPublicID)
+
+	// An administrator keeps the same privilege they always had.
+	require.Equal(t, http.StatusOK, post("admin-token", `{"name":"Admin Owned"}`, true).Code)
+
+	guest, err := accounts.CreateGuestSession(context.Background(), "访客建房")
+	require.NoError(t, err)
+	require.True(t, guest.Guest)
+	refused := post(guest.SessionToken, `{"name":"Member Owned"}`, true)
+	require.Equal(t, http.StatusForbidden, refused.Code)
+	require.Contains(t, refused.Body.String(), `"code":"guest-not-allowed"`)
+
+	// The version gate and the anonymous refusal run in front of the account check, unchanged.
+	require.Equal(t, http.StatusUpgradeRequired, post(guest.SessionToken, `{}`, false).Code)
+	anonymous := post("", `{"name":"Nobody"}`, true)
+	require.Equal(t, http.StatusUnauthorized, anonymous.Code)
+	require.Contains(t, anonymous.Body.String(), `"code":"unauthorized"`)
+
+	var attempts int
+	require.NoError(t, store.Reader().QueryRowContext(context.Background(),
+		"select count(1) from room where name in ('Member Owned','Nobody') and deleted_at is null").Scan(&attempts))
+	require.Equal(t, 1, attempts)
+}
+
+// The album view needs a page and the provider's own total, and it must sit behind the same gate
+// as every other desktop media route: version first, session before any upstream call.
+func TestDesktopAlbumRoutes(t *testing.T) {
+	store := httpStore(t)
+	insertStage5User(t, store, "album-token", "album-member", "MEMBER")
+	cfg := testConfig(t)
+	api := NewDesktopAPI(cfg, account.New(store), nil, nil, NewPlatformAPI(cfg, fixturePlatform{}))
+	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
+	get := func(path string, withVersion bool, token string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		if withVersion {
+			request.Header.Set("X-Desktop-API-Version", desktopAPIVersion)
+			request.Header.Set("X-Desktop-Client-Version", "0.2.0")
+		}
+		if token != "" {
+			request.AddCookie(&http.Cookie{Name: SessionCookieName, Value: token})
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response
+	}
+
+	require.Equal(t, http.StatusUpgradeRequired, get("/api/desktop/v1/albums/local?q=zhou", false, "album-token").Code)
+	require.Equal(t, http.StatusUnauthorized, get("/api/desktop/v1/albums/local?q=zhou", true, "").Code)
+	require.Equal(t, http.StatusBadRequest, get("/api/desktop/v1/albums/local", true, "album-token").Code, "an empty keyword never reaches a provider")
+	require.Equal(t, http.StatusBadRequest, get("/api/desktop/v1/albums/local?q=zhou&limit=0", true, "album-token").Code)
+	require.Equal(t, http.StatusBadRequest, get("/api/desktop/v1/albums/local?q=zhou&offset=-1", true, "album-token").Code)
+	require.Equal(t, http.StatusBadRequest, get("/api/desktop/v1/albums/local/"+strings.Repeat("a", 65)+"/songs", true, "album-token").Code)
+
+	page := get("/api/desktop/v1/albums/local?q=zhou&offset=10&limit=5", true, "album-token")
+	require.Equal(t, http.StatusOK, page.Code, page.Body.String())
+	var albums struct {
+		Items  []platform.Album `json:"items"`
+		Total  int              `json:"total"`
+		Offset int              `json:"offset"`
+		Limit  int              `json:"limit"`
+	}
+	require.NoError(t, json.Unmarshal(page.Body.Bytes(), &albums))
+	require.Equal(t, "album-10", albums.Items[0].ID, "the offset has to reach the provider")
+	require.Equal(t, 10, albums.Offset)
+	require.Equal(t, 5, albums.Limit)
+	require.Equal(t, 42, albums.Total, "the provider's total passes through untouched")
+
+	// The client's paging fallback keys off 0 meaning "this platform gives no count", so the route
+	// must not quietly substitute the page length for a missing total.
+	unknown := get("/api/desktop/v1/albums/local?q=no-total&offset=0&limit=5", true, "album-token")
+	require.Equal(t, http.StatusOK, unknown.Code, unknown.Body.String())
+	var uncounted struct {
+		Items []platform.Album `json:"items"`
+		Total int              `json:"total"`
+	}
+	require.NoError(t, json.Unmarshal(unknown.Body.Bytes(), &uncounted))
+	require.NotEmpty(t, uncounted.Items, "a page can hold albums while the platform reports no count")
+	require.Zero(t, uncounted.Total, "0 means unknown and must survive the round trip")
+
+	tracks := get("/api/desktop/v1/albums/local/album-10/songs", true, "album-token")
+	require.Equal(t, http.StatusOK, tracks.Code, tracks.Body.String())
+	var songs struct {
+		Items []platform.Music `json:"items"`
+		Total int              `json:"total"`
+	}
+	require.NoError(t, json.Unmarshal(tracks.Body.Bytes(), &songs))
+	require.Equal(t, len(songs.Items), songs.Total, "an unpaged album reports its whole size")
+
+	capabilities := httptest.NewRecorder()
+	handler.ServeHTTP(capabilities, httptest.NewRequest(http.MethodGet, "/api/desktop/v1/capabilities", nil))
+	var advertised struct {
+		Features             map[string]bool `json:"features"`
+		Providers            map[string]bool `json:"providers"`
+		AlbumSearchProviders map[string]bool `json:"albumSearchProviders"`
+	}
+	require.NoError(t, json.Unmarshal(capabilities.Body.Bytes(), &advertised))
+	require.True(t, advertised.Features["albumSearch"], "the shell must be able to see the endpoint exists")
+	require.Empty(t, advertised.AlbumSearchProviders, "only configured providers are listed, and local is not one of the three")
+
+	// A configured netease provider is the one that answers album queries.
+	neteaseHandler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(),
+		NewDesktopAPI(cfg, account.New(store), nil, nil, NewPlatformAPI(cfg, neteaseFixture{})))
+	neteaseCapabilities := httptest.NewRecorder()
+	neteaseHandler.ServeHTTP(neteaseCapabilities, httptest.NewRequest(http.MethodGet, "/api/desktop/v1/capabilities", nil))
+	require.NoError(t, json.Unmarshal(neteaseCapabilities.Body.Bytes(), &advertised))
+	require.Equal(t, map[string]bool{"netease": true}, advertised.AlbumSearchProviders)
+	require.True(t, advertised.Providers["netease"])
+	require.False(t, advertised.Providers["bilibili"], "an unconfigured provider stays listed but off")
+}

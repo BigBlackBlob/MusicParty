@@ -111,6 +111,14 @@ type HistoryEntry struct {
 	PlayedAt         int64
 }
 
+// HistoryPageEntry is a persisted history row plus the requester's display name. The name is
+// resolved by a join when reading and is never stored: room_history has no name column in the
+// frozen schema, so a rename shows up in older entries too.
+type HistoryPageEntry struct {
+	HistoryEntry
+	EnqueuerName *string
+}
+
 type PlaylistTrack struct {
 	ID         string
 	PlaylistID string

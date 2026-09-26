@@ -105,13 +105,15 @@ func (api *WebSocketAPI) handle(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *WebSocketAPI) canEnterRoom(r *http.Request, roomID string, session account.Session) bool {
-	var visibility string
+	var visibility, owner string
 	var passwordVersion int
-	err := api.store.Reader().QueryRowContext(r.Context(), "select visibility,password_version from room where id=? and deleted_at is null", roomID).Scan(&visibility, &passwordVersion)
+	err := api.store.Reader().QueryRowContext(r.Context(), "select visibility,password_version,owner_public_id from room where id=? and deleted_at is null", roomID).Scan(&visibility, &passwordVersion, &owner)
 	if err != nil {
 		return false
 	}
-	if visibility != "PRIVATE" || session.Admin() {
+	// The creator set this room's own password, so the five-minute access ticket must not lock
+	// them out of the room they own; everyone else still proves access with it.
+	if visibility != "PRIVATE" || session.Admin() || (owner != "" && owner == session.PublicID) {
 		return true
 	}
 	proof, _ := r.Cookie(RoomAccessCookieName)
@@ -171,7 +173,7 @@ func (api *WebSocketAPI) dispatch(ctx context.Context, client *wsruntime.Client,
 		api.enqueueRemoteCollection(ctx, client, runtime, envelope, kind == "enqueue.album")
 	case "enqueue.room-playlist":
 		api.enqueueRoomPlaylist(ctx, client, runtime, envelope)
-	case "control.next", "control.previous", "control.toggle-pause", "control.toggle-shuffle", "control.seek", "control.like":
+	case "control.next", "control.previous", "control.toggle-pause", "control.toggle-shuffle", "control.seek", "control.like", "control.unlike":
 		if !validControlPayload(kind, envelope.Payload) {
 			api.controlAck(client, envelope.RequestID, "rejected", "PAYLOAD_INVALID", nil)
 			return
@@ -204,6 +206,8 @@ func (api *WebSocketAPI) dispatch(ctx context.Context, client *wsruntime.Client,
 			result, err = runtime.Seek(ctx, *request.PositionMS, session.PublicID, session.Admin(), request.ExpectedPlayEpoch, mutation...)
 		case "control.like":
 			result, err = runtime.Like(ctx, session.PublicID, request.ExpectedPlayEpoch, mutation...)
+		case "control.unlike":
+			result, err = runtime.Unlike(ctx, session.PublicID, request.ExpectedPlayEpoch, mutation...)
 		}
 		api.control(client, envelope.RequestID, kind, result, err)
 	case "queue.remove", "queue.top":
@@ -277,6 +281,24 @@ func (api *WebSocketAPI) dispatch(ctx context.Context, client *wsruntime.Client,
 			}
 			_ = client.Send(responseType, "", values)
 		}
+	case "history.list":
+		request, err := decodePayload[struct{ Offset, Limit int }](envelope.Payload)
+		if err != nil {
+			api.event(client, "PAYLOAD_INVALID", err.Error())
+			return
+		}
+		page, err := runtime.PlaybackHistory(ctx, request.Offset, request.Limit)
+		if err != nil {
+			api.event(client, "HISTORY_FAILED", err.Error())
+			return
+		}
+		// Echo the request id like control.ack does, so a client that asks for two pages can tell
+		// them apart instead of matching whichever `history.page` lands next.
+		reply := wsruntime.Envelope{Type: "history.page", RoomID: client.RoomID, Payload: page}
+		if envelope.RequestID != "" {
+			reply.RequestID = envelope.RequestID
+		}
+		_ = client.Direct(reply)
 	case "user.rename":
 		request, err := decodePayload[struct {
 			NewName string `json:"newName"`
@@ -493,7 +515,7 @@ func validControlPayload(kind string, payload json.RawMessage) bool {
 				return false
 			}
 		case "expectedPlayEpoch":
-			if kind != "control.seek" && kind != "control.like" && kind != "control.previous" {
+			if kind != "control.seek" && kind != "control.like" && kind != "control.unlike" && kind != "control.previous" {
 				return false
 			}
 		default:

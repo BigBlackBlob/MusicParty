@@ -436,6 +436,59 @@
       "properties": {
         "payload": {
           "additionalProperties": false,
+          "dependentRequired": {
+            "idempotencyScopeId": [
+              "mutationId"
+            ],
+            "mutationId": [
+              "idempotencyScopeId"
+            ]
+          },
+          "properties": {
+            "expectedPlayEpoch": {
+              "type": "integer"
+            },
+            "idempotencyScopeId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "mutationId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "control.unlike"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "additionalProperties": false,
           "properties": {
             "musicId": {
               "type": "string"
@@ -599,6 +652,44 @@
         },
         "type": {
           "const": "enqueue.room-playlist"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "limit": {
+              "type": "number"
+            },
+            "offset": {
+              "type": "number"
+            }
+          },
+          "required": [],
+          "type": "object"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "history.list"
         }
       },
       "required": [

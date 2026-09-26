@@ -55,13 +55,21 @@ type Lyric struct {
 	WordRomanized   string `json:"wordRomanizedLyric,omitempty"`  // 逐字罗马音（yromalrc）
 }
 
+// AlbumSearchResult is one page of album search plus what the platform chose to say about the
+// whole result set. Total is the number of matching albums when the upstream reports one and 0
+// when it does not, so callers must treat 0 as "unknown" rather than "nothing left".
+type AlbumSearchResult struct {
+	Items []Album `json:"items"`
+	Total int     `json:"total"`
+}
+
 type Service interface {
 	Name() string
 	Available() bool
 	Search(context.Context, string, int, int) ([]Music, error)
 	UserPlaylists(context.Context, string) ([]Playlist, error)
 	PlaylistSongs(context.Context, string, int, int) ([]Music, error)
-	SearchAlbums(context.Context, string) ([]Album, error)
+	SearchAlbums(context.Context, string, int, int) (AlbumSearchResult, error)
 	AlbumSongs(context.Context, string) ([]Music, error)
 	SearchUsers(context.Context, string) ([]User, error)
 	Lyric(context.Context, string) (Lyric, error)

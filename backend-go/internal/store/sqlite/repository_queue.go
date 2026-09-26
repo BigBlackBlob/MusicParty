@@ -133,7 +133,7 @@ func synchronizeQueueTx(ctx context.Context, tx *sql.Tx, now func() time.Time, r
 func (repository *QueueRepository) LoadHistory(ctx context.Context, roomID string, limit int) ([]HistoryEntry, error) {
 	rows, err := repository.store.reader.QueryContext(ctx, `
 		select id, room_id, music_json, enqueuer_public_id, played_at
-		from room_history where room_id = ? order by played_at desc limit ?
+		from room_history where room_id = ? order by played_at desc, id desc limit ?
 	`, roomID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("load room history: %w", err)
@@ -144,6 +144,55 @@ func (repository *QueueRepository) LoadHistory(ctx context.Context, roomID strin
 		entry, err := scanHistoryEntry(rows)
 		if err != nil {
 			return nil, fmt.Errorf("scan room history: %w", err)
+		}
+		entries = append(entries, entry)
+	}
+	return entries, rows.Err()
+}
+
+// CountHistory reports every track the room has ever played. Nothing prunes room_history
+// (ReplaceHistory has no production caller), so this is the whole session rather than the
+// maxHistoryEntries window the runtime keeps in memory for control.previous.
+func (repository *QueueRepository) CountHistory(ctx context.Context, roomID string) (int, error) {
+	var count int
+	if err := repository.store.reader.QueryRowContext(ctx, `select count(1) from room_history where room_id = ?`, roomID).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count room history: %w", err)
+	}
+	return count, nil
+}
+
+// LoadHistoryPage reads one page of whole-room history, newest first, with the same ordering as
+// LoadHistory so a page and the in-memory window can never disagree about which entry is newer.
+// room_history carries no requester-name column in the frozen schema, so the name is joined from
+// user_profile: it is that account's current display name, and null once the profile is gone.
+func (repository *QueueRepository) LoadHistoryPage(ctx context.Context, roomID string, offset, limit int) ([]HistoryPageEntry, error) {
+	rows, err := repository.store.reader.QueryContext(ctx, `
+		select h.id, h.room_id, h.music_json, h.enqueuer_public_id, h.played_at, p.display_name
+		from room_history h left join user_profile p on p.public_id = h.enqueuer_public_id
+		where h.room_id = ? order by h.played_at desc, h.id desc limit ? offset ?
+	`, roomID, limit, max(0, offset))
+	if err != nil {
+		return nil, fmt.Errorf("load room history page: %w", err)
+	}
+	defer rows.Close()
+	entries := []HistoryPageEntry{}
+	for rows.Next() {
+		var entry HistoryPageEntry
+		var musicJSON string
+		var requester, displayName sql.NullString
+		if err := rows.Scan(&entry.ID, &entry.RoomID, &musicJSON, &requester, &entry.PlayedAt, &displayName); err != nil {
+			return nil, fmt.Errorf("scan room history page: %w", err)
+		}
+		if err := unmarshalJSON(musicJSON, &entry.Music); err != nil {
+			return nil, err
+		}
+		if requester.Valid {
+			value := requester.String
+			entry.EnqueuerPublicID = &value
+		}
+		if displayName.Valid {
+			value := displayName.String
+			entry.EnqueuerName = &value
 		}
 		entries = append(entries, entry)
 	}

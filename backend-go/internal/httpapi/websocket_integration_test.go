@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -15,12 +16,19 @@ import (
 	roomdomain "github.com/BigBlackBlob/MusicParty/backend-go/internal/domain/room"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/observability"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/realtime"
+	storesqlite "github.com/BigBlackBlob/MusicParty/backend-go/internal/store/sqlite"
 	wsruntime "github.com/BigBlackBlob/MusicParty/backend-go/internal/ws"
 	"github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
 )
 
 func websocketTestServer(t *testing.T) (*httptest.Server, *wsruntime.Hub) {
+	t.Helper()
+	server, hub, _ := websocketTestServerWithStore(t)
+	return server, hub
+}
+
+func websocketTestServerWithStore(t *testing.T) (*httptest.Server, *wsruntime.Hub, *storesqlite.Store) {
 	t.Helper()
 	store := httpStore(t)
 	insertStage5User(t, store, "member-token", "member", "MEMBER")
@@ -37,7 +45,7 @@ func websocketTestServer(t *testing.T) (*httptest.Server, *wsruntime.Hub) {
 		hub.Close()
 		manager.Close()
 	})
-	return server, hub
+	return server, hub, store
 }
 
 func dialWebSocket(t *testing.T, server *httptest.Server, token, roomID string) *websocket.Conn {
@@ -214,6 +222,20 @@ func TestWebSocketControlAckCorrelationAndPreconditions(t *testing.T) {
 	require.Equal(t, "noop", secondLike.Payload.(map[string]any)["outcome"])
 	require.NotNil(t, secondLike.Payload.(map[string]any)["committed"])
 	require.Equal(t, firstLike.Payload.(map[string]any)["committed"], secondLike.Payload.(map[string]any)["committed"])
+
+	// A like records who liked this track, so the caller's own public id in
+	// likedUserIds is the contract's answer to "did I like it"; unlike takes it back.
+	require.NoError(t, connection.Write(ctx, websocket.MessageText, []byte(`{"type":"control.unlike","requestId":"s5","payload":{}}`)))
+	unliked := readUntilType(t, connection, "control.ack")
+	require.Equal(t, "s5", unliked.RequestID)
+	require.Equal(t, "applied", unliked.Payload.(map[string]any)["outcome"])
+	require.NoError(t, connection.Write(ctx, websocket.MessageText, []byte(`{"type":"control.unlike","requestId":"s6","payload":{}}`)))
+	repeated := readUntilType(t, connection, "control.ack")
+	require.Equal(t, "noop", repeated.Payload.(map[string]any)["outcome"])
+	require.NoError(t, connection.Write(ctx, websocket.MessageText, []byte(`{"type":"player.resync","payload":{}}`)))
+	resynced := readUntilType(t, connection, "player.state")
+	nowPlaying := resynced.Payload.(map[string]any)["nowPlaying"].(map[string]any)
+	require.NotContains(t, nowPlaying["likedUserIds"], "member")
 }
 
 func TestWebSocketSeekRequiresPositionAndAcceptsZero(t *testing.T) {
@@ -387,4 +409,122 @@ func TestWebSocketAdminRoomCreationAndFailures(t *testing.T) {
 	require.NoError(t, member.Write(ctx, websocket.MessageText, []byte(`{"type":"rooms.create","payload":{"name":"Member Room"}}`)))
 	denied := readUntilType(t, member, "player.events")
 	require.Equal(t, "CONTROL_DENIED", denied.Payload.(map[string]any)["code"])
+}
+
+// The creator set their own room's password, so the short-lived access ticket must not lock them
+// out of it; everyone else still has to present one.
+func TestRoomEntryExemptsTheOwnerFromTheAccessTicket(t *testing.T) {
+	store := httpStore(t)
+	accounts := account.New(store)
+	cfg := testConfig(t)
+	cfg.Auth.RoomAccessTokenSecret = "contract-room-access-secret-32-bytes"
+	insertStage5User(t, store, "creator-token", "owner", "MEMBER")
+	insertStage5User(t, store, "stranger-token", "stranger", "MEMBER")
+	insertStage5Room(t, store, "owned-private", "PRIVATE", 1)
+	api := NewWebSocketAPI(cfg, store, accounts, nil, nil, nil, nil)
+	request := func() *http.Request {
+		return httptest.NewRequest(http.MethodGet, "/api/desktop/v1/ws?roomId=owned-private", nil)
+	}
+	creator, err := accounts.Resolve(context.Background(), "creator-token")
+	require.NoError(t, err)
+	stranger, err := accounts.Resolve(context.Background(), "stranger-token")
+	require.NoError(t, err)
+	require.True(t, api.canEnterRoom(request(), "owned-private", creator))
+	require.False(t, api.canEnterRoom(request(), "owned-private", stranger), "a non-owner still needs a valid room ticket")
+}
+
+// The lobby's room history has to reach the whole session, not the 100-entry window the runtime
+// keeps for control.previous, and a member who joins midway must be able to read what played
+// before they arrived. Driven over a real socket so the assertions are on the wire shape.
+func TestWebSocketRoomHistoryPagesTheWholeSession(t *testing.T) {
+	server, _, store := websocketTestServerWithStore(t)
+	insertStage5User(t, store, "latecomer-token", "latecomer", "MEMBER")
+	repository := storesqlite.NewQueueRepository(store, nil)
+	const played = 250
+	seed := context.Background()
+	for index := 0; index < played; index++ {
+		var requester *string
+		if index%10 != 0 {
+			publicID := "member"
+			requester = &publicID
+		}
+		require.NoError(t, repository.AppendHistory(seed, storesqlite.HistoryEntry{
+			ID:               fmt.Sprintf("hist-%03d", index),
+			RoomID:           "lounge",
+			Music:            storesqlite.Music{ID: fmt.Sprintf("track-%03d", index), Name: fmt.Sprintf("Track %d", index), Artists: []string{"Artist"}, Duration: 60_000, Platform: "local"},
+			EnqueuerPublicID: requester,
+			PlayedAt:         int64(1_000_000 + index*1_000),
+		}))
+	}
+
+	readHistory := func(t *testing.T, connection *websocket.Conn, body string) map[string]any {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		require.NoError(t, connection.Write(ctx, websocket.MessageText, []byte(`{"type":"history.list","payload":`+body+`}`)))
+		payload, ok := readUntilType(t, connection, "history.page").Payload.(map[string]any)
+		require.True(t, ok, "history.page must carry an object payload")
+		return payload
+	}
+	readItems := func(payload map[string]any) []map[string]any {
+		raw, ok := payload["items"].([]any)
+		require.True(t, ok, "items must always be an array, never null")
+		items := make([]map[string]any, 0, len(raw))
+		for _, value := range raw {
+			items = append(items, value.(map[string]any))
+		}
+		return items
+	}
+
+	latecomer := dialWebSocket(t, server, "latecomer-token", "lounge")
+	// A full 200-item page is about 34 KB, well past the client library's 32 KB default.
+	latecomer.SetReadLimit(1 << 20)
+	state := readUntilType(t, latecomer, "player.state")
+	cursor := state.Payload.(map[string]any)["historyCursor"].(float64)
+	require.Equal(t, float64(100), cursor, "the in-memory window control.previous walks back over is still capped")
+
+	// A request id comes back on the page, so two pages in flight stay distinguishable; a request
+	// without one keeps the field null rather than inventing an id.
+	correlation, cancelCorrelation := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelCorrelation()
+	require.NoError(t, latecomer.Write(correlation, websocket.MessageText, []byte(`{"type":"history.list","requestId":"page-42","payload":{"offset":0,"limit":2}}`)))
+	correlated := readUntilType(t, latecomer, "history.page")
+	require.Equal(t, "page-42", correlated.RequestID)
+	require.Equal(t, "lounge", correlated.RoomID)
+
+	newest := readHistory(t, latecomer, `{"offset":0,"limit":50}`)
+	require.Equal(t, "lounge", newest["roomId"])
+	require.Equal(t, float64(played), newest["total"], "total is the whole session, not the window")
+	require.Equal(t, float64(0), newest["offset"])
+	first := readItems(newest)
+	require.Len(t, first, 50)
+	require.Equal(t, "hist-249", first[0]["id"], "newest first")
+	require.Equal(t, float64(1_249_000), first[0]["playedAt"])
+	require.Equal(t, "member", first[0]["enqueuerName"], "the requester name comes from the server, not from who happens to be online")
+	require.Equal(t, "member", first[0]["enqueuerPublicId"])
+	require.Equal(t, "Track 249", first[0]["music"].(map[string]any)["name"])
+	require.Equal(t, "hist-240", first[9]["id"])
+	require.Nil(t, first[9]["enqueuerName"], "a requester whose profile is gone stays null instead of guessing")
+	require.Nil(t, first[9]["enqueuerPublicId"])
+
+	beyond := readItems(readHistory(t, latecomer, `{"offset":200,"limit":60}`))
+	require.Len(t, beyond, 50)
+	require.Equal(t, "hist-049", beyond[0]["id"], "paging must reach entries the memory window never held")
+	require.Equal(t, "hist-000", beyond[49]["id"])
+
+	require.Len(t, readItems(readHistory(t, latecomer, `{"limit":9999}`)), 200, "limit is clamped")
+	require.Len(t, readItems(readHistory(t, latecomer, `{}`)), 50, "a missing limit is one page")
+	overflow := readHistory(t, latecomer, `{"offset":900}`)
+	require.Empty(t, readItems(overflow), "past the end is an empty array, not null and not an error")
+	require.Equal(t, float64(played), overflow["total"])
+
+	// The list and control.previous must agree on order, or the button would resume from a track
+	// the page never showed.
+	window, err := repository.LoadHistory(context.Background(), "lounge", 100)
+	require.NoError(t, err)
+	aligned := readItems(readHistory(t, latecomer, `{"limit":100}`))
+	require.Len(t, aligned, len(window))
+	for index := range window {
+		require.Equal(t, window[index].ID, aligned[index]["id"])
+	}
 }

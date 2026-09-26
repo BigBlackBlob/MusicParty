@@ -252,6 +252,59 @@
       "additionalProperties": false,
       "properties": {
         "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "items": {
+              "items": {
+                "type": "object",
+                "x-typescript-type": "PlaybackHistoryItem"
+              },
+              "type": "array"
+            },
+            "offset": {
+              "type": "number"
+            },
+            "roomId": {
+              "type": "string"
+            },
+            "total": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "items",
+            "offset",
+            "roomId",
+            "total"
+          ],
+          "type": "object"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "history.page"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
           "type": "object",
           "x-typescript-type": "PlayerEvent"
         },

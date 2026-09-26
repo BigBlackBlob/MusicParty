@@ -27,6 +27,38 @@ func TestSearchMapsJavaCompatibleMusic(t *testing.T) {
 	require.Equal(t, "https://img.test/a.jpg?param=1000y1000", songs[0].CoverURL)
 }
 
+// The desktop album view needs a real page and the upstream's own match count. Measured against
+// the deployed netease-api on 2026-09-25: offset 0 and offset 5 return different ids and both
+// report albumCount 592, so `total` is a whole-session count rather than a page size.
+func TestSearchAlbumsPagesAndReportsTotal(t *testing.T) {
+	var askedOffset, askedLimit string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		askedOffset, askedLimit = r.URL.Query().Get("offset"), r.URL.Query().Get("limit")
+		require.Equal(t, "10", r.URL.Query().Get("type"))
+		_, _ = w.Write([]byte(`{"result":{"albumCount":592,"albums":[{"id":7,"name":"A","size":12,"picUrl":"http://img.test/a.jpg","artist":{"name":"Singer"}}]}}`))
+	}))
+	defer server.Close()
+	service := New(&platform.Client{HTTP: server.Client(), Retries: 0, MaxBody: 4096}, server.URL, "secret")
+
+	page, err := service.SearchAlbums(context.Background(), "周杰伦", 30, 10)
+	require.NoError(t, err)
+	require.Equal(t, "30", askedOffset)
+	require.Equal(t, "10", askedLimit)
+	require.Equal(t, 592, page.Total)
+	require.Len(t, page.Items, 1)
+	require.Equal(t, "7", page.Items[0].ID)
+	require.Equal(t, "Singer", page.Items[0].ArtistName)
+	require.Equal(t, 12, page.Items[0].TrackCount)
+	require.Equal(t, "netease", page.Items[0].Platform)
+
+	// The web route asks for no page at all and must not start sending one, so its response stays
+	// whatever the upstream default is.
+	_, err = service.SearchAlbums(context.Background(), "周杰伦", 0, 0)
+	require.NoError(t, err)
+	require.Equal(t, "", askedOffset)
+	require.Equal(t, "", askedLimit)
+}
+
 // Line-level slots must always come from legacy /lyric (the live /lyric/new
 // rewrites credits as JSON lines), while /lyric/new only augments word fields.
 func TestLyricMapsLineLevelFromLegacyAndWordLevelFromNew(t *testing.T) {

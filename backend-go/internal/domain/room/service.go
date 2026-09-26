@@ -118,6 +118,25 @@ func (s *Service) CanManage(ctx context.Context, roomID, token string) (account.
 	return session, session.Admin()
 }
 
+// CanEdit reports who may rename or delete a room: platform admins, or the member who created
+// it. Member, owner and invite administration deliberately keep requiring an admin, so a
+// creator can clean up their own room without gaining power over anyone else's.
+func (s *Service) CanEdit(ctx context.Context, roomID, token string) (account.Session, bool) {
+	session, err := s.accounts.Resolve(ctx, token)
+	if err != nil {
+		return account.Session{}, false
+	}
+	if session.Admin() {
+		return session, true
+	}
+	var owner string
+	var system bool
+	if err := s.store.Reader().QueryRowContext(ctx, "select owner_public_id,system from room where id=? and deleted_at is null", roomID).Scan(&owner, &system); err != nil {
+		return account.Session{}, false
+	}
+	return session, !system && owner != "" && owner == session.PublicID
+}
+
 func (s *Service) Create(ctx context.Context, token string, input CreateInput) (Info, error) {
 	session, err := s.accounts.Resolve(ctx, token)
 	if err != nil {
@@ -175,7 +194,7 @@ func (s *Service) UpdateDetails(ctx context.Context, roomID, token string, input
 	if _, err := s.accounts.Resolve(ctx, token); err != nil {
 		return Info{}, err
 	}
-	session, ok := s.CanManage(ctx, roomID, token)
+	session, ok := s.CanEdit(ctx, roomID, token)
 	if !ok {
 		return Info{}, ErrUpdateForbidden
 	}
@@ -255,7 +274,7 @@ func (s *Service) Delete(ctx context.Context, roomID, token string) (bool, error
 	if _, err := s.accounts.Resolve(ctx, token); err != nil {
 		return false, err
 	}
-	_, ok := s.CanManage(ctx, roomID, token)
+	_, ok := s.CanEdit(ctx, roomID, token)
 	if !ok {
 		return false, nil
 	}

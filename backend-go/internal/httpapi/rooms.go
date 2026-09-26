@@ -86,7 +86,8 @@ func (api *RoomAPI) list(w http.ResponseWriter, r *http.Request) error {
 					value[index].AccessGranted = true
 					continue
 				}
-				if _, canManage := api.service.CanManage(r.Context(), value[index].RoomID, sessionToken(r)); canManage {
+				// The creator owns the room, so they never need a room ticket for their own list entry.
+				if _, canEdit := api.service.CanEdit(r.Context(), value[index].RoomID, sessionToken(r)); canEdit {
 					value[index].AccessGranted = true
 					continue
 				}

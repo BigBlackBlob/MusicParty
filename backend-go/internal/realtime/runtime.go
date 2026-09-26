@@ -116,6 +116,7 @@ type RoomRuntime struct {
 	stateRepo        *storesqlite.PlaybackStateRepository
 	realtimeRepo     *storesqlite.RealtimeRepository
 	chatRepo         *storesqlite.ChatRepository
+	playlistRepo     *storesqlite.UserPlaylistRepository
 	queue            []storesqlite.QueueItem
 	state            storesqlite.PlaybackState
 	history          []storesqlite.HistoryEntry
@@ -154,7 +155,7 @@ func newRoomRuntime(ctx context.Context, store *storesqlite.Store, roomID string
 		state = &storesqlite.PlaybackState{RoomID: roomID, LikedUserIDs: map[string]struct{}{}, LikeMarkers: []int64{}, LastPersistedAt: now}
 	}
 	runtimeCtx, cancel := context.WithCancel(context.Background())
-	r := &RoomRuntime{roomID: roomID, queueRepo: queueRepo, stateRepo: stateRepo, realtimeRepo: storesqlite.NewRealtimeRepository(store, time.Now), chatRepo: storesqlite.NewChatRepository(store), queue: queue, state: *state, commands: make(chan command, capacity), ctx: runtimeCtx, cancel: cancel, done: make(chan struct{}), timeout: timeout, broadcaster: broadcaster, mutations: map[string]struct{}{}, idle: idle, lastActivity: time.Now(), onClose: onClose}
+	r := &RoomRuntime{roomID: roomID, queueRepo: queueRepo, stateRepo: stateRepo, realtimeRepo: storesqlite.NewRealtimeRepository(store, time.Now), chatRepo: storesqlite.NewChatRepository(store), playlistRepo: storesqlite.NewUserPlaylistRepository(store, time.Now, nil), queue: queue, state: *state, commands: make(chan command, capacity), ctx: runtimeCtx, cancel: cancel, done: make(chan struct{}), timeout: timeout, broadcaster: broadcaster, mutations: map[string]struct{}{}, idle: idle, lastActivity: time.Now(), onClose: onClose}
 	if history, historyErr := queueRepo.LoadHistory(ctx, roomID, maxHistoryEntries); historyErr == nil {
 		r.history = history
 	}
@@ -488,6 +489,10 @@ func (r *RoomRuntime) Like(ctx context.Context, publicID string, expectedEpoch *
 		if _, exists := runtime.state.LikedUserIDs[publicID]; exists {
 			return ControlResult{Committed: runtime.watermark()}, nil
 		}
+		music := playedMusic(runtime.state.CurrentMusic)
+		if err := runtime.syncLikedSongs(ctx, publicID, music, true); err != nil {
+			return nil, err
+		}
 		if err := runtime.mutateStateDirect(ctx, func(s *storesqlite.PlaybackState) {
 			if s.LikedUserIDs == nil {
 				s.LikedUserIDs = map[string]struct{}{}
@@ -503,6 +508,89 @@ func (r *RoomRuntime) Like(ctx context.Context, publicID string, expectedEpoch *
 		return controlResultValue(value), err
 	}
 	return value.(ControlResult), nil
+}
+
+// Unlike withdraws only the caller's like, so another member's stays. A client
+// that never liked the track gets the same noop as a repeated like: canceling
+// twice is as safe as liking twice.
+func (r *RoomRuntime) Unlike(ctx context.Context, publicID string, expectedEpoch *int64, mutation ...ControlMutation) (ControlResult, error) {
+	value, err := r.executeControl(ctx, "control.unlike", 0, expectedEpoch, mutation, func(runtime *RoomRuntime) (any, error) {
+		if expectedEpoch != nil && *expectedEpoch != runtime.state.PlayEpoch {
+			return nil, ErrPreconditionFailed
+		}
+		if runtime.state.CurrentMusic == nil {
+			return ControlResult{Committed: runtime.watermark()}, nil
+		}
+		if _, exists := runtime.state.LikedUserIDs[publicID]; !exists {
+			return ControlResult{Committed: runtime.watermark()}, nil
+		}
+		music := playedMusic(runtime.state.CurrentMusic)
+		if err := runtime.syncLikedSongs(ctx, publicID, music, false); err != nil {
+			return nil, err
+		}
+		if err := runtime.mutateStateDirect(ctx, func(s *storesqlite.PlaybackState) {
+			delete(s.LikedUserIDs, publicID)
+			// LikeMarkers carries one entry per outstanding like without saying who
+			// made which one, so the newest marker leaves with the newest like.
+			if len(s.LikeMarkers) > 0 {
+				s.LikeMarkers = s.LikeMarkers[:len(s.LikeMarkers)-1]
+			}
+		}); err != nil {
+			return nil, err
+		}
+		return ControlResult{Applied: true, Committed: runtime.watermark()}, nil
+	})
+	if err != nil {
+		return controlResultValue(value), err
+	}
+	return value.(ControlResult), nil
+}
+
+const (
+	// A member's own liked list is one row of the existing `user_playlist` system
+	// playlist table, the same one /api/me/liked-songs maintains for the web.
+	LikedSongsSystemKey = "liked-songs"
+	LikedSongsName      = "喜欢的歌曲"
+)
+
+func playedMusic(music *storesqlite.PlayableMusic) storesqlite.Music {
+	return storesqlite.Music{ID: music.ID, Name: music.Name, Artists: slices.Clone(music.Artists), Duration: music.Duration, Platform: music.Platform, CoverURL: music.CoverURL}
+}
+
+// syncLikedSongs mirrors a room like onto the member's own liked list, which is
+// the same `liked-songs` system playlist the web pages maintain through
+// /api/me/liked-songs. It runs before the room state commits, so a write that
+// fails leaves the shared heart and the personal list agreeing on "not liked".
+func (r *RoomRuntime) syncLikedSongs(ctx context.Context, publicID string, music storesqlite.Music, liked bool) error {
+	if !liked {
+		playlist, err := r.playlistRepo.FindSystemPlaylist(ctx, publicID, LikedSongsSystemKey)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		_, err = r.playlistRepo.DeleteTrackByMusicKey(ctx, publicID, playlist.ID, music.Platform+":"+music.ID)
+		return err
+	}
+	playlist, err := r.EnsureLikedSongs(ctx, publicID)
+	if err != nil {
+		return err
+	}
+	_, err = r.playlistRepo.AddTrackIfAbsent(ctx, publicID, playlist.ID, &music)
+	return err
+}
+
+// EnsureLikedSongs returns the member's own liked list, creating it on first use.
+func (r *RoomRuntime) EnsureLikedSongs(ctx context.Context, publicID string) (storesqlite.Playlist, error) {
+	playlist, err := r.playlistRepo.FindSystemPlaylist(ctx, publicID, LikedSongsSystemKey)
+	if err == nil {
+		return *playlist, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return storesqlite.Playlist{}, err
+	}
+	return r.playlistRepo.CreateSystemPlaylist(ctx, publicID, LikedSongsName, LikedSongsSystemKey)
 }
 
 func (r *RoomRuntime) Next(ctx context.Context, mutation ...ControlMutation) (ControlResult, error) {
@@ -550,6 +638,8 @@ func (r *RoomRuntime) Previous(ctx context.Context, expectedEpoch *int64, mutati
 			s.TimestampAnchor = now
 			s.PositionUpdatedAt = now
 			s.PlayEpoch++
+			s.LikedUserIDs = map[string]struct{}{}
+			s.LikeMarkers = []int64{}
 		}); err != nil {
 			return nil, err
 		}
@@ -613,6 +703,11 @@ func (r *RoomRuntime) advance(ctx context.Context) error {
 	nextState.PositionAnchor = 0
 	nextState.TimestampAnchor = now
 	nextState.PositionUpdatedAt = now
+	// Likes are statements about the track that was playing, so a new track starts
+	// with an empty set; without this the heart never goes out and `likedUserIds`
+	// keeps answering "someone liked something this session".
+	nextState.LikedUserIDs = map[string]struct{}{}
+	nextState.LikeMarkers = []int64{}
 	nextState.StateVersion++
 	nextState.LastPersistedAt = now
 	if err := r.realtimeRepo.CommitRoomState(ctx, r.roomID, nextQueue, nextState, history); err != nil {
@@ -669,6 +764,55 @@ func (r *RoomRuntime) ChatHistory(ctx context.Context, offset, limit int, public
 	return r.chatRepo.FetchMessages(ctx, room, max(0, offset), min(100, max(1, limit)))
 }
 
+const (
+	defaultHistoryPageLimit = 50
+	maxHistoryPageLimit     = 200
+)
+
+// PlaybackHistoryItem is one played track. `music` is the metadata the queue item carried (the
+// same shape as QueueItem.music); no stream URL is persisted with it, so replaying an entry means
+// enqueuing platform + music id again rather than opening an old address.
+type PlaybackHistoryItem struct {
+	ID               string            `json:"id"`
+	Music            storesqlite.Music `json:"music"`
+	EnqueuerPublicID *string           `json:"enqueuerPublicId"`
+	EnqueuerName     *string           `json:"enqueuerName"`
+	PlayedAt         int64             `json:"playedAt"`
+}
+
+// PlaybackHistoryPage answers `history.list`: the whole session, newest first, one page at a time.
+// Total counts every row the room ever wrote, which is deliberately larger than the
+// maxHistoryEntries window the runtime keeps for control.previous.
+type PlaybackHistoryPage struct {
+	RoomID string                `json:"roomId"`
+	Total  int                   `json:"total"`
+	Offset int                   `json:"offset"`
+	Items  []PlaybackHistoryItem `json:"items"`
+}
+
+// PlaybackHistory reads straight from the store instead of queueing behind playback: it is a read
+// for whoever already got into the room, so it stays out of the mutation and idempotency channels.
+func (r *RoomRuntime) PlaybackHistory(ctx context.Context, offset, limit int) (PlaybackHistoryPage, error) {
+	page := PlaybackHistoryPage{RoomID: r.roomID, Offset: max(0, offset), Items: []PlaybackHistoryItem{}}
+	if limit <= 0 {
+		limit = defaultHistoryPageLimit
+	}
+	limit = min(maxHistoryPageLimit, limit)
+	total, err := r.queueRepo.CountHistory(ctx, r.roomID)
+	if err != nil {
+		return page, err
+	}
+	entries, err := r.queueRepo.LoadHistoryPage(ctx, r.roomID, page.Offset, limit)
+	if err != nil {
+		return page, err
+	}
+	page.Total = total
+	for _, entry := range entries {
+		page.Items = append(page.Items, PlaybackHistoryItem{ID: entry.ID, Music: entry.Music, EnqueuerPublicID: entry.EnqueuerPublicID, EnqueuerName: entry.EnqueuerName, PlayedAt: entry.PlayedAt})
+	}
+	return page, nil
+}
+
 func (r *RoomRuntime) mutateStateChecked(ctx context.Context, kind string, positionMS int64, expectedEpoch *int64, mutation []ControlMutation, check func(storesqlite.PlaybackState) error, mutate func(*storesqlite.PlaybackState)) (ControlResult, error) {
 	value, err := r.executeControl(ctx, kind, positionMS, expectedEpoch, mutation, func(runtime *RoomRuntime) (any, error) {
 		if check != nil {
@@ -719,6 +863,8 @@ func startFirst(state *storesqlite.PlaybackState, queue *[]storesqlite.QueueItem
 	state.TimestampAnchor = now
 	state.PositionUpdatedAt = now
 	state.PlayEpoch++
+	state.LikedUserIDs = map[string]struct{}{}
+	state.LikeMarkers = []int64{}
 	state.StateVersion++
 	state.LastPersistedAt = now
 	return true

@@ -44,11 +44,12 @@ func RequireNonGuest(service *account.Service) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			session, err := service.Resolve(r.Context(), sessionToken(r))
 			if err != nil {
-				writeErrorJSON(w, http.StatusUnauthorized, map[string]string{"message": "Authentication required"})
+				// A code, not just prose: the desktop maps the refusal onto its own copy.
+				WriteMappedError(w, &APIError{Status: http.StatusUnauthorized, Code: "unauthorized", Message: "Authentication required"})
 				return
 			}
 			if session.Guest {
-				writeErrorJSON(w, http.StatusForbidden, map[string]string{"message": "This feature requires a registered account"})
+				WriteMappedError(w, &APIError{Status: http.StatusForbidden, Code: "guest-not-allowed", Message: "This feature requires a registered account"})
 				return
 			}
 			next.ServeHTTP(w, r)

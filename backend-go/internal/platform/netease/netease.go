@@ -89,7 +89,7 @@ func (s *Service) PlaylistSongs(ctx context.Context, playlistID string, offset, 
 	err := s.get(ctx, "/playlist/track/all", url.Values{"id": {playlistID}, "offset": {strconv.Itoa(offset)}, "limit": {strconv.Itoa(limit)}}, &response)
 	return mapSongs(response.Songs, ""), err
 }
-func (s *Service) SearchAlbums(ctx context.Context, keyword string) ([]platform.Album, error) {
+func (s *Service) SearchAlbums(ctx context.Context, keyword string, offset, limit int) (platform.AlbumSearchResult, error) {
 	var response struct {
 		Result struct {
 			Albums []struct {
@@ -100,15 +100,30 @@ func (s *Service) SearchAlbums(ctx context.Context, keyword string) ([]platform.
 					Name string `json:"name"`
 				} `json:"artist"`
 			} `json:"albums"`
+			// albumCount is the whole match set, not this page; measured live against the
+			// deployed netease-api: offset 0 and offset 5 return different ids and both report 592.
+			AlbumCount int `json:"albumCount"`
 		} `json:"result"`
 	}
-	err := s.get(ctx, "/cloudsearch", url.Values{"keywords": {keyword}, "type": {"10"}}, &response)
-	result := make([]platform.Album, 0, len(response.Result.Albums))
+	err := s.get(ctx, "/cloudsearch", albumSearchParams(keyword, offset, limit), &response)
+	result := platform.AlbumSearchResult{Items: make([]platform.Album, 0, len(response.Result.Albums)), Total: response.Result.AlbumCount}
 	for _, item := range response.Result.Albums {
-		result = append(result, platform.Album{ID: item.ID.String(), Name: item.Name, ArtistName: item.Artist.Name, CoverURL: image(item.PicURL), TrackCount: item.Size, Platform: "netease"})
+		result.Items = append(result.Items, platform.Album{ID: item.ID.String(), Name: item.Name, ArtistName: item.Artist.Name, CoverURL: image(item.PicURL), TrackCount: item.Size, Platform: "netease"})
 	}
 	return result, err
 }
+
+// albumSearchParams keeps the web route's historic shape: without a limit the upstream decides the
+// page size, and only a desktop request that names offset/limit gets them sent.
+func albumSearchParams(keyword string, offset, limit int) url.Values {
+	query := url.Values{"keywords": {keyword}, "type": {"10"}}
+	if limit > 0 {
+		query.Set("offset", strconv.Itoa(max(0, offset)))
+		query.Set("limit", strconv.Itoa(limit))
+	}
+	return query
+}
+
 func (s *Service) AlbumSongs(ctx context.Context, albumID string) ([]platform.Music, error) {
 	var response struct {
 		Album struct {

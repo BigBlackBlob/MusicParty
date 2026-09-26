@@ -30,13 +30,23 @@ func New(client *platform.Client, enabled bool, apiKey string, maxResults int, y
 func (*Service) Name() string      { return "youtube" }
 func (s *Service) Available() bool { return s.enabled && s.apiKey != "" }
 func (s *Service) Search(ctx context.Context, keyword string, offset, limit int) ([]platform.Music, error) {
-	if limit > s.maxResults {
-		limit = s.maxResults
+	if offset < 0 {
+		offset = 0
 	}
 	if limit < 1 {
 		limit = 1
 	}
-	q := url.Values{"part": {"snippet"}, "type": {"video"}, "q": {keyword}, "maxResults": {strconv.Itoa(limit)}, "key": {s.apiKey}}
+	// This endpoint is queried without a page token, so a page is cut out of one over-fetched
+	// window: ask for offset+limit and drop the head. Past the window the caller gets fewer
+	// items and then none, which is honest paging; the old code re-sent page 1 instead.
+	window := offset + limit
+	if window > s.maxResults {
+		window = s.maxResults
+	}
+	if window < 1 {
+		window = 1
+	}
+	q := url.Values{"part": {"snippet"}, "type": {"video"}, "q": {keyword}, "maxResults": {strconv.Itoa(window)}, "key": {s.apiKey}}
 	var search struct {
 		Items []struct {
 			ID struct {
@@ -76,7 +86,14 @@ func (s *Service) Search(ctx context.Context, keyword string, offset, limit int)
 	for _, v := range search.Items {
 		out = append(out, platform.Music{ID: v.ID.VideoID, Name: v.Snippet.Title, Artists: []string{v.Snippet.ChannelTitle}, Duration: durations[v.ID.VideoID], Platform: "youtube", CoverURL: v.Snippet.Thumbnails.High.URL})
 	}
-	return out, nil
+	if offset >= len(out) {
+		return []platform.Music{}, nil
+	}
+	// A page never over-delivers, even if the upstream answers more than the window asked for.
+	if end := offset + limit; end < len(out) {
+		out = out[:end]
+	}
+	return out[offset:], nil
 }
 func (s *Service) ResolvePlayable(ctx context.Context, id string) (platform.PlayableMusic, error) {
 	var videos struct {
@@ -151,8 +168,10 @@ func (*Service) UserPlaylists(context.Context, string) ([]platform.Playlist, err
 func (*Service) PlaylistSongs(context.Context, string, int, int) ([]platform.Music, error) {
 	return []platform.Music{}, nil
 }
-func (*Service) SearchAlbums(context.Context, string) ([]platform.Album, error) {
-	return []platform.Album{}, nil
+
+// SearchAlbums has no upstream concept on this platform: an empty page, no known total.
+func (*Service) SearchAlbums(context.Context, string, int, int) (platform.AlbumSearchResult, error) {
+	return platform.AlbumSearchResult{Items: []platform.Album{}}, nil
 }
 func (*Service) AlbumSongs(context.Context, string) ([]platform.Music, error) {
 	return []platform.Music{}, nil

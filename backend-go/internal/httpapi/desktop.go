@@ -71,10 +71,11 @@ type DesktopAPI struct {
 	hub       realtime.Broadcaster
 	platforms *PlatformAPI
 	cookies   CookieFactory
+	readiness *desktopReadinessProbe
 }
 
 func NewDesktopAPI(cfg config.Config, accounts *account.Service, rooms *roomdomain.Service, hub realtime.Broadcaster, platforms *PlatformAPI) *DesktopAPI {
-	return &DesktopAPI{cfg: cfg, accounts: accounts, rooms: rooms, hub: hub, platforms: platforms, cookies: CookieFactory{SecureCookies: cfg.Auth.SecureCookies}}
+	return &DesktopAPI{cfg: cfg, accounts: accounts, rooms: rooms, hub: hub, platforms: platforms, cookies: CookieFactory{SecureCookies: cfg.Auth.SecureCookies}, readiness: newDesktopReadinessProbe(nil)}
 }
 
 func (api *DesktopAPI) Routes(r chi.Router) {
@@ -82,18 +83,26 @@ func (api *DesktopAPI) Routes(r chi.Router) {
 		writeJSON(w, map[string]any{"status": "ok", "apiVersion": desktopAPIVersion})
 	})
 	r.Get("/api/desktop/v1/capabilities", api.capabilities)
+	// Readiness is public and version-ungated like health: the setup wizard must be
+	// able to ask "is this backend usable, and are its dependencies up?" before it
+	// has any credentials.
+	r.Get("/api/desktop/v1/readiness", api.readinessSnapshot)
 	r.With(desktopGuard).Post("/api/desktop/v1/invites/redeem", Adapt(api.redeemInvite))
 	r.With(desktopGuard).Get("/api/desktop/v1/media/{platform}/{songId}/resolve", Adapt(api.resolveMedia))
 	r.With(desktopGuard).Get("/api/desktop/v1/media/{platform}/{songId}/cover", Adapt(api.cover))
 	r.With(desktopGuard).Get("/api/desktop/v1/media/{platform}/{songId}/lyrics", Adapt(api.lyrics))
 	r.With(desktopGuard).Get("/api/desktop/v1/music/{platform}/{songId}/lyrics", Adapt(api.lyrics))
 	r.With(desktopGuard).Get("/api/desktop/v1/search/{platform}", Adapt(api.searchDesktop))
-	r.With(desktopGuard, RequireSession(api.accounts)).Post("/api/desktop/v1/rooms", Adapt(api.createRoom))
+	r.With(desktopGuard).Get("/api/desktop/v1/albums/{platform}", Adapt(api.searchAlbumsDesktop))
+	r.With(desktopGuard).Get("/api/desktop/v1/albums/{platform}/{albumId}/songs", Adapt(api.albumSongsDesktop))
+	// R5-1 裁决 ②：建房要一个注册账号，不是任意会话。guest 没有 user_account 行，所以
+	// 一次性迁移按不到它头上，房间会永久挂在一个查无此人的 owner 上。
+	r.With(desktopGuard, RequireNonGuest(api.accounts)).Post("/api/desktop/v1/rooms", Adapt(api.createRoom))
 }
 
 // createRoom lets a signed-in desktop client open a room without the web page.
-// Room ownership is recorded, but the existing management routes still require a
-// platform admin, so the creator cannot rename or delete it through this API.
+// RequireNonGuest above keeps guests out; the recorded owner can rename or delete the
+// room through CanEdit, so a created room is never ownerless.
 func (api *DesktopAPI) createRoom(w http.ResponseWriter, r *http.Request) error {
 	token := sessionToken(r)
 	session, err := api.accounts.Resolve(r.Context(), token)
@@ -170,14 +179,21 @@ func desktopHandshake(parent context.Context, connection *websocket.Conn, roomID
 
 func (api *DesktopAPI) capabilities(w http.ResponseWriter, _ *http.Request) {
 	providers := map[string]bool{}
+	// Only configured providers are listed, and the value says whether that provider answers
+	// album queries at all. A missing key means "not advertised", so a client never has to keep
+	// its own copy of the platform list to decide whether to show an album tab.
+	albumSearch := map[string]bool{}
 	for _, name := range []string{"netease", "youtube", "bilibili"} {
 		_, providers[name] = api.platforms.Service(name)
+		if providers[name] {
+			albumSearch[name] = albumSearchSupported(name)
+		}
 	}
 	writeJSON(w, map[string]any{"apiVersion": desktopAPIVersion, "serverVersion": desktopServerVersion, "minimumClientVersion": desktopMinimumClientVersion,
-		"authentication": "cookie", "reconnect": "snapshot", "eventReplay": false, "providers": providers,
+		"authentication": "cookie", "reconnect": "snapshot", "eventReplay": false, "providers": providers, "albumSearchProviders": albumSearch,
 		// Proven live 2026-09-22: the deployed netease-api (moefurina/ncm-api) serves
 		// /lyric/new with yrc; clients may rely on the wordLyric fields when present.
-		"features": map[string]bool{"inviteRedeem": true, "roomCreate": true, "mediaResolve": true, "queue": true, "chat": true, "lyrics": true, "controlAck": true, "controlPreconditions": true, "controlIdempotency": true, "lyricsWordLevel": true}})
+		"features": map[string]bool{"readiness": true, "inviteRedeem": true, "roomCreate": true, "roomManage": true, "roomHistory": true, "albumSearch": true, "unlike": true, "likePlaylist": true, "likedSongsEdit": true, "mediaResolve": true, "queue": true, "chat": true, "lyrics": true, "controlAck": true, "controlPreconditions": true, "controlIdempotency": true, "lyricsWordLevel": true}})
 }
 
 func (api *DesktopAPI) redeemInvite(w http.ResponseWriter, r *http.Request) error {
@@ -261,6 +277,53 @@ func (api *DesktopAPI) searchDesktop(w http.ResponseWriter, r *http.Request) err
 		return desktopMediaError(err)
 	}
 	writeJSON(w, map[string]any{"items": items, "offset": offset, "limit": limit})
+	return nil
+}
+
+// searchAlbumsDesktop gives the shell what the web album view has always had, plus a page and a
+// total. `total` is the provider's own count when it reports one and 0 when it does not, so the
+// client must read 0 as "unknown" rather than "no more results".
+func (api *DesktopAPI) searchAlbumsDesktop(w http.ResponseWriter, r *http.Request) error {
+	if err := api.mediaSession(r); err != nil {
+		return err
+	}
+	offset, limit, err := queryPage(r)
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if err != nil || q == "" || len(q) > 128 || offset < 0 || offset > 10000 || limit < 1 || limit > 100 {
+		return &APIError{Status: http.StatusBadRequest, Name: "invalid-request", Message: "Invalid album search parameters"}
+	}
+	service, ok := api.platforms.Service(chi.URLParam(r, "platform"))
+	if !ok {
+		return desktopMediaError(errors.New("unavailable"))
+	}
+	page, err := service.SearchAlbums(r.Context(), q, offset, limit)
+	if err != nil {
+		return desktopMediaError(err)
+	}
+	writeJSON(w, map[string]any{"items": page.Items, "total": page.Total, "offset": offset, "limit": limit})
+	return nil
+}
+
+// albumSongsDesktop expands one album. It is deliberately not paged: both providers that implement
+// album detail return the whole track list in one upstream call, so slicing it here would only
+// invent a page boundary the upstream cannot honor.
+func (api *DesktopAPI) albumSongsDesktop(w http.ResponseWriter, r *http.Request) error {
+	if err := api.mediaSession(r); err != nil {
+		return err
+	}
+	albumID := strings.TrimSpace(chi.URLParam(r, "albumId"))
+	if albumID == "" || len(albumID) > 64 {
+		return &APIError{Status: http.StatusBadRequest, Name: "invalid-request", Message: "Invalid album id"}
+	}
+	service, ok := api.platforms.Service(chi.URLParam(r, "platform"))
+	if !ok {
+		return desktopMediaError(errors.New("unavailable"))
+	}
+	items, err := service.AlbumSongs(r.Context(), albumID)
+	if err != nil {
+		return desktopMediaError(err)
+	}
+	writeJSON(w, map[string]any{"items": items, "total": len(items)})
 	return nil
 }
 

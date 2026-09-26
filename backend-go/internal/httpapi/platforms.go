@@ -148,6 +148,15 @@ func (api *PlatformAPI) Routes(r chi.Router) {
 func (api *PlatformAPI) config(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, map[string]string{"authorName": api.cfg.Application.AuthorName, "backWords": api.cfg.Application.BackWords})
 }
+
+// albumSearchSupported answers "does this provider have albums at all" in one place, so the web
+// list and the desktop capabilities cannot drift apart. It mirrors what the providers do: netease
+// and the subsonic family issue a real upstream call, while bilibili, youtube and local return an
+// empty page.
+func albumSearchSupported(name string) bool {
+	return name == "netease" || name == "navidrome" || name == "squidify" || strings.HasPrefix(name, "subsonic-")
+}
+
 func (api *PlatformAPI) platforms(w http.ResponseWriter, r *http.Request) {
 	type item struct {
 		ID                  string `json:"id"`
@@ -165,13 +174,13 @@ func (api *PlatformAPI) platforms(w http.ResponseWriter, r *http.Request) {
 		access[name] = check
 	}
 	api.mu.RUnlock()
-	out := []item{{"netease", "netease", true, false}, {"bilibili", "bilibili", false, false}}
+	out := []item{{"netease", "netease", albumSearchSupported("netease"), false}, {"bilibili", "bilibili", albumSearchSupported("bilibili"), false}}
 	for _, name := range []string{"youtube", "local", "navidrome", "squidify"} {
 		if service := services[name]; service != nil && service.Available() {
 			if check := access[name]; check != nil && !check(r.Context(), r.URL.Query().Get("token")) {
 				continue
 			}
-			out = append(out, item{name, name, name == "navidrome" || name == "squidify", name == "navidrome" || name == "squidify"})
+			out = append(out, item{name, name, albumSearchSupported(name), name == "navidrome" || name == "squidify"})
 		}
 	}
 	roomID := defaultValue(r.URL.Query().Get("roomId"), "lounge")
@@ -198,7 +207,7 @@ func (api *PlatformAPI) platforms(w http.ResponseWriter, r *http.Request) {
 		if labeled, ok := service.(interface{ Label() string }); ok {
 			label = labeled.Label()
 		}
-		out = append(out, item{name, label, true, true})
+		out = append(out, item{name, label, albumSearchSupported(name), true})
 	}
 	writeJSON(w, out)
 }
@@ -277,8 +286,10 @@ func (api *PlatformAPI) searchAlbums(w http.ResponseWriter, r *http.Request) err
 	if err != nil {
 		return err
 	}
-	v, err := service.SearchAlbums(r.Context(), r.URL.Query().Get("keyword"))
-	return writePlatformResult(w, v, err)
+	// The web contract stays a bare album array with the upstream's own page size; only the
+	// desktop route asks for a page and a total.
+	v, err := service.SearchAlbums(r.Context(), r.URL.Query().Get("keyword"), 0, 0)
+	return writePlatformResult(w, v.Items, err)
 }
 func (api *PlatformAPI) albumSongs(w http.ResponseWriter, r *http.Request) error {
 	service, err := api.authorizedService(r)

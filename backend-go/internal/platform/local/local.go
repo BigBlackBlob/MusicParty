@@ -51,8 +51,10 @@ func (*Service) UserPlaylists(context.Context, string) ([]platform.Playlist, err
 func (*Service) PlaylistSongs(context.Context, string, int, int) ([]platform.Music, error) {
 	return []platform.Music{}, nil
 }
-func (*Service) SearchAlbums(context.Context, string) ([]platform.Album, error) {
-	return []platform.Album{}, nil
+
+// SearchAlbums has no upstream concept on this platform: an empty page, no known total.
+func (*Service) SearchAlbums(context.Context, string, int, int) (platform.AlbumSearchResult, error) {
+	return platform.AlbumSearchResult{Items: []platform.Album{}}, nil
 }
 func (*Service) AlbumSongs(context.Context, string) ([]platform.Music, error) {
 	return []platform.Music{}, nil

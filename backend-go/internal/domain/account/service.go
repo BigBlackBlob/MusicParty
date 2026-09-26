@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"regexp"
 	"strings"
@@ -43,6 +44,17 @@ type Session struct {
 	Enabled      bool   `json:"enabled"`
 	LastLoginAt  *int64 `json:"lastLoginAt"`
 }
+
+// MarshalJSON publishes isAdmin next to role so clients never have to mirror which role strings
+// count as an administrator. It is derived from Admin(), so the two can never disagree.
+func (s Session) MarshalJSON() ([]byte, error) {
+	type wire Session
+	return json.Marshal(struct {
+		wire
+		IsAdmin bool `json:"isAdmin"`
+	}{wire: wire(s), IsAdmin: s.Admin()})
+}
+
 type InviteMetadata struct {
 	RoomID    string `json:"roomId"`
 	RoomName  string `json:"roomName"`

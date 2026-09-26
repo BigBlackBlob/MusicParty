@@ -40,6 +40,17 @@ func TestAccountCookieAndCSRFFlow(t *testing.T) {
 	meResponse := httptest.NewRecorder()
 	handler.ServeHTTP(meResponse, me)
 	require.Equal(t, 200, meResponse.Code)
+	// Clients read `isAdmin` instead of mirroring which role strings count as an administrator,
+	// so it must be published on every session response and never disagree with Admin().
+	require.Contains(t, meResponse.Body.String(), `"isAdmin":true`)
+	require.Contains(t, loginResponse.Body.String(), `"isAdmin":true`)
+	guest := httptest.NewRequest(http.MethodPost, "/api/account/guest", strings.NewReader(`{"displayName":"访客"}`))
+	guest.Header.Set("Content-Type", "application/json")
+	guestResponse := httptest.NewRecorder()
+	handler.ServeHTTP(guestResponse, guest)
+	require.Equal(t, 200, guestResponse.Code)
+	require.Contains(t, guestResponse.Body.String(), `"isAdmin":false`)
+	require.Contains(t, guestResponse.Body.String(), `"role":"GUEST"`)
 	profile := httptest.NewRequest(http.MethodPut, "/api/account/profile", strings.NewReader(`{"displayName":"新名称"}`))
 	profile.AddCookie(byName[SessionCookieName])
 	profile.AddCookie(byName[CSRFCookieName])

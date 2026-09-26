@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -30,8 +31,8 @@ func (neteaseFixture) UserPlaylists(context.Context, string) ([]platform.Playlis
 func (f neteaseFixture) PlaylistSongs(context.Context, string, int, int) ([]platform.Music, error) {
 	return []platform.Music{}, f.err
 }
-func (neteaseFixture) SearchAlbums(context.Context, string) ([]platform.Album, error) {
-	return []platform.Album{}, nil
+func (neteaseFixture) SearchAlbums(context.Context, string, int, int) (platform.AlbumSearchResult, error) {
+	return platform.AlbumSearchResult{Items: []platform.Album{}}, nil
 }
 func (neteaseFixture) AlbumSongs(context.Context, string) ([]platform.Music, error) {
 	return []platform.Music{}, nil
@@ -60,8 +61,17 @@ func (fixturePlatform) UserPlaylists(context.Context, string) ([]platform.Playli
 func (fixturePlatform) PlaylistSongs(context.Context, string, int, int) ([]platform.Music, error) {
 	return []platform.Music{}, nil
 }
-func (fixturePlatform) SearchAlbums(context.Context, string) ([]platform.Album, error) {
-	return []platform.Album{}, nil
+
+// SearchAlbums echoes the page it was asked for, so route tests can prove offset/limit reach the
+// provider and that the provider's own total is passed through untouched. A keyword of "no-total"
+// stands in for a platform that reports no count at all, which must surface as 0 rather than the
+// page length.
+func (fixturePlatform) SearchAlbums(_ context.Context, keyword string, offset, limit int) (platform.AlbumSearchResult, error) {
+	result := platform.AlbumSearchResult{Items: []platform.Album{{ID: fmt.Sprintf("album-%d", offset), Name: "Album", Platform: "local"}}, Total: 42}
+	if strings.Contains(keyword, "no-total") {
+		result.Total = 0
+	}
+	return result, nil
 }
 func (fixturePlatform) AlbumSongs(context.Context, string) ([]platform.Music, error) {
 	return []platform.Music{}, nil
