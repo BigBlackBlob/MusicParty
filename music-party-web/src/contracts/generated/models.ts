@@ -4,7 +4,7 @@ export type QueuePatchOperation = 'append' | 'remove' | 'move' | 'snapshot' | 's
 export type ControlAckOutcome = 'applied' | 'noop' | 'rejected'
 export interface ControlAckCommitted { stateVersion: number; playEpoch: number; queueVersion: number }
 
-export interface Session { publicId: string; username: string; displayName: string; role: string; guest: boolean; enabled: boolean; lastLoginAt: number | null }
+export interface Session { publicId: string; username: string; displayName: string; role: string; guest: boolean; enabled: boolean; lastLoginAt: number | null; isAdmin?: boolean }
 export interface AccountStatus { requiresSetup: boolean }
 export interface RoomSummary { roomId: string; name: string; creatorPublicId: string; createdAt: number; privateRoom: boolean; system: boolean; onlineCount: number; accessGranted: boolean }
 export interface RoomAccessResult { roomId: string; accessGranted: true; expiresAt: number }
@@ -22,6 +22,7 @@ export interface PlaylistSummary { id: string; ownerPublicId?: string; roomId?: 
 export interface PlaylistTrack { id: string; playlistId: string; music: Music; sortOrder: number; createdAt: number }
 export interface LocalTrack extends Music { path?: string; size?: number; modifiedAt?: number }
 export interface ChatMessage { id: string; userId: string; userName: string; content: string; timestamp: number; type: string }
+export interface PlaybackHistoryItem { id: string; music: Music; enqueuerPublicId: string | null; enqueuerName: string | null; playedAt: number }
 export type PlayerEventCode = 'CONTROL_DENIED' | 'RENAME_FAILED' | 'ROOM_PASSWORD_CHANGED' | 'ROOM_DELETED' | 'ROOM_PLAYLISTS_UPDATED' | 'RESET' | 'REMOVE' | 'ERROR_LOAD' | 'SYSTEM_MESSAGE' | 'SEEK_DENIED' | 'LIKE' | 'USER_JOIN' | 'USER_LEAVE' | 'PLAY_START'
 export interface PlayerEvent { code: PlayerEventCode; severity: 'info' | 'success' | 'warning' | 'error'; message: string; actor?: UserSummary; metadata?: Record<string, string | number | boolean> }
 export interface APIError { status: number; code: string; message: string; requestId?: string; fieldErrors?: Record<string, string> }

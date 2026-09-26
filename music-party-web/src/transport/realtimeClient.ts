@@ -251,6 +251,13 @@ export class RealtimeClient {
       case 'server.hello': handlers['server.hello']?.(envelope.payload, envelope); return
       case 'user.me': handlers['user.me']?.(envelope.payload, envelope); return
       case 'users.online': handlers['users.online']?.(envelope.payload, envelope); return
+      // Playlist frames are routed like every other envelope; no store subscribes to them yet
+      // (the playlist views still read over HTTP), so they are inert until one does.
+      case 'playlist.ack': handlers['playlist.ack']?.(envelope.payload, envelope); return
+      case 'playlist.data': handlers['playlist.data']?.(envelope.payload, envelope); return
+      case 'playlist.nack': handlers['playlist.nack']?.(envelope.payload, envelope); return
+      // History is the same shape of additive frame. No store subscribes yet.
+      case 'history.page': handlers['history.page']?.(envelope.payload, envelope); return
       // additive server frame; the web UI reacts to broadcasts and resolves nothing from acks yet
       case 'control.ack': return
       default: assertNever(envelope)

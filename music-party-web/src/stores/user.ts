@@ -29,7 +29,7 @@ export const useUserStore = defineStore('user', () => {
   const publicId = computed(() => account.value?.publicId || '')
   const role = computed(() => account.value?.role || 'GUEST')
   const isGuest = computed(() => account.value?.guest ?? true)
-  const isAdmin = computed(() => role.value === 'PLATFORM_ADMIN')
+  const isAdmin = computed(() => role.value === 'PLATFORM_ADMIN' || role.value === 'ADMIN')
   const currentUser = computed(() => ({
     name: account.value?.displayName || account.value?.username || '游客',
     publicId: publicId.value
@@ -52,11 +52,14 @@ export const useUserStore = defineStore('user', () => {
   const canManageRooms = computed(() => capabilities.value.canManageCurrentRoom)
   const canCreatePlaylists = computed(() => isSignedIn.value)
 
-  function capabilitiesForRoom(_creatorPublicId?: string): Capabilities {
+  function capabilitiesForRoom(creatorPublicId?: string): Capabilities {
+    // Renaming and deleting belong to the room's creator as well (server: room.CanEdit); member
+    // and invite administration stay with platform admins only (room.CanManage).
     const managesRoom = isAdmin.value
+    const editsRoom = managesRoom || (Boolean(creatorPublicId) && creatorPublicId === publicId.value)
     return {
       ...capabilities.value,
-      canManageCurrentRoom: managesRoom,
+      canManageCurrentRoom: editsRoom,
       canManageMembers: managesRoom,
       canManageInvites: false
     }

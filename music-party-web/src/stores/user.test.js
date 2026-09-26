@@ -133,3 +133,37 @@ describe('user store account actions', () => {
     expect(localStorage.getItem('mp_session_token')).toBeNull();
   });
 });
+
+describe('room capabilities follow the server room gates', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+  });
+
+  const signIn = (role, publicId = 'u_me') => {
+    const user = useUserStore();
+    user.initAccount({ sessionToken: 'token-a', publicId, username: 'me', displayName: 'Me', role, guest: false });
+    return user;
+  };
+
+  it('offers rename and delete to the room creator but not to other members', () => {
+    const creator = signIn('USER', 'u_creator');
+    expect(creator.capabilitiesForRoom('u_creator').canManageCurrentRoom).toBe(true);
+    expect(creator.capabilitiesForRoom('u_someone').canManageCurrentRoom).toBe(false);
+    // A missing creator must not open the entry for anyone.
+    expect(creator.capabilitiesForRoom(undefined).canManageCurrentRoom).toBe(false);
+  });
+
+  it('keeps member administration admin-only, and counts both admin roles', () => {
+    const member = signIn('USER', 'u_creator');
+    expect(member.capabilitiesForRoom('u_creator').canManageMembers).toBe(false);
+    const platformAdmin = signIn('PLATFORM_ADMIN', 'u_admin');
+    expect(platformAdmin.isAdmin).toBe(true);
+    expect(platformAdmin.capabilitiesForRoom('u_someone').canManageCurrentRoom).toBe(true);
+    expect(platformAdmin.capabilitiesForRoom('u_someone').canManageMembers).toBe(true);
+    const legacyAdmin = signIn('ADMIN', 'u_admin2');
+    expect(legacyAdmin.isAdmin).toBe(true);
+    expect(legacyAdmin.capabilitiesForRoom('u_someone').canManageCurrentRoom).toBe(true);
+  });
+});
