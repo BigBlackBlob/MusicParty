@@ -21,6 +21,12 @@ on:
       - '.dockerignore'
       - '.github/workflows/**'
   workflow_dispatch:
+    inputs:
+      publish_backup_image:
+        description: Publish verified backup-branch image to ACR without moving production tags
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -31,7 +37,7 @@ permissions:
   packages: write
 
 env:
-  GO_VERSION: '1.26.5'
+  GO_VERSION: '1.27.1'
   NODE_VERSION: '22'
   PNPM_VERSION: '11.10.0'
   GHCR_IMAGE: ghcr.io/bigblackblob/musicparty
@@ -273,16 +279,48 @@ jobs:
           docker logs musicparty-ci-smoke
           exit 1
       - name: Export verified image
-        if: github.event_name == 'push' && github.ref == 'refs/heads/NRT-Base'
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/NRT-Base') || (github.event_name == 'workflow_dispatch' && inputs.publish_backup_image)
         run: docker save "musicparty-ci:${GITHUB_SHA}" | gzip > "$RUNNER_TEMP/musicparty-image.tar.gz"
       - name: Upload verified image
-        if: github.event_name == 'push' && github.ref == 'refs/heads/NRT-Base'
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/NRT-Base') || (github.event_name == 'workflow_dispatch' && inputs.publish_backup_image)
         uses: actions/upload-artifact@v4
         with:
           name: verified-image-${{ github.sha }}
           path: ${{ runner.temp }}/musicparty-image.tar.gz
           if-no-files-found: error
           retention-days: 1
+
+  publish-backup:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_backup_image && github.ref == 'refs/heads/backup/desktop-20260930'
+    needs: container
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: verified-image-${{ github.sha }}
+          path: ${{ runner.temp }}
+      - name: Load verified image
+        run: gunzip -c "$RUNNER_TEMP/musicparty-image.tar.gz" | docker load
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_REGISTRY }}
+          username: ${{ secrets.ALIYUN_ACR_USERNAME }}
+          password: ${{ secrets.ALIYUN_ACR_PASSWORD }}
+      - name: Publish only immutable backup reference
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          target="${ACR_IMAGE}:backup-${SOURCE_SHA}"
+          docker tag "musicparty-ci:${SOURCE_SHA}" "$target"
+          docker push "$target"
+          docker pull "$target"
+          digest=$(docker image inspect "$target" --format '{{index .RepoDigests 0}}')
+          test -n "$digest"
+          {
+            echo "SOURCE_SHA=$SOURCE_SHA"
+            echo "MUSIC_PARTY_IMAGE=$digest"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/NRT-Base'

@@ -10,3 +10,7 @@ packaging/
 .idea/
 .vscode/
 *.zip
+.env*
+**/*.log
+**/*.key
+music_party/
