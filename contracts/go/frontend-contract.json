@@ -23,7 +23,9 @@
     "management": {
       "method": "PUT",
       "path": "/api/rooms/{roomId}",
-      "body": { "name": "string", "isPrivate": "boolean", "password": "string", "keepExistingPassword": "boolean" },
+      "body": { "name": "string", "isPrivate": "boolean?", "password": "string?", "keepExistingPassword": "boolean?" },
+      "omittedVisibility": "preserve current visibility and password unless a new password is supplied",
+      "roomNames": "trimmed, case-insensitive with SQLite lower(), unique among active rooms on create and rename",
       "authorized": ["room owner", "platform administrator"]
     }
   },

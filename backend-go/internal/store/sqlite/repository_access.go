@@ -16,6 +16,9 @@ func NewRoomAccessRepository(store *Store) *RoomAccessRepository {
 
 func (repository *RoomAccessRepository) UpsertMembership(ctx context.Context, membership RoomMembership) error {
 	return repository.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		if err := RequireActiveRoom(ctx, tx, membership.RoomID); err != nil {
+			return err
+		}
 		_, err := tx.ExecContext(ctx, `
 			insert into room_membership(room_id, public_id, role, created_at, updated_at) values (?, ?, ?, ?, ?)
 			on conflict(room_id, public_id) do update set role = excluded.role, updated_at = excluded.updated_at
@@ -69,6 +72,9 @@ func (repository *RoomAccessRepository) DeleteMembership(ctx context.Context, ro
 
 func (repository *RoomAccessRepository) CreateInvite(ctx context.Context, invite RoomInvite) error {
 	return repository.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		if err := RequireActiveRoom(ctx, tx, invite.RoomID); err != nil {
+			return err
+		}
 		_, err := tx.ExecContext(ctx, `
 			insert into room_invite(id, room_id, created_by_public_id, secret_hash, label, expires_at, max_uses, used_at, used_by_public_id, revoked_at, created_at)
 			values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

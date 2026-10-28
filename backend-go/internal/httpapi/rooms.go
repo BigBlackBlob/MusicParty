@@ -102,7 +102,7 @@ func (api *RoomAPI) list(w http.ResponseWriter, r *http.Request) error {
 func (api *RoomAPI) update(w http.ResponseWriter, r *http.Request) error {
 	var request struct {
 		Name                 string `json:"name"`
-		IsPrivate            bool   `json:"isPrivate"`
+		IsPrivate            *bool  `json:"isPrivate"`
 		Password             string `json:"password"`
 		KeepExistingPassword bool   `json:"keepExistingPassword"`
 	}

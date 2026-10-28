@@ -211,6 +211,22 @@ func (h *Hub) Unregister(client *Client) {
 	}
 }
 
+// CloseRoom removes presence first, then closes all connections attached to the deleted room.
+func (h *Hub) CloseRoom(roomID string) {
+	h.mu.Lock()
+	clients := make([]*Client, 0, len(h.rooms[roomID]))
+	for id, client := range h.rooms[roomID] {
+		clients = append(clients, client)
+		delete(h.clients, id)
+	}
+	delete(h.rooms, roomID)
+	h.presenceRevisions[roomID]++
+	h.mu.Unlock()
+	for _, client := range clients {
+		client.Close(websocket.StatusPolicyViolation, "Room deleted")
+	}
+}
+
 // CloseSession immediately removes every realtime client associated with one
 // browser session. Session matching uses an irreversible fingerprint.
 func (h *Hub) CloseSession(sessionToken string) {

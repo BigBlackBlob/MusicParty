@@ -176,6 +176,10 @@ func run() error {
 				}
 			})
 		}
+		roomService.SetRoomDeletedHook(func(roomID string) {
+			realtimeManager.CloseRoom(roomID)
+			socketHub.CloseRoom(roomID)
+		})
 		playlistAPI.SetRealtime(realtimeManager)
 		webSocketAPI = httpapi.NewWebSocketAPI(cfg, databaseStore, accountService, roomService, socketHub, realtimeManager, platformAPI)
 	}

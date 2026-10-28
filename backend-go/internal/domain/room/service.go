@@ -48,7 +48,7 @@ type Info struct {
 
 type UpdateInput struct {
 	Name                 string
-	Private              bool
+	Private              *bool
 	Password             string
 	KeepExistingPassword bool
 }
@@ -83,14 +83,20 @@ type Invite struct {
 	CreatedAt int64  `json:"-"`
 }
 type Service struct {
-	store    *storesqlite.Store
-	accounts *account.Service
-	now      func() time.Time
+	store         *storesqlite.Store
+	accounts      *account.Service
+	now           func() time.Time
+	onRoomDeleted func(string)
 }
 
 func New(store *storesqlite.Store, accounts *account.Service) *Service {
 	return &Service{store: store, accounts: accounts, now: time.Now}
 }
+
+// SetRoomDeletedHook wires runtime and connection cleanup after the deletion commits.
+// Configure it at startup before serving room mutations.
+func (s *Service) SetRoomDeletedHook(hook func(string)) { s.onRoomDeleted = hook }
+
 func (s *Service) List(ctx context.Context, token string) ([]Info, error) {
 	_ = token
 	rows, err := s.store.Reader().QueryContext(ctx, `select id,name,owner_public_id,visibility,system,created_at from room where deleted_at is null order by system desc,last_active_at desc,created_at`)
@@ -154,20 +160,13 @@ func (s *Service) Create(ctx context.Context, token string, input CreateInput) (
 	if err != nil {
 		return Info{}, err
 	}
-	name := strings.TrimSpace(input.Name)
-	if name == "" || len([]rune(name)) > 64 {
-		return Info{}, ErrInvalidRoomName
+	name, err := normalizeRoomName(input.Name)
+	if err != nil {
+		return Info{}, err
 	}
 	private := input.Private
 	if private && strings.TrimSpace(input.Password) == "" {
 		return Info{}, ErrPrivatePasswordRequired
-	}
-	var duplicates int
-	if err := s.store.Reader().QueryRowContext(ctx, "select count(1) from room where lower(name)=lower(?) and deleted_at is null", name).Scan(&duplicates); err != nil {
-		return Info{}, err
-	}
-	if duplicates > 0 {
-		return Info{}, ErrRoomNameExists
 	}
 	roomID := "room-" + uuid.NewString()[:8]
 	visibility := "PUBLIC"
@@ -184,6 +183,9 @@ func (s *Service) Create(ctx context.Context, token string, input CreateInput) (
 	}
 	now := s.now().UnixMilli()
 	if err := s.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		if err := ensureRoomNameAvailable(ctx, tx, name, ""); err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, "insert into room(id,name,owner_public_id,visibility,password_hash,password_version,system,created_at,last_active_at) values(?,?,?,?,?,?,0,?,?)", roomID, name, session.PublicID, visibility, passwordHash, passwordVersion, now, now); err != nil {
 			return err
 		}
@@ -194,12 +196,31 @@ func (s *Service) Create(ctx context.Context, token string, input CreateInput) (
 	}
 	return Info{RoomID: roomID, Name: name, CreatorPublicID: session.PublicID, CreatedAt: now, PrivateRoom: private, AccessGranted: true}, nil
 }
+
+// Update renames a room without changing its visibility or password.
 func (s *Service) Update(ctx context.Context, roomID, token, name string) (Info, error) {
-	metadata, err := s.Access(ctx, roomID)
-	if err != nil {
-		return Info{}, err
+	return s.UpdateDetails(ctx, roomID, token, UpdateInput{Name: name})
+}
+
+func normalizeRoomName(raw string) (string, error) {
+	name := strings.TrimSpace(raw)
+	if name == "" || len([]rune(name)) > 64 {
+		return "", ErrInvalidRoomName
 	}
-	return s.UpdateDetails(ctx, roomID, token, UpdateInput{Name: name, Private: metadata.Private, KeepExistingPassword: metadata.Private})
+	return name, nil
+}
+
+// Check names in the same writer transaction as creation or rename. Existing duplicate
+// rows are left intact; new names follow the existing SQLite case-insensitive rule.
+func ensureRoomNameAvailable(ctx context.Context, tx *sql.Tx, name, exceptRoomID string) error {
+	var exists bool
+	if err := tx.QueryRowContext(ctx, "select exists(select 1 from room where lower(name)=lower(?) and deleted_at is null and id<>?)", name, exceptRoomID).Scan(&exists); err != nil {
+		return err
+	}
+	if exists {
+		return ErrRoomNameExists
+	}
+	return nil
 }
 
 func (s *Service) UpdateDetails(ctx context.Context, roomID, token string, input UpdateInput) (Info, error) {
@@ -210,47 +231,60 @@ func (s *Service) UpdateDetails(ctx context.Context, roomID, token string, input
 	if !ok {
 		return Info{}, ErrUpdateForbidden
 	}
-	name := strings.TrimSpace(input.Name)
-	if name == "" || len([]rune(name)) > 64 {
-		return Info{}, ErrInvalidRoomName
-	}
-	var existingVisibility, existingHash string
-	var existingVersion int
-	if err := s.store.Reader().QueryRowContext(ctx, "select visibility,coalesce(password_hash,''),password_version from room where id=? and deleted_at is null", roomID).Scan(&existingVisibility, &existingHash, &existingVersion); err != nil {
+	name, err := normalizeRoomName(input.Name)
+	if err != nil {
 		return Info{}, err
 	}
-	visibility := "PUBLIC"
-	passwordHash := ""
-	passwordVersion := existingVersion
-	if input.Private {
-		visibility = "PRIVATE"
-		if input.KeepExistingPassword && existingVisibility == "PRIVATE" && existingHash != "" {
-			passwordHash = existingHash
-		} else {
-			if strings.TrimSpace(input.Password) == "" {
-				return Info{}, ErrPrivatePasswordRequired
-			}
-			hash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
-			if err != nil {
-				return Info{}, err
-			}
-			passwordHash = string(hash)
-			passwordVersion++
+	// Hash outside the single-writer transaction; decide which password to keep inside it.
+	newHash := ""
+	if (input.Private == nil || *input.Private) && strings.TrimSpace(input.Password) != "" {
+		hash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return Info{}, err
 		}
-	} else if existingVisibility == "PRIVATE" {
-		passwordVersion++
+		newHash = string(hash)
 	}
 	now := s.now().UnixMilli()
 	if err := s.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		result, err := tx.ExecContext(ctx, "update room set name=?,visibility=?,password_hash=?,password_version=?,last_active_at=? where id=? and deleted_at is null", name, visibility, nullable(passwordHash), passwordVersion, now, roomID)
+		allowed, err := canEditRoomTx(ctx, tx, roomID, session)
 		if err != nil {
 			return err
 		}
-		count, _ := result.RowsAffected()
-		if count == 0 {
-			return sql.ErrNoRows
+		if !allowed {
+			return ErrUpdateForbidden
 		}
-		return nil
+		var existingName, visibility, passwordHash string
+		var passwordVersion int
+		if err := tx.QueryRowContext(ctx, "select name,visibility,coalesce(password_hash,''),password_version from room where id=? and deleted_at is null", roomID).Scan(&existingName, &visibility, &passwordHash, &passwordVersion); err != nil {
+			return err
+		}
+		if name != existingName {
+			if err := ensureRoomNameAvailable(ctx, tx, name, roomID); err != nil {
+				return err
+			}
+		}
+		private := visibility == "PRIVATE"
+		if input.Private != nil {
+			private = *input.Private
+		}
+		if private {
+			keep := input.KeepExistingPassword || (input.Private == nil && input.Password == "")
+			if !(keep && visibility == "PRIVATE" && passwordHash != "") {
+				if newHash == "" {
+					return ErrPrivatePasswordRequired
+				}
+				passwordHash = newHash
+				passwordVersion++
+			}
+			visibility = "PRIVATE"
+		} else {
+			if visibility == "PRIVATE" {
+				passwordVersion++
+			}
+			visibility, passwordHash = "PUBLIC", ""
+		}
+		_, err = tx.ExecContext(ctx, "update room set name=?,visibility=?,password_hash=?,password_version=?,last_active_at=? where id=? and deleted_at is null", name, visibility, nullable(passwordHash), passwordVersion, now, roomID)
+		return err
 	}); err != nil {
 		return Info{}, err
 	}
@@ -283,27 +317,37 @@ func (s *Service) VerifyAccess(ctx context.Context, roomID, token, password stri
 	return metadata, session, nil
 }
 func (s *Service) Delete(ctx context.Context, roomID, token string) (bool, error) {
-	if _, err := s.accounts.Resolve(ctx, token); err != nil {
+	session, err := s.accounts.Resolve(ctx, token)
+	if err != nil {
 		return false, err
 	}
-	_, ok := s.CanEdit(ctx, roomID, token)
-	if !ok {
-		return false, nil
-	}
-	var system bool
-	if err := s.store.Reader().QueryRowContext(ctx, "select system from room where id=? and deleted_at is null", roomID).Scan(&system); err != nil {
-		return false, nil
-	}
-	if system {
-		return false, nil
-	}
+	deleted := false
 	now := s.now().UnixMilli()
-	err := s.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+	// Once accepted, deletion and its post-commit cleanup complete even if the HTTP/WS
+	// request ends. Otherwise cancellation can hide a committed write from the caller.
+	ctx = context.WithoutCancel(ctx)
+	err = s.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		allowed, err := canEditRoomTx(ctx, tx, roomID, session)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil || !allowed {
+			return err
+		}
+		var system bool
+		if err := tx.QueryRowContext(ctx, "select system from room where id=? and deleted_at is null", roomID).Scan(&system); err != nil {
+			return err
+		}
+		if system {
+			return nil
+		}
+		if _, err := tx.ExecContext(ctx, "update room set deleted_at=? where id=? and deleted_at is null", now, roomID); err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, "update user_profile set current_room_id='lounge',last_seen_at=? where current_room_id=?", now, roomID); err != nil {
 			return err
 		}
-		tables := []string{"room_queue", "room_history", "room_history_track", "room_playback_state", "chat_message", "room_subsonic_source", "room_invite", "room_membership"}
-		for _, table := range tables {
+		for _, table := range []string{"room_queue", "room_history", "room_history_track", "room_playback_state", "chat_message", "room_subsonic_source", "room_invite", "room_membership"} {
 			if _, err := tx.ExecContext(ctx, "delete from "+table+" where room_id=?", roomID); err != nil {
 				return err
 			}
@@ -314,18 +358,36 @@ func (s *Service) Delete(ctx context.Context, roomID, token string) (bool, error
 		if _, err := tx.ExecContext(ctx, "delete from room_playlist where room_id=?", roomID); err != nil {
 			return err
 		}
-		result, err := tx.ExecContext(ctx, "update room set deleted_at=? where id=? and deleted_at is null", now, roomID)
-		if err != nil {
-			return err
-		}
-		count, _ := result.RowsAffected()
-		if count != 1 {
-			return sql.ErrNoRows
-		}
+		deleted = true
 		return nil
 	})
-	return err == nil, err
+	if err == nil && deleted && s.onRoomDeleted != nil {
+		s.onRoomDeleted(roomID)
+	}
+	return deleted && err == nil, err
 }
+
+// Recheck ownership with the room mutation so a queued write cannot use a revoked owner role.
+func canEditRoomTx(ctx context.Context, tx *sql.Tx, roomID string, session account.Session) (bool, error) {
+	var owner string
+	var system bool
+	if err := tx.QueryRowContext(ctx, "select owner_public_id,system from room where id=? and deleted_at is null", roomID).Scan(&owner, &system); err != nil {
+		return false, err
+	}
+	if session.Admin() {
+		return true, nil
+	}
+	if system {
+		return false, nil
+	}
+	if owner != "" && owner == session.PublicID {
+		return true, nil
+	}
+	var allowed bool
+	err := tx.QueryRowContext(ctx, "select exists(select 1 from room_membership where room_id=? and public_id=? and role='OWNER')", roomID, session.PublicID).Scan(&allowed)
+	return allowed, err
+}
+
 func (s *Service) CreateInvite(ctx context.Context, roomID, token, label string) (Invite, error) {
 	session, ok := s.CanManage(ctx, roomID, token)
 	if !ok {
@@ -343,6 +405,9 @@ func (s *Service) CreateInvite(ctx context.Context, roomID, token, label string)
 	now := s.now().UnixMilli()
 	value := Invite{ID: "inv_" + strings.ReplaceAll(uuid.NewString(), "-", ""), Secret: secret, RoomID: roomID, Label: label, ExpiresAt: PermanentInviteExpiresAt, Permanent: true, CreatedAt: now}
 	err := s.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		if err := storesqlite.RequireActiveRoom(ctx, tx, roomID); err != nil {
+			return err
+		}
 		_, err := tx.ExecContext(ctx, "insert into room_invite(id,room_id,created_by_public_id,secret_hash,label,expires_at,max_uses,created_at) values(?,?,?,?,?,?,1,?)", value.ID, roomID, session.PublicID, hash(secret), nullable(label), value.ExpiresAt, now)
 		return err
 	})

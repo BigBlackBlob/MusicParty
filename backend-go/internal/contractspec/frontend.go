@@ -229,7 +229,7 @@ export interface Session { publicId: string; username: string; displayName: stri
 export interface AccountStatus { requiresSetup: boolean }
 export interface RoomSummary { roomId: string; name: string; creatorPublicId: string; createdAt: number; privateRoom: boolean; system: boolean; onlineCount: number; accessGranted: boolean }
 export interface RoomAccessResult { roomId: string; accessGranted: true; expiresAt: number }
-export interface RoomUpdateInput { name: string; isPrivate: boolean; password?: string; keepExistingPassword: boolean }
+export interface RoomUpdateInput { name: string; isPrivate?: boolean; password?: string; keepExistingPassword?: boolean }
 export interface UserSummary { publicId: string; name: string; isGuest: boolean }
 export interface PresenceSnapshot { roomId: string; revision: number; users: UserSummary[] }
 export interface RoomMember { roomId: string; publicId: string; role: string; createdAt: number; updatedAt: number }

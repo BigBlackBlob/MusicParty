@@ -72,6 +72,9 @@ func encodePlaybackState(state PlaybackState) (encodedPlaybackState, error) {
 }
 
 func upsertPlaybackStateTx(ctx context.Context, tx *sql.Tx, state PlaybackState, values encodedPlaybackState) error {
+	if err := RequireActiveRoom(ctx, tx, state.RoomID); err != nil {
+		return err
+	}
 	_, err := tx.ExecContext(ctx, `
 			insert into room_playback_state(
 				room_id, current_music_json, current_enqueuer_id, current_enqueuer_name,
@@ -190,6 +193,11 @@ func (repository *ChatRepository) FetchMessages(ctx context.Context, roomID *str
 
 func (repository *ChatRepository) ReplaceMessages(ctx context.Context, roomID *string, messages []ChatMessage) error {
 	return repository.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		if roomID != nil {
+			if err := RequireActiveRoom(ctx, tx, *roomID); err != nil {
+				return err
+			}
+		}
 		var err error
 		if roomID == nil {
 			_, err = tx.ExecContext(ctx, "delete from chat_message where room_id is null")
@@ -216,6 +224,11 @@ func (repository *ChatRepository) DeleteRoomHistory(ctx context.Context, roomID 
 }
 
 func appendChatMessage(ctx context.Context, tx *sql.Tx, roomID *string, message ChatMessage) error {
+	if roomID != nil {
+		if err := RequireActiveRoom(ctx, tx, *roomID); err != nil {
+			return err
+		}
+	}
 	var room any
 	if roomID != nil {
 		room = *roomID

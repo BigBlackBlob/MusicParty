@@ -130,6 +130,9 @@ func (repository *SubsonicSourceRepository) FindRoomBinding(ctx context.Context,
 
 func (repository *SubsonicSourceRepository) UpsertRoomBinding(ctx context.Context, binding RoomSubsonicSource) error {
 	return repository.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		if err := RequireActiveRoom(ctx, tx, binding.RoomID); err != nil {
+			return err
+		}
 		_, err := tx.ExecContext(ctx, `
 			insert into room_subsonic_source(room_id, source_id, enabled, display_label, allowed_users, sort_order, created_at, updated_at)
 			values (?, ?, ?, ?, ?, ?, ?, ?)

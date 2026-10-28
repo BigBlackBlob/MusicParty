@@ -72,6 +72,13 @@ func (m *Manager) Room(ctx context.Context, roomID string) (*RoomRuntime, error)
 	if m.closed {
 		return nil, context.Canceled
 	}
+	var active bool
+	if err := m.store.Reader().QueryRowContext(ctx, "select exists(select 1 from room where id=? and deleted_at is null)", roomID).Scan(&active); err != nil {
+		return nil, err
+	}
+	if !active {
+		return nil, storesqlite.ErrRoomGone
+	}
 	if runtime := m.runtimes[roomID]; runtime != nil {
 		return runtime, nil
 	}
@@ -85,6 +92,16 @@ func (m *Manager) Room(ctx context.Context, roomID string) (*RoomRuntime, error)
 	}
 	m.runtimes[roomID] = runtime
 	return runtime, nil
+}
+
+// CloseRoom stops an existing runtime without creating a replacement for a deleted room.
+func (m *Manager) CloseRoom(roomID string) {
+	m.mu.Lock()
+	runtime := m.runtimes[roomID]
+	m.mu.Unlock()
+	if runtime != nil {
+		runtime.Close()
+	}
 }
 
 func (m *Manager) Close() {
@@ -1068,6 +1085,9 @@ func (r *RoomRuntime) loop() {
 			value, err := command.apply(r)
 			r.lastActivity = time.Now()
 			command.result <- commandResult{value: value, err: err}
+			if errors.Is(err, storesqlite.ErrRoomGone) {
+				r.cancel()
+			}
 		}
 	}
 }

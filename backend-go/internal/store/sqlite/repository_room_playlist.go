@@ -65,6 +65,9 @@ func (repository *RoomPlaylistRepository) CreatePlaylist(ctx context.Context, ro
 	now, id := repository.now().UnixMilli(), repository.newID()
 	playlist := Playlist{ID: id, OwnerID: roomID, Name: name, CreatedAt: now, UpdatedAt: now}
 	err := repository.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		if err := RequireActiveRoom(ctx, tx, roomID); err != nil {
+			return err
+		}
 		_, err := tx.ExecContext(ctx, `insert into room_playlist(id, room_id, name, created_at, updated_at) values (?, ?, ?, ?, ?)`, id, roomID, name, now, now)
 		return err
 	})

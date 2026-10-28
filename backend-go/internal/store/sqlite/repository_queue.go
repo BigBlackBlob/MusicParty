@@ -59,6 +59,9 @@ func (repository *QueueRepository) ReplaceQueue(ctx context.Context, roomID stri
 		return err
 	}
 	return repository.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		if err := RequireActiveRoom(ctx, tx, roomID); err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, "delete from room_queue where room_id = ?", roomID); err != nil {
 			return err
 		}
@@ -86,6 +89,9 @@ func (repository *QueueRepository) SynchronizeQueue(ctx context.Context, roomID 
 }
 
 func synchronizeQueueTx(ctx context.Context, tx *sql.Tx, now func() time.Time, roomID string, items []QueueItem, encoded []string) error {
+	if err := RequireActiveRoom(ctx, tx, roomID); err != nil {
+		return err
+	}
 	existing, err := loadPersistedQueueRows(ctx, tx, roomID)
 	if err != nil {
 		return err
@@ -256,6 +262,9 @@ func (repository *QueueRepository) AppendHistory(ctx context.Context, entry Hist
 }
 
 func appendHistoryTx(ctx context.Context, tx *sql.Tx, entry HistoryEntry, musicJSON string) error {
+	if err := RequireActiveRoom(ctx, tx, entry.RoomID); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `
 			insert into room_history(id, room_id, music_json, enqueuer_public_id, played_at) values (?, ?, ?, ?, ?)
 		`, entry.ID, entry.RoomID, musicJSON, nullableString(entry.EnqueuerPublicID), entry.PlayedAt); err != nil {
@@ -286,6 +295,9 @@ func (repository *QueueRepository) ReplaceHistory(ctx context.Context, roomID st
 		encoded[index] = value
 	}
 	return repository.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		if err := RequireActiveRoom(ctx, tx, roomID); err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `delete from room_history where room_id = ?`, roomID); err != nil {
 			return err
 		}
