@@ -15,7 +15,7 @@ func TestSearchUsesTokenAuthenticationAndMapsDuration(t *testing.T) {
 		require.Equal(t, "search3.view", r.URL.Path[len("/rest/"):])
 		require.Equal(t, "json", r.URL.Query().Get("f"))
 		require.NotEmpty(t, r.URL.Query().Get("t"))
-		_, _ = w.Write([]byte(`{"subsonic-response":{"searchResult3":{"song":[{"id":"s1","title":"Title","artist":"Artist","duration":12,"coverArt":"c1"}]}}}`))
+		_, _ = w.Write([]byte(`{"subsonic-response":{"status":"ok","searchResult3":{"song":[{"id":"s1","title":"Title","artist":"Artist","duration":12,"coverArt":"c1"}]}}}`))
 	}))
 	defer server.Close()
 	service := New(&platform.Client{HTTP: server.Client(), Retries: 0, MaxBody: 2048}, Config{ID: "navidrome", BaseURL: server.URL, Username: "u", Password: "p", Client: "musicparty", Version: "1.16.1", ProxyPrefix: "/api/navidrome/cover", Enabled: true})

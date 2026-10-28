@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/domain/account"
@@ -23,6 +24,7 @@ type AdminAPI struct {
 	accounts  *account.Service
 	client    *platform.Client
 	platforms *PlatformAPI
+	sourcesMu sync.Mutex // Serializes source persistence and its post-commit registry publication.
 }
 
 func NewAdminAPI(store *storesqlite.Store, accounts *account.Service, client *platform.Client, platforms *PlatformAPI) *AdminAPI {
@@ -40,15 +42,15 @@ func (api *AdminAPI) Routes(r chi.Router) {
 }
 
 type sourceRequest struct {
-	RoomID       string `json:"roomId"`
-	ID           string `json:"id"`
-	Label        string `json:"label"`
-	BaseURL      string `json:"baseUrl"`
-	Username     string `json:"username"`
-	Password     string `json:"password"`
-	AllowedUsers string `json:"allowedUsers"`
-	Enabled      *bool  `json:"enabled"`
-	SortOrder    *int   `json:"sortOrder"`
+	RoomID       string  `json:"roomId"`
+	ID           string  `json:"id"`
+	Label        *string `json:"label"`
+	BaseURL      string  `json:"baseUrl"`
+	Username     string  `json:"username"`
+	Password     string  `json:"password"`
+	AllowedUsers *string `json:"allowedUsers"`
+	Enabled      *bool   `json:"enabled"`
+	SortOrder    *int    `json:"sortOrder"`
 }
 type platformCredentialRequest struct {
 	Platform   string `json:"platform"`
@@ -144,13 +146,22 @@ func (api *AdminAPI) saveSource(w http.ResponseWriter, r *http.Request) error {
 	if request.ID == "" || request.BaseURL == "" || request.Username == "" {
 		return badRequest("id, baseUrl and username are required")
 	}
+	api.sourcesMu.Lock()
+	defer api.sourcesMu.Unlock()
+	if err := r.Context().Err(); err != nil {
+		return err
+	}
+	ctx := context.WithoutCancel(r.Context())
 	repository := storesqlite.NewSubsonicSourceRepository(api.store)
-	existing, _ := repository.FindByID(r.Context(), request.ID)
+	existing, err := repository.FindByID(ctx, request.ID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
 	password := request.Password
 	if password == "" && existing != nil {
 		password = existing.Password
 	}
-	secret, err := api.siteSecret(r.Context())
+	secret, err := api.siteSecret(ctx)
 	if err != nil {
 		return err
 	}
@@ -163,29 +174,36 @@ func (api *AdminAPI) saveSource(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	now := time.Now().UnixMilli()
-	enabled := true
-	if request.Enabled != nil {
-		enabled = *request.Enabled
-	}
-	source := storesqlite.SubsonicSource{ID: request.ID, Label: defaultValue(request.Label, request.ID), BaseURL: strings.TrimRight(request.BaseURL, "/"), Username: request.Username, Password: password, Client: "musicparty", APIVersion: "1.16.1", AllowedUsers: stringPointer(defaultValue(request.AllowedUsers, "*")), Enabled: enabled, System: existing != nil && existing.System, CreatedAt: now, UpdatedAt: now}
+	source := storesqlite.SubsonicSource{ID: request.ID, Label: defaultValue(dereference(request.Label), request.ID), Client: "musicparty", APIVersion: "1.16.1", AllowedUsers: stringPointer("*"), Enabled: true, CreatedAt: now}
 	if existing != nil {
-		source.CreatedAt = existing.CreatedAt
-		source.OwnerRoomID = existing.OwnerRoomID
+		source = *existing
 	}
-	if err := repository.Upsert(r.Context(), source); err != nil {
+	source.BaseURL, source.Username, source.Password, source.UpdatedAt = strings.TrimRight(request.BaseURL, "/"), request.Username, password, now
+	binding := storesqlite.RoomSubsonicSource{RoomID: request.RoomID, SourceID: source.ID, Enabled: true, CreatedAt: now}
+	previous, err := repository.FindRoomBinding(ctx, request.RoomID, request.ID)
+	if err == nil {
+		binding = *previous
+	} else if !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	sortOrder := 0
+	if request.Enabled != nil {
+		binding.Enabled = *request.Enabled
+	}
 	if request.SortOrder != nil {
-		sortOrder = *request.SortOrder
+		binding.SortOrder = *request.SortOrder
 	}
-	binding := storesqlite.RoomSubsonicSource{RoomID: request.RoomID, SourceID: source.ID, Enabled: enabled, DisplayLabel: stringPointer(request.Label), AllowedUsers: stringPointer(request.AllowedUsers), SortOrder: sortOrder, CreatedAt: now, UpdatedAt: now}
-	if err := repository.UpsertRoomBinding(r.Context(), binding); err != nil {
+	if request.Label != nil {
+		binding.DisplayLabel = stringPointer(*request.Label)
+	}
+	if request.AllowedUsers != nil {
+		binding.AllowedUsers = request.AllowedUsers
+	}
+	binding.UpdatedAt = now
+	bindings, err := repository.SaveWithBinding(ctx, source, binding)
+	if err != nil {
 		return err
 	}
-	platformID := "subsonic-" + source.ID + "@" + request.RoomID
-	api.platforms.Register(subsonic.New(api.client, subsonic.Config{ID: platformID, Label: source.Label, RoomID: request.RoomID, BaseURL: source.BaseURL, Username: source.Username, Password: runtimePassword, Client: source.Client, Version: source.APIVersion, ProxyPrefix: "/api/subsonic/" + request.RoomID + "/" + source.ID + "/cover", Enabled: enabled}))
-	api.platforms.SetAccess(platformID, PlatformAccess(api.accounts, defaultValue(request.AllowedUsers, "*")))
+	api.platforms.replaceSubsonicSource(api.client, api.accounts, source, bindings, runtimePassword)
 	writeJSON(w, map[string]string{"message": "SOURCE SAVED", "platformId": "subsonic-" + source.ID})
 	return nil
 }
@@ -200,6 +218,8 @@ func (api *AdminAPI) orderSource(w http.ResponseWriter, r *http.Request) error {
 	if request.SortOrder == nil {
 		return badRequest("sortOrder is required")
 	}
+	api.sourcesMu.Lock()
+	defer api.sourcesMu.Unlock()
 	repository := storesqlite.NewSubsonicSourceRepository(api.store)
 	binding, err := repository.FindRoomBinding(r.Context(), defaultValue(request.RoomID, "lounge"), request.ID)
 	if err != nil {
@@ -221,18 +241,20 @@ func (api *AdminAPI) removeSource(w http.ResponseWriter, r *http.Request) error 
 	if !api.admin(r) {
 		return accessDenied(w)
 	}
-	repository := storesqlite.NewSubsonicSourceRepository(api.store)
-	if _, err := repository.FindRoomBinding(r.Context(), defaultValue(request.RoomID, "lounge"), request.ID); err != nil {
-		return badRequest("Source not found in this Lounge")
+	api.sourcesMu.Lock()
+	defer api.sourcesMu.Unlock()
+	if err := r.Context().Err(); err != nil {
+		return err
 	}
-	if err := repository.DeleteRoomBinding(r.Context(), defaultValue(request.RoomID, "lounge"), request.ID); err != nil {
+	ctx := context.WithoutCancel(r.Context())
+	repository := storesqlite.NewSubsonicSourceRepository(api.store)
+	if err := repository.RemoveBindingAndUnusedSource(ctx, defaultValue(request.RoomID, "lounge"), request.ID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return badRequest("Source not found in this Lounge")
+		}
 		return err
 	}
 	api.platforms.Unregister("subsonic-" + request.ID + "@" + defaultValue(request.RoomID, "lounge"))
-	source, err := repository.FindByID(r.Context(), request.ID)
-	if err == nil && !source.System {
-		_ = repository.Delete(r.Context(), request.ID)
-	}
 	writeJSON(w, map[string]string{"message": "SOURCE REMOVED"})
 	return nil
 }
@@ -318,7 +340,10 @@ func (api *AdminAPI) updateNavidrome(w http.ResponseWriter, r *http.Request, gra
 func (api *AdminAPI) siteSecret(ctx context.Context) (string, error) {
 	repository := storesqlite.NewSiteSettingRepository(api.store)
 	value, err := repository.FindValue(ctx, "security.site-secret.v1")
-	if err == nil && value != nil && *value != "" {
+	if err == nil {
+		if value == nil || *value == "" {
+			return "", errors.New("existing site secret is empty; repair the setting before saving credentials")
+		}
 		return *value, nil
 	}
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -329,10 +354,7 @@ func (api *AdminAPI) siteSecret(ctx context.Context) (string, error) {
 		return "", err
 	}
 	secret := base64.StdEncoding.EncodeToString(bytes)
-	if err := repository.Upsert(ctx, storesqlite.SiteSetting{Key: "security.site-secret.v1", Value: &secret, Secret: true, UpdatedAt: time.Now().UnixMilli()}); err != nil {
-		return "", err
-	}
-	return secret, nil
+	return repository.InitializeSecret(ctx, "security.site-secret.v1", secret, time.Now().UnixMilli())
 }
 func accessDenied(w http.ResponseWriter) error {
 	writeErrorJSON(w, 403, map[string]string{"message": "ACCESS DENIED"})

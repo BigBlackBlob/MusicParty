@@ -43,6 +43,20 @@ func (repository *LocalTrackRepository) FindAll(ctx context.Context) ([]LocalTra
 	return repository.query(ctx, "select * from local_track where status <> 'DELETED' order by updated_at desc")
 }
 
+func (repository *LocalTrackRepository) FindPendingAfter(ctx context.Context, after string, limit int) ([]LocalTrack, error) {
+	return repository.query(ctx, "select * from local_track where status in ('PENDING','PROCESSING') and id>? order by id limit ?", after, limit)
+}
+
+// RetryTranscode replaces recovery input without overwriting metadata or reviving a deleted row.
+func (repository *LocalTrackRepository) RetryTranscode(ctx context.Context, id, source string, uploadName, mime *string, size, now int64) error {
+	return repository.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		result, err := tx.ExecContext(ctx, `update local_track set source_path=?, original_file_name=?, source_mime_type=?, source_size_bytes=?,
+		  status='PENDING', error_message=null, status_message='Waiting for transcode', progress_percent=0,
+		  started_at=null, completed_at=null, updated_at=? where id=? and status in ('PENDING','PROCESSING','FAILED')`, source, nullableString(uploadName), nullableString(mime), size, now, id)
+		return liveTrackResult(result, err)
+	})
+}
+
 func (repository *LocalTrackRepository) SearchCompleted(ctx context.Context, keyword string, offset, limit int) ([]LocalTrack, error) {
 	like := "%" + strings.ToLower(strings.TrimSpace(keyword)) + "%"
 	return repository.query(ctx, `
@@ -91,6 +105,32 @@ func (repository *LocalTrackRepository) UpdateStatus(ctx context.Context, id str
 			nullableInt(update.ProgressPercent), nullableInt64(update.StartedAt), nullableInt64(update.CompletedAt), update.UpdatedAt, id)
 		return liveTrackResult(result, err)
 	})
+}
+
+type LocalTrackMetadata struct {
+	Title, Album *string
+	Artists      []string
+}
+
+// UpdateMetadata never writes task fields and rejects deleted or missing tracks.
+func (repository *LocalTrackRepository) UpdateMetadata(ctx context.Context, id string, metadata LocalTrackMetadata, now int64) (LocalTrack, error) {
+	var track LocalTrack
+	var artists *string
+	if len(metadata.Artists) > 0 {
+		value := joinArtists(metadata.Artists)
+		artists = &value
+	}
+	err := repository.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		result, err := tx.ExecContext(ctx, `update local_track set title=coalesce(?,title), artists=coalesce(?,artists),
+		  album=case when ? is null then album else nullif(?,'') end, updated_at=? where id=? and status<>'DELETED'`,
+			nullableString(metadata.Title), nullableString(artists), nullableString(metadata.Album), nullableString(metadata.Album), now, id)
+		if err := liveTrackResult(result, err); err != nil {
+			return err
+		}
+		track, err = scanLocalTrack(tx.QueryRowContext(ctx, "select * from local_track where id=?", id))
+		return err
+	})
+	return track, err
 }
 
 func (repository *LocalTrackRepository) CompleteTranscode(ctx context.Context, id, oggPath string, durationMS int64, coverPath, coverMIMEType *string, now int64) error {

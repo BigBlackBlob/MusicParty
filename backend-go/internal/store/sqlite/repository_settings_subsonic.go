@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 )
 
@@ -46,6 +47,36 @@ func (repository *SiteSettingRepository) Upsert(ctx context.Context, setting Sit
 	})
 }
 
+// InitializeSecret returns the committed winner without replacing an existing key.
+// An empty existing key needs operator repair; silently replacing it can lose credentials.
+func (repository *SiteSettingRepository) InitializeSecret(ctx context.Context, key, candidate string, now int64) (string, error) {
+	var value sql.NullString
+	err := repository.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		// A missing key with encrypted sources is data loss, not first initialization.
+		// Keep those credentials intact for operator recovery rather than minting a new key.
+		if key == "security.site-secret.v1" {
+			var lostKey bool
+			if err := tx.QueryRowContext(ctx, `select not exists(select 1 from site_setting where setting_key=?) and exists(select 1 from subsonic_source where password like 'enc:v1:%')`, key).Scan(&lostKey); err != nil {
+				return err
+			}
+			if lostKey {
+				return errors.New("site secret is missing for existing encrypted credentials; restore the original key")
+			}
+		}
+		if _, err := tx.ExecContext(ctx, `insert into site_setting(setting_key,setting_value,secret,updated_at) values(?,?,1,?) on conflict(setting_key) do nothing`, key, candidate, now); err != nil {
+			return err
+		}
+		if err := tx.QueryRowContext(ctx, "select setting_value from site_setting where setting_key=?", key).Scan(&value); err != nil {
+			return err
+		}
+		if !value.Valid || value.String == "" {
+			return errors.New("existing site secret is empty; repair the setting before saving credentials")
+		}
+		return nil
+	})
+	return value.String, err
+}
+
 type SubsonicSourceRepository struct{ store *Store }
 
 func NewSubsonicSourceRepository(store *Store) *SubsonicSourceRepository {
@@ -80,7 +111,12 @@ func (repository *SubsonicSourceRepository) FindByID(ctx context.Context, id str
 
 func (repository *SubsonicSourceRepository) Upsert(ctx context.Context, source SubsonicSource) error {
 	return repository.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, `
+		return upsertSubsonicSource(ctx, tx, source)
+	})
+}
+
+func upsertSubsonicSource(ctx context.Context, tx *sql.Tx, source SubsonicSource) error {
+	_, err := tx.ExecContext(ctx, `
 			insert into subsonic_source(id, label, base_url, username, password, client, api_version,
 			                            allowed_users, enabled, system, owner_room_id, created_at, updated_at)
 			values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -90,9 +126,8 @@ func (repository *SubsonicSourceRepository) Upsert(ctx context.Context, source S
 			  allowed_users = excluded.allowed_users, enabled = excluded.enabled, system = excluded.system,
 			  owner_room_id = excluded.owner_room_id, updated_at = excluded.updated_at
 		`, source.ID, source.Label, source.BaseURL, source.Username, source.Password, source.Client, source.APIVersion,
-			nullableString(source.AllowedUsers), source.Enabled, source.System, nullableString(source.OwnerRoomID), source.CreatedAt, source.UpdatedAt)
-		return err
-	})
+		nullableString(source.AllowedUsers), source.Enabled, source.System, nullableString(source.OwnerRoomID), source.CreatedAt, source.UpdatedAt)
+	return err
 }
 
 func (repository *SubsonicSourceRepository) Delete(ctx context.Context, id string) error {
@@ -130,17 +165,68 @@ func (repository *SubsonicSourceRepository) FindRoomBinding(ctx context.Context,
 
 func (repository *SubsonicSourceRepository) UpsertRoomBinding(ctx context.Context, binding RoomSubsonicSource) error {
 	return repository.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		if err := RequireActiveRoom(ctx, tx, binding.RoomID); err != nil {
-			return err
-		}
-		_, err := tx.ExecContext(ctx, `
+		return upsertRoomSubsonicBinding(ctx, tx, binding)
+	})
+}
+
+func upsertRoomSubsonicBinding(ctx context.Context, tx *sql.Tx, binding RoomSubsonicSource) error {
+	if err := RequireActiveRoom(ctx, tx, binding.RoomID); err != nil {
+		return err
+	}
+	_, err := tx.ExecContext(ctx, `
 			insert into room_subsonic_source(room_id, source_id, enabled, display_label, allowed_users, sort_order, created_at, updated_at)
 			values (?, ?, ?, ?, ?, ?, ?, ?)
 			on conflict(room_id, source_id) do update set
 			  enabled = excluded.enabled, display_label = excluded.display_label, allowed_users = excluded.allowed_users,
 			  sort_order = excluded.sort_order, updated_at = excluded.updated_at
 		`, binding.RoomID, binding.SourceID, binding.Enabled, nullableString(binding.DisplayLabel), nullableString(binding.AllowedUsers),
-			binding.SortOrder, binding.CreatedAt, binding.UpdatedAt)
+		binding.SortOrder, binding.CreatedAt, binding.UpdatedAt)
+	return err
+}
+
+// SaveWithBinding commits credentials and the room override together and returns
+// every binding that must receive the committed credentials in the registry.
+func (repository *SubsonicSourceRepository) SaveWithBinding(ctx context.Context, source SubsonicSource, binding RoomSubsonicSource) ([]RoomSubsonicSource, error) {
+	var bindings []RoomSubsonicSource
+	err := repository.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		if err := upsertSubsonicSource(ctx, tx, source); err != nil {
+			return err
+		}
+		if err := upsertRoomSubsonicBinding(ctx, tx, binding); err != nil {
+			return err
+		}
+		rows, err := tx.QueryContext(ctx, `select room_id,source_id,enabled,display_label,allowed_users,sort_order,created_at,updated_at from room_subsonic_source where source_id=? order by room_id`, source.ID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			binding, err := scanRoomSubsonicSource(rows)
+			if err != nil {
+				return err
+			}
+			bindings = append(bindings, binding)
+		}
+		return rows.Err()
+	})
+	return bindings, err
+}
+
+// RemoveBindingAndUnusedSource preserves shared and system sources.
+func (repository *SubsonicSourceRepository) RemoveBindingAndUnusedSource(ctx context.Context, roomID, sourceID string) error {
+	return repository.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		result, err := tx.ExecContext(ctx, "delete from room_subsonic_source where room_id=? and source_id=?", roomID, sourceID)
+		if err != nil {
+			return err
+		}
+		count, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if count == 0 {
+			return sql.ErrNoRows
+		}
+		_, err = tx.ExecContext(ctx, `delete from subsonic_source where id=? and system=0 and not exists(select 1 from room_subsonic_source where source_id=?)`, sourceID, sourceID)
 		return err
 	})
 }

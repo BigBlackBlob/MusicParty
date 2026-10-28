@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	storesqlite "github.com/BigBlackBlob/MusicParty/backend-go/internal/store/sqlite"
@@ -31,6 +32,8 @@ type LocalLibrary struct {
 	repository *storesqlite.LocalTrackRepository
 	transcoder *Transcoder
 	now        func() time.Time
+	jobsMu     sync.Mutex
+	inFlight   map[string]struct{}
 	// report receives background failures (transcode results that can no longer be stored) that
 	// no request handler can return to a caller.
 	report func(error)
@@ -49,7 +52,7 @@ func NewLocalLibrary(root string, maxUpload int64, repository *storesqlite.Local
 			return nil, err
 		}
 	}
-	library := &LocalLibrary{root: absolute, maxUpload: maxUpload, repository: repository, transcoder: transcoder, now: time.Now}
+	library := &LocalLibrary{root: absolute, maxUpload: maxUpload, repository: repository, transcoder: transcoder, now: time.Now, inFlight: make(map[string]struct{})}
 	library.report = func(err error) { log.Printf("local library: %v", err) }
 	return library, nil
 }
@@ -114,8 +117,8 @@ func (l *LocalLibrary) Upload(ctx context.Context, upload Upload) (storesqlite.L
 	}
 	hash := hex.EncodeToString(hasher.Sum(nil))
 	if existing, findErr := l.repository.FindActiveByOriginalHash(ctx, hash); findErr == nil {
-		_ = os.Remove(sourcePath)
-		return *existing, true, nil
+		track, err := l.retryUpload(ctx, *existing, relativeSource, upload, written)
+		return track, true, err
 	} else if !errors.Is(findErr, sql.ErrNoRows) && !strings.Contains(findErr.Error(), sql.ErrNoRows.Error()) {
 		_ = os.Remove(sourcePath)
 		return storesqlite.LocalTrack{}, false, findErr
@@ -129,29 +132,30 @@ func (l *LocalLibrary) Upload(ctx context.Context, upload Upload) (storesqlite.L
 	album := optional(upload.Album)
 	track := storesqlite.LocalTrack{ID: id, OriginalHash: &hash, OriginalFileName: optional(filepath.Base(upload.FileName)), SourcePath: &relativeSource, SourceMIMEType: optional(upload.ContentType), SourceSizeBytes: written, Title: title, Artists: artists, Album: album, Status: "PENDING", StatusMessage: optional("Waiting for transcode"), ProgressPercent: intPointer(0), UploadedBy: optional(upload.UploadedBy), CreatedAt: now, UpdatedAt: now}
 	if err := l.repository.Upsert(ctx, track); err != nil {
-		_ = os.Remove(sourcePath)
 		if existing, findErr := l.repository.FindActiveByOriginalHash(ctx, hash); findErr == nil {
-			return *existing, true, nil
+			track, err := l.retryUpload(ctx, *existing, relativeSource, upload, written)
+			return track, true, err
 		}
+		_ = os.Remove(sourcePath)
 		return storesqlite.LocalTrack{}, false, err
 	}
-	relativeOutput := filepath.ToSlash(filepath.Join("media", id+".ogg"))
-	outputPath, _ := ResolveWithin(l.root, relativeOutput)
-	err = l.transcoder.Submit(TranscodeJob{ID: id, Input: sourcePath, Output: outputPath, Complete: func(transcodeErr error) {
-		l.completeTranscode(id, relativeSource, relativeOutput, transcodeErr)
-	}})
-	if err != nil {
-		message := err.Error()
-		l.updateStatus(id, storesqlite.LocalTrackStatusUpdate{Status: "FAILED", ErrorMessage: &message, StatusMessage: optional("Transcode queue rejected"), ProgressPercent: intPointer(0), UpdatedAt: l.now().UnixMilli()})
-		return track, false, err
+	if l.reserveTrack(id) {
+		err = l.submitReserved(ctx, id, false)
 	}
-	return track, false, nil
+	return track, false, err
 }
 
 func (l *LocalLibrary) completeTranscode(id, sourceRelative, outputRelative string, transcodeErr error) {
 	now := l.now().UnixMilli()
 	if transcodeErr != nil {
+		if errors.Is(transcodeErr, storesqlite.ErrLocalTrackGone) {
+			return
+		}
 		message := transcodeErr.Error()
+		if errors.Is(transcodeErr, context.Canceled) {
+			l.updateStatus(id, storesqlite.LocalTrackStatusUpdate{Status: "PENDING", StatusMessage: optional("Waiting for restart"), ProgressPercent: intPointer(0), UpdatedAt: now})
+			return
+		}
 		l.updateStatus(id, storesqlite.LocalTrackStatusUpdate{Status: "FAILED", ErrorMessage: &message, StatusMessage: optional("Transcode failed"), ProgressPercent: intPointer(0), CompletedAt: &now, UpdatedAt: now})
 		return
 	}
@@ -183,7 +187,7 @@ func (l *LocalLibrary) updateStatus(id string, update storesqlite.LocalTrackStat
 	}
 }
 
-// removeOutputs deletes transcode artefacts whose database row no longer exists.
+// removeOutputs deletes obsolete library files, including superseded retry inputs.
 func (l *LocalLibrary) removeOutputs(relative ...*string) {
 	for _, value := range relative {
 		if value == nil {

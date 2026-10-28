@@ -27,7 +27,6 @@ import (
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform/subsonic"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform/youtube"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/realtime"
-	securitycompat "github.com/BigBlackBlob/MusicParty/backend-go/internal/security"
 	storesqlite "github.com/BigBlackBlob/MusicParty/backend-go/internal/store/sqlite"
 	wsruntime "github.com/BigBlackBlob/MusicParty/backend-go/internal/ws"
 )
@@ -127,6 +126,15 @@ func run() error {
 			if libraryErr != nil {
 				return fmt.Errorf("initialize local media library: %w", libraryErr)
 			}
+			recoveryCtx, stopRecovery := context.WithCancel(applicationContext)
+			recoveryDone := make(chan struct{})
+			go func() {
+				defer close(recoveryDone)
+				if err := library.RecoverPending(recoveryCtx); err != nil && recoveryCtx.Err() == nil {
+					logger.Error("recover local transcodes", "error", err)
+				}
+			}()
+			defer func() { stopRecovery(); <-recoveryDone }()
 		}
 		proxyClient := newProxyClient()
 		cacheBytes, sizeErr := media.ParseByteSize(cfg.Cache.MaxSize)
@@ -147,6 +155,13 @@ func run() error {
 		dynamicServices, dynamicAccess, loadErr := loadSubsonicServices(applicationContext, databaseStore, platformClient)
 		if loadErr != nil {
 			return fmt.Errorf("load Subsonic sources: %w", loadErr)
+		}
+		// A persisted source is authoritative even when all its bindings were
+		// removed. Do not resurrect its lounge binding from environment defaults.
+		if _, err := storesqlite.NewSubsonicSourceRepository(databaseStore).FindByID(applicationContext, cfg.Platforms.Squidify.ID); err == nil {
+			platformAPI.Unregister("subsonic-" + cfg.Platforms.Squidify.ID + "@lounge")
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("find configured Subsonic source: %w", err)
 		}
 		for _, service := range dynamicServices {
 			platformAPI.Register(service)
@@ -344,37 +359,7 @@ func loadSubsonicServices(ctx context.Context, store *storesqlite.Store, client 
 	} else if findErr != nil && !errors.Is(findErr, sql.ErrNoRows) {
 		return nil, nil, findErr
 	}
-	byID := map[string]storesqlite.SubsonicSource{}
-	for _, source := range sources {
-		byID[source.ID] = source
-	}
-	result := []platform.Service{}
-	access := map[string]string{}
-	for _, binding := range bindings {
-		source, ok := byID[binding.SourceID]
-		if !ok || !source.Enabled || !binding.Enabled {
-			continue
-		}
-		password, decryptErr := securitycompat.DecryptSubsonicCredential(source.Password, siteSecret)
-		if decryptErr != nil {
-			continue
-		}
-		name := "subsonic-" + source.ID + "@" + binding.RoomID
-		label := source.Label
-		if binding.DisplayLabel != nil && strings.TrimSpace(*binding.DisplayLabel) != "" {
-			label = *binding.DisplayLabel
-		}
-		allowed := ""
-		if source.AllowedUsers != nil {
-			allowed = *source.AllowedUsers
-		}
-		if binding.AllowedUsers != nil {
-			allowed = *binding.AllowedUsers
-		}
-		result = append(result, subsonic.New(client, subsonic.Config{ID: name, Label: label, RoomID: binding.RoomID, BaseURL: source.BaseURL, Username: source.Username, Password: password, Client: source.Client, Version: source.APIVersion, ProxyPrefix: "/api/subsonic/" + binding.RoomID + "/" + source.ID + "/cover", Enabled: true}))
-		access[name] = allowed
-	}
-	return result, access, nil
+	return httpapi.SubsonicServices(client, sources, bindings, siteSecret)
 }
 
 func settingOrDefault(ctx context.Context, repository *storesqlite.SiteSettingRepository, key, fallback string) (string, error) {

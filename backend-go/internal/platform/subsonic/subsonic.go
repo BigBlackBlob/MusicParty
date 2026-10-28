@@ -34,8 +34,28 @@ func (s *Service) RoomID() string { return s.cfg.RoomID }
 func (s *Service) Available() bool {
 	return s.cfg.Enabled && s.cfg.BaseURL != "" && s.cfg.Username != "" && s.cfg.Password != ""
 }
-func (s *Service) get(ctx context.Context, endpoint string, values url.Values, target any) error {
-	return s.client.JSON(ctx, s.endpoint(endpoint, values), nil, target)
+
+// ProtocolError reports an HTTP-success response rejected by the Subsonic API.
+type ProtocolError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+func (e *ProtocolError) Error() string {
+	return fmt.Sprintf("subsonic error %d: %s", e.Code, e.Message)
+}
+
+func (s *Service) get(ctx context.Context, endpoint string, values url.Values, target *response) error {
+	if err := s.client.JSON(ctx, s.endpoint(endpoint, values), nil, target); err != nil {
+		return err
+	}
+	if target.Body.Error != nil {
+		return target.Body.Error
+	}
+	if target.Body.Status != "ok" {
+		return fmt.Errorf("subsonic response has invalid status %q", target.Body.Status)
+	}
+	return nil
 }
 func (s *Service) endpoint(endpoint string, values url.Values) string {
 	salt := "musicparty"
@@ -60,11 +80,7 @@ func (s *Service) Search(ctx context.Context, keyword string, offset, limit int)
 	return s.mapSongs(r.Body.Search.Songs), err
 }
 func (s *Service) ResolvePlayable(ctx context.Context, id string) (platform.PlayableMusic, error) {
-	var r struct {
-		Body struct {
-			Song song `json:"song"`
-		} `json:"subsonic-response"`
-	}
+	var r response
 	if err := s.get(ctx, "getSong.view", url.Values{"id": {id}}, &r); err != nil {
 		return platform.PlayableMusic{}, err
 	}
@@ -76,7 +92,7 @@ func (s *Service) ResolvePlayable(ctx context.Context, id string) (platform.Play
 	return platform.PlayableMusic{Music: items[0], URL: streamPrefix + "/" + url.PathEscape(id)}, nil
 }
 
-// SearchAlbums pages through search3's offset/albumCount. The response carries no total that this
+// SearchAlbums pages through search3's albumOffset/albumCount. The response carries no total that this
 // client parses, so Total stays 0 ("unknown") and callers must fall back to a full-page heuristic.
 func (s *Service) SearchAlbums(ctx context.Context, keyword string, offset, limit int) (platform.AlbumSearchResult, error) {
 	pageSize := limit
@@ -84,7 +100,7 @@ func (s *Service) SearchAlbums(ctx context.Context, keyword string, offset, limi
 		pageSize = 50 // the historic fixed page the web route always got
 	}
 	var r response
-	err := s.get(ctx, "search3.view", url.Values{"query": {keyword}, "songCount": {"0"}, "albumCount": {strconv.Itoa(pageSize)}, "artistCount": {"0"}, "offset": {strconv.Itoa(max(0, offset))}}, &r)
+	err := s.get(ctx, "search3.view", url.Values{"query": {keyword}, "songCount": {"0"}, "albumCount": {strconv.Itoa(pageSize)}, "artistCount": {"0"}, "albumOffset": {strconv.Itoa(max(0, offset))}}, &r)
 	out := platform.AlbumSearchResult{Items: make([]platform.Album, 0, len(r.Body.Search.Albums))}
 	for _, a := range r.Body.Search.Albums {
 		out.Items = append(out.Items, platform.Album{ID: a.ID, Name: a.Name, ArtistName: a.Artist, CoverURL: s.cover(a.CoverArt), TrackCount: a.SongCount, Platform: s.cfg.ID})
@@ -109,6 +125,9 @@ func (*Service) Lyric(context.Context, string) (platform.Lyric, error) { return 
 
 type response struct {
 	Body struct {
+		Status string         `json:"status"`
+		Error  *ProtocolError `json:"error"`
+		Song   song           `json:"song"`
 		Search struct {
 			Songs  []song  `json:"song"`
 			Albums []album `json:"album"`

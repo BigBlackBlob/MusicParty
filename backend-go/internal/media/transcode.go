@@ -15,6 +15,7 @@ var ErrTranscodeQueueFull = errors.New("transcode queue is full")
 
 type TranscodeJob struct {
 	ID, Input, Output string
+	Start             func() error
 	Complete          func(error)
 }
 
@@ -58,6 +59,25 @@ func (t *Transcoder) Submit(job TranscodeJob) error {
 	}
 }
 
+// SubmitWait lets the single recovery feeder wait for bounded queue capacity.
+// The jobs channel is never closed; cancellation also releases blocked feeders.
+func (t *Transcoder) SubmitWait(ctx context.Context, job TranscodeJob) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := t.ctx.Err(); err != nil {
+		return err
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.ctx.Done():
+		return t.ctx.Err()
+	case t.jobs <- job:
+		return nil
+	}
+}
+
 func (t *Transcoder) Close() {
 	t.closeOne.Do(func() {
 		t.stateMu.Lock()
@@ -84,6 +104,11 @@ func (t *Transcoder) worker() {
 }
 
 func (t *Transcoder) execute(job TranscodeJob) error {
+	if job.Start != nil {
+		if err := job.Start(); err != nil {
+			return err
+		}
+	}
 	if err := os.MkdirAll(filepath.Dir(job.Output), 0o750); err != nil {
 		return err
 	}

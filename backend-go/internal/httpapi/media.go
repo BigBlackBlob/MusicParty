@@ -11,7 +11,6 @@ import (
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/config"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/domain/account"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/media"
-	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform"
 	storesqlite "github.com/BigBlackBlob/MusicParty/backend-go/internal/store/sqlite"
 	"github.com/go-chi/chi/v5"
 )
@@ -31,6 +30,15 @@ func NewMediaAPI(cfg config.Config, accounts *account.Service, store *storesqlit
 }
 
 func (api *MediaAPI) Routes(r chi.Router) {
+	r = r.With(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+			if strings.HasPrefix(request.URL.Path, "/api/local/") && (!api.cfg.LocalLibrary.Enabled || api.library == nil) {
+				WriteMappedError(w, &APIError{Status: http.StatusServiceUnavailable, Message: "Local library is disabled"})
+				return
+			}
+			next.ServeHTTP(w, request)
+		})
+	})
 	r.Get("/api/local/tracks", Adapt(api.listLocal))
 	r.Post("/api/local/tracks/upload", Adapt(api.uploadLocal))
 	r.Patch("/api/local/tracks/{id}", Adapt(api.updateLocal))
@@ -120,7 +128,7 @@ func (api *MediaAPI) uploadLocal(w http.ResponseWriter, r *http.Request) error {
 
 func (api *MediaAPI) updateLocal(w http.ResponseWriter, r *http.Request) error {
 	var request struct {
-		Title, Album string
+		Title, Album *string
 		Artists      []string `json:"artists"`
 	}
 	if err := decodeJSONBody(r, &request); err != nil {
@@ -129,19 +137,16 @@ func (api *MediaAPI) updateLocal(w http.ResponseWriter, r *http.Request) error {
 	if _, ok := api.canManage(r); !ok {
 		return accessDenied(w)
 	}
-	track, err := api.repository.FindByID(r.Context(), chi.URLParam(r, "id"))
+	if request.Title != nil {
+		title := strings.TrimSpace(*request.Title)
+		request.Title = stringPointer(title)
+	}
+	track, err := api.repository.UpdateMetadata(r.Context(), chi.URLParam(r, "id"), storesqlite.LocalTrackMetadata{Title: request.Title, Artists: request.Artists, Album: request.Album}, time.Now().UnixMilli())
+	if errors.Is(err, storesqlite.ErrLocalTrackGone) {
+		w.WriteHeader(http.StatusNotFound)
+		return nil
+	}
 	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(request.Title) != "" {
-		track.Title = strings.TrimSpace(request.Title)
-	}
-	if len(request.Artists) > 0 {
-		track.Artists = request.Artists
-	}
-	track.Album = stringPointer(request.Album)
-	track.UpdatedAt = time.Now().UnixMilli()
-	if err := api.repository.Upsert(r.Context(), *track); err != nil {
 		return err
 	}
 	writeJSON(w, track)
@@ -288,12 +293,9 @@ func (api *MediaAPI) subsonicCover(w http.ResponseWriter, r *http.Request) error
 	return api.proxyPlatform(w, r, "subsonic-"+chi.URLParam(r, "sourceId")+"@"+roomID, chi.URLParam(r, "coverId"), true)
 }
 func (api *MediaAPI) proxyPlatform(w http.ResponseWriter, r *http.Request, name, id string, cover bool) error {
-	service, ok := api.platforms.Service(name)
-	if !ok {
-		return forbidden(w)
-	}
-	if !api.platforms.PlatformAllowed(r.Context(), name, sessionToken(r)) {
-		return forbidden(w)
+	source, err := api.platforms.authorizedMediaSource(r, name)
+	if err != nil {
+		return err
 	}
 	cacheKey := name + ":" + id
 	if !cover && api.cache != nil {
@@ -301,12 +303,7 @@ func (api *MediaAPI) proxyPlatform(w http.ResponseWriter, r *http.Request, name,
 			return media.ServeFile(w, r, path, "application/octet-stream", "private, max-age=86400")
 		}
 	}
-	source, ok := service.(platform.MediaSource)
-	if !ok {
-		return BadGateway("Platform does not expose media")
-	}
 	var target string
-	var err error
 	if cover {
 		target, err = source.CoverURL(r.Context(), id)
 	} else {

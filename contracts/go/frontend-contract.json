@@ -63,6 +63,23 @@
     },
     "playNext": "priority tracks play before shuffle; batch top preserves visible relative order, latest top precedes earlier top, ordinary reorder changes visible order only; priority persists in queue JSON"
   },
+  "subsonicSources": {
+    "ownership": "platform administrators manage shared source credentials; each room owns its binding overrides; preserve existing owner_room_id and system flags",
+    "save": "source and room binding commit together; omitted password retains the credential; omitted label, allowlist, enabled and sortOrder retain binding values; explicit empty allowlist denies all users",
+    "sharing": "baseUrl, username and password updates refresh every bound room after commit; enabled, label, allowedUsers and sortOrder affect only the selected room; existing global source defaults remain unchanged",
+    "remove": "remove only the selected binding; delete a non-system source only after its final binding is removed, in the same transaction",
+    "siteSecret": "insert-if-absent and read back the committed key; preserve existing keys; empty keys or a missing key with ciphertext require repair; startup rejects unreadable credentials including disabled sources",
+    "protocol": "all Subsonic JSON endpoints require status=ok and no protocol error; admin connection tests return 502 on protocol failure; album search uses albumOffset",
+    "coverColor": "accept only concrete relative Navidrome/Subsonic cover proxy routes; reuse the media proxy service and policy snapshot, fetch directly from the configured provider without forwarding browser credentials; denied access returns 403"
+  },
+  "localLibrary": {
+    "disabled": "all /api/local routes return 503 after global request checks when disabled or unavailable; platform proxy routes are unaffected",
+    "metadata": "PATCH updates only title, artists, album and updated_at; omitted fields are preserved; empty album clears it; missing or deleted tracks return 404",
+    "recovery": "one startup feeder scans PENDING and PROCESSING in pages of 64 and waits for bounded transcode queue capacity; missing or invalid source files mark the track FAILED",
+    "duplicates": "completed or in-flight duplicates reuse the existing track; otherwise reupload replaces the recovery source and retries the same ID while retaining edited metadata",
+    "shutdown": "cancelled running jobs return to PENDING; unstarted work remains recoverable at the next startup",
+    "completion": "remove source only after COMPLETED commits; database failures preserve recovery files; deleted tracks reject task updates and completion removes newly produced output"
+  },
   "resources": {
     "authorization": "cookie-based",
     "queryToken": false

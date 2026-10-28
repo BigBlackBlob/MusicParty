@@ -106,6 +106,22 @@ func (api *PlatformAPI) Service(name string) (platform.Service, bool) {
 	api.mu.RUnlock()
 	return service, service != nil && service.Available()
 }
+
+// authorizedMediaSource snapshots a service and its policy together, then runs
+// the policy without holding the registry lock across account/database work.
+func (api *PlatformAPI) authorizedMediaSource(r *http.Request, name string) (platform.MediaSource, error) {
+	api.mu.RLock()
+	service, check := api.services[name], api.access[name]
+	api.mu.RUnlock()
+	if service == nil || !service.Available() || (check != nil && !check(r.Context(), sessionToken(r))) {
+		return nil, &APIError{Status: http.StatusForbidden, Message: "Forbidden"}
+	}
+	source, ok := service.(platform.MediaSource)
+	if !ok {
+		return nil, BadGateway("Platform does not expose media")
+	}
+	return source, nil
+}
 func (api *PlatformAPI) SupportsCredentialUpdate(name string) bool {
 	api.mu.RLock()
 	service := api.services[name]
@@ -132,12 +148,9 @@ func (api *PlatformAPI) UpdateCredential(name, credential string) error {
 	return nil
 }
 func (api *PlatformAPI) ResolvePlayable(ctx context.Context, platformName, musicID, sessionToken string) (platform.PlayableMusic, error) {
-	service, err := api.service(platformName)
+	service, err := api.authorizedPlatform(ctx, platformName, sessionToken)
 	if err != nil {
 		return platform.PlayableMusic{}, err
-	}
-	if !api.PlatformAllowed(ctx, platformName, sessionToken) {
-		return platform.PlayableMusic{}, &APIError{Status: http.StatusForbidden, Message: "Forbidden"}
 	}
 	key := platformName + ":" + musicID
 	now := time.Now()
@@ -239,22 +252,18 @@ func (api *PlatformAPI) platforms(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, out)
 }
-func (api *PlatformAPI) service(name string) (platform.Service, error) {
+func (api *PlatformAPI) authorizedService(r *http.Request) (platform.Service, error) {
+	return api.authorizedPlatform(r.Context(), chi.URLParam(r, "platform"), sessionToken(r))
+}
+
+func (api *PlatformAPI) authorizedPlatform(ctx context.Context, name, token string) (platform.Service, error) {
 	api.mu.RLock()
-	service := api.services[name]
+	service, check := api.services[name], api.access[name]
 	api.mu.RUnlock()
 	if service == nil || !service.Available() {
 		return nil, &APIError{Status: http.StatusInternalServerError, Message: "Platform not supported: " + name}
 	}
-	return service, nil
-}
-func (api *PlatformAPI) authorizedService(r *http.Request) (platform.Service, error) {
-	name := chi.URLParam(r, "platform")
-	service, err := api.service(name)
-	if err != nil {
-		return nil, err
-	}
-	if !api.PlatformAllowed(r.Context(), name, sessionToken(r)) {
+	if check != nil && !check(ctx, token) {
 		return nil, &APIError{Status: http.StatusForbidden, Message: "Forbidden"}
 	}
 	return service, nil
@@ -355,18 +364,19 @@ func (api *PlatformAPI) lyricDetail(w http.ResponseWriter, r *http.Request) erro
 }
 func (api *PlatformAPI) coverColor(w http.ResponseWriter, r *http.Request) error {
 	coverPath := r.URL.Query().Get("url")
-	if !(strings.HasPrefix(coverPath, "/media/") || strings.HasPrefix(coverPath, "/api/navidrome/cover/") || (strings.HasPrefix(coverPath, "/api/subsonic/") && strings.Contains(coverPath, "/cover/"))) {
+	name, id, err := proxiedCover(coverPath)
+	if err != nil {
 		return &APIError{Status: http.StatusBadRequest, Message: "Only proxied cover URLs are supported"}
 	}
-	base, err := url.Parse(api.cfg.Application.BaseURL)
+	source, err := api.authorizedMediaSource(r, name)
 	if err != nil {
 		return err
 	}
-	target, err := base.Parse(coverPath)
-	if err != nil {
-		return err
+	target, err := source.CoverURL(r.Context(), id)
+	if err != nil || target == "" {
+		return BadGateway("Cover source unavailable")
 	}
-	request, err := http.NewRequestWithContext(r.Context(), http.MethodGet, target.String(), nil)
+	request, err := http.NewRequestWithContext(r.Context(), http.MethodGet, target, nil)
 	if err != nil {
 		return err
 	}
@@ -408,6 +418,31 @@ func (api *PlatformAPI) coverColor(w http.ResponseWriter, r *http.Request) error
 	accent := fmt.Sprintf("#%02x%02x%02x", r8, g8, b8)
 	writeJSON(w, map[string]string{"accent": accent, "accentHover": accent, "accentMuted": fmt.Sprintf("rgba(%d, %d, %d, 0.16)", r8, g8, b8), "accentSubtle": fmt.Sprintf("rgba(%d, %d, %d, 0.08)", r8, g8, b8)})
 	return nil
+}
+
+// proxiedCover accepts only concrete proxy routes. Queries, absolute URLs and
+// path traversal never become upstream targets; providers construct those URLs.
+func proxiedCover(raw string) (string, string, error) {
+	u, err := url.Parse(raw)
+	if err != nil || u.IsAbs() || u.Host != "" || u.RawQuery != "" || u.Fragment != "" {
+		return "", "", errors.New("invalid cover path")
+	}
+	parts := strings.Split(u.Path, "/")
+	for _, part := range parts[1:] {
+		if part == "" || part == "." || part == ".." || strings.ContainsAny(part, "\\\x00\r\n") {
+			return "", "", errors.New("invalid cover path segment")
+		}
+	}
+	if len(parts) == 5 && parts[0] == "" && parts[1] == "api" && parts[2] == "navidrome" && parts[3] == "cover" {
+		return "navidrome", parts[4], nil
+	}
+	if len(parts) == 6 && parts[0] == "" && parts[1] == "api" && parts[2] == "subsonic" && parts[4] == "cover" {
+		return "subsonic-" + parts[3] + "@lounge", parts[5], nil
+	}
+	if len(parts) == 7 && parts[0] == "" && parts[1] == "api" && parts[2] == "subsonic" && parts[5] == "cover" {
+		return "subsonic-" + parts[4] + "@" + parts[3], parts[6], nil
+	}
+	return "", "", errors.New("unsupported cover path")
 }
 func writePlatformResult(w http.ResponseWriter, value any, err error) error {
 	if err != nil {
