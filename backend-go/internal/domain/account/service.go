@@ -32,7 +32,18 @@ var (
 	//lint:ignore ST1005 Java-compatible API message.
 	errInvalidInvite = errors.New("Invitation is invalid or expired")
 	usernamePattern  = regexp.MustCompile(`^[\p{L}\p{N}_.-]+$`)
+	// ErrAccountDisabled rejects a session whose account was disabled after the
+	// token was issued. It matches ErrUnknownSession under errors.Is so every
+	// existing HTTP mapping keeps answering 401 instead of 500.
+	ErrAccountDisabled error = accountDisabledError{}
 )
+
+type accountDisabledError struct{}
+
+//lint:ignore ST1005 Java-compatible API message.
+func (accountDisabledError) Error() string { return "Account is disabled" }
+
+func (accountDisabledError) Is(target error) bool { return target == ErrUnknownSession }
 
 type Session struct {
 	SessionToken string `json:"sessionToken,omitempty"`
@@ -65,11 +76,14 @@ type InviteMetadata struct {
 func (s Session) Admin() bool { return s.Role == "PLATFORM_ADMIN" || s.Role == "ADMIN" }
 
 type Service struct {
-	store *storesqlite.Store
-	now   func() time.Time
+	store    *storesqlite.Store
+	profiles *storesqlite.UserProfileRepository
+	now      func() time.Time
 }
 
-func New(store *storesqlite.Store) *Service { return &Service{store: store, now: time.Now} }
+func New(store *storesqlite.Store) *Service {
+	return &Service{store: store, profiles: storesqlite.NewUserProfileRepository(store, nil), now: time.Now}
+}
 func (s *Service) Status(ctx context.Context) (map[string]bool, error) {
 	var count int
 	err := s.store.Reader().QueryRowContext(ctx, "select count(1) from user_account where role in ('PLATFORM_ADMIN','ADMIN') and enabled = 1").Scan(&count)
@@ -122,13 +136,23 @@ func (s *Service) Resolve(ctx context.Context, token string) (Session, error) {
 	}
 	hash := tokenHash(token)
 
-	// Try to resolve as registered user (with user_account)
-	row := s.store.Reader().QueryRowContext(ctx, `select a.public_id,a.username,p.display_name,a.role,a.enabled,a.last_login_at,p.is_guest from user_session ss join user_account a on a.public_id=ss.public_id join user_profile p on p.public_id=a.public_id where ss.session_token_hash=? and a.enabled=1`, hash)
+	// Try to resolve as registered user (with user_account). Disabled accounts are
+	// selected too so that a token issued before the account was disabled cannot
+	// silently degrade into a guest session below.
+	row := s.store.Reader().QueryRowContext(ctx, `select a.public_id,a.username,p.display_name,a.role,a.enabled,a.last_login_at,p.is_guest from user_session ss join user_account a on a.public_id=ss.public_id join user_profile p on p.public_id=a.public_id where ss.session_token_hash=?`, hash)
 	var result Session
 	var last sql.NullInt64
 	var isGuest int
 	err := row.Scan(&result.PublicID, &result.Username, &result.DisplayName, &result.Role, &result.Enabled, &last, &isGuest)
 	if err == nil {
+		if !result.Enabled {
+			// Revoke every session of the disabled account so the stale token stops
+			// being presented at all, then report the explicit refusal.
+			if err := s.profiles.DeleteSessionsByPublicID(ctx, result.PublicID); err != nil {
+				return Session{}, err
+			}
+			return Session{}, ErrAccountDisabled
+		}
 		result.SessionToken = token
 		result.Guest = isGuest == 1
 		if last.Valid {
@@ -136,11 +160,25 @@ func (s *Service) Resolve(ctx context.Context, token string) (Session, error) {
 		}
 		return result, nil
 	}
+	// Only a missing account row means "this is not a registered session". A real
+	// database failure must surface as an error: falling through would hand back a
+	// guest identity for a token whose account could not be read.
+	if !errors.Is(err, sql.ErrNoRows) {
+		return Session{}, err
+	}
 
-	// Try to resolve as guest (no user_account)
-	row = s.store.Reader().QueryRowContext(ctx, `select p.public_id,p.display_name,p.is_guest from user_session ss join user_profile p on p.public_id=ss.public_id where ss.session_token_hash=?`, hash)
+	// Try to resolve as guest. A guest profile must both flag is_guest=1 and have
+	// no user_account row: an account that exists but is missing here is a
+	// rejection (handled above), never a guest.
+	row = s.store.Reader().QueryRowContext(ctx, `select p.public_id,p.display_name,p.is_guest from user_session ss join user_profile p on p.public_id=ss.public_id where ss.session_token_hash=? and p.is_guest=1 and not exists (select 1 from user_account a where a.public_id=p.public_id)`, hash)
 	err = row.Scan(&result.PublicID, &result.DisplayName, &isGuest)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Session{}, ErrUnknownSession
+		}
+		return Session{}, err
+	}
+	if isGuest != 1 {
 		return Session{}, ErrUnknownSession
 	}
 	result.SessionToken = token

@@ -118,9 +118,11 @@ func (s *Service) CanManage(ctx context.Context, roomID, token string) (account.
 	return session, session.Admin()
 }
 
-// CanEdit reports who may rename or delete a room: platform admins, or the member who created
-// it. Member, owner and invite administration deliberately keep requiring an admin, so a
-// creator can clean up their own room without gaining power over anyone else's.
+// CanEdit reports who may rename or delete a room: platform admins, the room owner, or a member
+// holding the OWNER role. room.owner_public_id stays the authority (SetOwner keeps it in step with
+// room_membership) and the OWNER membership is a fallback for rows written before that linkage.
+// Member, owner and invite administration deliberately keep requiring an admin, so an owner can
+// clean up their own room without gaining power over anyone else's.
 func (s *Service) CanEdit(ctx context.Context, roomID, token string) (account.Session, bool) {
 	session, err := s.accounts.Resolve(ctx, token)
 	if err != nil {
@@ -134,7 +136,17 @@ func (s *Service) CanEdit(ctx context.Context, roomID, token string) (account.Se
 	if err := s.store.Reader().QueryRowContext(ctx, "select owner_public_id,system from room where id=? and deleted_at is null", roomID).Scan(&owner, &system); err != nil {
 		return account.Session{}, false
 	}
-	return session, !system && owner != "" && owner == session.PublicID
+	if system {
+		return session, false
+	}
+	if owner != "" && owner == session.PublicID {
+		return session, true
+	}
+	var role string
+	if err := s.store.Reader().QueryRowContext(ctx, "select role from room_membership where room_id=? and public_id=?", roomID, session.PublicID).Scan(&role); err != nil {
+		return session, false
+	}
+	return session, role == "OWNER"
 }
 
 func (s *Service) Create(ctx context.Context, token string, input CreateInput) (Info, error) {
@@ -413,11 +425,69 @@ func (s *Service) SetOwner(ctx context.Context, roomID, publicID, token string, 
 	if err != nil || !session.Admin() {
 		return false, ErrForbidden
 	}
-	role := "MEMBER"
-	if owner {
-		role = "OWNER"
+	if !owner {
+		return s.changeMembership(ctx, roomID, publicID, "MEMBER", true)
 	}
-	return s.changeMembership(ctx, roomID, publicID, role, !owner)
+	return s.grantOwner(ctx, roomID, publicID)
+}
+
+// grantOwner promotes publicID to OWNER and, in the same write transaction, moves
+// room.owner_public_id to them while the previous owner steps down to MEMBER. CanEdit reads that
+// pointer, so a promotion or a handover takes effect immediately without a second write path.
+func (s *Service) grantOwner(ctx context.Context, roomID, publicID string) (bool, error) {
+	changed := false
+	err := s.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		var existing string
+		if err := tx.QueryRowContext(ctx, "select role from room_membership where room_id=? and public_id=?", roomID, publicID).Scan(&existing); err != nil {
+			// A plain sql.ErrNoRows maps to 404 at the HTTP layer; anything else stays an error.
+			return err
+		}
+		var previous string
+		if err := tx.QueryRowContext(ctx, "select owner_public_id from room where id=? and deleted_at is null", roomID).Scan(&previous); err != nil {
+			return err
+		}
+		now := s.now().UnixMilli()
+		if _, err := tx.ExecContext(ctx, "update room_membership set role='OWNER',updated_at=? where room_id=? and public_id=?", now, roomID, publicID); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, "update room set owner_public_id=? where id=? and deleted_at is null", publicID, roomID); err != nil {
+			return err
+		}
+		if previous != "" && previous != publicID {
+			// The new owner is already recorded, so demoting the previous one never leaves the room
+			// without an owner.
+			if _, err := tx.ExecContext(ctx, "update room_membership set role='MEMBER',updated_at=? where room_id=? and public_id=? and role='OWNER'", now, roomID, previous); err != nil {
+				return err
+			}
+		}
+		changed = true
+		return nil
+	})
+	return changed, err
+}
+
+// syncOwnerPointer re-points room.owner_public_id at a remaining OWNER (or clears it) once the
+// member it names stops being one, keeping CanEdit and room_membership in agreement.
+func (s *Service) syncOwnerPointer(ctx context.Context, tx *sql.Tx, roomID, publicID string) error {
+	var owner string
+	if err := tx.QueryRowContext(ctx, "select owner_public_id from room where id=? and deleted_at is null", roomID).Scan(&owner); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	if owner == "" || owner != publicID {
+		return nil
+	}
+	var next string
+	if err := tx.QueryRowContext(ctx, "select public_id from room_membership where room_id=? and role='OWNER' order by created_at,public_id limit 1", roomID).Scan(&next); err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		next = ""
+	}
+	_, err := tx.ExecContext(ctx, "update room set owner_public_id=? where id=? and deleted_at is null", next, roomID)
+	return err
 }
 func (s *Service) changeMembership(ctx context.Context, roomID, publicID, role string, protectLastOwner bool) (bool, error) {
 	changed := false
@@ -436,13 +506,17 @@ func (s *Service) changeMembership(ctx context.Context, roomID, publicID, role s
 			}
 		}
 		if role == "DELETE" {
-			_, err := tx.ExecContext(ctx, "delete from room_membership where room_id=? and public_id=?", roomID, publicID)
-			changed = err == nil
+			if _, err := tx.ExecContext(ctx, "delete from room_membership where room_id=? and public_id=?", roomID, publicID); err != nil {
+				return err
+			}
+			changed = true
+			return s.syncOwnerPointer(ctx, tx, roomID, publicID)
+		}
+		if _, err := tx.ExecContext(ctx, "update room_membership set role=?,updated_at=? where room_id=? and public_id=?", role, s.now().UnixMilli(), roomID, publicID); err != nil {
 			return err
 		}
-		_, err := tx.ExecContext(ctx, "update room_membership set role=?,updated_at=? where room_id=? and public_id=?", role, s.now().UnixMilli(), roomID, publicID)
-		changed = err == nil
-		return err
+		changed = true
+		return s.syncOwnerPointer(ctx, tx, roomID, publicID)
 	})
 	return changed, err
 }

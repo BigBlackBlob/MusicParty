@@ -21,6 +21,9 @@ func testHandler(t *testing.T, origins ...string) (*observability.Health, http.H
 		if name == "BASE_URL" && len(origins) > 0 {
 			return origins[0], true
 		}
+		if name == "ROOM_ACCESS_TOKEN_SECRET" {
+			return "test-room-access-secret-32-bytes", true
+		}
 		return "", false
 	})
 	if err != nil {

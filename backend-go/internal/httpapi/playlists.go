@@ -571,11 +571,11 @@ func noContentOrNotFound(w http.ResponseWriter, changed bool, err error) error {
 	return nil
 }
 func unauthorized(w http.ResponseWriter) error {
-	writeErrorJSON(w, 401, map[string]string{"message": "Unknown session token"})
+	WriteMappedError(w, &APIError{Status: http.StatusUnauthorized, Code: statusCode(http.StatusUnauthorized), Message: "Unknown session token"})
 	return nil
 }
 func forbidden(w http.ResponseWriter) error {
-	writeErrorJSON(w, 403, map[string]string{"message": "Forbidden"})
+	WriteMappedError(w, &APIError{Status: http.StatusForbidden, Code: statusCode(http.StatusForbidden), Message: "Forbidden"})
 	return nil
 }
 func roomAccessError(w http.ResponseWriter, err error) error {

@@ -119,6 +119,15 @@ func (repository *UserProfileRepository) DeleteSessionByHash(ctx context.Context
 	})
 }
 
+// DeleteSessionsByPublicID revokes every session of one public ID. Resolve and
+// the account-disable path use it so a stale token cannot outlive its account.
+func (repository *UserProfileRepository) DeleteSessionsByPublicID(ctx context.Context, publicID string) error {
+	return repository.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, "delete from user_session where public_id = ?", publicID)
+		return err
+	})
+}
+
 func (repository *UserProfileRepository) MoveUsersToRoom(ctx context.Context, fromRoomID, toRoomID string) error {
 	lastSeenAt := repository.now().UnixMilli()
 	return repository.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {

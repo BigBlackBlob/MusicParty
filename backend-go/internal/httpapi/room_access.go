@@ -2,20 +2,46 @@ package httpapi
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
-func roomAccessSecret(raw string) []byte {
-	if strings.TrimSpace(raw) != "" {
-		return []byte(raw)
+// ephemeralRoomAccessSecret backs room access proofs when
+// ROOM_ACCESS_TOKEN_SECRET is not configured. It is generated once per process
+// so that a value baked into the source tree cannot be used to forge proofs,
+// and so tokens issued before a restart stop validating afterwards.
+var (
+	ephemeralRoomAccessSecretOnce sync.Once
+	ephemeralRoomAccessSecret     []byte
+)
+
+func newEphemeralRoomAccessSecret() []byte {
+	secret := make([]byte, 32)
+	if _, err := rand.Read(secret); err != nil {
+		// crypto/rand only fails when the platform RNG is unavailable; still
+		// avoid shipping an all-zero key by mixing in per-process entropy that
+		// is not present in the source tree.
+		stamp := []byte(strconv.FormatInt(time.Now().UnixNano(), 10))
+		for index := range secret {
+			secret[index] = stamp[index%len(stamp)] ^ byte(index)
+		}
 	}
-	// Development configurations may omit the explicit secret. This still keeps
-	// access proofs process-local and avoids exposing a browser-readable token.
-	return []byte("musicparty-room-access-development-secret")
+	return secret
+}
+
+func roomAccessSecret(raw string) []byte {
+	if configured := strings.TrimSpace(raw); configured != "" {
+		return []byte(configured)
+	}
+	ephemeralRoomAccessSecretOnce.Do(func() {
+		ephemeralRoomAccessSecret = newEphemeralRoomAccessSecret()
+	})
+	return ephemeralRoomAccessSecret
 }
 
 func signRoomAccessToken(secret []byte, roomID, publicID string, expiresAt int64, passwordVersion int) string {

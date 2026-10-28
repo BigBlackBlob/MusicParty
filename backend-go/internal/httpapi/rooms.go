@@ -119,7 +119,7 @@ func (api *RoomAPI) update(w http.ResponseWriter, r *http.Request) error {
 		} else if errors.Is(err, roomdomain.ErrUpdateForbidden) {
 			status = http.StatusForbidden
 		}
-		writeErrorJSON(w, status, map[string]string{"message": err.Error()})
+		WriteMappedError(w, &APIError{Status: status, Code: statusCode(status), Message: err.Error()})
 		return nil
 	}
 	writeJSON(w, value)
@@ -139,11 +139,11 @@ func (api *RoomAPI) verify(w http.ResponseWriter, r *http.Request) error {
 		return unauthorized(w)
 	}
 	if errors.Is(err, sql.ErrNoRows) {
-		w.WriteHeader(http.StatusNotFound)
+		writeRoomNotFound(w)
 		return nil
 	}
 	if err != nil {
-		writeErrorJSON(w, http.StatusForbidden, map[string]string{"message": "Invalid room password"})
+		WriteMappedError(w, &APIError{Status: http.StatusForbidden, Code: roomErrorCodeInvalidPassword, Message: "Invalid room password"})
 		return nil
 	}
 	expiresAt := time.Now().Add(time.Duration(roomAccessSeconds) * time.Second).UnixMilli()
@@ -168,7 +168,7 @@ func (api *RoomAPI) delete(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	if !deleted {
-		writeErrorJSON(w, http.StatusForbidden, map[string]string{"message": "No permission to delete room"})
+		WriteMappedError(w, &APIError{Status: http.StatusForbidden, Code: statusCode(http.StatusForbidden), Message: "No permission to delete room"})
 		return nil
 	}
 	writeJSON(w, map[string]string{"message": "ROOM DELETED"})
@@ -190,13 +190,23 @@ func (api *RoomAPI) removeOwner(w http.ResponseWriter, r *http.Request) error {
 	changed, err := api.service.SetOwner(r.Context(), chi.URLParam(r, "roomId"), chi.URLParam(r, "publicId"), sessionToken(r), false)
 	return membershipResult(w, changed, err)
 }
+
+// roomErrorCodeLastOwner identifies the refusal to strip a room of its final owner. The
+// contract requires every error body to carry a code, and this one is actionable in a way the
+// generic "bad-request" is not: the caller tried to leave the room without an accountable user.
+const roomErrorCodeLastOwner = "last-owner"
+
+// roomErrorCodeInvalidPassword lets the client tell a wrong room password apart from a
+// refusal, without matching on the prose message.
+const roomErrorCodeInvalidPassword = "invalid-room-password"
+
 func roomResult(w http.ResponseWriter, value any, err error) error {
 	if err == nil {
 		writeJSON(w, value)
 		return nil
 	}
 	if errors.Is(err, roomdomain.ErrForbidden) {
-		writeErrorJSON(w, http.StatusForbidden, map[string]string{"message": "Forbidden"})
+		WriteMappedError(w, &APIError{Status: http.StatusForbidden, Code: statusCode(http.StatusForbidden), Message: "Forbidden"})
 		return nil
 	}
 	return err
@@ -204,23 +214,27 @@ func roomResult(w http.ResponseWriter, value any, err error) error {
 func membershipResult(w http.ResponseWriter, changed bool, err error) error {
 	if err != nil {
 		if errors.Is(err, roomdomain.ErrForbidden) {
-			writeErrorJSON(w, http.StatusForbidden, map[string]string{"message": "Forbidden"})
+			WriteMappedError(w, &APIError{Status: http.StatusForbidden, Code: statusCode(http.StatusForbidden), Message: "Forbidden"})
 			return nil
 		}
 		if errors.Is(err, roomdomain.ErrLastOwner) {
-			writeErrorJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
+			WriteMappedError(w, &APIError{Status: http.StatusBadRequest, Code: roomErrorCodeLastOwner, Message: err.Error()})
 			return nil
 		}
 		if errors.Is(err, sql.ErrNoRows) {
-			w.WriteHeader(http.StatusNotFound)
+			writeRoomNotFound(w)
 			return nil
 		}
 		return err
 	}
 	if !changed {
-		w.WriteHeader(http.StatusNotFound)
+		writeRoomNotFound(w)
 	} else {
 		w.WriteHeader(http.StatusNoContent)
 	}
 	return nil
+}
+
+func writeRoomNotFound(w http.ResponseWriter) {
+	WriteMappedError(w, &APIError{Status: http.StatusNotFound, Code: statusCode(http.StatusNotFound), Message: "Room or member not found"})
 }

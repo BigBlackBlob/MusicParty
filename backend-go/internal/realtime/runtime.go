@@ -100,6 +100,22 @@ func (m *Manager) Close() {
 	}
 }
 
+// ReloadQueue refreshes the in-memory queue of a room that is already loaded, so rows removed
+// outside the realtime layer stop being served from memory and written back. removedTrackID names
+// the track that triggered the reload: when it is still the room's current music, the runtime drops
+// it instead of persisting a reference to a row that no longer exists. Rooms that were never loaded
+// are skipped: removing a track must not spawn a runtime just to broadcast to nobody.
+func (m *Manager) ReloadQueue(ctx context.Context, roomID, removedTrackID string) error {
+	m.mu.Lock()
+	runtime := m.runtimes[roomID]
+	closed := m.closed
+	m.mu.Unlock()
+	if closed || runtime == nil {
+		return nil
+	}
+	return runtime.ReloadQueue(ctx, removedTrackID)
+}
+
 type command struct {
 	ctx    context.Context
 	apply  func(*RoomRuntime) (any, error)
@@ -676,6 +692,73 @@ func (r *RoomRuntime) Clear(ctx context.Context, mutationID string) error {
 		return nil, nil
 	})
 	return err
+}
+
+// ReloadQueue replaces the runtime queue with the persisted one. The queue version only moves
+// forward: clients treat a version of zero or less as invalid, so it is never rewritten.
+func (r *RoomRuntime) ReloadQueue(ctx context.Context, removedTrackID string) error {
+	_, err := r.Execute(ctx, func(runtime *RoomRuntime) (any, error) {
+		next, err := runtime.queueRepo.LoadQueue(ctx, runtime.roomID)
+		if err != nil {
+			return nil, err
+		}
+		if removedTrackID != "" && runtime.isCurrentTrack(removedTrackID) {
+			return nil, runtime.dropCurrentTrack(ctx, next)
+		}
+		runtime.queue = next
+		runtime.queueVersion++
+		runtime.broadcastState()
+		return nil, nil
+	})
+	return err
+}
+
+// isCurrentTrack reports whether the named local track is the room's current music.
+func (r *RoomRuntime) isCurrentTrack(trackID string) bool {
+	current := r.state.CurrentMusic
+	return current != nil && current.Platform == "local" && current.ID == trackID
+}
+
+// dropCurrentTrack forgets a current track whose file is gone and starts the next queued item. Queue
+// and playback state land in one write, and no history entry is written for the removed track: the
+// point of the reload is that a deleted row is never referenced again.
+func (r *RoomRuntime) dropCurrentTrack(ctx context.Context, queue []storesqlite.QueueItem) error {
+	nextQueue := slices.Clone(queue)
+	nextState := clonePlaybackState(r.state)
+	nextState.CurrentMusic = nil
+	nextState.CurrentEnqueuerID = nil
+	nextState.CurrentEnqueuerName = nil
+	nextState.LikedUserIDs = map[string]struct{}{}
+	nextState.LikeMarkers = []int64{}
+	// A reload is a removal, not a skip, so it ignores shuffle and takes the head of the queue.
+	skipShuffle := nextState.Shuffle
+	nextState.Shuffle = false
+	if len(nextQueue) > 0 {
+		item := takeNext(&nextState, &nextQueue)
+		nextState.CurrentMusic = playableMusic(item.Music)
+		nextState.CurrentEnqueuerID = &item.EnqueuedBy.PublicID
+		nextState.CurrentEnqueuerName = &item.EnqueuedBy.Name
+		nextState.Paused = false
+		nextState.PlayEpoch++
+	} else {
+		nextState.Paused = true
+	}
+	nextState.Shuffle = skipShuffle
+	now := time.Now().UnixMilli()
+	nextState.PositionAnchor = 0
+	nextState.TimestampAnchor = now
+	nextState.PositionUpdatedAt = now
+	nextState.StateVersion++
+	nextState.LastPersistedAt = now
+	if err := r.realtimeRepo.CommitRoomState(ctx, r.roomID, nextQueue, nextState, nil); err != nil {
+		return err
+	}
+	r.queue = nextQueue
+	r.state = nextState
+	r.queueVersion++
+	r.broadcast("queue.patch", map[string]any{"operation": "snapshot", "queueVersion": r.queueVersion, "queue": nextQueue})
+	r.broadcastState()
+	return nil
 }
 
 func (r *RoomRuntime) advance(ctx context.Context) error {

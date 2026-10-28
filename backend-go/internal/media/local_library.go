@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -30,6 +31,12 @@ type LocalLibrary struct {
 	repository *storesqlite.LocalTrackRepository
 	transcoder *Transcoder
 	now        func() time.Time
+	// report receives background failures (transcode results that can no longer be stored) that
+	// no request handler can return to a caller.
+	report func(error)
+	// removed is called with the deleted track and the rooms that referenced it right after its
+	// references were removed, so the caller can refresh the in-memory room state it owns.
+	removed func(ctx context.Context, trackID string, roomIDs []string)
 }
 
 func NewLocalLibrary(root string, maxUpload int64, repository *storesqlite.LocalTrackRepository, transcoder *Transcoder) (*LocalLibrary, error) {
@@ -42,10 +49,43 @@ func NewLocalLibrary(root string, maxUpload int64, repository *storesqlite.Local
 			return nil, err
 		}
 	}
-	return &LocalLibrary{root: absolute, maxUpload: maxUpload, repository: repository, transcoder: transcoder, now: time.Now}, nil
+	library := &LocalLibrary{root: absolute, maxUpload: maxUpload, repository: repository, transcoder: transcoder, now: time.Now}
+	library.report = func(err error) { log.Printf("local library: %v", err) }
+	return library, nil
 }
 
 func (l *LocalLibrary) Root() string { return l.root }
+
+// SetErrorReporter replaces the sink for background failures, e.g. to route them through the
+// server logger. A nil reporter only silences output; failures are never swallowed silently.
+func (l *LocalLibrary) SetErrorReporter(report func(error)) {
+	if report == nil {
+		report = func(error) {}
+	}
+	l.report = report
+}
+
+// SetTracksRemovedHook installs the callback that runs after a deleted track's room references are
+// gone. The library does not know about the realtime package; the caller wires the two together.
+func (l *LocalLibrary) SetTracksRemovedHook(hook func(ctx context.Context, trackID string, roomIDs []string)) {
+	l.removed = hook
+}
+
+func (l *LocalLibrary) notifyTracksRemoved(ctx context.Context, trackID string, roomIDs []string) {
+	if l.removed == nil || len(roomIDs) == 0 {
+		return
+	}
+	l.removed(ctx, trackID, roomIDs)
+}
+
+func (l *LocalLibrary) reportError(err error) {
+	if err == nil {
+		return
+	}
+	if l.report != nil {
+		l.report(err)
+	}
+}
 
 func (l *LocalLibrary) Upload(ctx context.Context, upload Upload) (storesqlite.LocalTrack, bool, error) {
 	if upload.Reader == nil || upload.Size <= 0 || upload.Size > l.maxUpload {
@@ -102,7 +142,7 @@ func (l *LocalLibrary) Upload(ctx context.Context, upload Upload) (storesqlite.L
 	}})
 	if err != nil {
 		message := err.Error()
-		_ = l.repository.UpdateStatus(context.Background(), id, storesqlite.LocalTrackStatusUpdate{Status: "FAILED", ErrorMessage: &message, StatusMessage: optional("Transcode queue rejected"), ProgressPercent: intPointer(0), UpdatedAt: l.now().UnixMilli()})
+		l.updateStatus(id, storesqlite.LocalTrackStatusUpdate{Status: "FAILED", ErrorMessage: &message, StatusMessage: optional("Transcode queue rejected"), ProgressPercent: intPointer(0), UpdatedAt: l.now().UnixMilli()})
 		return track, false, err
 	}
 	return track, false, nil
@@ -112,15 +152,51 @@ func (l *LocalLibrary) completeTranscode(id, sourceRelative, outputRelative stri
 	now := l.now().UnixMilli()
 	if transcodeErr != nil {
 		message := transcodeErr.Error()
-		_ = l.repository.UpdateStatus(context.Background(), id, storesqlite.LocalTrackStatusUpdate{Status: "FAILED", ErrorMessage: &message, StatusMessage: optional("Transcode failed"), ProgressPercent: intPointer(0), CompletedAt: &now, UpdatedAt: now})
+		l.updateStatus(id, storesqlite.LocalTrackStatusUpdate{Status: "FAILED", ErrorMessage: &message, StatusMessage: optional("Transcode failed"), ProgressPercent: intPointer(0), CompletedAt: &now, UpdatedAt: now})
 		return
 	}
-	source, _ := ResolveWithin(l.root, sourceRelative)
+	source, err := ResolveWithin(l.root, sourceRelative)
+	if err != nil {
+		l.reportError(fmt.Errorf("complete transcode %s: %w", id, err))
+		return
+	}
 	duration := l.probeDuration(source)
 	coverRelative, coverMIME := l.extractCover(id, source)
-	_ = l.repository.CompleteTranscode(context.Background(), id, outputRelative, duration, coverRelative, coverMIME, now)
+	if err := l.repository.CompleteTranscode(context.Background(), id, outputRelative, duration, coverRelative, coverMIME, now); err != nil {
+		// The track was deleted while ffmpeg was running. Keep the source file (never delete media
+		// for a write that did not land) and drop the transcode output that just became worthless.
+		l.reportError(fmt.Errorf("complete transcode %s: %w", id, err))
+		if errors.Is(err, storesqlite.ErrLocalTrackGone) {
+			l.removeOutputs(&outputRelative, coverRelative)
+		}
+		return
+	}
 	if source, err := ResolveWithin(l.root, sourceRelative); err == nil {
 		_ = os.Remove(source)
+	}
+}
+
+// updateStatus records a job status, reporting a rejected write instead of dropping it.
+func (l *LocalLibrary) updateStatus(id string, update storesqlite.LocalTrackStatusUpdate) {
+	if err := l.repository.UpdateStatus(context.Background(), id, update); err != nil {
+		l.reportError(fmt.Errorf("update local track %s status: %w", id, err))
+	}
+}
+
+// removeOutputs deletes transcode artefacts whose database row no longer exists.
+func (l *LocalLibrary) removeOutputs(relative ...*string) {
+	for _, value := range relative {
+		if value == nil {
+			continue
+		}
+		path, err := ResolveWithin(l.root, *value)
+		if err != nil {
+			l.reportError(err)
+			continue
+		}
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			l.reportError(err)
+		}
 	}
 }
 
@@ -163,12 +239,18 @@ func (l *LocalLibrary) Delete(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
+	// Collect the affected rooms before the references disappear from the database.
+	rooms, err := l.repository.RoomsReferencingLocalTrack(ctx, id)
+	if err != nil {
+		return err
+	}
 	if err := l.repository.DeleteLocalReferences(ctx, id); err != nil {
 		return err
 	}
 	if err := l.repository.MarkDeleted(ctx, id, l.now().UnixMilli()); err != nil {
 		return err
 	}
+	l.notifyTracksRemoved(ctx, id, rooms)
 	for _, relative := range []*string{track.SourcePath, track.OGGPath, track.CoverPath} {
 		if relative == nil {
 			continue

@@ -3,9 +3,14 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 )
+
+// ErrLocalTrackGone reports a status write that matched no live row: the track was deleted, or no
+// longer exists, while the transcode (or upload) it belongs to was still in flight.
+var ErrLocalTrackGone = errors.New("local track is deleted")
 
 type LocalTrackRepository struct{ store *Store }
 
@@ -75,27 +80,27 @@ func (repository *LocalTrackRepository) Upsert(ctx context.Context, track LocalT
 
 func (repository *LocalTrackRepository) UpdateStatus(ctx context.Context, id string, update LocalTrackStatusUpdate) error {
 	return repository.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, `
+		result, err := tx.ExecContext(ctx, `
 			update local_track set
 			  status = ?, ogg_path = coalesce(?, ogg_path),
 			  source_path = case when ? = 'COMPLETED' then null else source_path end,
 			  error_message = ?, status_message = ?, progress_percent = ?,
 			  started_at = coalesce(?, started_at), completed_at = coalesce(?, completed_at), updated_at = ?
-			where id = ?
+			where id = ? and status <> 'DELETED'
 		`, update.Status, nullableString(update.OGGPath), update.Status, nullableString(update.ErrorMessage), nullableString(update.StatusMessage),
 			nullableInt(update.ProgressPercent), nullableInt64(update.StartedAt), nullableInt64(update.CompletedAt), update.UpdatedAt, id)
-		return err
+		return liveTrackResult(result, err)
 	})
 }
 
 func (repository *LocalTrackRepository) CompleteTranscode(ctx context.Context, id, oggPath string, durationMS int64, coverPath, coverMIMEType *string, now int64) error {
 	return repository.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, `
+		result, err := tx.ExecContext(ctx, `
 			update local_track set status='COMPLETED', ogg_path=?, source_path=null, duration_ms=?,
 			  cover_path=?, cover_mime_type=?, error_message=null, status_message='Ready',
-			  progress_percent=100, completed_at=?, updated_at=? where id=?
+			  progress_percent=100, completed_at=?, updated_at=? where id=? and status <> 'DELETED'
 		`, oggPath, durationMS, nullableString(coverPath), nullableString(coverMIMEType), now, now, id)
-		return err
+		return liveTrackResult(result, err)
 	})
 }
 
@@ -104,6 +109,35 @@ func (repository *LocalTrackRepository) MarkDeleted(ctx context.Context, id stri
 		_, err := tx.ExecContext(ctx, "update local_track set status = 'DELETED', updated_at = ? where id = ?", updatedAt, id)
 		return err
 	})
+}
+
+// RoomsReferencingLocalTrack lists the rooms whose queue, playback state or history still mentions the
+// track, so the realtime layer can reload the queue after those references are removed.
+func (repository *LocalTrackRepository) RoomsReferencingLocalTrack(ctx context.Context, trackID string) ([]string, error) {
+	idNeedle := `"id":"` + strings.ReplaceAll(trackID, `"`, `\"`) + `"`
+	platformNeedle := `"platform":"local"`
+	platformPattern, idPattern := "%"+platformNeedle+"%", "%"+idNeedle+"%"
+	rows, err := repository.store.reader.QueryContext(ctx, `
+		select room_id from room_queue where music_json like ? and music_json like ?
+		union
+		select room_id from room_playback_state where current_music_json like ? and current_music_json like ?
+		union
+		select room_id from room_history where music_json like ? and music_json like ?
+		order by room_id
+	`, platformPattern, idPattern, platformPattern, idPattern, platformPattern, idPattern)
+	if err != nil {
+		return nil, fmt.Errorf("find rooms referencing local track: %w", err)
+	}
+	defer rows.Close()
+	rooms := []string{}
+	for rows.Next() {
+		var roomID string
+		if err := rows.Scan(&roomID); err != nil {
+			return nil, err
+		}
+		rooms = append(rooms, roomID)
+	}
+	return rooms, rows.Err()
 }
 
 func (repository *LocalTrackRepository) DeleteLocalReferences(ctx context.Context, trackID string) error {
@@ -180,6 +214,22 @@ func (repository *LocalTrackRepository) query(ctx context.Context, query string,
 		tracks = append(tracks, track)
 	}
 	return tracks, rows.Err()
+}
+
+// liveTrackResult turns "the row was already DELETED (or gone)" into ErrLocalTrackGone so callers
+// can tell a stale transcode result from a real write failure.
+func liveTrackResult(result sql.Result, err error) error {
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return ErrLocalTrackGone
+	}
+	return nil
 }
 
 func scanLocalTrack(row rowScanner) (LocalTrack, error) {

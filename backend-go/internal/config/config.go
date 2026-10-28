@@ -185,6 +185,10 @@ type Database struct {
 	BusyTimeout       time.Duration
 }
 
+// minRoomAccessTokenSecretLength is the shortest room access signing key a
+// production deployment may configure.
+const minRoomAccessTokenSecretLength = 16
+
 type Auth struct {
 	RateLimitEnabled      bool
 	MaxAttempts           int
@@ -311,6 +315,17 @@ func (c Config) Validate() error {
 		}
 		if !hasPublicOrigin(c.Application.AllowedOrigins) {
 			problems = append(problems, "ALLOWED_ORIGINS must explicitly include the public origin in server production deployments")
+		}
+	}
+	// Room access proofs are HMAC-signed with this key. A production deployment
+	// that leaves it empty would otherwise fall back to a process-ephemeral key,
+	// silently invalidating every issued proof on restart, so require it.
+	if c.Application.Production {
+		switch secret := strings.TrimSpace(c.Auth.RoomAccessTokenSecret); {
+		case secret == "":
+			problems = append(problems, "ROOM_ACCESS_TOKEN_SECRET must be set in production deployments")
+		case len(secret) < minRoomAccessTokenSecretLength:
+			problems = append(problems, fmt.Sprintf("ROOM_ACCESS_TOKEN_SECRET must be at least %d characters in production deployments", minRoomAccessTokenSecretLength))
 		}
 	}
 	if c.Queue.MaxSize <= 0 || c.Performance.WebSocketClientQueueCapacity <= 0 || c.Performance.RoomCommandQueueCapacity <= 0 || c.Performance.DBWriteQueueCapacity <= 0 {

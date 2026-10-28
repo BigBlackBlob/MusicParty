@@ -32,6 +32,7 @@ func TestLoadOverrides(t *testing.T) {
 		"SERVER_PORT": "18080", "ALLOWED_ORIGINS": "https://one.example, https://two.example",
 		"BASE_URL":            "https://one.example",
 		"AUTH_SECURE_COOKIES": "false", "ROOM_COMMAND_QUEUE_TIMEOUT_MS": "7500",
+		"ROOM_ACCESS_TOKEN_SECRET": "development-room-access-secret",
 	}))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
@@ -62,9 +63,10 @@ func TestProductionValidationMatchesJavaBaseline(t *testing.T) {
 	}
 
 	cfg, err := Load(lookup(map[string]string{
-		"APP_ENV":         "production",
-		"BASE_URL":        "https://music.example",
-		"ALLOWED_ORIGINS": "https://music.example",
+		"APP_ENV":                  "production",
+		"BASE_URL":                 "https://music.example",
+		"ALLOWED_ORIGINS":          "https://music.example",
+		"ROOM_ACCESS_TOKEN_SECRET": "production-room-access-secret",
 	}))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)

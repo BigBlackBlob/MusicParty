@@ -35,6 +35,10 @@ import (
 )
 
 const (
+	// localTrackRemovalReloadTimeout bounds how long a deleted track may keep living in a room
+	// runtime before the reload is abandoned and logged.
+	localTrackRemovalReloadTimeout = 5 * time.Second
+
 	proxyMaxIdleConnections        = 64
 	proxyMaxIdleConnectionsPerHost = 16
 	proxyIdleConnectionTimeout     = 90 * time.Second
@@ -160,6 +164,22 @@ func run() error {
 		realtimeManager = realtime.NewManager(databaseStore, cfg.Performance.RoomCommandQueueCapacity, cfg.Performance.RoomCommandQueueTimeout, cfg.Player.RoomEvictionIdle, socketHub)
 		defer realtimeManager.Close()
 		defer socketHub.Close()
+		if library != nil {
+			// Deleting a local track removes its rows everywhere, but the room runtimes keep serving
+			// the track from memory until they reload. Errors are logged, never fatal for the delete.
+			library.SetTracksRemovedHook(func(ctx context.Context, trackID string, roomIDs []string) {
+				// The hook runs on the deleting request's goroutine. Detaching from its deadline keeps
+				// the refresh alive when that client disconnects mid-delete; the runtime would
+				// otherwise keep a reference to the removed row and write it back later.
+				ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), localTrackRemovalReloadTimeout)
+				defer cancel()
+				for _, roomID := range roomIDs {
+					if err := realtimeManager.ReloadQueue(ctx, roomID, trackID); err != nil {
+						logger.Error("reload room queue after local track removal", "room", roomID, "error", err)
+					}
+				}
+			})
+		}
 		playlistAPI.SetRealtime(realtimeManager)
 		webSocketAPI = httpapi.NewWebSocketAPI(cfg, databaseStore, accountService, roomService, socketHub, realtimeManager, platformAPI)
 	}
