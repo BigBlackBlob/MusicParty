@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MusicParty Codebase Review Handoff</title>
+  <style>
+    :root { color-scheme: dark; --bg:#000; --panel:#111; --line:#333; --text:#f4f4f4; --muted:#aaa; --high:#ff8b8b; --med:#ffd27a; --low:#9ed2ff; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font:15px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif; }
+    main { max-width:1120px; margin:0 auto; padding:32px 22px 64px; }
+    h1 { margin:0 0 8px; font-size:28px; line-height:1.25; }
+    h2 { margin:34px 0 12px; padding-bottom:8px; border-bottom:1px solid var(--line); font-size:20px; }
+    p { margin:8px 0; }
+    .lede,.note { color:var(--muted); }
+    .note { border-left:3px solid #777; padding:8px 12px; background:#0c0c0c; }
+    .issue { border-top:1px solid var(--line); padding:16px 0 18px; }
+    .issue h3 { margin:0 0 6px; font-size:16px; line-height:1.5; }
+    .num { display:inline-block; min-width:34px; color:var(--muted); font-variant-numeric:tabular-nums; }
+    .risk { display:inline-block; margin-left:8px; font-size:12px; font-weight:700; }
+    .high { color:var(--high); } .med { color:var(--med); } .low { color:var(--low); }
+    .label { color:#ddd; font-weight:650; }
+    code { color:#e7e7e7; background:#171717; padding:1px 4px; overflow-wrap:anywhere; }
+    .path { color:#c9d7e5; overflow-wrap:anywhere; }
+    ul { margin:8px 0 0; padding-left:22px; }
+    li { margin:4px 0; }
+    @media (max-width:600px) { main { padding:22px 15px 44px; } h1 { font-size:23px; } .issue { padding:13px 0 15px; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>MusicParty Codebase Review Handoff</h1>
+    <p class="lede">供修复 agent 使用的只读审查结果汇总。共 39 项：第一轮 21 项（此前确认的 19 项，加上队列拖动与播放顺序审查新增 2 项），第二轮 18 项（凭证与撤权、本地曲库生命周期、缓存与平台来源契约）。22–39 项已按当前分支逐条复核代码确认。</p>
+    <p class="note">本文件描述发现及建议，不代表修复方案已获确认。风险等级沿用审查判断；修复前应重新核对当前分支实现、调用链和已有未提交改动。以下建议用于定位修复方向，不要求按顺序或一次性处理。</p>
+  </header>
+
+  <h2>高风险：授权与房间隔离</h2>
+  <article class="issue">
+    <h3><span class="num">01</span>私有房间歌单读取缺少访问检查 <span class="risk high">高风险</span></h3>
+    <p><span class="label">问题：</span><code>GET /api/rooms/{roomId}/playlists</code>、曲目列表和导出接口没有验证房间访问凭证。知道房间 ID 的请求者可能读取私有房间歌单内容。</p>
+    <p class="path">位置：backend-go/internal/httpapi/playlists.go:349</p>
+    <p><span class="label">建议：</span>统一复用房间访问授权服务，在列表、详情、曲目和导出等读接口执行相同校验；补充未授权、有效访问凭证和房间拥有者场景的接口测试。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">02</span>个人歌单入队接口可向无权进入的房间写入 <span class="risk high">高风险</span></h3>
+    <p><span class="label">问题：</span><code>POST /api/me/playlists/{playlistId}/enqueue</code>接受<code>roomId</code>，但没有检查调用者是否获准进入目标私有房间。</p>
+    <p class="path">位置：backend-go/internal/httpapi/playlists.go:595</p>
+    <p><span class="label">建议：</span>在执行入队前对目标房间做与 WebSocket 入房一致的访问验证，并确保所有入队入口共享这一策略。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">03</span>平台媒体缓存命中早于授权检查 <span class="risk high">高风险</span></h3>
+    <p><span class="label">问题：</span>缓存命中时，代理直接返回媒体文件，未先检查平台访问权限；已缓存的媒体可能绕过当前授权策略。</p>
+    <p class="path">位置：backend-go/internal/httpapi/media.go:290</p>
+    <p><span class="label">建议：</span>将授权检查放在缓存读取之前；检查所有媒体代理分支及缓存 key 的隔离边界，并覆盖权限撤销后缓存仍存在的测试。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">04</span>平台访问检查读取了错误的凭证来源 <span class="risk high">高风险</span></h3>
+    <p><span class="label">问题：</span>平台访问策略检查 URL 查询参数<code>token</code>，但接口契约规定会话凭证通过 cookie 传递，前端也不发送该查询参数。受限平台可能拒绝合法用户，或导致能力列表隐藏平台。</p>
+    <p class="path">位置：backend-go/internal/httpapi/platforms.go:223</p>
+    <p><span class="label">建议：</span>从统一会话解析结果取得身份与授权信息，不要让访问控制依赖未受契约支持的查询参数；明确访客、成员、管理员的预期行为并补接口测试。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">05</span>WebSocket 与媒体代理对访问策略 map 存在无锁读取 <span class="risk high">高风险</span></h3>
+    <p><span class="label">问题：</span>管理接口可并发更新或删除策略，部分处理器直接读取 map，可能发生 data race，极端情况下导致运行时崩溃。</p>
+    <p class="path">位置：backend-go/internal/httpapi/websocket.go:150；backend-go/internal/httpapi/media.go:301</p>
+    <p><span class="label">建议：</span>将策略读取和更新封装到带同步的服务或不可变快照中，避免 handler 直接访问共享 map；用 race 检查验证并发更新路径。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">06</span>房间删除后，已有 WebSocket 客户端仍能操作该房间 <span class="risk high">高风险</span></h3>
+    <p><span class="label">问题：</span>删除流程软删除房间并清理数据，但没有关闭连接；命令处理和队列持久化也不再确认房间仍有效。已连接客户端可能重新写入被清理的数据。</p>
+    <p class="path">位置：backend-go/internal/httpapi/rooms.go:162；backend-go/internal/domain/room/service.go:289</p>
+    <p><span class="label">建议：</span>房间删除时撤销或关闭该房间的实时连接，并在持久化写操作边界验证房间有效性；确保删除与并发命令之间有明确的事务或状态顺序。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">07</span>私有房间更新请求缺少 isPrivate 时会意外公开房间 <span class="risk high">高风险</span></h3>
+    <p><span class="label">问题：</span>JSON 缺少布尔字段时解码为<code>false</code>，更新服务据此将房间改为公开。只想修改名称的请求也可能移除密码保护。</p>
+    <p class="path">位置：backend-go/internal/httpapi/rooms.go:102</p>
+    <p><span class="label">建议：</span>将更新请求改为显式区分“未提供”和“false”的字段模型，或使用 PATCH 语义；避免对缺失字段应用零值。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">08</span>访客创建缺少速率限制或可见的清理路径 <span class="risk high">高风险</span></h3>
+    <p><span class="label">问题：</span>访客接口会持久化 profile 和 session；持续调用会不断累积记录。</p>
+    <p class="path">位置：backend-go/internal/httpapi/auth.go:62</p>
+    <p><span class="label">建议：</span>为访客创建增加节流，并制定过期 session/profile 的清理策略；清理条件应避免误删仍有效的访客会话。</p>
+  </article>
+
+  <h2>中风险：数据一致性与资源边界</h2>
+  <article class="issue">
+    <h3><span class="num">09</span>三个队列配置没有真正控制运行时 <span class="risk med">中风险</span></h3>
+    <p><span class="label">问题：</span><code>QUEUE_MAX_SIZE</code>、<code>QUEUE_MAX_USER_SONGS</code>未用于入队限制；<code>QUEUE_HISTORY_SIZE</code>也未用于历史长度，运行时固定保留 100 条。通过 WebSocket、HTTP 或歌单入队的数据可能超过部署配置的边界。</p>
+    <p class="path">位置：backend-go/internal/config/config.go:249；backend-go/internal/realtime/runtime.go:217</p>
+    <p><span class="label">建议：</span>将配置注入运行时并在所有入队路径统一实施限制；确认单用户计数、队列容量和历史窗口的定义一致。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">10</span>REST 歌单写入绕过 WebSocket 的字段校验和批量限制 <span class="risk med">中风险</span></h3>
+    <p><span class="label">问题：</span>批量个人歌单、房间歌单单曲写入会直接持久化音乐对象；WebSocket 路径则校验字段并限制每批 200 项。REST 可写入不完整或超长数据，也可在一个请求中提交大量项目。</p>
+    <p class="path">位置：backend-go/internal/httpapi/playlists.go:170；backend-go/internal/httpapi/websocket_playlist.go:226</p>
+    <p><span class="label">建议：</span>抽取共享的请求校验和批量上限，令 REST 与 WebSocket 使用同一领域入口；在持久化前拒绝无效数据。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">11</span>聊天限流和历史配置未生效，历史记录持续增长 <span class="risk med">中风险</span></h3>
+    <p><span class="label">问题：</span><code>CHAT_MIN_INTERVAL</code>、<code>CHAT_HISTORY_LIMIT</code>未用于发送间隔和消息清理；消息长度限制硬编码为 200。持有会话的用户可连续写入聊天记录并触发广播。</p>
+    <p class="path">位置：backend-go/internal/realtime/runtime.go:733；backend-go/internal/store/sqlite/repository_playback_chat.go:165</p>
+    <p><span class="label">建议：</span>将限流及保留窗口配置接入实际写入路径，并定义持久化清理策略；限制应在服务端执行且适用于所有聊天入口。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">12</span>平台歌单分页参数缺少范围校验 <span class="risk med">中风险</span></h3>
+    <p><span class="label">问题：</span>REST 歌单歌曲接口把解析后的<code>offset</code>和<code>limit</code>传给 provider；Bilibili 只限制最大 limit，负数仍可能进入上游请求，网易云则直接传入分页值。</p>
+    <p class="path">位置：backend-go/internal/httpapi/platforms.go:269</p>
+    <p><span class="label">建议：</span>在 HTTP 边界校验 offset、limit 的非负性和上限，统一 provider 的分页约定；对非法参数返回 4xx。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">13</span>部分歌单导入绕过平台 allowlist <span class="risk med">中风险</span></h3>
+    <p><span class="label">问题：</span>导入路径直接调用平台服务，没有复用普通平台访问检查，可能让无权访问受限平台的用户仍能导入其歌单。</p>
+    <p class="path">位置：backend-go/internal/httpapi/playlists.go:241</p>
+    <p><span class="label">建议：</span>把 allowlist 和访问策略放入 provider 调用前的共享授权层；检查搜索、导入、详情和分页等所有平台入口。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">14</span>Subsonic 来源保存由两笔事务完成 <span class="risk med">中风险</span></h3>
+    <p><span class="label">问题：</span>全局 source 写入成功、房间 binding 写入失败时，会留下孤儿 source；同一 source 的全局配置和房间 binding 还可能相互覆盖或影响其他房间。</p>
+    <p class="path">位置：backend-go/internal/httpapi/admin.go:134</p>
+    <p><span class="label">建议：</span>明确 source 是全局凭证还是房间级配置；需要原子保存时用单一事务完成 source 与 binding，避免跨房间共享敏感字段的意外副作用。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">15</span>房间名称校验不一致且存在并发重复风险 <span class="risk med">中风险</span></h3>
+    <p><span class="label">问题：</span>创建接口检查名称是否重复，但重命名接口不检查，数据库没有唯一约束；创建端的检查又在写事务外执行。因此重命名可产生同名房间，并发创建也可能绕过重复检查。</p>
+    <p class="path">位置：backend-go/internal/domain/room/service.go:140；backend-go/internal/domain/room/service.go:193</p>
+    <p><span class="label">建议：</span>统一规范化后的名称唯一性规则，并在数据库约束或同一写事务内完成冲突检查；覆盖并发创建和重命名。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">16</span>管理员改密码不会撤销其他会话，服务端未执行 session 过期 <span class="risk med">中风险</span></h3>
+    <p><span class="label">问题：</span>Cookie 的 Max-Age 不能替代服务端有效期；旧 session 记录仍能通过服务端解析，直到显式注销或其他路径删除它。</p>
+    <p class="path">位置：backend-go/internal/domain/account/service.go:119；backend-go/internal/domain/account/service.go:186</p>
+    <p><span class="label">建议：</span>服务端验证 session 到期时间；改密或禁用账号时撤销相关 session，并关闭关联 WebSocket 连接。</p>
+  </article>
+
+  <h2>协议与错误契约</h2>
+  <article class="issue">
+    <h3><span class="num">17</span>队列 WebSocket 命令允许缺少 mutationId，重试无法去重 <span class="risk med">中风险</span></h3>
+    <p><span class="label">问题：</span>协议 schema 要求该字段，服务端却将缺失值当空字符串传入运行时；运行时对空值跳过去重。</p>
+    <p class="path">位置：backend-go/internal/httpapi/websocket.go:218；backend-go/internal/realtime/runtime.go:932</p>
+    <p><span class="label">建议：</span>在服务端校验队列变更命令必需字段，并为重复 mutation 明确 ack/nack 语义；保持 schema、生成类型与运行时一致。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">18</span>畸形 sync.ping payload 可能触发 panic，且清理路径不完整 <span class="risk med">中风险</span></h3>
+    <p><span class="label">问题：</span>处理器忽略 JSON 解码错误后直接写 map；非对象 payload 会导致 panic。外层恢复机制接住 panic 时，WebSocket 处理函数的正常 hub 注销路径可能被跳过。</p>
+    <p class="path">位置：backend-go/internal/httpapi/websocket.go:150</p>
+    <p><span class="label">建议：</span>处理前校验 payload 类型并显式处理解码错误；确保 panic 恢复不绕过连接注销和 runtime detach。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">19</span>搜索接口把客户端参数错误映射成 HTTP 500 <span class="risk med">中风险</span></h3>
+    <p><span class="label">问题：</span>非法分页值、超范围 limit 或过长关键词都会被当成内部故障返回，导致客户端误判并污染服务端错误监控。</p>
+    <p class="path">位置：backend-go/internal/httpapi/platforms.go:245</p>
+    <p><span class="label">建议：</span>区分输入校验错误和 provider/内部错误，客户端参数问题返回 4xx，并为响应契约补充测试。</p>
+  </article>
+
+  <h2>队列拖动与播放顺序（本轮新增）</h2>
+  <article class="issue">
+    <h3><span class="num">20</span>runtime 重建后队列版本归零，前端拒绝快照并反复 resync <span class="risk high">高风险</span></h3>
+    <p><span class="label">问题：</span>后端从数据库恢复队列，但新 runtime 的<code>queueVersion</code>没有恢复，默认为 0。前端将小于等于 0 的版本判为无效；无效状态又触发 resync，服务端返回的快照仍是版本 0，于是重复同步。runtime 空闲关闭后重建时，已有持久化队列可能在重连后显示为空、无法排序；增量 patch 还可能先应用到不完整的本地队列。</p>
+    <p class="path">位置：backend-go/internal/realtime/runtime.go:124、142；music-party-web/src/domains/realtime/roomRuntimeStore.ts:41；music-party-web/src/domains/realtime/roomStateSynchronizer.ts:45；backend-go/internal/httpapi/websocket.go:355</p>
+    <p><span class="label">建议：</span>为队列版本定义跨 runtime 重建仍有效的来源，例如将版本持久化，或为每个 runtime epoch 引入快照代次并在协议中区分代次与版本；不要简单无条件接受 0。让缺少历史版本的完整快照可初始化客户端状态，并确保 resync 能收敛而非循环。补充“持久化队列 + runtime 回收/重启 + 首次连接与 resync”的端到端测试。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">21</span>shuffle 开启时，“下一首播放”不保证成为下一首 <span class="risk med">中风险</span></h3>
+    <p><span class="label">问题：</span>单曲置顶将歌曲移到队列数组开头，但播放推进在 shuffle 开启时仍从整个队列随机抽取。UI 文案承诺“下一首播放”，实际播放顺序可能跳过这首歌。</p>
+    <p class="path">位置：backend-go/internal/realtime/runtime.go:309、875；music-party-web/src/components/QueueItem.vue:24；music-party-web/src/i18n/zh.js:323</p>
+    <p><span class="label">建议：</span>明确产品语义：若“下一首播放”是硬保证，应在 shuffle 状态下维护独立的优先播放项/集合，并让普通随机选择先消费该项；若置顶只改变可见队列，则调整文案和协议命名。为置顶、批量置顶、shuffle 与自然结束/手动 next 的组合定义测试矩阵。</p>
+  </article>
+
+  <h2>高风险：凭证、撤权与房间所有权</h2>
+  <p class="note">以下 22–39 项来自第二轮审查，已按当前分支逐条复核代码确认属实；行号以复核时的实现为准。</p>
+  <article class="issue">
+    <h3><span class="num">22</span>未配置密钥时房间访问凭证可用公开常量伪造 <span class="risk high">高风险</span></h3>
+    <p><span class="label">问题：</span>ROOM_ACCESS_TOKEN_SECRET 默认为空（<code>config.go:272</code>），<code>roomAccessSecret()</code> 在其为空时回退到源码内的固定字符串（<code>room_access.go:12-19</code>），注释称其“process-local”，实际是公开常量；<code>Config.Validate()</code> 的生产分支（<code>config.go:293-331</code>）只校验 BASE_URL 与 ALLOWED_ORIGINS，不校验该密钥。生产环境若漏配，任何持普通会话者都能用已知密钥为任意 publicID 签出房间访问凭证，<code>passwordVersion</code> 从 1 起可猜。</p>
+    <p class="path">位置：backend-go/internal/httpapi/room_access.go:12；backend-go/internal/config/config.go:272、293</p>
+    <p><span class="label">建议：</span>生产模式（或非本机部署）在 <code>Validate()</code> 中拒绝空密钥；确需自动初始化时随机生成并持久化（可复用 site secret 机制），同时修正注释措辞。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">23</span>禁用账号的旧 session 被降级为有效访客 <span class="risk high">高风险</span></h3>
+    <p><span class="label">问题：</span><code>Resolve()</code> 先按 join user_account 且 <code>a.enabled = 1</code> 查询（<code>service.go:127</code>），失败后回退到只 join user_session 与 user_profile 的访客分支（<code>:140-147</code>），既不确认该 public_id 没有账号，也不要求 <code>is_guest = 1</code>，而是直接置 <code>Guest = true</code>、<code>Role = "GUEST"</code>、<code>Enabled = true</code>。账号被禁用后旧 token 继续有效，只是身份变成访客。</p>
+    <p class="path">位置：backend-go/internal/domain/account/service.go:119、140</p>
+    <p><span class="label">建议：</span>访客分支要求 <code>profile.is_guest = 1</code>；若 user_account 存在但 <code>enabled = 0</code>，返回明确的禁用错误、撤销该 public_id 的全部 session，并通过 Hub 断开其实时连接。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">24</span>OWNER 授予与 CanEdit 判断使用不同数据源 <span class="risk high">高风险</span></h3>
+    <p><span class="label">问题：</span><code>CanEdit</code>（<code>service.go:124-140</code>）依据 room.owner_public_id 与 system 身份判断，从不读 room_membership；<code>SetOwner</code>（<code>:411-421</code>）却只修改 room_membership.role。结果是把成员提升为 OWNER 不获得任何管理权，而原创建者被降级或移出成员列表后仍可重命名、删除房间。</p>
+    <p class="path">位置：backend-go/internal/domain/room/service.go:124、411</p>
+    <p><span class="label">建议：</span>统一“创建者”与“所有者”的语义，让 <code>CanEdit</code> 与 <code>SetOwner</code> 共用同一数据源（owner 变更时同步 owner_public_id，或 <code>CanEdit</code> 改读 membership 的 OWNER 角色）；补充撤权后旧身份不能删除房间的测试。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">25</span>并发改密可能让旧访问凭证继续有效 <span class="risk high">高风险</span></h3>
+    <p><span class="label">问题：</span><code>UpdateDetails</code> 在写事务之外用 Reader 读取 password_version（<code>service.go:206-208</code>），在内存 +1（<code>:222</code>），再以绝对值写回（<code>:233-235</code>）。两次并发改密都写入 v+1，第一次改密后签发的凭证在第二次改密之后仍通过版本校验。</p>
+    <p class="path">位置：backend-go/internal/domain/room/service.go:206、233</p>
+    <p><span class="label">建议：</span>在同一写事务内读取并推进版本，或改用 <code>set password_version = password_version + 1</code> 后回读新值再签发凭证。</p>
+  </article>
+  <h2>中风险：授权一致性与限流韧性</h2>
+  <article class="issue">
+    <h3><span class="num">26</span>平台 allowlist 在重启前后授权语义不同 <span class="risk med">中风险</span></h3>
+    <p><span class="label">问题：</span><code>main.go:366-392</code> 的 <code>sessionAccess</code> 用 FindByPublicID 且要求账号已启用；<code>admin.go:347-365</code> 的 <code>allowedAccess</code> 用 <code>accounts.Resolve</code>（会接受访客，见 23），并按 PublicID/Username 匹配，<code>*</code> 对任何已解析会话放行。同一份配置在线修改后放行访客，重启后拒绝。</p>
+    <p class="path">位置：backend-go/cmd/musicparty/main.go:366；backend-go/internal/httpapi/admin.go:347</p>
+    <p><span class="label">建议：</span>收敛为一套实现（依赖 23 修复后的 Resolve），统一身份类型与通配符语义；补充“在线修改 → 重启 → 行为一致”的测试。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">27</span>登录限流容量耗尽后新来源不再受限 <span class="risk med">中风险</span></h3>
+    <p><span class="label">问题：</span><code>failure()</code>（<code>auth.go:243-265</code>）仅在 map 未达 maxTracked 或该 IP 已有失败记录时才写入，记录没有过期清理（只有 <code>success()</code> 会删除）。map 被其他 IP 占满后，新 IP 的失败不再累计，永不触发封禁。另外 <code>TrustedProxyClientIP</code>（<code>middleware.go:73-92</code>）取 X-Forwarded-For 最左项，代理若追加而非覆盖，客户端可自带前缀伪造限流 key。</p>
+    <p class="path">位置：backend-go/internal/httpapi/auth.go:243；backend-go/internal/httpapi/middleware.go:73</p>
+    <p><span class="label">建议：</span>给记录加过期与淘汰策略，保证容量满时新 IP 仍被计数；取可信代理链最右侧可信项（或要求严格覆盖语义），并补限流边界测试。</p>
+  </article>
+  <h2>高风险：删除与转码生命周期（本地曲库）</h2>
+  <article class="issue">
+    <h3><span class="num">28</span>删除本地歌曲不同步活跃 runtime，队列数据会被写回 <span class="risk high">高风险</span></h3>
+    <p><span class="label">问题：</span><code>Delete</code>（<code>local_library.go:161-175</code>）调用 <code>DeleteLocalReferences</code>（<code>repository_local.go:109-130</code>），直接删除 room_queue、room_history、room_history_track、user_playlist_track、room_playlist_track 中引用该曲目的行，并把 <code>room_playback_state.current_music_json</code> 置空，全程不通知 realtime.Manager/runtime，也不广播。runtime 内存中仍持有该曲目，下一次整份同步或状态持久化（<code>runtime.go:682</code>）会把它写回，客户端也看不到删除后的队列状态。</p>
+    <p class="path">位置：backend-go/internal/media/local_library.go:161；backend-go/internal/store/sqlite/repository_local.go:109；backend-go/internal/realtime/runtime.go:682</p>
+    <p><span class="label">建议：</span>删除通过 runtime 命令协调（在房间内移除队列项、持久化并广播快照），或删除后逐房间重新加载并推送快照；避免绕过 runtime 直接改它拥有的数据。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">29</span>转码期间删除的记录会被回调改回 <span class="risk med">中风险</span></h3>
+    <p><span class="label">问题：</span><code>Delete</code> 不取消在途转码；<code>CompleteTranscode</code>（<code>repository_local.go:91-101</code>）与 <code>UpdateStatus</code>（<code>:66-79</code>）都只按 id 更新，没有排除 DELETED 的状态条件。删除后到达的完成或失败回调会把记录从 DELETED 改回 COMPLETED 或 FAILED。</p>
+    <p class="path">位置：backend-go/internal/media/local_library.go:111；backend-go/internal/store/sqlite/repository_local.go:91、66</p>
+    <p><span class="label">建议：</span>把 DELETED 设为终止状态（回调 SQL 增加状态条件保护）；删除时取消或忽略在途任务，并清理已产生的输出文件。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">30</span>编辑元数据可能覆盖并发转码或删除结果 <span class="risk med">中风险</span></h3>
+    <p><span class="label">问题：</span><code>updateLocal</code>（<code>media.go:121-147</code>）先 FindByID 整条读取，修改标题/艺术家/专辑后调用 <code>repository.Upsert</code>（<code>repository_local.go:48-72</code>，全字段 insert ... on conflict do update）。若转码完成或删除发生在读取与写回之间，旧记录的 PENDING 状态与空 ogg_path 会覆盖新结果。</p>
+    <p class="path">位置：backend-go/internal/httpapi/media.go:121；backend-go/internal/store/sqlite/repository_local.go:48</p>
+    <p><span class="label">建议：</span>新增只更新 title/artists/album/updated_at 的语句，编辑接口不回写 status、ogg_path、duration_ms 等任务字段。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">31</span>重启后 PENDING 转码任务永久滞留 <span class="risk med">中风险</span></h3>
+    <p><span class="label">问题：</span><code>Submit</code>（<code>transcode.go:45-58</code>）只把任务放入内存 channel，worker 退出后未取出的任务不会执行完成回调；启动流程（<code>main.go:120-128</code>）只创建 transcoder 与 library，没有扫描 PENDING 记录恢复或标记失败。重启后这些记录永久停在 PENDING，同文件重传也会命中该记录。</p>
+    <p class="path">位置：backend-go/internal/media/transcode.go:45；backend-go/internal/media/local_library.go:90；backend-go/cmd/musicparty/main.go:120</p>
+    <p><span class="label">建议：</span>启动时扫描 PENDING（及转码中）记录，有源文件则重新入队，否则标记 FAILED；明确同文件重传命中 PENDING 记录时的恢复路径。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">32</span>状态保存失败仍删除源文件 <span class="risk med">中风险</span></h3>
+    <p><span class="label">问题：</span><code>completeTranscode</code>（<code>local_library.go:118-124</code>）忽略 <code>CompleteTranscode</code> 的返回错误，紧接着无条件 <code>os.Remove(source)</code>。写库失败时记录仍是 PENDING 且没有 ogg_path，源文件却已删除，无法重试。</p>
+    <p class="path">位置：backend-go/internal/media/local_library.go:118</p>
+    <p><span class="label">建议：</span>仅在状态成功提交后才删除源文件；失败时记录错误并保留源文件以便重试。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">33</span>关闭本地曲库后上传与编辑接口仍可进入空指针路径 <span class="risk low">低风险</span></h3>
+    <p><span class="label">问题：</span>LOCAL_LIBRARY_ENABLED=false 时不创建 library（<code>main.go:120-128</code>），但 MediaAPI 仍被创建并注册 <code>/api/local/tracks/upload</code> 与 <code>/api/local/tracks/{id}</code>（<code>media.go:35-36</code>），其中直接调用 <code>api.library.Upload</code>（<code>:106</code>）、<code>api.library.Delete</code>（<code>:155</code>）、<code>api.library.Root</code>（<code>:252</code>），均无 nil 保护，panic 后被恢复为 500。</p>
+    <p class="path">位置：backend-go/cmd/musicparty/main.go:120、142；backend-go/internal/httpapi/media.go:106、155</p>
+    <p><span class="label">建议：</span>禁用时不注册这些路由，或在入口返回明确的“功能未启用”错误（503）；读取路径同样加 nil 保护。</p>
+  </article>
+  <h2>中风险：媒体缓存与平台来源契约</h2>
+  <article class="issue">
+    <h3><span class="num">34</span>缓存重启后丢失全量占用统计 <span class="risk med">中风险</span></h3>
+    <p><span class="label">问题：</span><code>NewCache</code>（<code>cache.go:66-90</code>）只清理 <code>*.part</code>，不扫描已有的 <code>*.media</code>，entries 为空 map；<code>Get</code>（<code>:92-115</code>）在命中磁盘时才把文件懒加入 entries；<code>evictLocked</code>（<code>:254</code> 起）只累加 entries 中的大小。重启后未再被访问的旧文件不计入 maxBytes，缓存实际占用可超过配额。</p>
+    <p class="path">位置：backend-go/internal/media/cache.go:66、93、254</p>
+    <p><span class="label">建议：</span>启动时遍历缓存目录按文件名、大小、mtime 建立条目索引，再按真实占用执行淘汰。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">35</span>缓存下载没有大小、时长和写入量上限 <span class="risk med">中风险</span></h3>
+    <p><span class="label">问题：</span>worker 用 <code>io.Copy(file, response.Body)</code> 写入 <code>.part</code>（<code>cache.go:220</code>），没有字节或时长上限，写完才 <code>evictLocked</code>（<code>:235-237</code>），且 <code>.part</code> 不计入配额；<code>newProxyClient</code>（<code>main.go:233-241</code>）只设 ResponseHeaderTimeout，没有 Client.Timeout。上游超大响应或持续慢速输出可长期占用下载 worker，并在淘汰前耗尽磁盘。</p>
+    <p class="path">位置：backend-go/internal/media/cache.go:220；backend-go/cmd/musicparty/main.go:233</p>
+    <p><span class="label">建议：</span>限制单文件大小与在途下载总量，为下载设置总超时（context deadline 或空闲读超时），超限时取消并清理 <code>.part</code>。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">36</span>Subsonic 协议层错误被当作成功 <span class="risk med">中风险</span></h3>
+    <p><span class="label">问题：</span>response 结构（<code>subsonic.go:110-124</code>）只解析 searchResult3/album，没有 status 与 error 字段；<code>get()</code>（<code>:37-39</code>）只依赖 HTTP 与 JSON 解析成功。上游返回 HTTP 200 且 <code>status="failed"</code> 时被当作空结果加 nil error，管理端的来源测试（<code>admin.go:238</code>）也会误报正常。</p>
+    <p class="path">位置：backend-go/internal/platform/subsonic/subsonic.go:37、110；backend-go/internal/httpapi/admin.go:238</p>
+    <p><span class="label">建议：</span>在 <code>get()</code> 统一校验 subsonic-response.status 与 error.code/message，失败时返回带 code 的错误；来源测试依据该错误判断。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">37</span>Subsonic 专辑搜索分页参数错误 <span class="risk low">低风险</span></h3>
+    <p><span class="label">问题：</span><code>SearchAlbums</code>（<code>subsonic.go:78-90</code>）发送了 albumCount，但分页参数用的是 offset（Subsonic search3 期望 albumOffset），上游忽略它，翻页恒返回第一页；歌曲搜索（<code>:60-63</code>）用的 songOffset 是正确的。</p>
+    <p class="path">位置：backend-go/internal/platform/subsonic/subsonic.go:81</p>
+    <p><span class="label">建议：</span>改用 albumOffset（保留 songOffset），并补一个断言第二页结果的测试。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">38</span>站点加密密钥首次初始化存在竞争 <span class="risk med">中风险</span></h3>
+    <p><span class="label">问题：</span><code>siteSecret</code>（<code>admin.go:318-333</code>）先 FindValue，未命中则随机生成再 Upsert。两个首次保存来源的请求可能各自生成密钥并互相覆盖，而各自已用不同密钥加密数据；数据库最终只保留一个密钥，另一来源的密文重启后无法解密（<code>main.go:292</code> 加载时跳过）。</p>
+    <p class="path">位置：backend-go/internal/httpapi/admin.go:318；backend-go/cmd/musicparty/main.go:292</p>
+    <p><span class="label">建议：</span>在单一事务内 insert-if-absent 后回读最终值（或 insert ... on conflict do nothing 再 select），保证所有调用者拿到同一密钥。</p>
+  </article>
+  <article class="issue">
+    <h3><span class="num">39</span>封面取色请求未携带授权 <span class="risk low">低风险</span></h3>
+    <p><span class="label">问题：</span><code>coverColor</code>（<code>platforms.go:331-360</code>）校验目标 URL 前缀后，用 <code>http.NewRequestWithContext</code> 请求自身 BASE_URL，但没有转发会话 Cookie 或 Authorization；<code>media.go:290</code> 起的封面代理需要会话或 allowlist 授权，受限封面的取色请求因此 403，被外层映射成 502。</p>
+    <p class="path">位置：backend-go/internal/httpapi/platforms.go:331；backend-go/internal/httpapi/media.go:290</p>
+    <p><span class="label">建议：</span>改为服务端内部调用（复用已授权的封面读取逻辑，不走 HTTP 自调用），或取色时显式传递已解析身份；若确需转发凭证，必须先严格锁定目标为自身 BASE_URL。</p>
+  </article>
+  <h2>修复交接建议</h2>
+  <ul>
+    <li>先处理授权边界和队列版本恢复问题；后者直接解释队列重连或 runtime 回收后间歇性失效。</li>
+    <li>第二轮条目建议按此顺序推进：22、23、24、28、29（房间访问凭证可伪造、禁用账号未撤权、OWNER 不生效、已删除曲目被写回、转码回调覆盖删除）；其次 26、31、34、38（依赖重启或进程生命周期的行为不一致）。</li>
+    <li>22–39 项在写入前已按当前分支逐条复核代码确认；复核中没有运行测试或构建。</li>
+    <li>修复每项时同步核对 OpenAPI/WebSocket schema、生成客户端类型和真实 handler，避免只修单个入口。</li>
+    <li>对并发、重连、runtime 生命周期及播放顺序问题优先增加能覆盖触发条件的集成测试；不要只测纯 helper。</li>
+    <li>在落地前确认是否有近期未提交改动或其他 agent 的并行修复，并保留用户现有工作区改动。</li>
+  </ul>
+  <p class="lede">审查材料为静态代码审查结果；本 handoff 不表示本轮执行过测试、构建或运行时验证。</p>
+</main>
+</body>
+</html>

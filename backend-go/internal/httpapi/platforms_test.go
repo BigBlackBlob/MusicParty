@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/config"
@@ -139,6 +140,54 @@ func TestRestrictedPlatformRequiresToken(t *testing.T) {
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/search/local/x", nil))
 	require.Equal(t, http.StatusForbidden, response.Code)
 }
+
+func TestRestrictedPlatformsUseSessionCookie(t *testing.T) {
+	cfg := testConfig(t)
+	api := NewPlatformAPI(cfg, fixturePlatform{})
+	api.SetAccess("local", func(_ context.Context, token string) bool { return token == "session-token" })
+	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
+
+	for _, path := range []string{"/api/platforms?token=ignored", "/api/search/local/query?token=ignored"} {
+		t.Run(path, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, path, nil)
+			request.AddCookie(&http.Cookie{Name: SessionCookieName, Value: "session-token"})
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			require.Equal(t, http.StatusOK, response.Code)
+			if strings.HasPrefix(path, "/api/platforms") {
+				require.Contains(t, response.Body.String(), `"local"`)
+			}
+		})
+	}
+	for _, path := range []string{"/api/platforms?token=session-token", "/api/search/local/query?token=session-token"} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		if strings.HasPrefix(path, "/api/platforms") {
+			require.NotContains(t, response.Body.String(), `"local"`)
+		} else {
+			require.Equal(t, http.StatusForbidden, response.Code)
+		}
+	}
+
+}
+
+func TestPlatformAccessPolicyCanChangeConcurrentlyWithChecks(t *testing.T) {
+	api := NewPlatformAPI(config.Config{})
+	check := func(context.Context, string) bool { return true }
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 1000 {
+				api.SetAccess("local", check)
+				api.PlatformAllowed(context.Background(), "local", "session")
+			}
+		}()
+	}
+	wg.Wait()
+}
+
 func testConfig(t *testing.T) config.Config {
 	t.Helper()
 	cfg, err := config.Load(func(key string) (string, bool) {

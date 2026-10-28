@@ -2,9 +2,7 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -144,10 +142,8 @@ func run() error {
 		}
 		defer mediaCache.Close()
 		mediaAPI = httpapi.NewMediaAPI(cfg, accountService, databaseStore, library, platformAPI, proxyClient, mediaCache)
-		profiles := storesqlite.NewUserProfileRepository(databaseStore, time.Now)
-		accounts := storesqlite.NewUserAccountRepository(databaseStore)
-		platformAPI.SetAccess("navidrome", sessionAccess(profiles, accounts, navidromeAllowedUsers))
-		platformAPI.SetAccess("subsonic-"+cfg.Platforms.Squidify.ID+"@lounge", sessionAccess(profiles, accounts, cfg.Platforms.Squidify.AllowedUsers))
+		platformAPI.SetAccess("navidrome", httpapi.PlatformAccess(accountService, navidromeAllowedUsers))
+		platformAPI.SetAccess("subsonic-"+cfg.Platforms.Squidify.ID+"@lounge", httpapi.PlatformAccess(accountService, cfg.Platforms.Squidify.AllowedUsers))
 		dynamicServices, dynamicAccess, loadErr := loadSubsonicServices(applicationContext, databaseStore, platformClient)
 		if loadErr != nil {
 			return fmt.Errorf("load Subsonic sources: %w", loadErr)
@@ -156,7 +152,7 @@ func run() error {
 			platformAPI.Register(service)
 		}
 		for name, allowed := range dynamicAccess {
-			platformAPI.SetAccess(name, sessionAccess(profiles, accounts, allowed))
+			platformAPI.SetAccess(name, httpapi.PlatformAccess(accountService, allowed))
 		}
 		socketHub = wsruntime.NewHub(cfg.Performance.WebSocketClientQueueCapacity)
 		authAPI.SetSessionCloser(socketHub)
@@ -381,35 +377,6 @@ func settingValue(ctx context.Context, repository *storesqlite.SiteSettingReposi
 		return "", err
 	}
 	return fallback, nil
-}
-
-func sessionAccess(profiles *storesqlite.UserProfileRepository, accounts *storesqlite.UserAccountRepository, rawAllowed string) func(context.Context, string) bool {
-	allowed := map[string]struct{}{}
-	for _, value := range strings.Split(rawAllowed, ",") {
-		if normalized := strings.ToLower(strings.TrimSpace(value)); normalized != "" {
-			allowed[normalized] = struct{}{}
-		}
-	}
-	return func(ctx context.Context, token string) bool {
-		if strings.TrimSpace(token) == "" || len(allowed) == 0 {
-			return false
-		}
-		digest := sha256.Sum256([]byte(token))
-		session, err := profiles.FindSessionByHash(ctx, hex.EncodeToString(digest[:]))
-		if err != nil {
-			return false
-		}
-		account, err := accounts.FindByPublicID(ctx, session.PublicID)
-		if err != nil || !account.Enabled {
-			return false
-		}
-		if _, ok := allowed["*"]; ok {
-			return true
-		}
-		_, byID := allowed[strings.ToLower(account.PublicID)]
-		_, byName := allowed[strings.ToLower(account.Username)]
-		return byID || byName
-	}
 }
 
 func parseLogLevel(raw string) slog.Level {

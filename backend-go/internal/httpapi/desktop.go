@@ -250,10 +250,7 @@ func (api *DesktopAPI) mediaSession(r *http.Request) error {
 		return &APIError{Status: 401, Name: "unauthorized", Message: "Authentication required"}
 	}
 	name := chi.URLParam(r, "platform")
-	api.platforms.mu.RLock()
-	check := api.platforms.access[name]
-	api.platforms.mu.RUnlock()
-	if check != nil && !check(r.Context(), sessionToken(r)) {
+	if !api.platforms.PlatformAllowed(r.Context(), name, sessionToken(r)) {
 		return &APIError{Status: 403, Name: "forbidden", Message: "Provider access denied"}
 	}
 	return nil

@@ -1,14 +1,19 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/BigBlackBlob/MusicParty/backend-go/internal/domain/account"
+	storesqlite "github.com/BigBlackBlob/MusicParty/backend-go/internal/store/sqlite"
 )
 
 // ephemeralRoomAccessSecret backs room access proofs when
@@ -79,4 +84,21 @@ func validRoomAccessToken(secret []byte, token, roomID, publicID string, passwor
 	}
 	version, err := strconv.Atoi(fields[3])
 	return err == nil && fields[0] == roomID && fields[1] == publicID && expiresAt >= now.UnixMilli() && version == passwordVersion
+}
+
+func roomAccessAllowedRequest(r *http.Request, store *storesqlite.Store, secret []byte, roomID string, session account.Session) bool {
+	proof, _ := r.Cookie(RoomAccessCookieName)
+	return roomAccessAllowed(r.Context(), store, secret, roomID, session, cookieValue(proof))
+}
+
+func roomAccessAllowed(ctx context.Context, store *storesqlite.Store, secret []byte, roomID string, session account.Session, proof string) bool {
+	var visibility, owner string
+	var passwordVersion int
+	if err := store.Reader().QueryRowContext(ctx, "select visibility,password_version,owner_public_id from room where id=? and deleted_at is null", roomID).Scan(&visibility, &passwordVersion, &owner); err != nil {
+		return false
+	}
+	if visibility != "PRIVATE" || session.Admin() || (owner != "" && owner == session.PublicID) {
+		return true
+	}
+	return validRoomAccessToken(secret, proof, roomID, session.PublicID, passwordVersion, time.Now())
 }

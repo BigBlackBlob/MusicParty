@@ -105,19 +105,7 @@ func (api *WebSocketAPI) handle(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *WebSocketAPI) canEnterRoom(r *http.Request, roomID string, session account.Session) bool {
-	var visibility, owner string
-	var passwordVersion int
-	err := api.store.Reader().QueryRowContext(r.Context(), "select visibility,password_version,owner_public_id from room where id=? and deleted_at is null", roomID).Scan(&visibility, &passwordVersion, &owner)
-	if err != nil {
-		return false
-	}
-	// The creator set this room's own password, so the five-minute access ticket must not lock
-	// them out of the room they own; everyone else still proves access with it.
-	if visibility != "PRIVATE" || session.Admin() || (owner != "" && owner == session.PublicID) {
-		return true
-	}
-	proof, _ := r.Cookie(RoomAccessCookieName)
-	return validRoomAccessToken(roomAccessSecret(api.cfg.Auth.RoomAccessTokenSecret), cookieValue(proof), roomID, session.PublicID, passwordVersion, time.Now())
+	return roomAccessAllowedRequest(r, api.store, roomAccessSecret(api.cfg.Auth.RoomAccessTokenSecret), roomID, session)
 }
 func (api *WebSocketAPI) sendInitial(ctx context.Context, client *wsruntime.Client, runtime *realtime.RoomRuntime) {
 	snapshot, err := runtime.Snapshot(ctx)
@@ -394,7 +382,7 @@ func (api *WebSocketAPI) enqueueRemoteCollection(ctx context.Context, client *ws
 		api.nack(client, "enqueue.nack", request.MutationID, errors.New("platform unavailable"))
 		return
 	}
-	if check := api.platforms.access[request.Platform]; check != nil && !check(ctx, session.SessionToken) {
+	if !api.platforms.PlatformAllowed(ctx, request.Platform, session.SessionToken) {
 		api.nack(client, "enqueue.nack", request.MutationID, errors.New("forbidden"))
 		return
 	}

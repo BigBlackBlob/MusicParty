@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/config"
+	"github.com/BigBlackBlob/MusicParty/backend-go/internal/domain/account"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform"
 	"github.com/go-chi/chi/v5"
 )
@@ -45,6 +46,40 @@ func NewPlatformAPI(cfg config.Config, services ...platform.Service) *PlatformAP
 	}
 	return &PlatformAPI{cfg: cfg, services: m, access: map[string]func(context.Context, string) bool{}, cache: map[string]cachedPlayable{}}
 }
+
+// PlatformAccess builds the same allowlist policy for startup configuration and live updates.
+func PlatformAccess(accounts *account.Service, rawAllowed string) func(context.Context, string) bool {
+	allowed := make(map[string]struct{})
+	for _, value := range strings.Split(rawAllowed, ",") {
+		if normalized := strings.ToLower(strings.TrimSpace(value)); normalized != "" {
+			allowed[normalized] = struct{}{}
+		}
+	}
+	return func(ctx context.Context, token string) bool {
+		if accounts == nil || len(allowed) == 0 {
+			return false
+		}
+		session, err := accounts.Resolve(ctx, token)
+		if err != nil {
+			return false
+		}
+		if _, ok := allowed["*"]; ok {
+			return true
+		}
+		_, byID := allowed[strings.ToLower(session.PublicID)]
+		_, byName := allowed[strings.ToLower(session.Username)]
+		return byID || byName
+	}
+}
+
+// PlatformAllowed snapshots the policy under the lock, then evaluates it without holding the lock.
+func (api *PlatformAPI) PlatformAllowed(ctx context.Context, name, token string) bool {
+	api.mu.RLock()
+	check := api.access[name]
+	api.mu.RUnlock()
+	return check == nil || check(ctx, token)
+}
+
 func (api *PlatformAPI) SetAccess(platformName string, check func(context.Context, string) bool) {
 	api.mu.Lock()
 	defer api.mu.Unlock()
@@ -101,10 +136,7 @@ func (api *PlatformAPI) ResolvePlayable(ctx context.Context, platformName, music
 	if err != nil {
 		return platform.PlayableMusic{}, err
 	}
-	api.mu.RLock()
-	check := api.access[platformName]
-	api.mu.RUnlock()
-	if check != nil && !check(ctx, sessionToken) {
+	if !api.PlatformAllowed(ctx, platformName, sessionToken) {
 		return platform.PlayableMusic{}, &APIError{Status: http.StatusForbidden, Message: "Forbidden"}
 	}
 	key := platformName + ":" + musicID
@@ -169,15 +201,11 @@ func (api *PlatformAPI) platforms(w http.ResponseWriter, r *http.Request) {
 	for name, service := range api.services {
 		services[name] = service
 	}
-	access := make(map[string]func(context.Context, string) bool, len(api.access))
-	for name, check := range api.access {
-		access[name] = check
-	}
 	api.mu.RUnlock()
 	out := []item{{"netease", "netease", albumSearchSupported("netease"), false}, {"bilibili", "bilibili", albumSearchSupported("bilibili"), false}}
 	for _, name := range []string{"youtube", "local", "navidrome", "squidify"} {
 		if service := services[name]; service != nil && service.Available() {
-			if check := access[name]; check != nil && !check(r.Context(), r.URL.Query().Get("token")) {
+			if !api.PlatformAllowed(r.Context(), name, sessionToken(r)) {
 				continue
 			}
 			out = append(out, item{name, name, albumSearchSupported(name), name == "navidrome" || name == "squidify"})
@@ -200,7 +228,7 @@ func (api *PlatformAPI) platforms(w http.ResponseWriter, r *http.Request) {
 		if !service.Available() {
 			continue
 		}
-		if check := access[name]; check != nil && !check(r.Context(), r.URL.Query().Get("token")) {
+		if !api.PlatformAllowed(r.Context(), name, sessionToken(r)) {
 			continue
 		}
 		label := name
@@ -226,10 +254,7 @@ func (api *PlatformAPI) authorizedService(r *http.Request) (platform.Service, er
 	if err != nil {
 		return nil, err
 	}
-	api.mu.RLock()
-	check := api.access[name]
-	api.mu.RUnlock()
-	if check != nil && !check(r.Context(), r.URL.Query().Get("token")) {
+	if !api.PlatformAllowed(r.Context(), name, sessionToken(r)) {
 		return nil, &APIError{Status: http.StatusForbidden, Message: "Forbidden"}
 	}
 	return service, nil

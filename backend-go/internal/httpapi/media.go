@@ -288,18 +288,18 @@ func (api *MediaAPI) subsonicCover(w http.ResponseWriter, r *http.Request) error
 	return api.proxyPlatform(w, r, "subsonic-"+chi.URLParam(r, "sourceId")+"@"+roomID, chi.URLParam(r, "coverId"), true)
 }
 func (api *MediaAPI) proxyPlatform(w http.ResponseWriter, r *http.Request, name, id string, cover bool) error {
+	service, ok := api.platforms.Service(name)
+	if !ok {
+		return forbidden(w)
+	}
+	if !api.platforms.PlatformAllowed(r.Context(), name, sessionToken(r)) {
+		return forbidden(w)
+	}
 	cacheKey := name + ":" + id
 	if !cover && api.cache != nil {
 		if path, ok := api.cache.Get(cacheKey); ok {
 			return media.ServeFile(w, r, path, "application/octet-stream", "private, max-age=86400")
 		}
-	}
-	service, ok := api.platforms.Service(name)
-	if !ok {
-		return forbidden(w)
-	}
-	if check := api.platforms.access[name]; check != nil && !check(r.Context(), sessionToken(r)) {
-		return forbidden(w)
 	}
 	source, ok := service.(platform.MediaSource)
 	if !ok {

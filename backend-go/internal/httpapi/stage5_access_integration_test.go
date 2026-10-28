@@ -15,6 +15,8 @@ import (
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/domain/account"
 	roomdomain "github.com/BigBlackBlob/MusicParty/backend-go/internal/domain/room"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/observability"
+	"github.com/BigBlackBlob/MusicParty/backend-go/internal/realtime"
+	storesqlite "github.com/BigBlackBlob/MusicParty/backend-go/internal/store/sqlite"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -53,6 +55,77 @@ func TestRoomPlaylistWriteAccessMatchesRoomVisibility(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, request("/api/rooms/private-room/playlists", expired))
 	wrongVersion := signRoomAccessToken(roomAccessSecret(cfg.Auth.RoomAccessTokenSecret), "private-room", "member", time.Now().Add(time.Minute).UnixMilli(), 2)
 	require.Equal(t, http.StatusForbidden, request("/api/rooms/private-room/playlists", wrongVersion))
+}
+
+func TestPrivateRoomPlaylistReadsRequireRoomAccess(t *testing.T) {
+	store := httpStore(t)
+	accounts := account.New(store)
+	rooms := roomdomain.New(store, accounts)
+	cfg := testConfig(t)
+	cfg.Auth.RoomAccessTokenSecret = "contract-room-access-secret-32-bytes"
+	insertStage5User(t, store, "member-token", "member", "MEMBER")
+	insertStage5Room(t, store, "private-room", "PRIVATE", 3)
+	api := NewPlaylistAPI(cfg, store, accounts, rooms, NewPlatformAPI(cfg))
+	playlist, err := api.roomPlaylists.CreatePlaylist(context.Background(), "private-room", "Private playlist")
+	require.NoError(t, err)
+	_, err = api.roomPlaylists.AddTrack(context.Background(), "private-room", playlist.ID, &storesqlite.Music{ID: "private-song", Name: "Private song", Artists: []string{"Artist"}, Platform: "local"})
+	require.NoError(t, err)
+	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
+	paths := []string{
+		"/api/rooms/private-room/playlists",
+		"/api/rooms/private-room/playlists/" + playlist.ID + "/tracks",
+		"/api/rooms/private-room/playlists/" + playlist.ID + "/export",
+	}
+	proof := signRoomAccessToken(roomAccessSecret(cfg.Auth.RoomAccessTokenSecret), "private-room", "member", time.Now().Add(time.Minute).UnixMilli(), 3)
+	for _, path := range paths {
+		for _, test := range []struct {
+			name  string
+			proof string
+			want  int
+		}{{name: "no access proof", want: http.StatusForbidden}, {name: "valid session and proof", proof: proof, want: http.StatusOK}} {
+			t.Run(path+"/"+test.name, func(t *testing.T) {
+				request := httptest.NewRequest(http.MethodGet, path, nil)
+				request.AddCookie(&http.Cookie{Name: SessionCookieName, Value: "member-token"})
+				if test.proof != "" {
+					request.AddCookie(&http.Cookie{Name: RoomAccessCookieName, Value: test.proof})
+				}
+				response := httptest.NewRecorder()
+				handler.ServeHTTP(response, request)
+				require.Equal(t, test.want, response.Code)
+			})
+		}
+	}
+}
+
+func TestPersonalPlaylistEnqueueRequiresPrivateRoomAccess(t *testing.T) {
+	store := httpStore(t)
+	accounts := account.New(store)
+	rooms := roomdomain.New(store, accounts)
+	cfg := testConfig(t)
+	cfg.Auth.RoomAccessTokenSecret = "contract-room-access-secret-32-bytes"
+	insertStage5User(t, store, "member-token", "member", "MEMBER")
+	insertStage5Room(t, store, "private-room", "PRIVATE", 3)
+	api := NewPlaylistAPI(cfg, store, accounts, rooms, NewPlatformAPI(cfg))
+	manager := realtime.NewManager(store, 10, time.Second, time.Hour, nil)
+	defer manager.Close()
+	api.SetRealtime(manager)
+	playlist, err := api.users.CreatePlaylist(context.Background(), "member", "Personal")
+	require.NoError(t, err)
+	_, err = api.users.AddTrackIfAbsent(context.Background(), "member", playlist.ID, &storesqlite.Music{ID: "song", Name: "Song", Artists: []string{"Artist"}, Platform: "local"})
+	require.NoError(t, err)
+	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
+	proof := signRoomAccessToken(roomAccessSecret(cfg.Auth.RoomAccessTokenSecret), "private-room", "member", time.Now().Add(time.Minute).UnixMilli(), 3)
+	path := "/api/me/playlists/" + playlist.ID + "/enqueue?roomId=private-room"
+	denied := batch2Request(handler, http.MethodPost, path, "{}", "member-token", "")
+	require.Equal(t, http.StatusForbidden, denied.Code)
+	var count int
+	require.NoError(t, store.Reader().QueryRow("select (select count(*) from room_queue where room_id='private-room') + (select count(*) from room_playback_state where room_id='private-room' and current_music_json is not null)").Scan(&count))
+	require.Zero(t, count, "unauthorized enqueue must not persist queue items")
+	allowed := batch2Request(handler, http.MethodPost, path, "{}", "member-token", proof)
+	require.Equal(t, http.StatusOK, allowed.Code, allowed.Body.String())
+	require.Contains(t, allowed.Body.String(), `"count":1`)
+	require.NoError(t, store.Reader().QueryRow("select (select count(*) from room_queue where room_id='private-room') + (select count(*) from room_playback_state where room_id='private-room' and current_music_json is not null)").Scan(&count))
+	require.Equal(t, 1, count)
 }
 
 func TestRoomMutationDistinguishesUnauthorizedAndForbidden(t *testing.T) {

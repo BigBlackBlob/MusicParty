@@ -326,27 +326,21 @@ func (api *PlaylistAPI) unlikeSong(w http.ResponseWriter, r *http.Request) error
 	changed, err := api.users.DeleteTrackByMusicKey(r.Context(), session.PublicID, playlist.ID, chi.URLParam(r, "platform")+":"+chi.URLParam(r, "musicId"))
 	return noContentOrNotFound(w, changed, err)
 }
-func (api *PlaylistAPI) roomWrite(r *http.Request) error {
+func (api *PlaylistAPI) roomAccess(r *http.Request) error {
 	session, err := api.accounts.Resolve(r.Context(), roomSessionToken(r))
 	if err != nil {
 		return err
 	}
 	roomID := chi.URLParam(r, "roomId")
-	var visibility string
-	var passwordVersion int
-	if err := api.store.Reader().QueryRowContext(r.Context(), "select visibility,password_version from room where id=? and deleted_at is null", roomID).Scan(&visibility, &passwordVersion); err != nil {
-		return errors.New("Forbidden")
-	}
-	if visibility != "PRIVATE" {
-		return nil
-	}
-	proof, _ := r.Cookie(RoomAccessCookieName)
-	if !validRoomAccessToken(api.roomSecret, cookieValue(proof), roomID, session.PublicID, passwordVersion, time.Now()) {
+	if !roomAccessAllowedRequest(r, api.store, api.roomSecret, roomID, session) {
 		return errors.New("Forbidden")
 	}
 	return nil
 }
 func (api *PlaylistAPI) roomList(w http.ResponseWriter, r *http.Request) error {
+	if err := api.roomAccess(r); err != nil {
+		return roomAccessError(w, err)
+	}
 	values, err := api.roomPlaylists.ListPlaylists(r.Context(), chi.URLParam(r, "roomId"))
 	if err != nil {
 		return err
@@ -359,7 +353,7 @@ func (api *PlaylistAPI) roomList(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 func (api *PlaylistAPI) roomCreate(w http.ResponseWriter, r *http.Request) error {
-	if err := api.roomWrite(r); err != nil {
+	if err := api.roomAccess(r); err != nil {
 		return roomAccessError(w, err)
 	}
 	name, err := requestName(r)
@@ -374,7 +368,7 @@ func (api *PlaylistAPI) roomCreate(w http.ResponseWriter, r *http.Request) error
 	return nil
 }
 func (api *PlaylistAPI) roomRename(w http.ResponseWriter, r *http.Request) error {
-	if err := api.roomWrite(r); err != nil {
+	if err := api.roomAccess(r); err != nil {
 		return roomAccessError(w, err)
 	}
 	name, err := requestName(r)
@@ -393,19 +387,22 @@ func (api *PlaylistAPI) roomRename(w http.ResponseWriter, r *http.Request) error
 	return nil
 }
 func (api *PlaylistAPI) roomDelete(w http.ResponseWriter, r *http.Request) error {
-	if err := api.roomWrite(r); err != nil {
+	if err := api.roomAccess(r); err != nil {
 		return roomAccessError(w, err)
 	}
 	changed, err := api.roomPlaylists.DeletePlaylist(r.Context(), chi.URLParam(r, "roomId"), chi.URLParam(r, "playlistId"))
 	return noContentOrNotFound(w, changed, err)
 }
 func (api *PlaylistAPI) roomTracks(w http.ResponseWriter, r *http.Request) error {
+	if err := api.roomAccess(r); err != nil {
+		return roomAccessError(w, err)
+	}
 	offset, limit := pagination(r, 100)
 	values, err := api.roomPlaylists.ListTracks(r.Context(), chi.URLParam(r, "roomId"), chi.URLParam(r, "playlistId"), offset, limit)
 	return writeTracks(w, values, err)
 }
 func (api *PlaylistAPI) roomAddTrack(w http.ResponseWriter, r *http.Request) error {
-	if err := api.roomWrite(r); err != nil {
+	if err := api.roomAccess(r); err != nil {
 		return roomAccessError(w, err)
 	}
 	var request struct {
@@ -426,14 +423,14 @@ func (api *PlaylistAPI) roomAddTrack(w http.ResponseWriter, r *http.Request) err
 	return nil
 }
 func (api *PlaylistAPI) roomDeleteTrack(w http.ResponseWriter, r *http.Request) error {
-	if err := api.roomWrite(r); err != nil {
+	if err := api.roomAccess(r); err != nil {
 		return roomAccessError(w, err)
 	}
 	changed, err := api.roomPlaylists.DeleteTrack(r.Context(), chi.URLParam(r, "roomId"), chi.URLParam(r, "playlistId"), chi.URLParam(r, "trackId"))
 	return noContentOrNotFound(w, changed, err)
 }
 func (api *PlaylistAPI) roomReorder(w http.ResponseWriter, r *http.Request) error {
-	if err := api.roomWrite(r); err != nil {
+	if err := api.roomAccess(r); err != nil {
 		return roomAccessError(w, err)
 	}
 	ids, err := requestTrackIDs(r)
@@ -446,7 +443,7 @@ func (api *PlaylistAPI) roomReorder(w http.ResponseWriter, r *http.Request) erro
 	return nil
 }
 func (api *PlaylistAPI) roomImport(w http.ResponseWriter, r *http.Request) error {
-	if err := api.roomWrite(r); err != nil {
+	if err := api.roomAccess(r); err != nil {
 		return roomAccessError(w, err)
 	}
 	var request struct {
@@ -476,10 +473,16 @@ func (api *PlaylistAPI) roomImport(w http.ResponseWriter, r *http.Request) error
 	return nil
 }
 func (api *PlaylistAPI) roomExport(w http.ResponseWriter, r *http.Request) error {
+	if err := api.roomAccess(r); err != nil {
+		return roomAccessError(w, err)
+	}
 	values, err := api.roomPlaylists.ListTracks(r.Context(), chi.URLParam(r, "roomId"), chi.URLParam(r, "playlistId"), 0, 500)
 	return exportTracks(w, r, values, err)
 }
 func (api *PlaylistAPI) remoteSongs(r *http.Request, name, id string) ([]platform.Music, error) {
+	if !api.platforms.PlatformAllowed(r.Context(), name, sessionToken(r)) {
+		return nil, &APIError{Status: http.StatusForbidden, Message: "Forbidden"}
+	}
 	service, ok := api.platforms.Service(name)
 	if !ok {
 		return nil, badRequest("Platform not supported: " + name)
@@ -593,12 +596,16 @@ func batchResult(tracks []trackView, requested int) map[string]any {
 	return map[string]any{"addedCount": len(tracks), "skippedCount": max(0, requested-len(tracks)), "tracks": tracks}
 }
 func (api *PlaylistAPI) userEnqueue(w http.ResponseWriter, r *http.Request) error {
-	if api.runtimes == nil {
-		return &APIError{Status: http.StatusServiceUnavailable, Message: "Realtime service unavailable"}
-	}
 	session, err := api.user(r)
 	if err != nil {
 		return unauthorized(w)
+	}
+	roomID := defaultValue(r.URL.Query().Get("roomId"), "lounge")
+	if !roomAccessAllowedRequest(r, api.store, api.roomSecret, roomID, session) {
+		return forbidden(w)
+	}
+	if api.runtimes == nil {
+		return &APIError{Status: http.StatusServiceUnavailable, Message: "Realtime service unavailable"}
 	}
 	tracks, err := api.users.ListTracks(r.Context(), session.PublicID, chi.URLParam(r, "playlistId"), 0, 500)
 	if err != nil {
@@ -607,7 +614,6 @@ func (api *PlaylistAPI) userEnqueue(w http.ResponseWriter, r *http.Request) erro
 	if len(tracks) == 0 {
 		return &APIError{Status: http.StatusInternalServerError, Message: "An unexpected internal server error occurred.", Name: "ResponseStatusException"}
 	}
-	roomID := defaultValue(r.URL.Query().Get("roomId"), "lounge")
 	runtime, err := api.runtimes.Room(r.Context(), roomID)
 	if err != nil {
 		return err

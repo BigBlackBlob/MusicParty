@@ -185,7 +185,7 @@ func (api *AdminAPI) saveSource(w http.ResponseWriter, r *http.Request) error {
 	}
 	platformID := "subsonic-" + source.ID + "@" + request.RoomID
 	api.platforms.Register(subsonic.New(api.client, subsonic.Config{ID: platformID, Label: source.Label, RoomID: request.RoomID, BaseURL: source.BaseURL, Username: source.Username, Password: runtimePassword, Client: source.Client, Version: source.APIVersion, ProxyPrefix: "/api/subsonic/" + request.RoomID + "/" + source.ID + "/cover", Enabled: enabled}))
-	api.platforms.SetAccess(platformID, api.allowedAccess(defaultValue(request.AllowedUsers, "*")))
+	api.platforms.SetAccess(platformID, PlatformAccess(api.accounts, defaultValue(request.AllowedUsers, "*")))
 	writeJSON(w, map[string]string{"message": "SOURCE SAVED", "platformId": "subsonic-" + source.ID})
 	return nil
 }
@@ -311,7 +311,7 @@ func (api *AdminAPI) updateNavidrome(w http.ResponseWriter, r *http.Request, gra
 	if err := repository.Upsert(r.Context(), storesqlite.SiteSetting{Key: "navidrome.allowed-users", Value: &joined, UpdatedAt: time.Now().UnixMilli()}); err != nil {
 		return err
 	}
-	api.platforms.SetAccess("navidrome", api.allowedAccess(joined))
+	api.platforms.SetAccess("navidrome", PlatformAccess(api.accounts, joined))
 	writeJSON(w, map[string]string{"message": "NAVIDROME ACCESS UPDATED"})
 	return nil
 }
@@ -343,24 +343,4 @@ func stringPointer(value string) *string {
 		return nil
 	}
 	return &value
-}
-func (api *AdminAPI) allowedAccess(raw string) func(context.Context, string) bool {
-	allowed := map[string]struct{}{}
-	for _, value := range strings.Split(raw, ",") {
-		if normalized := strings.ToLower(strings.TrimSpace(value)); normalized != "" {
-			allowed[normalized] = struct{}{}
-		}
-	}
-	return func(ctx context.Context, token string) bool {
-		session, err := api.accounts.Resolve(ctx, token)
-		if err != nil {
-			return false
-		}
-		if _, ok := allowed["*"]; ok {
-			return true
-		}
-		_, byID := allowed[strings.ToLower(session.PublicID)]
-		_, byName := allowed[strings.ToLower(session.Username)]
-		return byID || byName
-	}
 }
