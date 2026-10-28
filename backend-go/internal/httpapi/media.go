@@ -299,7 +299,8 @@ func (api *MediaAPI) proxyPlatform(w http.ResponseWriter, r *http.Request, name,
 	}
 	cacheKey := name + ":" + id
 	if !cover && api.cache != nil {
-		if path, ok := api.cache.Get(cacheKey); ok {
+		if path, release, ok := api.cache.Acquire(cacheKey); ok {
+			defer release()
 			return media.ServeFile(w, r, path, "application/octet-stream", "private, max-age=86400")
 		}
 	}

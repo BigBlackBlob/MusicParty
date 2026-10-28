@@ -20,6 +20,12 @@ func productionTestConfig(production bool, secret string) Config {
 		Chat:  Chat{MaxHistorySize: 1000, MaxMessageLength: 200},
 		Queue: Queue{MaxSize: 1000, MaxUserSongs: 100, HistorySize: 50},
 		Performance: Performance{
+			DownloadMaxActiveTasks:       1,
+			DownloadMaxQueuedTasks:       1,
+			DownloadReservationBytes:     1024,
+			DownloadMaxFileBytes:         1024,
+			DownloadTaskTTL:              time.Minute,
+			DownloadRetryMaxDelay:        time.Second,
 			WebSocketClientQueueCapacity: 1,
 			RoomCommandQueueCapacity:     1,
 			DBWriteQueueCapacity:         1,

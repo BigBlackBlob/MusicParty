@@ -137,6 +137,7 @@ type Performance struct {
 	DownloadMaxQueuedTasks         int
 	DownloadMaxActiveTasks         int
 	DownloadReservationBytes       int64
+	DownloadMaxFileBytes           int64
 	NeteaseDownloadConcurrency     int
 	BilibiliDownloadConcurrency    int
 	YouTubeDownloadConcurrency     int
@@ -257,6 +258,7 @@ func Load(lookup LookupEnv) (Config, error) {
 		Performance: Performance{
 			DownloadMaxQueuedTasks: r.int("DOWNLOAD_MAX_QUEUED_TASKS", 100),
 			DownloadMaxActiveTasks: r.int("DOWNLOAD_MAX_ACTIVE_TASKS", 3), DownloadReservationBytes: r.int64("DOWNLOAD_RESERVATION_BYTES", 33_554_432),
+			DownloadMaxFileBytes:       r.int64("DOWNLOAD_MAX_FILE_BYTES", 268_435_456),
 			NeteaseDownloadConcurrency: r.int("NETEASE_DOWNLOAD_CONCURRENCY", 2), BilibiliDownloadConcurrency: r.int("BILIBILI_DOWNLOAD_CONCURRENCY", 1),
 			YouTubeDownloadConcurrency: r.int("YOUTUBE_DOWNLOAD_CONCURRENCY", 1), LocalDownloadConcurrency: r.int("LOCAL_DOWNLOAD_CONCURRENCY", 2),
 			DownloadTaskTTL: r.durationMS("DOWNLOAD_TASK_TTL_MS", 1_800_000), DownloadMaxRetries: r.int("DOWNLOAD_MAX_RETRIES", 3),
@@ -336,6 +338,9 @@ func (c Config) Validate() error {
 	}
 	if c.Chat.MinInterval < 0 || c.Chat.MaxHistorySize <= 0 || c.Chat.MaxMessageLength <= 0 {
 		problems = append(problems, "chat limits must be positive and interval nonnegative")
+	}
+	if c.Performance.DownloadMaxActiveTasks <= 0 || c.Performance.DownloadMaxQueuedTasks <= 0 || c.Performance.DownloadReservationBytes <= 0 || c.Performance.DownloadMaxFileBytes <= 0 || c.Performance.DownloadTaskTTL <= 0 || c.Performance.DownloadMaxRetries < 0 || c.Performance.DownloadRetryInitialDelay < 0 || c.Performance.DownloadRetryMaxDelay <= 0 {
+		problems = append(problems, "cache download limits must be positive and retries/delay nonnegative")
 	}
 	if c.Database.ConnectionTimeout <= 0 || c.Database.BusyTimeout < 0 {
 		problems = append(problems, "database timeouts are invalid")

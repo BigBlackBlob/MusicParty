@@ -141,10 +141,13 @@ func run() error {
 		if sizeErr != nil {
 			return fmt.Errorf("parse media cache size: %w", sizeErr)
 		}
-		mediaCache, sizeErr = media.NewCache("cached_media", cacheBytes, proxyClient, cfg.Performance.DownloadMaxActiveTasks, cfg.Performance.DownloadMaxQueuedTasks, cfg.Performance.DownloadMaxRetries, cfg.Performance.DownloadRetryInitialDelay, map[string]int{
-			"netease": cfg.Performance.NeteaseDownloadConcurrency, "bilibili": cfg.Performance.BilibiliDownloadConcurrency,
-			"youtube": cfg.Performance.YouTubeDownloadConcurrency, "local": cfg.Performance.LocalDownloadConcurrency,
-		})
+		mediaCache, sizeErr = media.NewCache("cached_media", cacheBytes, proxyClient, cfg.Performance.DownloadMaxActiveTasks, cfg.Performance.DownloadMaxQueuedTasks, cfg.Performance.DownloadMaxRetries, cfg.Performance.DownloadRetryInitialDelay, media.CacheOptions{
+			ReservationBytes: cfg.Performance.DownloadReservationBytes, MaxFileBytes: cfg.Performance.DownloadMaxFileBytes,
+			TaskTTL: cfg.Performance.DownloadTaskTTL, RetryMaxDelay: cfg.Performance.DownloadRetryMaxDelay,
+			PlatformLimits: map[string]int{
+				"netease": cfg.Performance.NeteaseDownloadConcurrency, "bilibili": cfg.Performance.BilibiliDownloadConcurrency,
+				"youtube": cfg.Performance.YouTubeDownloadConcurrency, "local": cfg.Performance.LocalDownloadConcurrency,
+			}})
 		if sizeErr != nil {
 			return fmt.Errorf("initialize media cache: %w", sizeErr)
 		}

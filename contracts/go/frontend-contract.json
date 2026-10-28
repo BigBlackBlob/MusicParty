@@ -80,6 +80,15 @@
     "shutdown": "cancelled running jobs return to PENDING; unstarted work remains recoverable at the next startup",
     "completion": "remove source only after COMPLETED commits; database failures preserve recovery files; deleted tracks reject task updates and completion removes newly produced output"
   },
+  "mediaCache": {
+    "capacity": "CACHE_MAX_SIZE bounds managed .media files plus active .part writes; reservations count before every write; files being served remain pinned and counted until their readers finish; insufficient reclaimable space abandons the best-effort cache download",
+    "startup": "remove abandoned partials, index all existing .media files by disk filename, and reclaim to the capacity before workers start; modification time and filename define the initial LRU order, subsequent hits update in-memory recency",
+    "downloads": "DOWNLOAD_MAX_FILE_BYTES defaults to 268435456 (256 MiB), capped by total cache capacity; reject oversized Content-Length before creating a partial and enforce the same byte limit on decoded response data of unknown length",
+    "reservations": "known response lengths reserve their size; unknown lengths initially reserve DOWNLOAD_RESERVATION_BYTES (default 33554432), capped by the file limit, then obtain additional shared quota before writes; active reservations cannot be evicted",
+    "timeout": "DOWNLOAD_TASK_TTL_MS defaults to 1800000; the deadline starts at queue admission and covers platform waiting, retries, Retry-After and body reads; local exponential backoff is capped by DOWNLOAD_RETRY_MAX_DELAY_MS",
+    "cleanup": "completion atomically renames the partial and converts reservation to committed bytes; failure and cancellation remove the partial and release quota; deletion failures keep leftover bytes indexed for eviction",
+    "playback": "background limits do not change the shared HTTP client timeout or the streaming playback proxy; only full HTTP 200 responses become cache entries"
+  },
   "resources": {
     "authorization": "cookie-based",
     "queryToken": false

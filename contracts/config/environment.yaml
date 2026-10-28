@@ -260,6 +260,14 @@
       "description": "MusicParty Go runtime configuration"
     },
     {
+      "name": "DOWNLOAD_MAX_FILE_BYTES",
+      "default": "268_435_456",
+      "required": false,
+      "secret": false,
+      "deprecated": false,
+      "description": "MusicParty Go runtime configuration"
+    },
+    {
       "name": "DOWNLOAD_MAX_QUEUED_TASKS",
       "default": "100",
       "required": false,

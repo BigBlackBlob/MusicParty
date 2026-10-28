@@ -5,11 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,6 +22,13 @@ type cacheEntry struct {
 	accessOrder uint64
 }
 
+// CacheOptions apply only to background downloads, never the playback proxy.
+type CacheOptions struct {
+	PlatformLimits                 map[string]int
+	ReservationBytes, MaxFileBytes int64
+	TaskTTL, RetryMaxDelay         time.Duration
+}
+
 func ParseByteSize(value string) (int64, error) {
 	raw := strings.ToUpper(strings.TrimSpace(value))
 	multiplier := int64(1)
@@ -35,35 +40,63 @@ func ParseByteSize(value string) (int64, error) {
 		}
 	}
 	number, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || number <= 0 {
+	if err != nil || number <= 0 || number > (1<<63-1)/multiplier {
 		return 0, errors.New("invalid cache size")
 	}
 	return number * multiplier, nil
 }
 
-type downloadJob struct{ key, url string }
-
-// Cache owns a bounded download queue, atomic .part files, and LRU space reclamation.
-type Cache struct {
-	ctx       context.Context
-	cancel    context.CancelFunc
-	root      string
-	maxBytes  int64
-	client    *http.Client
-	retries   int
-	retryBase time.Duration
-	jobs      chan downloadJob
-	mu        sync.Mutex
-	entries   map[string]cacheEntry
-	inflight  map[string]struct{}
-	limits    map[string]chan struct{}
-	accessSeq uint64
-	wait      sync.WaitGroup
-	closeOne  sync.Once
-	closed    bool
+type downloadJob struct {
+	key, url string
+	deadline time.Time
 }
 
-func NewCache(root string, maxBytes int64, client *http.Client, workers, capacity, retries int, retryBase time.Duration, platformLimits ...map[string]int) (*Cache, error) {
+// Cache accounts for committed files plus reservations covering all partial writes.
+// Entries use disk filenames, allowing startup eviction without reversing key hashes.
+type Cache struct {
+	ctx                      context.Context
+	cancel                   context.CancelFunc
+	root                     string
+	maxBytes                 int64
+	client                   *http.Client
+	retries                  int
+	retryBase                time.Duration
+	options                  CacheOptions
+	jobs                     chan downloadJob
+	mu                       sync.Mutex
+	entries                  map[string]cacheEntry
+	usedBytes, reservedBytes int64
+	inflight                 map[string]struct{}
+	readers                  map[string]int
+	limits                   map[string]chan struct{}
+	accessSeq                uint64
+	wait                     sync.WaitGroup
+	closeOne                 sync.Once
+	closed                   bool
+}
+
+func NewCache(root string, maxBytes int64, client *http.Client, workers, capacity, retries int, retryBase time.Duration, options ...CacheOptions) (*Cache, error) {
+	var opts CacheOptions
+	if len(options) > 0 {
+		opts = options[0]
+	}
+	if opts.ReservationBytes == 0 {
+		opts.ReservationBytes = 32 << 20
+	}
+	if opts.MaxFileBytes == 0 {
+		opts.MaxFileBytes = 256 << 20
+	}
+	if opts.TaskTTL == 0 {
+		opts.TaskTTL = 30 * time.Minute
+	}
+	if opts.RetryMaxDelay == 0 {
+		opts.RetryMaxDelay = 30 * time.Second
+	}
+	if maxBytes <= 0 || retries < 0 || retryBase < 0 || opts.ReservationBytes < 0 || opts.MaxFileBytes < 0 || opts.TaskTTL < 0 || opts.RetryMaxDelay < 0 {
+		return nil, errors.New("invalid cache download limits")
+	}
+	opts.MaxFileBytes = min(opts.MaxFileBytes, maxBytes)
+	opts.ReservationBytes = min(opts.ReservationBytes, opts.MaxFileBytes)
 	root, err := filepath.Abs(root)
 	if err != nil {
 		return nil, err
@@ -71,17 +104,18 @@ func NewCache(root string, maxBytes int64, client *http.Client, workers, capacit
 	if err := os.MkdirAll(root, 0o750); err != nil {
 		return nil, err
 	}
-	if partials, globErr := filepath.Glob(filepath.Join(root, "*.part")); globErr == nil {
-		for _, partial := range partials {
-			_ = os.Remove(partial)
-		}
+	if client == nil {
+		client = http.DefaultClient
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	c := &Cache{ctx: ctx, cancel: cancel, root: root, maxBytes: maxBytes, client: client, retries: retries, retryBase: retryBase, jobs: make(chan downloadJob, max(1, capacity)), entries: map[string]cacheEntry{}, inflight: map[string]struct{}{}, limits: map[string]chan struct{}{}}
-	if len(platformLimits) > 0 {
-		for platform, limit := range platformLimits[0] {
-			c.limits[platform] = make(chan struct{}, max(1, limit))
-		}
+	c := &Cache{ctx: ctx, cancel: cancel, root: root, maxBytes: maxBytes, client: client, retries: retries, retryBase: retryBase, options: opts,
+		jobs: make(chan downloadJob, max(1, capacity)), entries: map[string]cacheEntry{}, inflight: map[string]struct{}{}, readers: map[string]int{}, limits: map[string]chan struct{}{}}
+	if err := c.scan(); err != nil {
+		cancel()
+		return nil, err
+	}
+	for platform, limit := range opts.PlatformLimits {
+		c.limits[platform] = make(chan struct{}, max(1, limit))
 	}
 	for range max(1, workers) {
 		c.wait.Add(1)
@@ -90,54 +124,86 @@ func NewCache(root string, maxBytes int64, client *http.Client, workers, capacit
 	return c, nil
 }
 
+// Get locates a cached file. Use Acquire to protect it from eviction while serving.
 func (c *Cache) Get(key string) (string, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	entry, ok := c.entries[key]
+	return c.lookupLocked(filepath.Base(c.pathForKey(key)))
+}
+
+// Acquire pins a completed file until release. Otherwise eviction could unlink a
+// playing file and claim space that its open handle still occupies on disk.
+func (c *Cache) Acquire(key string) (string, func(), bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	id := filepath.Base(c.pathForKey(key))
+	path, ok := c.lookupLocked(id)
 	if !ok {
-		path := c.pathForKey(key)
-		info, err := os.Stat(path)
-		if err != nil || !info.Mode().IsRegular() {
-			return "", false
-		}
-		entry = cacheEntry{path: path, size: info.Size(), accessOrder: c.nextAccessOrderLocked()}
-		c.entries[key] = entry
+		return "", nil, false
 	}
-	if _, err := os.Stat(entry.path); err != nil {
-		delete(c.entries, key)
+	c.readers[id]++
+	release := sync.OnceFunc(func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		c.readers[id]--
+		if c.readers[id] == 0 {
+			delete(c.readers, id)
+		}
+	})
+	return path, release, true
+}
+
+func (c *Cache) lookupLocked(id string) (string, bool) {
+	path := filepath.Join(c.root, id)
+	info, err := os.Lstat(path)
+	old, exists := c.entries[id]
+	if err != nil {
+		if exists && errors.Is(err, os.ErrNotExist) {
+			c.usedBytes -= old.size
+			delete(c.entries, id)
+		}
 		return "", false
 	}
-	entry.accessOrder = c.nextAccessOrderLocked()
-	c.entries[key] = entry
-	return entry.path, true
+	if !info.Mode().IsRegular() {
+		return "", false
+	}
+	base := c.usedBytes
+	if exists {
+		base -= old.size
+	}
+	if info.Size() > (1<<63-1)-base {
+		return "", false
+	}
+	c.usedBytes = base + info.Size()
+	c.entries[id] = cacheEntry{path: path, size: info.Size(), accessOrder: c.nextAccessOrderLocked()}
+	if err := c.makeRoomLocked(0); err != nil {
+		return "", false
+	}
+	_, exists = c.entries[id]
+	return path, exists
 }
 
 func (c *Cache) Submit(key, url string) error {
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.closed {
-		c.mu.Unlock()
 		return context.Canceled
 	}
-	if _, ok := c.entries[key]; ok {
-		c.mu.Unlock()
+	if _, ok := c.lookupLocked(filepath.Base(c.pathForKey(key))); ok {
 		return nil
 	}
 	if _, ok := c.inflight[key]; ok {
-		c.mu.Unlock()
 		return nil
 	}
 	c.inflight[key] = struct{}{}
 	select {
 	case <-c.ctx.Done():
 		delete(c.inflight, key)
-		c.mu.Unlock()
 		return context.Canceled
-	case c.jobs <- downloadJob{key: key, url: url}:
-		c.mu.Unlock()
+	case c.jobs <- downloadJob{key: key, url: url, deadline: time.Now().Add(c.options.TaskTTL)}:
 		return nil
 	default:
 		delete(c.inflight, key)
-		c.mu.Unlock()
 		return ErrDownloadQueueFull
 	}
 }
@@ -149,101 +215,35 @@ func (c *Cache) Close() {
 		c.mu.Unlock()
 		c.cancel()
 		c.wait.Wait()
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		clear(c.inflight)
+		for {
+			select {
+			case <-c.jobs:
+			default:
+				return
+			}
+		}
 	})
 }
 
 func (c *Cache) worker() {
 	defer c.wait.Done()
 	for {
+		if c.ctx.Err() != nil {
+			return
+		}
 		select {
 		case <-c.ctx.Done():
 			return
 		case job := <-c.jobs:
 			c.download(job)
-			c.finish(job.key)
+			c.mu.Lock()
+			delete(c.inflight, job.key)
+			c.mu.Unlock()
 		}
 	}
-}
-
-func (c *Cache) download(job downloadJob) {
-	platform := strings.SplitN(job.key, ":", 2)[0]
-	if limit := c.limits[platform]; limit != nil {
-		select {
-		case limit <- struct{}{}:
-			defer func() { <-limit }()
-		case <-c.ctx.Done():
-			return
-		}
-	}
-	path := c.pathForKey(job.key)
-	part := path + ".part"
-	for attempt := 0; attempt <= c.retries; attempt++ {
-		if attempt > 0 {
-			delay := c.retryBase << (attempt - 1)
-			select {
-			case <-time.After(delay):
-			case <-c.ctx.Done():
-				return
-			}
-		}
-		request, err := http.NewRequestWithContext(c.ctx, http.MethodGet, job.url, nil)
-		if err != nil {
-			return
-		}
-		response, err := c.client.Do(request)
-		if err != nil {
-			continue
-		}
-		if response.StatusCode < 200 || response.StatusCode >= 300 {
-			if response.StatusCode == http.StatusTooManyRequests {
-				if delay, ok := retryAfter(response.Header.Get("Retry-After"), time.Now()); ok {
-					response.Body.Close()
-					select {
-					case <-time.After(delay):
-					case <-c.ctx.Done():
-						return
-					}
-					continue
-				}
-			}
-			response.Body.Close()
-			if response.StatusCode < 500 && response.StatusCode != http.StatusTooManyRequests {
-				return
-			}
-			continue
-		}
-		file, err := os.OpenFile(part, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o640)
-		if err != nil {
-			response.Body.Close()
-			return
-		}
-		size, copyErr := io.Copy(file, response.Body)
-		closeErr := errors.Join(file.Close(), response.Body.Close())
-		if copyErr != nil || closeErr != nil || c.ctx.Err() != nil {
-			_ = os.Remove(part)
-			continue
-		}
-		if err := os.Rename(part, path); err != nil {
-			_ = os.Remove(part)
-			return
-		}
-		c.mu.Lock()
-		c.entries[job.key] = cacheEntry{path: path, size: size, accessOrder: c.nextAccessOrderLocked()}
-		c.evictLocked()
-		c.mu.Unlock()
-		return
-	}
-	_ = os.Remove(part)
-}
-
-func retryAfter(value string, now time.Time) (time.Duration, bool) {
-	if seconds, err := strconv.Atoi(strings.TrimSpace(value)); err == nil && seconds >= 0 {
-		return time.Duration(seconds) * time.Second, true
-	}
-	if date, err := http.ParseTime(value); err == nil && date.After(now) {
-		return date.Sub(now), true
-	}
-	return 0, false
 }
 
 func (c *Cache) pathForKey(key string) string {
@@ -251,39 +251,14 @@ func (c *Cache) pathForKey(key string) string {
 	return filepath.Join(c.root, hex.EncodeToString(nameHash[:])+".media")
 }
 
-func (c *Cache) evictLocked() {
-	var total int64
-	entries := make([]struct {
-		key string
-		cacheEntry
-	}, 0, len(c.entries))
-	for key, entry := range c.entries {
-		total += entry.size
-		entries = append(entries, struct {
-			key string
-			cacheEntry
-		}{key, entry})
-	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].accessOrder < entries[j].accessOrder })
-	for _, entry := range entries {
-		if total <= c.maxBytes {
-			break
-		}
-		if os.Remove(entry.path) == nil {
-			total -= entry.size
-			delete(c.entries, entry.key)
-		}
-	}
-}
+func (c *Cache) nextAccessOrderLocked() uint64 { c.accessSeq++; return c.accessSeq }
 
-// nextAccessOrderLocked assigns a deterministic recency order while c.mu is held.
-func (c *Cache) nextAccessOrderLocked() uint64 {
-	c.accessSeq++
-	return c.accessSeq
-}
-
-func (c *Cache) finish(key string) {
-	c.mu.Lock()
-	delete(c.inflight, key)
-	c.mu.Unlock()
+func retryAfter(value string, now time.Time) (time.Duration, bool) {
+	if seconds, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64); err == nil && seconds >= 0 && seconds <= (1<<63-1)/int64(time.Second) {
+		return time.Duration(seconds) * time.Second, true
+	}
+	if date, err := http.ParseTime(value); err == nil && date.After(now) {
+		return date.Sub(now), true
+	}
+	return 0, false
 }

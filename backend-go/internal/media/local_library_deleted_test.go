@@ -26,7 +26,9 @@ func newLibraryFixture(t *testing.T) *libraryFixture {
 	require.NoError(t, err)
 	require.NoError(t, storesqlite.EnsureCompatibleSchema(context.Background(), store, true))
 	t.Cleanup(func() { _ = store.Close() })
-	transcoder := NewTranscoder("fake", 1, 1, time.Second)
+	// Keep metadata probes beside a nonexistent test binary instead of invoking
+	// ffprobe from PATH for every fake transcode.
+	transcoder := NewTranscoder(filepath.Join(t.TempDir(), "fake-ffmpeg"), 1, 1, time.Second)
 	t.Cleanup(transcoder.Close)
 	root := filepath.Join(t.TempDir(), "library")
 	repository := storesqlite.NewLocalTrackRepository(store)
