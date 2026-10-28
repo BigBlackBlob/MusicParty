@@ -30,11 +30,8 @@ func New(client *platform.Client, enabled bool, apiKey string, maxResults int, y
 func (*Service) Name() string      { return "youtube" }
 func (s *Service) Available() bool { return s.enabled && s.apiKey != "" }
 func (s *Service) Search(ctx context.Context, keyword string, offset, limit int) ([]platform.Music, error) {
-	if offset < 0 {
-		offset = 0
-	}
-	if limit < 1 {
-		limit = 1
+	if err := platform.ValidateSearch(keyword, offset, limit); err != nil {
+		return nil, err
 	}
 	// This endpoint is queried without a page token, so a page is cut out of one over-fetched
 	// window: ask for offset+limit and drop the head. Past the window the caller gets fewer

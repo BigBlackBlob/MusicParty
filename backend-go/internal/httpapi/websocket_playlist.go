@@ -224,15 +224,9 @@ func (api *WebSocketAPI) playlistCommand(ctx context.Context, client *wsruntime.
 			return
 		}
 		var musics []storesqlite.Music
-		if err := json.Unmarshal(request.Items, &musics); err != nil || len(musics) == 0 || len(musics) > playlistMaxItems {
+		if err := json.Unmarshal(request.Items, &musics); err != nil || !validPlaylistMusics(musics) {
 			nack("PAYLOAD_INVALID")
 			return
-		}
-		for _, music := range musics {
-			if !validPlaylistMusic(music) {
-				nack("PAYLOAD_INVALID")
-				return
-			}
 		}
 		var added []storesqlite.PlaylistTrack
 		if request.Scope == "user" {
@@ -334,23 +328,4 @@ func playlistLimit(value *int) int {
 		return 100
 	}
 	return min(playlistMaxTracks, *value)
-}
-
-func validPlaylistMusic(music storesqlite.Music) bool {
-	bounded := func(value string, min, max int) bool {
-		length := len([]rune(value))
-		return min <= length && length <= max
-	}
-	if !bounded(music.ID, 1, 128) || !bounded(music.Platform, 1, 64) || !bounded(music.Name, 1, 256) || !bounded(music.CoverURL, 0, 512) {
-		return false
-	}
-	if music.Duration < 0 || music.Duration > 86_400_000 || len(music.Artists) > 8 {
-		return false
-	}
-	for _, artist := range music.Artists {
-		if !bounded(artist, 0, 128) {
-			return false
-		}
-	}
-	return strings.TrimSpace(music.ID) != "" && strings.TrimSpace(music.Name) != ""
 }

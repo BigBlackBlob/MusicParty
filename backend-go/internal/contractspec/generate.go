@@ -108,7 +108,7 @@ func openAPI(routes []route) map[string]any {
 			pathItem = map[string]any{}
 			paths[item.Path] = pathItem
 		}
-		pathItem[strings.ToLower(item.Method)] = map[string]any{
+		operation := map[string]any{
 			"operationId": item.Operation,
 			"x-go-source": item.Source,
 			"responses": map[string]any{
@@ -116,6 +116,8 @@ func openAPI(routes []route) map[string]any {
 				"default": map[string]any{"$ref": "#/components/responses/Error"},
 			},
 		}
+		annotateHTTPValidation(item, operation)
+		pathItem[strings.ToLower(item.Method)] = operation
 	}
 	return map[string]any{
 		"openapi": "3.1.0",
@@ -123,6 +125,7 @@ func openAPI(routes []route) map[string]any {
 		"paths":   paths,
 		"components": map[string]any{
 			"schemas": map[string]any{
+				"MusicInput": musicInputSchema(),
 				"APIError": map[string]any{
 					"type": "object", "additionalProperties": false,
 					"required": []string{"status", "code", "message"},

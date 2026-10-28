@@ -178,6 +178,9 @@ func (api *PlaylistAPI) userAddBatch(w http.ResponseWriter, r *http.Request) err
 	if err := decodeJSONBody(r, &request); err != nil {
 		return badRequest("Invalid request body")
 	}
+	if !validPlaylistMusics(request.Musics) {
+		return badRequest("Invalid playlist items")
+	}
 	values, err := api.users.AddTracksIfAbsent(r.Context(), session.PublicID, chi.URLParam(r, "playlistId"), request.Musics)
 	if err != nil {
 		return err
@@ -299,6 +302,9 @@ func (api *PlaylistAPI) likeSong(w http.ResponseWriter, r *http.Request) error {
 	}
 	music.Platform = chi.URLParam(r, "platform")
 	music.ID = chi.URLParam(r, "musicId")
+	if !validPlaylistMusic(music) {
+		return badRequest("Invalid playlist music")
+	}
 	playlist, err := api.liked(w, r, session)
 	if err != nil {
 		return err
@@ -411,6 +417,9 @@ func (api *PlaylistAPI) roomAddTrack(w http.ResponseWriter, r *http.Request) err
 	if err := decodeJSONBody(r, &request); err != nil {
 		return badRequest("Invalid request body")
 	}
+	if !validPlaylistMusic(request.Music) {
+		return badRequest("Invalid playlist music")
+	}
 	value, err := api.roomPlaylists.AddTrack(r.Context(), chi.URLParam(r, "roomId"), chi.URLParam(r, "playlistId"), &request.Music)
 	if err != nil {
 		return err
@@ -493,6 +502,14 @@ func (api *PlaylistAPI) remoteSongs(r *http.Request, name, id string) ([]platfor
 			return nil, BadGateway("尚未配置网易云 Cookie，请联系管理员设置")
 		}
 		return nil, mapPlatformError(err)
+	}
+	if len(values) > platform.MaxPlaylistLimit {
+		return nil, BadGateway("Invalid upstream playlist items")
+	}
+	for _, music := range values {
+		if !validPlaylistMusic(toStoreMusic(music)) {
+			return nil, BadGateway("Invalid upstream playlist music")
+		}
 	}
 	return values, nil
 }

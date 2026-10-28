@@ -19,6 +19,9 @@ func New(repository *storesqlite.LocalTrackRepository) *Service {
 func (*Service) Name() string      { return "local" }
 func (s *Service) Available() bool { return s.repository != nil }
 func (s *Service) Search(ctx context.Context, keyword string, offset, limit int) ([]platform.Music, error) {
+	if err := platform.ValidateSearch(keyword, offset, limit); err != nil {
+		return nil, err
+	}
 	tracks, err := s.repository.SearchCompleted(ctx, keyword, offset, limit)
 	result := make([]platform.Music, 0, len(tracks))
 	for _, track := range tracks {

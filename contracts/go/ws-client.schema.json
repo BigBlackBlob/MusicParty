@@ -749,9 +749,64 @@
           "properties": {
             "items": {
               "items": {
-                "type": "object",
-                "x-typescript-type": "Music"
+                "properties": {
+                  "artists": {
+                    "items": {
+                      "maxLength": 128,
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "maxItems": 8,
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "coverUrl": {
+                    "maxLength": 512,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "duration": {
+                    "maximum": 86400000,
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "id": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "name": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "platform": {
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "platform"
+                ],
+                "type": "object"
               },
+              "maxItems": 200,
+              "minItems": 1,
               "type": "array"
             },
             "mutationId": {

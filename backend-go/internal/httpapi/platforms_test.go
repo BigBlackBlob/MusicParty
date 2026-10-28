@@ -91,7 +91,7 @@ func TestPlatformRoutesMatchFrozenGoldenStatuses(t *testing.T) {
 		path   string
 		status int
 		body   string
-	}{{"/api/config", 200, `"authorName"`}, {"/api/platforms", 200, `"local"`}, {"/api/search/local/contract?limit=20&offset=0", 200, "[]"}, {"/api/search/local/contract?limit=20&offset=-1", 500, "ResponseStatusException"}, {"/api/music/lyric/local/id", 200, "歌词"}, {"/api/theme/extract-cover-color?url=https://evil.test/x", 400, "Only proxied"}} {
+	}{{"/api/config", 200, `"authorName"`}, {"/api/platforms", 200, `"local"`}, {"/api/search/local/contract?limit=20&offset=0", 200, "[]"}, {"/api/search/local/contract?limit=20&offset=-1", 400, "bad-request"}, {"/api/music/lyric/local/id", 200, "歌词"}, {"/api/theme/extract-cover-color?url=https://evil.test/x", 400, "Only proxied"}} {
 		request := httptest.NewRequest(http.MethodGet, test.path, nil)
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)

@@ -44,6 +44,9 @@ func (s *Service) get(ctx context.Context, path string, query url.Values, target
 }
 
 func (s *Service) Search(ctx context.Context, keyword string, offset, limit int) ([]platform.Music, error) {
+	if err := platform.ValidateSearch(keyword, offset, limit); err != nil {
+		return nil, err
+	}
 	var response struct {
 		Result struct {
 			Songs []song `json:"songs"`
@@ -83,6 +86,9 @@ func (s *Service) UserPlaylists(ctx context.Context, userID string) ([]platform.
 	return result, err
 }
 func (s *Service) PlaylistSongs(ctx context.Context, playlistID string, offset, limit int) ([]platform.Music, error) {
+	if err := platform.ValidatePage(offset, limit, platform.MaxPlaylistLimit); err != nil {
+		return nil, err
+	}
 	var response struct {
 		Songs []song `json:"songs"`
 	}
@@ -90,6 +96,9 @@ func (s *Service) PlaylistSongs(ctx context.Context, playlistID string, offset, 
 	return mapSongs(response.Songs, ""), err
 }
 func (s *Service) SearchAlbums(ctx context.Context, keyword string, offset, limit int) (platform.AlbumSearchResult, error) {
+	if err := platform.ValidateAlbumSearch(keyword, offset, limit); err != nil {
+		return platform.AlbumSearchResult{}, err
+	}
 	var response struct {
 		Result struct {
 			Albums []struct {
@@ -135,6 +144,9 @@ func (s *Service) AlbumSongs(ctx context.Context, albumID string) ([]platform.Mu
 	return mapSongs(response.Songs, image(response.Album.PicURL)), err
 }
 func (s *Service) SearchUsers(ctx context.Context, keyword string) ([]platform.User, error) {
+	if err := platform.ValidateKeyword(keyword); err != nil {
+		return nil, err
+	}
 	var response struct {
 		Result struct {
 			Profiles []struct {

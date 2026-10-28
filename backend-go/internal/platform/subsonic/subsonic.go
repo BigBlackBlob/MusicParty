@@ -75,6 +75,9 @@ func (s *Service) CoverURL(_ context.Context, id string) (string, error) {
 	return s.endpoint("getCoverArt.view", url.Values{"id": {id}, "size": {"300"}}), nil
 }
 func (s *Service) Search(ctx context.Context, keyword string, offset, limit int) ([]platform.Music, error) {
+	if err := platform.ValidateSearch(keyword, offset, limit); err != nil {
+		return nil, err
+	}
 	var r response
 	err := s.get(ctx, "search3.view", url.Values{"query": {keyword}, "songOffset": {strconv.Itoa(offset)}, "songCount": {strconv.Itoa(limit)}, "albumCount": {"0"}, "artistCount": {"0"}}, &r)
 	return s.mapSongs(r.Body.Search.Songs), err
@@ -95,6 +98,9 @@ func (s *Service) ResolvePlayable(ctx context.Context, id string) (platform.Play
 // SearchAlbums pages through search3's albumOffset/albumCount. The response carries no total that this
 // client parses, so Total stays 0 ("unknown") and callers must fall back to a full-page heuristic.
 func (s *Service) SearchAlbums(ctx context.Context, keyword string, offset, limit int) (platform.AlbumSearchResult, error) {
+	if err := platform.ValidateAlbumSearch(keyword, offset, limit); err != nil {
+		return platform.AlbumSearchResult{}, err
+	}
 	pageSize := limit
 	if pageSize <= 0 {
 		pageSize = 50 // the historic fixed page the web route always got

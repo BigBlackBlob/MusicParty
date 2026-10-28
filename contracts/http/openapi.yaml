@@ -41,6 +41,63 @@
           "message"
         ],
         "type": "object"
+      },
+      "MusicInput": {
+        "properties": {
+          "artists": {
+            "items": {
+              "maxLength": 128,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "maxItems": 8,
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "coverUrl": {
+            "maxLength": 512,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "duration": {
+            "maximum": 86400000,
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "platform": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "platform"
+        ],
+        "type": "object"
       }
     }
   },
@@ -413,9 +470,27 @@
     "/api/album/search/{platform}": {
       "get": {
         "operationId": "get.api.album.search.platform",
+        "parameters": [
+          {
+            "description": "Nonblank search keyword, at most 128 UTF-8 bytes",
+            "in": "query",
+            "name": "keyword",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string",
+              "x-max-utf8-bytes": 128
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
           },
           "default": {
             "$ref": "#/components/responses/Error"
@@ -469,9 +544,47 @@
     "/api/desktop/v1/albums/{platform}": {
       "get": {
         "operationId": "get.api.desktop.v1.albums.platform",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "default": 0,
+              "maximum": 10000,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Nonblank search keyword, at most 128 UTF-8 bytes",
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string",
+              "x-max-utf8-bytes": 128
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
           },
           "default": {
             "$ref": "#/components/responses/Error"
@@ -623,9 +736,47 @@
     "/api/desktop/v1/search/{platform}": {
       "get": {
         "operationId": "get.api.desktop.v1.search.platform",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "default": 0,
+              "maximum": 10000,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Nonblank search keyword, at most 128 UTF-8 bytes",
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string",
+              "x-max-utf8-bytes": 128
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
           },
           "default": {
             "$ref": "#/components/responses/Error"
@@ -827,9 +978,76 @@
       },
       "put": {
         "operationId": "put.api.me.liked_songs.platform.musicId",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "artists": {
+                    "items": {
+                      "maxLength": 128,
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "maxItems": 8,
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "coverUrl": {
+                    "maxLength": 512,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "duration": {
+                    "maximum": 86400000,
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "id": {
+                    "description": "Replaced by the corresponding path parameter",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "name": {
+                    "maxLength": 256,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  "platform": {
+                    "description": "Replaced by the corresponding path parameter",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
           },
           "default": {
             "$ref": "#/components/responses/Error"
@@ -963,9 +1181,35 @@
     "/api/me/playlists/{playlistId}/tracks/batch": {
       "post": {
         "operationId": "post.api.me.playlists.playlistId.tracks.batch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "musics": {
+                    "items": {
+                      "$ref": "#/components/schemas/MusicInput"
+                    },
+                    "maxItems": 200,
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "musics"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
           },
           "default": {
             "$ref": "#/components/responses/Error"
@@ -1089,9 +1333,34 @@
     "/api/playlist/songs/{platform}/{playlistId}": {
       "get": {
         "operationId": "get.api.playlist.songs.platform.playlistId",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "default": 0,
+              "maximum": 10000,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 20,
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
           },
           "default": {
             "$ref": "#/components/responses/Error"
@@ -1289,9 +1558,30 @@
       },
       "post": {
         "operationId": "post.api.rooms.roomId.playlists.playlistId.tracks",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "music": {
+                    "$ref": "#/components/schemas/MusicInput"
+                  }
+                },
+                "required": [
+                  "music"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
           },
           "default": {
             "$ref": "#/components/responses/Error"
@@ -1345,9 +1635,47 @@
     "/api/search/{platform}/{keyword}": {
       "get": {
         "operationId": "get.api.search.platform.keyword",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "default": 0,
+              "maximum": 10000,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Nonblank search keyword, at most 128 UTF-8 bytes",
+            "in": "path",
+            "name": "keyword",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string",
+              "x-max-utf8-bytes": 128
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
           },
           "default": {
             "$ref": "#/components/responses/Error"
@@ -1443,9 +1771,27 @@
     "/api/user/search/{platform}/{keyword}": {
       "get": {
         "operationId": "get.api.user.search.platform.keyword",
+        "parameters": [
+          {
+            "description": "Nonblank search keyword, at most 128 UTF-8 bytes",
+            "in": "path",
+            "name": "keyword",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string",
+              "x-max-utf8-bytes": 128
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
           },
           "default": {
             "$ref": "#/components/responses/Error"

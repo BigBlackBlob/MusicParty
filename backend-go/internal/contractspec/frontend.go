@@ -163,6 +163,9 @@ func websocketSchema(title string, messages []messageSpec) map[string]any {
 		for _, name := range keys {
 			field := message.Payload[name]
 			payloadProperties[name] = schemaForType(field.Type)
+			if message.Name == "playlist.add-items" && name == "items" {
+				payloadProperties[name] = map[string]any{"type": "array", "minItems": 1, "maxItems": 200, "items": musicInputSchema()}
+			}
 			if name == "mutationId" && !field.Optional && !strings.HasSuffix(message.Name, ".ack") && !strings.HasSuffix(message.Name, ".nack") {
 				payloadProperties[name] = map[string]any{"type": "string", "minLength": 1, "maxLength": 128, "pattern": `\S`}
 			}

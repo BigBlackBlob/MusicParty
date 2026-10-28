@@ -268,19 +268,25 @@ func (api *PlatformAPI) authorizedPlatform(ctx context.Context, name, token stri
 	}
 	return service, nil
 }
-func queryPage(r *http.Request) (int, int, error) {
+func queryPage(r *http.Request, maxLimit int) (int, int, error) {
 	offset, err := strconv.Atoi(defaultValue(r.URL.Query().Get("offset"), "0"))
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, badRequest("Invalid pagination parameters")
 	}
 	limit, err := strconv.Atoi(defaultValue(r.URL.Query().Get("limit"), "20"))
-	return offset, limit, err
+	if err != nil || platform.ValidatePage(offset, limit, maxLimit) != nil {
+		return 0, 0, badRequest("Invalid pagination parameters")
+	}
+	return offset, limit, nil
 }
 func (api *PlatformAPI) search(w http.ResponseWriter, r *http.Request) error {
 	keyword := chi.URLParam(r, "keyword")
-	offset, limit, err := queryPage(r)
-	if err != nil || len(keyword) > 128 || offset < 0 || offset > 10000 || limit < 1 || limit > 100 {
-		return &APIError{Status: http.StatusInternalServerError, Message: "An unexpected internal server error occurred.", Name: "ResponseStatusException"}
+	offset, limit, err := queryPage(r, platform.MaxSearchLimit)
+	if err != nil {
+		return err
+	}
+	if err := platform.ValidateKeyword(keyword); err != nil {
+		return mapPlatformError(err)
 	}
 	service, err := api.authorizedService(r)
 	if err != nil {
@@ -301,7 +307,7 @@ func (api *PlatformAPI) userPlaylists(w http.ResponseWriter, r *http.Request) er
 	return writePlatformResult(w, v, err)
 }
 func (api *PlatformAPI) playlistSongs(w http.ResponseWriter, r *http.Request) error {
-	offset, limit, err := queryPage(r)
+	offset, limit, err := queryPage(r, platform.MaxPlaylistLimit)
 	if err != nil {
 		return err
 	}
@@ -316,6 +322,9 @@ func (api *PlatformAPI) playlistSongs(w http.ResponseWriter, r *http.Request) er
 	return writePlatformResult(w, v, err)
 }
 func (api *PlatformAPI) searchAlbums(w http.ResponseWriter, r *http.Request) error {
+	if err := platform.ValidateKeyword(r.URL.Query().Get("keyword")); err != nil {
+		return mapPlatformError(err)
+	}
 	service, err := api.authorizedService(r)
 	if err != nil {
 		return err
@@ -334,6 +343,9 @@ func (api *PlatformAPI) albumSongs(w http.ResponseWriter, r *http.Request) error
 	return writePlatformResult(w, v, err)
 }
 func (api *PlatformAPI) searchUsers(w http.ResponseWriter, r *http.Request) error {
+	if err := platform.ValidateKeyword(chi.URLParam(r, "keyword")); err != nil {
+		return mapPlatformError(err)
+	}
 	service, err := api.authorizedService(r)
 	if err != nil {
 		return err
@@ -452,6 +464,10 @@ func writePlatformResult(w http.ResponseWriter, value any, err error) error {
 	return nil
 }
 func mapPlatformError(err error) error {
+	var input *platform.InputError
+	if errors.As(err, &input) {
+		return badRequest(input.Message)
+	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return &APIError{Status: http.StatusGatewayTimeout, Message: "Upstream request timed out"}
 	}

@@ -49,6 +49,9 @@ func (s *Service) credential() string {
 }
 
 func (s *Service) Search(ctx context.Context, keyword string, offset, limit int) ([]platform.Music, error) {
+	if err := platform.ValidateSearch(keyword, offset, limit); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(s.credential()) == "" {
 		return nil, errors.New("bilibili SESSDATA is not configured")
 	}
@@ -242,6 +245,9 @@ func (s *Service) UserPlaylists(ctx context.Context, userID string) ([]platform.
 	return result, nil
 }
 func (s *Service) PlaylistSongs(ctx context.Context, playlistID string, offset, limit int) ([]platform.Music, error) {
+	if err := platform.ValidatePage(offset, limit, platform.MaxPlaylistLimit); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(s.credential()) == "" {
 		return nil, errors.New("bilibili SESSDATA is not configured")
 	}

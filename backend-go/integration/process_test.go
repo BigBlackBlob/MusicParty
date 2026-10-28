@@ -112,7 +112,7 @@ func TestMusicPartyProcessLifecycleAndProbes(t *testing.T) {
 		{"/api/rooms", http.StatusOK, `"roomId":"lounge"`},
 		{"/api/platforms", http.StatusOK, `"local"`},
 		{"/api/search/local/contract?offset=0&limit=20", http.StatusOK, "[]"},
-		{"/api/search/local/contract?offset=-1&limit=20", http.StatusInternalServerError, "ResponseStatusException"},
+		{"/api/search/local/contract?offset=-1&limit=20", http.StatusBadRequest, "bad-request"},
 	} {
 		response, err := client.Get(baseURL + probe.path)
 		if err != nil {

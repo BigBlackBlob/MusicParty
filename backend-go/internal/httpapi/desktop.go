@@ -12,6 +12,7 @@ import (
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/config"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/domain/account"
 	roomdomain "github.com/BigBlackBlob/MusicParty/backend-go/internal/domain/room"
+	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/realtime"
 	wsruntime "github.com/BigBlackBlob/MusicParty/backend-go/internal/ws"
 	"github.com/coder/websocket"
@@ -238,6 +239,10 @@ func (api *DesktopAPI) resolveMedia(w http.ResponseWriter, r *http.Request) erro
 }
 
 func desktopMediaError(err error) error {
+	var input *platform.InputError
+	if errors.As(err, &input) {
+		return badRequest(input.Message)
+	}
 	var apiErr *APIError
 	if errors.As(err, &apiErr) && apiErr.Status == 403 {
 		return &APIError{Status: 403, Name: "forbidden", Message: "Provider access denied"}
@@ -260,9 +265,9 @@ func (api *DesktopAPI) searchDesktop(w http.ResponseWriter, r *http.Request) err
 	if err := api.mediaSession(r); err != nil {
 		return err
 	}
-	offset, limit, err := queryPage(r)
+	offset, limit, err := queryPage(r, platform.MaxSearchLimit)
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
-	if err != nil || q == "" || len(q) > 128 || offset < 0 || offset > 10000 || limit < 1 || limit > 100 {
+	if err != nil || platform.ValidateKeyword(q) != nil {
 		return &APIError{Status: 400, Name: "invalid-request", Message: "Invalid search parameters"}
 	}
 	service, ok := api.platforms.Service(chi.URLParam(r, "platform"))
@@ -284,9 +289,9 @@ func (api *DesktopAPI) searchAlbumsDesktop(w http.ResponseWriter, r *http.Reques
 	if err := api.mediaSession(r); err != nil {
 		return err
 	}
-	offset, limit, err := queryPage(r)
+	offset, limit, err := queryPage(r, platform.MaxSearchLimit)
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
-	if err != nil || q == "" || len(q) > 128 || offset < 0 || offset > 10000 || limit < 1 || limit > 100 {
+	if err != nil || platform.ValidateKeyword(q) != nil {
 		return &APIError{Status: http.StatusBadRequest, Name: "invalid-request", Message: "Invalid album search parameters"}
 	}
 	service, ok := api.platforms.Service(chi.URLParam(r, "platform"))
