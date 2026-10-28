@@ -48,4 +48,18 @@ describe('roomRuntimeStore queue reducer', () => {
     expect(runtime.replaceQueue([], 2, true)).toBe('applied')
     expect(runtime.queue).toEqual([])
   })
+
+  it('requires a full baseline and rejects patches from another runtime generation', () => {
+    const runtime = useRoomRuntimeStore()
+    expect(runtime.applyQueuePatch({ operation: 'append', queueVersion: 1, items: [queueItem('partial')] })).toBe('version-gap')
+    expect(runtime.acceptQueueEpoch('old')).toBe(true)
+    runtime.replaceQueue([queueItem('old')], 90, true)
+    expect(runtime.applyQueuePatch({ operation: 'snapshot', queueEpoch: 'new', queueVersion: 1, queue: [] })).toBe('version-gap')
+    expect(runtime.acceptQueueEpoch('new')).toBe(true)
+    expect(runtime.replaceQueue([queueItem('restored')], 1, true)).toBe('applied')
+    expect(runtime.applyQueuePatch({ operation: 'append', queueEpoch: 'old', queueVersion: 91, items: [queueItem('obsolete')] })).toBe('stale')
+    expect(runtime.acceptQueueEpoch('old')).toBe(false)
+    expect(runtime.applyQueuePatch({ operation: 'append', queueEpoch: 'new', queueVersion: 2, items: [queueItem('next')] })).toBe('applied')
+    expect(runtime.queue.map(item => item.queueId)).toEqual(['restored', 'next'])
+  })
 })

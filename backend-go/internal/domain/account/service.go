@@ -46,6 +46,7 @@ func (accountDisabledError) Error() string { return "Account is disabled" }
 func (accountDisabledError) Is(target error) bool { return target == ErrUnknownSession }
 
 type Session struct {
+	ExpiresAt    int64  `json:"-"`
 	SessionToken string `json:"sessionToken,omitempty"`
 	PublicID     string `json:"publicId"`
 	Username     string `json:"username"`
@@ -76,13 +77,13 @@ type InviteMetadata struct {
 func (s Session) Admin() bool { return s.Role == "PLATFORM_ADMIN" || s.Role == "ADMIN" }
 
 type Service struct {
-	store    *storesqlite.Store
-	profiles *storesqlite.UserProfileRepository
-	now      func() time.Time
+	store             *storesqlite.Store
+	now               func() time.Time
+	onSessionsRevoked func([]string)
 }
 
 func New(store *storesqlite.Store) *Service {
-	return &Service{store: store, profiles: storesqlite.NewUserProfileRepository(store, nil), now: time.Now}
+	return &Service{store: store, now: time.Now}
 }
 func (s *Service) Status(ctx context.Context) (map[string]bool, error) {
 	var count int
@@ -139,19 +140,24 @@ func (s *Service) Resolve(ctx context.Context, token string) (Session, error) {
 	// Try to resolve as registered user (with user_account). Disabled accounts are
 	// selected too so that a token issued before the account was disabled cannot
 	// silently degrade into a guest session below.
-	row := s.store.Reader().QueryRowContext(ctx, `select a.public_id,a.username,p.display_name,a.role,a.enabled,a.last_login_at,p.is_guest from user_session ss join user_account a on a.public_id=ss.public_id join user_profile p on p.public_id=a.public_id where ss.session_token_hash=?`, hash)
+	row := s.store.Reader().QueryRowContext(ctx, `select a.public_id,a.username,p.display_name,a.role,a.enabled,a.last_login_at,p.is_guest,ss.created_at from user_session ss join user_account a on a.public_id=ss.public_id join user_profile p on p.public_id=a.public_id where ss.session_token_hash=?`, hash)
 	var result Session
 	var last sql.NullInt64
 	var isGuest int
-	err := row.Scan(&result.PublicID, &result.Username, &result.DisplayName, &result.Role, &result.Enabled, &last, &isGuest)
+	var createdAt int64
+	err := row.Scan(&result.PublicID, &result.Username, &result.DisplayName, &result.Role, &result.Enabled, &last, &isGuest, &createdAt)
 	if err == nil {
 		if !result.Enabled {
 			// Revoke every session of the disabled account so the stale token stops
 			// being presented at all, then report the explicit refusal.
-			if err := s.profiles.DeleteSessionsByPublicID(ctx, result.PublicID); err != nil {
+			if err := s.revokeUserSessions(ctx, result.PublicID); err != nil {
 				return Session{}, err
 			}
 			return Session{}, ErrAccountDisabled
+		}
+		result.ExpiresAt = createdAt + sessionLifetime(result.Admin()).Milliseconds()
+		if s.now().UnixMilli() >= result.ExpiresAt {
+			return Session{}, ErrUnknownSession
 		}
 		result.SessionToken = token
 		result.Guest = isGuest == 1
@@ -170,8 +176,8 @@ func (s *Service) Resolve(ctx context.Context, token string) (Session, error) {
 	// Try to resolve as guest. A guest profile must both flag is_guest=1 and have
 	// no user_account row: an account that exists but is missing here is a
 	// rejection (handled above), never a guest.
-	row = s.store.Reader().QueryRowContext(ctx, `select p.public_id,p.display_name,p.is_guest from user_session ss join user_profile p on p.public_id=ss.public_id where ss.session_token_hash=? and p.is_guest=1 and not exists (select 1 from user_account a where a.public_id=p.public_id)`, hash)
-	err = row.Scan(&result.PublicID, &result.DisplayName, &isGuest)
+	row = s.store.Reader().QueryRowContext(ctx, `select p.public_id,p.display_name,p.is_guest,ss.created_at from user_session ss join user_profile p on p.public_id=ss.public_id where ss.session_token_hash=? and p.is_guest=1 and not exists (select 1 from user_account a where a.public_id=p.public_id)`, hash)
+	err = row.Scan(&result.PublicID, &result.DisplayName, &isGuest, &createdAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Session{}, ErrUnknownSession
@@ -179,6 +185,10 @@ func (s *Service) Resolve(ctx context.Context, token string) (Session, error) {
 		return Session{}, err
 	}
 	if isGuest != 1 {
+		return Session{}, ErrUnknownSession
+	}
+	result.ExpiresAt = createdAt + MemberSessionLifetime.Milliseconds()
+	if s.now().UnixMilli() >= result.ExpiresAt {
 		return Session{}, ErrUnknownSession
 	}
 	result.SessionToken = token
@@ -204,6 +214,14 @@ func (s *Service) Login(ctx context.Context, username, password string) (Session
 	hash := tokenHash(token)
 	var display string
 	err = s.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		var currentHash, role string
+		var enabled bool
+		if err := tx.QueryRowContext(ctx, "select password_hash,role,enabled from user_account where public_id=?", account.PublicID).Scan(&currentHash, &role, &enabled); err != nil {
+			return err
+		}
+		if !enabled || currentHash != account.PasswordHash || (role != "ADMIN" && role != "PLATFORM_ADMIN") {
+			return ErrInvalidLogin
+		}
 		if _, err := tx.ExecContext(ctx, "update user_account set last_login_at=?,updated_at=? where username=?", now, now, username); err != nil {
 			return err
 		}
@@ -219,16 +237,13 @@ func (s *Service) Login(ctx context.Context, username, password string) (Session
 	if err != nil {
 		return Session{}, err
 	}
-	return Session{SessionToken: token, PublicID: account.PublicID, Username: account.Username, DisplayName: display, Role: account.Role, Enabled: true, LastLoginAt: &now}, nil
+	return Session{ExpiresAt: now + AdminSessionLifetime.Milliseconds(), SessionToken: token, PublicID: account.PublicID, Username: account.Username, DisplayName: display, Role: account.Role, Enabled: true, LastLoginAt: &now}, nil
 }
 func (s *Service) Logout(ctx context.Context, token string) error {
 	if token == "" {
 		return nil
 	}
-	return s.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, "delete from user_session where session_token_hash=?", tokenHash(token))
-		return err
-	})
+	return s.revokeSessions(ctx, "session_token_hash=?", []any{tokenHash(token)})
 }
 func (s *Service) UpdateProfile(ctx context.Context, token, displayName string) (Session, error) {
 	displayName, err := normalizeDisplayName(displayName)
@@ -272,10 +287,37 @@ func (s *Service) ChangePassword(ctx context.Context, token, current, next strin
 		return err
 	}
 	now := s.now().UnixMilli()
-	return s.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, "update user_account set password_hash=?,updated_at=? where public_id=?", nextHash, now, session.PublicID)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	ctx = context.WithoutCancel(ctx)
+	var revoked []string
+	err = s.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		var valid bool
+		if err := tx.QueryRowContext(ctx, "select exists(select 1 from user_session where session_token_hash=? and created_at>?)", tokenHash(token), now-AdminSessionLifetime.Milliseconds()).Scan(&valid); err != nil {
+			return err
+		}
+		if !valid {
+			return ErrUnknownSession
+		}
+		result, err := tx.ExecContext(ctx, "update user_account set password_hash=?,updated_at=? where public_id=? and password_hash=? and enabled=1 and role in ('ADMIN','PLATFORM_ADMIN')", nextHash, now, session.PublicID, currentHash)
+		if err != nil {
+			return err
+		}
+		count, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if count != 1 {
+			return errCurrentPassword
+		}
+		revoked, err = revokeSessionsTx(ctx, tx, "public_id=?", []any{session.PublicID})
 		return err
 	})
+	if err == nil {
+		s.sessionsRevoked(revoked)
+	}
+	return err
 }
 func (s *Service) UpgradeGuestToUser(ctx context.Context, guestToken, inviteSecret string) (Session, error) {
 	guestSession, err := s.Resolve(ctx, guestToken)
@@ -339,7 +381,7 @@ func (s *Service) UpgradeGuestToUser(ctx context.Context, guestToken, inviteSecr
 		return Session{}, err
 	}
 
-	return Session{SessionToken: newToken, PublicID: guestSession.PublicID, Username: username, DisplayName: guestSession.DisplayName, Role: "MEMBER", Guest: false, Enabled: true, LastLoginAt: &now}, nil
+	return Session{ExpiresAt: now + MemberSessionLifetime.Milliseconds(), SessionToken: newToken, PublicID: guestSession.PublicID, Username: username, DisplayName: guestSession.DisplayName, Role: "MEMBER", Guest: false, Enabled: true, LastLoginAt: &now}, nil
 }
 
 func (s *Service) RedeemInvite(ctx context.Context, secret, displayName string) (Session, error) {
@@ -391,7 +433,7 @@ func (s *Service) RedeemInvite(ctx context.Context, secret, displayName string) 
 	if err != nil {
 		return Session{}, err
 	}
-	return Session{SessionToken: token, PublicID: publicID, Username: "", DisplayName: displayName, Role: "MEMBER", Enabled: true, LastLoginAt: &now}, nil
+	return Session{ExpiresAt: now + MemberSessionLifetime.Milliseconds(), SessionToken: token, PublicID: publicID, Username: "", DisplayName: displayName, Role: "MEMBER", Enabled: true, LastLoginAt: &now}, nil
 }
 func (s *Service) CreateGuestSession(ctx context.Context, displayName string) (Session, error) {
 	displayName, err := normalizeDisplayName(displayName)
@@ -412,7 +454,7 @@ func (s *Service) CreateGuestSession(ctx context.Context, displayName string) (S
 	if err != nil {
 		return Session{}, err
 	}
-	return Session{SessionToken: token, PublicID: publicID, Username: "", DisplayName: displayName, Role: "GUEST", Guest: true, Enabled: true, LastLoginAt: &now}, nil
+	return Session{ExpiresAt: now + MemberSessionLifetime.Milliseconds(), SessionToken: token, PublicID: publicID, Username: "", DisplayName: displayName, Role: "GUEST", Guest: true, Enabled: true, LastLoginAt: &now}, nil
 }
 func (s *Service) InviteMetadata(ctx context.Context, secret string) InviteMetadata {
 	var value InviteMetadata

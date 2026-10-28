@@ -623,6 +623,9 @@ func (api *PlaylistAPI) userEnqueue(w http.ResponseWriter, r *http.Request) erro
 		musics[i] = tracks[i].Music
 	}
 	items, err := runtime.EnqueueMany(r.Context(), session, musics, uuid.NewString())
+	if errors.Is(err, realtime.ErrQueueCapacity) {
+		return &APIError{Status: http.StatusConflict, Code: "QUEUE_CAPACITY", Message: err.Error()}
+	}
 	if err != nil {
 		return err
 	}

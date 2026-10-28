@@ -31,6 +31,19 @@ export const useRoomRuntimeStore = defineStore('room-runtime', () => {
   const historyCursor = ref(0)
   const lastStateVersion = ref(0)
   const lastQueueVersion = ref(0)
+  const queueEpoch = ref('')
+  const retiredQueueEpochs = new Set<string>()
+
+  // Only a full player.state snapshot may establish a runtime generation.
+  function acceptQueueEpoch(epoch: string): boolean {
+    if (!epoch || epoch === queueEpoch.value) return true
+    if (retiredQueueEpochs.has(epoch)) return false
+    if (queueEpoch.value) retiredQueueEpochs.add(queueEpoch.value)
+    queueEpoch.value = epoch
+    lastQueueVersion.value = 0
+    queue.value = []
+    return true
+  }
   const lastPlayEpoch = ref(0)
   const lastServerTimestamp = ref(0)
   const remotePosition = ref(0)
@@ -54,6 +67,11 @@ export const useRoomRuntimeStore = defineStore('room-runtime', () => {
   }
 
   function applyQueuePatch(patch: QueuePatch): QueueUpdateResult {
+    if (patch.queueEpoch && patch.queueEpoch !== queueEpoch.value) {
+      return retiredQueueEpochs.has(patch.queueEpoch) ? 'stale' : 'version-gap'
+    }
+    if (queueEpoch.value && !patch.queueEpoch) return 'invalid'
+    if (lastQueueVersion.value === 0) return 'version-gap'
     if (patch.operation === 'snapshot') {
       return replaceQueue(patch.queue ?? [], patch.queueVersion, true)
     }
@@ -97,6 +115,8 @@ export const useRoomRuntimeStore = defineStore('room-runtime', () => {
     historyCursor.value = 0
     lastStateVersion.value = 0
     lastQueueVersion.value = 0
+    queueEpoch.value = ''
+    retiredQueueEpochs.clear()
     lastPlayEpoch.value = 0
     lastServerTimestamp.value = 0
     remotePosition.value = 0
@@ -110,7 +130,7 @@ export const useRoomRuntimeStore = defineStore('room-runtime', () => {
     isPauseLocked, isSkipLocked, isShuffleLocked, isLoading, historyCursor,
     lastStateVersion, lastQueueVersion, lastPlayEpoch, lastServerTimestamp,
     remotePosition, lastSyncTime, serverClockOffset, hasClockSample,
-    replaceQueue, applyQueuePatch,
+    queueEpoch, acceptQueueEpoch, replaceQueue, applyQueuePatch,
     reset
   }
 })

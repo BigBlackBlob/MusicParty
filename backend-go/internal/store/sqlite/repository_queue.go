@@ -158,7 +158,7 @@ func (repository *QueueRepository) LoadHistory(ctx context.Context, roomID strin
 
 // CountHistory reports every track the room has ever played. Nothing prunes room_history
 // (ReplaceHistory has no production caller), so this is the whole session rather than the
-// maxHistoryEntries window the runtime keeps in memory for control.previous.
+// configured history window the runtime keeps in memory for control.previous.
 func (repository *QueueRepository) CountHistory(ctx context.Context, roomID string) (int, error) {
 	var count int
 	if err := repository.store.reader.QueryRowContext(ctx, `select count(1) from room_history where room_id = ?`, roomID).Scan(&count); err != nil {

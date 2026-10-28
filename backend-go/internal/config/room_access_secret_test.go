@@ -17,7 +17,8 @@ func productionTestConfig(production bool, secret string) Config {
 			BaseURL:        "https://music.example",
 			AllowedOrigins: []string{"https://music.example"},
 		},
-		Queue: Queue{MaxSize: 1000},
+		Chat:  Chat{MaxHistorySize: 1000, MaxMessageLength: 200},
+		Queue: Queue{MaxSize: 1000, MaxUserSongs: 100, HistorySize: 50},
 		Performance: Performance{
 			WebSocketClientQueueCapacity: 1,
 			RoomCommandQueueCapacity:     1,

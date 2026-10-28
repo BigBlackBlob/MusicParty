@@ -122,7 +122,7 @@ func TestTrustedProxyClientIP(t *testing.T) {
 	request.Header.Set("X-Forwarded-For", "203.0.113.9, 198.51.100.2")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Body.String() != "203.0.113.9" {
+	if response.Body.String() != "198.51.100.2" {
 		t.Fatalf("client IP = %q", response.Body.String())
 	}
 }

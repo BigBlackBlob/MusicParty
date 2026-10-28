@@ -75,21 +75,19 @@ func TrustedProxyClientIP(trustedCIDRs []string) func(http.Handler) http.Handler
 			remoteAddress := parseRemoteAddress(r.RemoteAddr)
 			clientIP := remoteAddress
 			if isTrusted(net.ParseIP(remoteAddress), trusted) {
-				forwardedFound := false
-				forwarded := strings.Split(r.Header.Get("X-Forwarded-For"), ",")
-				for _, raw := range forwarded {
-					candidate := cleanAddress(raw)
-					if candidate == "" {
-						continue
-					}
-					clientIP = candidate
-					forwardedFound = true
-					break
-				}
-				if !forwardedFound {
-					if candidate := cleanAddress(r.Header.Get("X-Real-IP")); candidate != "" {
+				header := strings.TrimSpace(r.Header.Get("X-Forwarded-For"))
+				if header != "" && !strings.EqualFold(header, "unknown") {
+					forwarded := strings.Split(header, ",")
+					for i := len(forwarded) - 1; i >= 0 && isTrusted(net.ParseIP(clientIP), trusted); i-- {
+						candidate := cleanAddress(forwarded[i])
+						if net.ParseIP(candidate) == nil {
+							clientIP = remoteAddress
+							break
+						}
 						clientIP = candidate
 					}
+				} else if candidate := cleanAddress(r.Header.Get("X-Real-IP")); net.ParseIP(candidate) != nil {
+					clientIP = candidate
 				}
 			}
 			ctx := context.WithValue(r.Context(), clientIPContextKey{}, clientIP)

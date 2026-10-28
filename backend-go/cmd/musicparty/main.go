@@ -156,8 +156,31 @@ func run() error {
 		}
 		socketHub = wsruntime.NewHub(cfg.Performance.WebSocketClientQueueCapacity)
 		authAPI.SetSessionCloser(socketHub)
+		accountService.SetSessionsRevokedHook(socketHub.CloseSessionHashes)
+		if err := accountService.CleanupExpiredSessions(applicationContext); err != nil {
+			return fmt.Errorf("clean expired sessions: %w", err)
+		}
+		cleanupCtx, stopCleanup := context.WithCancel(applicationContext)
+		cleanupDone := make(chan struct{})
+		go func() {
+			defer close(cleanupDone)
+			ticker := time.NewTicker(time.Hour)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-cleanupCtx.Done():
+					return
+				case <-ticker.C:
+					if err := accountService.CleanupExpiredSessions(cleanupCtx); err != nil && cleanupCtx.Err() == nil {
+						logger.Error("clean expired sessions", "error", err)
+					}
+				}
+			}
+		}()
+		defer func() { stopCleanup(); <-cleanupDone }()
 		authAPI.SetSessionPresenceUpdater(socketHub)
-		realtimeManager = realtime.NewManager(databaseStore, cfg.Performance.RoomCommandQueueCapacity, cfg.Performance.RoomCommandQueueTimeout, cfg.Player.RoomEvictionIdle, socketHub)
+		realtimeManager = realtime.NewManager(databaseStore, cfg.Performance.RoomCommandQueueCapacity, cfg.Performance.RoomCommandQueueTimeout, cfg.Player.RoomEvictionIdle, socketHub, realtime.QueueLimits{MaxSize: cfg.Queue.MaxSize, MaxUserSongs: cfg.Queue.MaxUserSongs, HistorySize: cfg.Queue.HistorySize})
+		realtimeManager.SetChatLimits(realtime.ChatLimits{MinInterval: cfg.Chat.MinInterval, MaxHistorySize: cfg.Chat.MaxHistorySize, MaxMessageLength: cfg.Chat.MaxMessageLength})
 		defer realtimeManager.Close()
 		defer socketHub.Close()
 		if library != nil {

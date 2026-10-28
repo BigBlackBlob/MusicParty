@@ -48,6 +48,13 @@ export const useRoomStateSynchronizer = defineStore('room-state-synchronizer', (
       commands.requestResync('player-state-invalid', true)
       return
     }
+    if (state.queueVersion <= 0) { commands.requestResync('queue-version-invalid', true); return }
+    if (state.queueEpoch && state.queueEpoch !== runtime.queueEpoch) {
+      if (!runtime.acceptQueueEpoch(state.queueEpoch)) return
+      commands.resetQueueGeneration()
+      resetSyncGate()
+    }
+    if (runtime.queueEpoch && !state.queueEpoch) return
     if (state.stateVersion < lastStateVersion.value) return
     if (state.stateVersion === lastStateVersion.value && state.serverTimestamp < lastServerTimestamp.value) return
     lastStateVersion.value = state.stateVersion
@@ -58,7 +65,7 @@ export const useRoomStateSynchronizer = defineStore('room-state-synchronizer', (
     }
 
     nowPlaying.value = state.nowPlaying ?? null
-    commands.setQueue(state.queue, state.queueVersion, { snapshot: true })
+    commands.setQueue(state.queue, state.queueVersion, { snapshot: true, epoch: state.queueEpoch ?? runtime.queueEpoch })
     isPaused.value = state.isPaused
     isShuffle.value = state.isShuffle
     isPauseLocked.value = state.isPauseLocked

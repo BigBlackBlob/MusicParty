@@ -4,11 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
-	"sync"
-	"time"
 
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/config"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/domain/account"
@@ -19,6 +16,7 @@ type AuthAPI struct {
 	service       *account.Service
 	cookies       CookieFactory
 	limiter       *loginLimiter
+	guestLimiter  *loginLimiter
 	sessionCloser sessionCloser
 	presence      sessionPresenceUpdater
 }
@@ -32,7 +30,7 @@ type sessionPresenceUpdater interface {
 }
 
 func NewAuthAPI(cfg config.Config, service *account.Service) *AuthAPI {
-	return &AuthAPI{service: service, cookies: CookieFactory{SecureCookies: cfg.Auth.SecureCookies}, limiter: newLoginLimiter(cfg)}
+	return &AuthAPI{service: service, cookies: CookieFactory{SecureCookies: cfg.Auth.SecureCookies}, limiter: newLoginLimiter(cfg), guestLimiter: newLoginLimiter(cfg)}
 }
 
 // SetSessionCloser lets the realtime hub revoke existing WebSocket clients
@@ -60,6 +58,10 @@ func (api *AuthAPI) status(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 func (api *AuthAPI) createGuest(w http.ResponseWriter, r *http.Request) error {
+	if retry, blocked := api.guestLimiter.admit(ClientIP(r)); blocked {
+		w.Header().Set("Retry-After", retry)
+		return &APIError{Status: http.StatusTooManyRequests, Message: "Too many guest sessions. Try again later."}
+	}
 	var request struct {
 		DisplayName string `json:"displayName"`
 	}
@@ -84,7 +86,7 @@ func (api *AuthAPI) createGuest(w http.ResponseWriter, r *http.Request) error {
 }
 func (api *AuthAPI) login(w http.ResponseWriter, r *http.Request) error {
 	ip := ClientIP(r)
-	if retry, blocked := api.limiter.blocked(ip); blocked {
+	if retry, blocked := api.limiter.admit(ip); blocked {
 		w.Header().Set("Retry-After", retry)
 		writeErrorJSON(w, http.StatusTooManyRequests, map[string]string{"message": "Too many login attempts. Try again later."})
 		return nil
@@ -98,13 +100,11 @@ func (api *AuthAPI) login(w http.ResponseWriter, r *http.Request) error {
 	}
 	session, err := api.service.Login(r.Context(), request.Username, request.Password)
 	if err != nil {
-		api.limiter.failure(ip)
 		writeErrorJSON(w, http.StatusUnauthorized, map[string]string{"message": err.Error()})
 		return nil
 	}
 	if !session.Admin() {
 		_ = api.service.Logout(r.Context(), session.SessionToken)
-		api.limiter.failure(ip)
 		writeErrorJSON(w, http.StatusForbidden, map[string]string{"message": "Platform administrator account required"})
 		return nil
 	}
@@ -211,52 +211,3 @@ func sessionToken(r *http.Request) string {
 	}
 	return cookie.Value
 }
-
-type loginAttempt struct {
-	failures            int
-	first, blockedUntil time.Time
-}
-type loginLimiter struct {
-	mu              sync.Mutex
-	enabled         bool
-	max, maxTracked int
-	window, block   time.Duration
-	items           map[string]loginAttempt
-}
-
-func newLoginLimiter(cfg config.Config) *loginLimiter {
-	return &loginLimiter{enabled: cfg.Auth.RateLimitEnabled, max: cfg.Auth.MaxAttempts, maxTracked: cfg.Auth.MaxTrackedIPs, window: cfg.Auth.Window, block: cfg.Auth.BlockDuration, items: map[string]loginAttempt{}}
-}
-func (l *loginLimiter) blocked(ip string) (string, bool) {
-	if !l.enabled {
-		return "", false
-	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	item := l.items[ip]
-	remaining := time.Until(item.blockedUntil)
-	if remaining <= 0 {
-		return "", false
-	}
-	return fmt.Sprintf("%d", max(1, int(remaining.Seconds()+0.999))), true
-}
-func (l *loginLimiter) failure(ip string) {
-	if !l.enabled {
-		return
-	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	now := time.Now()
-	item := l.items[ip]
-	if item.first.IsZero() || now.Sub(item.first) > l.window {
-		item = loginAttempt{first: now}
-	}
-	item.failures++
-	if item.failures >= l.max {
-		item.blockedUntil = now.Add(l.block)
-	}
-	if len(l.items) < l.maxTracked || l.items[ip].failures > 0 {
-		l.items[ip] = item
-	}
-}
-func (l *loginLimiter) success(ip string) { l.mu.Lock(); delete(l.items, ip); l.mu.Unlock() }

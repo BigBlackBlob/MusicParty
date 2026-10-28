@@ -295,10 +295,12 @@ func (api *WebSocketAPI) playlistCommand(ctx context.Context, client *wsruntime.
 		for index := range values {
 			musics[index] = values[index].Music
 		}
-		items, err := runtime.EnqueueMany(ctx, session, musics, request.MutationID)
+		items, err := runtime.EnqueueMany(ctx, session, musics, queueMutationID(session, request.MutationID), "playlist.enqueue", request.Scope, request.PlaylistID)
 		if err != nil {
-			if errors.Is(err, realtime.ErrDuplicate) {
-				nack("DUPLICATE")
+			if errors.Is(err, realtime.ErrQueueCapacity) {
+				nack("QUEUE_CAPACITY")
+			} else if errors.Is(err, realtime.ErrMutationConflict) {
+				nack("MUTATION_CONFLICT")
 			} else {
 				nack("PERSISTENCE_FAILED")
 			}

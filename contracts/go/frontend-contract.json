@@ -4,7 +4,12 @@
   "authentication": {
     "transport": "same-origin HttpOnly MP_SESSION cookie",
     "csrf": "MP_CSRF cookie plus X-CSRF-Token for unsafe requests",
-    "browserReadableTokens": false
+    "browserReadableTokens": false,
+    "sessionLifetime": "absolute from user_session.created_at, including historical rows: administrators 12 hours; members and guests 90 days; Cookie and server share these durations",
+    "revocation": "password change atomically revokes every session, including the caller, and closes associated WebSockets after commit; authenticate again with the new password",
+    "cleanup": "expired sessions removed at startup and hourly; guest profiles and owned data retained",
+    "rateLimits": "login and guest creation have independent per-IP budgets using AUTH_MAX_ATTEMPTS, AUTH_WINDOW_SECONDS and AUTH_BLOCK_DURATION; reserve attempts atomically; saturated tracking rejects new sources until an active record expires",
+    "proxyChain": "trust forwarding headers only from trusted peers; strip trusted X-Forwarded-For hops from right to left and use the first untrusted address"
   },
   "rooms": {
     "list": {
@@ -32,7 +37,31 @@
   "websocket": {
     "path": "/ws?room-id={roomId}",
     "authentication": "session and room access cookies are sent by the browser",
-    "noSessionTokenField": true
+    "noSessionTokenField": true,
+    "sessionValidation": "revalidate after registration and before each command; idle sockets close at their absolute session deadline",
+    "chat": {
+      "interval": "CHAT_MIN_INTERVAL applies per authenticated user and stream; all rooms share the one public stream",
+      "length": "CHAT_MAX_LENGTH counts Unicode code points after trimming",
+      "retention": "each room and the public stream separately retain the latest CHAT_HISTORY_LIMIT messages; insert and prune commit atomically; timestamp ties follow insertion order",
+      "rejection": "RATE_LIMITED emits no chat message and persists nothing; active limiter reservations survive room runtime recreation and are bounded at 10000, rejecting new keys while full"
+    },
+    "queueSynchronization": {
+      "queueEpoch": "runtime UUID on snapshots and patches; versions are positive and monotonic within that epoch",
+      "baseline": "only a complete player.state initializes a new epoch; reject retired epochs and request resync for patches without a baseline"
+    },
+    "queueMutations": {
+      "mutationId": "required, nonblank, at most 128 UTF-8 bytes",
+      "scope": "authenticated actor plus room runtime; successful results replay for 60 seconds, across connections in that runtime only",
+      "retry": "same ID and arguments returns the original ack without a second mutation; changed arguments are rejected as MUTATION_CONFLICT",
+      "unknown": "an uncertain persistence result reserves its ID until runtime destruction and requires resync",
+      "capacity": "2048 records; reject new IDs when full instead of clearing prior reservations"
+    },
+    "queueLimits": {
+      "count": "pending items only, including priority items, excluding now-playing; per-user count uses authenticated publicId",
+      "batchOverflow": "reject the whole batch before persistence with QUEUE_CAPACITY; HTTP returns 409",
+      "history": "QUEUE_HISTORY_SIZE controls only the in-memory previous-track window; persisted history is retained"
+    },
+    "playNext": "priority tracks play before shuffle; batch top preserves visible relative order, latest top precedes earlier top, ordinary reorder changes visible order only; priority persists in queue JSON"
   },
   "resources": {
     "authorization": "cookie-based",

@@ -3,8 +3,10 @@ package httpapi
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"github.com/BigBlackBlob/MusicParty/backend-go/internal/domain/account"
 	"net/http"
 	"strings"
+	"time"
 )
 
 const (
@@ -14,8 +16,8 @@ const (
 	AdminElevationCookieName = "MP_ADMIN_ELEVATION"
 	CSRFHeaderName           = "X-CSRF-Token"
 
-	memberSessionSeconds  = 90 * 24 * 60 * 60
-	adminSessionSeconds   = 12 * 60 * 60
+	memberSessionSeconds  = int(account.MemberSessionLifetime / time.Second)
+	adminSessionSeconds   = int(account.AdminSessionLifetime / time.Second)
 	adminElevationSeconds = 10 * 60
 	roomAccessSeconds     = 5 * 60
 )

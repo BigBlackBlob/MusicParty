@@ -86,7 +86,7 @@ func TestRoomRuntimeSerializesConcurrentMutationsAndDeduplicates(t *testing.T) {
 	require.NotNil(t, snapshot["nowPlaying"])
 
 	_, err = runtime.Enqueue(context.Background(), session, storesqlite.Music{ID: "duplicate", Name: "Duplicate"}, "mutation-a")
-	require.ErrorIs(t, err, ErrDuplicate)
+	require.ErrorIs(t, err, ErrMutationConflict)
 	require.Equal(t, 50, broadcaster.count("queue.patch"))
 }
 
@@ -307,7 +307,7 @@ func TestQueueEventsMonotonicAndStaleMutationsRejected(t *testing.T) {
 			}
 		}
 	}
-	require.Equal(t, []int64{1, 2, 3}, versions)
+	require.Equal(t, []int64{2, 3, 4}, versions)
 }
 
 func TestConcurrentClientsQueueConflictAndDeduplication(t *testing.T) {
@@ -327,7 +327,7 @@ func TestConcurrentClientsQueueConflictAndDeduplication(t *testing.T) {
 	}
 	wg.Wait()
 	_, err = r.Enqueue(context.Background(), s, storesqlite.Music{ID: "dup", Name: "dup"}, "client-a")
-	require.ErrorIs(t, err, ErrDuplicate)
+	require.ErrorIs(t, err, ErrMutationConflict)
 }
 
 func TestLikesBelongToThePlayingTrackAndMirrorThePersonalLikedList(t *testing.T) {

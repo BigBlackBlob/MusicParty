@@ -377,6 +377,9 @@
               },
               "type": "array"
             },
+            "queueEpoch": {
+              "type": "string"
+            },
             "queueVersion": {
               "type": "number"
             },
@@ -780,6 +783,9 @@
                 "x-typescript-type": "QueueItem"
               },
               "type": "array"
+            },
+            "queueEpoch": {
+              "type": "string"
             },
             "queueId": {
               "type": "string"

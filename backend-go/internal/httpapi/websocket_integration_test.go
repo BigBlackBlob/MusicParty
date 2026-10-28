@@ -481,7 +481,7 @@ func TestWebSocketRoomHistoryPagesTheWholeSession(t *testing.T) {
 	latecomer.SetReadLimit(1 << 20)
 	state := readUntilType(t, latecomer, "player.state")
 	cursor := state.Payload.(map[string]any)["historyCursor"].(float64)
-	require.Equal(t, float64(100), cursor, "the in-memory window control.previous walks back over is still capped")
+	require.Equal(t, float64(testConfig(t).Queue.HistorySize), cursor, "the previous-track window follows QUEUE_HISTORY_SIZE")
 
 	// A request id comes back on the page, so two pages in flight stay distinguishable; a request
 	// without one keeps the field null rather than inventing an id.

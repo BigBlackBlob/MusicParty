@@ -109,7 +109,7 @@ func serverMessageSpecs() []messageSpec {
 		{"enqueue.nack", fields("accepted", "boolean?", "mutationId", "string", "reason", "string", "queueVersion", "number?")},
 		{"history.page", fields("roomId", "string", "total", "number", "offset", "number", "items", "PlaybackHistoryItem[]")},
 		directMessage("player.events", "PlayerEvent"),
-		{"player.state", fields("nowPlaying", "NowPlaying?", "queue", "QueueItem[]", "isShuffle", "boolean", "isPaused", "boolean", "isPauseLocked", "boolean", "isSkipLocked", "boolean", "isShuffleLocked", "boolean", "isLoading", "boolean", "serverTimestamp", "number", "stateVersion", "number", "playEpoch", "number", "queueVersion", "number", "historyCursor", "number", "idempotencyScopeId", "string?", "idempotencyTtlMs", "number?")},
+		{"player.state", fields("nowPlaying", "NowPlaying?", "queue", "QueueItem[]", "isShuffle", "boolean", "isPaused", "boolean", "isPauseLocked", "boolean", "isSkipLocked", "boolean", "isShuffleLocked", "boolean", "isLoading", "boolean", "serverTimestamp", "number", "stateVersion", "number", "playEpoch", "number", "queueVersion", "number", "queueEpoch", "string?", "historyCursor", "number", "idempotencyScopeId", "string?", "idempotencyTtlMs", "number?")},
 		{"playlist.ack", fields("operation", "string", "scope", "string", "mutationId", "string", "playlist", "PlaylistSummary?", "playlistId", "string?", "playlists", "PlaylistSummary[]?", "tracks", "PlaylistTrack[]?", "addedCount", "number?", "skippedCount", "number?", "removedCount", "number?", "count", "number?")},
 		{"playlist.data", fields("operation", "string", "scope", "string", "playlists", "PlaylistSummary[]?", "playlistId", "string?", "tracks", "PlaylistTrack[]?")},
 		{"playlist.nack", fields("operation", "string", "reason", "string", "scope", "string?", "mutationId", "string?")},
@@ -117,7 +117,7 @@ func serverMessageSpecs() []messageSpec {
 		directMessage("public-chat.message", "ChatMessage"),
 		{"queue.mutation.ack", fields("mutationId", "string")},
 		{"queue.mutation.nack", fields("mutationId", "string", "reason", "string", "queueVersion", "number?")},
-		{"queue.patch", fields("operation", "QueuePatchOperation", "queueVersion", "number", "items", "QueueItem[]?", "item", "Partial<QueueItem>?", "queue", "QueueItem[]?", "queueIds", "string[]?", "queueId", "string?", "targetQueueId", "string?", "position", "string?", "status", "string?")},
+		{"queue.patch", fields("operation", "QueuePatchOperation", "queueVersion", "number", "queueEpoch", "string?", "items", "QueueItem[]?", "item", "Partial<QueueItem>?", "queue", "QueueItem[]?", "queueIds", "string[]?", "queueId", "string?", "targetQueueId", "string?", "position", "string?", "status", "string?")},
 		{"queue.reorder.ack", fields("mutationId", "string")},
 		{"queue.reorder.nack", fields("mutationId", "string", "reason", "string", "queueVersion", "number?")},
 		directMessage("rooms.created", "RoomSummary"),
@@ -163,6 +163,9 @@ func websocketSchema(title string, messages []messageSpec) map[string]any {
 		for _, name := range keys {
 			field := message.Payload[name]
 			payloadProperties[name] = schemaForType(field.Type)
+			if name == "mutationId" && !field.Optional && !strings.HasSuffix(message.Name, ".ack") && !strings.HasSuffix(message.Name, ".nack") {
+				payloadProperties[name] = map[string]any{"type": "string", "minLength": 1, "maxLength": 128, "pattern": `\S`}
+			}
 			if !field.Optional {
 				requiredPayload = append(requiredPayload, name)
 			}
@@ -238,7 +241,7 @@ export interface PlatformDescriptor { id: string; label: string; supportsAlbumSe
 export interface Music { id: string; name: string; artists: string[]; duration: number; platform: string; coverUrl: string }
 export interface PlayableMusic extends Music { url: string; needsProxy: boolean }
 export interface NowPlaying { music: PlayableMusic; currentPosition: number; enqueuedById?: string; enqueuedByName?: string; likedUserIds: string[]; likeMarkers: number[]; playEpoch: number; positionUpdatedAt: number }
-export interface QueueItem { queueId: string; music: Music; enqueuedBy: UserSummary; status: string }
+export interface QueueItem { playbackPriority?: number; queueId: string; music: Music; enqueuedBy: UserSummary; status: string }
 export interface PlaylistSummary { id: string; ownerPublicId?: string; roomId?: string; name: string; systemKey: string | null; trackCount: number; createdAt: number; updatedAt: number }
 export interface PlaylistTrack { id: string; playlistId: string; music: Music; sortOrder: number; createdAt: number }
 export interface LocalTrack extends Music { path?: string; size?: number; modifiedAt?: number }

@@ -15,7 +15,7 @@ import { useRoomRuntimeStore } from './roomRuntimeStore'
 type ClientType = ClientEnvelope['type']
 type ClientPayload<T extends ClientType> = Extract<ClientEnvelope, { type: T }>['payload']
 type QueuePatch = QueuePatchServerEnvelope['payload']
-type DeferredQueueUpdate = { queue: QueueItem[]; version: number; snapshot: boolean }
+type DeferredQueueUpdate = { queue: QueueItem[]; version: number; snapshot: boolean; epoch: string }
 type EnqueueEnvelope = Extract<ClientEnvelope, { type: 'enqueue' | 'enqueue.album' | 'enqueue.playlist' }>
 type QueueMutationEnvelope = Extract<ClientEnvelope, { type: 'queue.top' | 'queue.remove' | 'queue.batch-top' | 'queue.batch-remove' }>
 
@@ -55,12 +55,12 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
     return realtimeClient.send('player.resync', {})
   }
 
-  function setQueue(nextQueue: QueueItem[], queueVersion: number, options: { snapshot?: boolean } = {}): boolean {
+  function setQueue(nextQueue: QueueItem[], queueVersion: number, options: { snapshot?: boolean; epoch?: string } = {}): boolean {
     if (!Number.isFinite(queueVersion)) {
       requestResync('queue-version-missing', true)
       return false
     }
-    const update = { queue: nextQueue, version: queueVersion, snapshot: options.snapshot ?? false }
+    const update = { queue: nextQueue, version: queueVersion, snapshot: options.snapshot ?? false, epoch: options.epoch ?? runtime.queueEpoch }
     if (mutationBus.hasMutationKind('reorder')) {
       deferredQueueUpdate = update
       return false
@@ -68,6 +68,11 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
     const result = runtime.replaceQueue(update.queue, update.version, update.snapshot)
     if (result === 'version-gap' || result === 'invalid') requestResync('queue-version-gap', true)
     return result === 'applied'
+  }
+
+  function resetQueueGeneration(): void {
+    deferredQueueUpdate = null
+    mutationBus.reset()
   }
 
   function applyQueuePatch(patch: QueuePatch): boolean {
@@ -80,7 +85,7 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
         requestResync('queue-patch-during-mutation', true)
         return false
       }
-      deferredQueueUpdate = { queue: patch.queue ?? [], version: patch.queueVersion, snapshot: true }
+      deferredQueueUpdate = { queue: patch.queue ?? [], version: patch.queueVersion, snapshot: true, epoch: patch.queueEpoch ?? runtime.queueEpoch }
       return false
     }
     const result = runtime.applyQueuePatch(patch)
@@ -90,7 +95,7 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
 
   function applyDeferredQueueUpdate(): void {
     if (!deferredQueueUpdate) return
-    runtime.replaceQueue(deferredQueueUpdate.queue, deferredQueueUpdate.version, deferredQueueUpdate.snapshot)
+    if (deferredQueueUpdate.epoch === runtime.queueEpoch) runtime.replaceQueue(deferredQueueUpdate.queue, deferredQueueUpdate.version, deferredQueueUpdate.snapshot)
     deferredQueueUpdate = null
   }
 
@@ -231,7 +236,7 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
 
   return {
     requireAuth,
-    setQueue, applyQueuePatch, settleQueueReorder, settleQueueMutation, settleEnqueue,
+    resetQueueGeneration, setQueue, applyQueuePatch, settleQueueReorder, settleQueueMutation, settleEnqueue,
     requestResync, playNext, playPrevious, togglePause, toggleShuffle, seek, toggleLike,
     enqueue, enqueuePlaylist, enqueueAlbum, topSong, removeSong, topSongs, removeSongs, reorderQueue,
     reset,

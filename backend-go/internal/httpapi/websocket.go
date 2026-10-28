@@ -57,6 +57,9 @@ func (api *WebSocketAPI) handle(w http.ResponseWriter, r *http.Request) {
 		_ = connection.Close(websocket.StatusPolicyViolation, "Unknown session token")
 		return
 	}
+	connectionCtx, expireSession := context.WithDeadline(r.Context(), time.UnixMilli(session.ExpiresAt))
+	defer expireSession()
+	r = r.WithContext(connectionCtx)
 	roomID := defaultValue(r.URL.Query().Get("room-id"), "lounge")
 	desktop := r.URL.Path == "/api/desktop/v1/ws"
 	if desktop {
@@ -70,15 +73,18 @@ func (api *WebSocketAPI) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	client := api.hub.RegisterSession(connection, roomID, session, token)
+	defer api.hub.Unregister(client)
+	if _, err := api.accounts.Resolve(r.Context(), token); err != nil {
+		client.Close(websocket.StatusPolicyViolation, "Session revoked")
+		return
+	}
 	runtime, err := api.runtimes.Room(r.Context(), roomID)
 	if err != nil {
 		client.Close(websocket.StatusInternalError, "Room unavailable")
-		api.hub.Unregister(client)
 		return
 	}
 	if err := runtime.Attach(r.Context()); err != nil {
 		client.Close(websocket.StatusInternalError, "Room unavailable")
-		api.hub.Unregister(client)
 		return
 	}
 	defer func() { _ = runtime.Detach(context.Background()) }()
@@ -101,7 +107,6 @@ func (api *WebSocketAPI) handle(w http.ResponseWriter, r *http.Request) {
 	case <-writeDone:
 	case <-time.After(time.Second):
 	}
-	api.hub.Unregister(client)
 }
 
 func (api *WebSocketAPI) canEnterRoom(r *http.Request, roomID string, session account.Session) bool {
@@ -138,19 +143,46 @@ func decodePayload[T any](raw json.RawMessage) (T, error) {
 func (api *WebSocketAPI) dispatch(ctx context.Context, client *wsruntime.Client, runtime *realtime.RoomRuntime, envelope inboundEnvelope) {
 	kind := canonical(envelope.Type)
 	session := client.SessionSnapshot()
+	currentSession, err := api.accounts.Resolve(ctx, session.SessionToken)
+	if err != nil {
+		client.Close(websocket.StatusPolicyViolation, "Session expired or revoked")
+		return
+	}
+	session = currentSession
+	client.UpdateIdentity(currentSession)
 	if (kind == "rooms.create" || kind == "rooms.delete") && !session.Admin() {
 		api.event(client, "CONTROL_DENIED", "administrator required")
 		return
+	}
+	if isQueueCommand(kind) {
+		if err := validateQueuePayload(kind, envelope.Payload); err != nil {
+			var request struct {
+				MutationID string `json:"mutationId"`
+			}
+			_ = json.Unmarshal(envelope.Payload, &request)
+			nack := "queue.mutation.nack"
+			if strings.HasPrefix(kind, "enqueue") {
+				nack = "enqueue.nack"
+			} else if kind == "queue.reorder" {
+				nack = "queue.reorder.nack"
+			}
+			api.nack(client, nack, request.MutationID, err)
+			return
+		}
 	}
 	switch kind {
 	case "player.resync":
 		api.scheduleResync(ctx, client, runtime, session)
 	case "sync.ping":
-		var request map[string]any
-		_ = json.Unmarshal(envelope.Payload, &request)
-		request["serverReceiveTime"] = time.Now().UnixMilli()
-		request["serverSendTime"] = time.Now().UnixMilli()
-		_ = client.Send("sync.pong", "", request)
+		var ping struct {
+			PingID         string   `json:"pingId"`
+			ClientSendTime *float64 `json:"clientSendTime"`
+		}
+		if json.Unmarshal(envelope.Payload, &ping) != nil || ping.PingID == "" || ping.ClientSendTime == nil {
+			api.event(client, "PAYLOAD_INVALID", "pingId and numeric clientSendTime are required")
+			return
+		}
+		_ = client.Send("sync.pong", "", map[string]any{"pingId": ping.PingID, "clientSendTime": *ping.ClientSendTime, "serverReceiveTime": time.Now().UnixMilli(), "serverSendTime": time.Now().UnixMilli()})
 	case "user.me":
 		_ = client.Send("user.me", "", api.currentUser(session))
 	case "users.online":
@@ -205,9 +237,9 @@ func (api *WebSocketAPI) dispatch(ctx context.Context, client *wsruntime.Client,
 			return
 		}
 		if kind == "queue.remove" {
-			err = runtime.Remove(ctx, []string{request.QueueID}, request.MutationID)
+			err = runtime.Remove(ctx, []string{request.QueueID}, queueMutationID(session, request.MutationID))
 		} else {
-			err = runtime.Top(ctx, []string{request.QueueID}, request.MutationID)
+			err = runtime.Top(ctx, []string{request.QueueID}, queueMutationID(session, request.MutationID))
 		}
 		api.mutationResult(client, request.MutationID, err, false)
 	case "queue.batch-remove", "queue.batch-top":
@@ -217,9 +249,9 @@ func (api *WebSocketAPI) dispatch(ctx context.Context, client *wsruntime.Client,
 		}](envelope.Payload)
 		if err == nil {
 			if kind == "queue.batch-remove" {
-				err = runtime.Remove(ctx, request.QueueIDs, request.MutationID)
+				err = runtime.Remove(ctx, request.QueueIDs, queueMutationID(session, request.MutationID))
 			} else {
-				err = runtime.Top(ctx, request.QueueIDs, request.MutationID)
+				err = runtime.Top(ctx, request.QueueIDs, queueMutationID(session, request.MutationID))
 			}
 		}
 		api.mutationResult(client, request.MutationID, err, false)
@@ -233,16 +265,16 @@ func (api *WebSocketAPI) dispatch(ctx context.Context, client *wsruntime.Client,
 		}](envelope.Payload)
 		if err == nil {
 			if request.QueueID != "" || request.TargetQueueID != "" {
-				err = runtime.ReorderByID(ctx, request.QueueID, request.TargetQueueID, request.Position, request.MutationID)
+				err = runtime.ReorderByID(ctx, request.QueueID, request.TargetQueueID, request.Position, queueMutationID(session, request.MutationID))
 			} else {
-				err = runtime.Reorder(ctx, request.OldIndex, request.NewIndex, request.MutationID)
+				err = runtime.Reorder(ctx, request.OldIndex, request.NewIndex, queueMutationID(session, request.MutationID))
 			}
 		}
 		api.mutationResult(client, request.MutationID, err, true)
 	case "queue.clear":
 		request, err := decodePayload[struct{ MutationID string }](envelope.Payload)
 		if err == nil {
-			err = runtime.Clear(ctx, request.MutationID)
+			err = runtime.Clear(ctx, queueMutationID(session, request.MutationID))
 		}
 		api.mutationResult(client, request.MutationID, err, false)
 	case "playlist.list", "playlist.get", "playlist.create", "playlist.rename", "playlist.delete", "playlist.add-items", "playlist.remove-items", "playlist.enqueue":
@@ -256,7 +288,9 @@ func (api *WebSocketAPI) dispatch(ctx context.Context, client *wsruntime.Client,
 			}
 			_, err = runtime.AppendChat(ctx, session, content, kind == "public-chat.message")
 		}
-		if err != nil {
+		if errors.Is(err, realtime.ErrChatRateLimited) {
+			api.event(client, "RATE_LIMITED", err.Error())
+		} else if err != nil {
 			api.event(client, "CONTROL_DENIED", err.Error())
 		}
 	case "chat.history.fetch", "public-chat.history.fetch":
@@ -400,7 +434,7 @@ func (api *WebSocketAPI) enqueueRemoteCollection(ctx context.Context, client *ws
 	for _, value := range values {
 		musics = append(musics, storesqlite.Music{ID: value.ID, Name: value.Name, Artists: value.Artists, Duration: value.Duration, Platform: value.Platform, CoverURL: value.CoverURL})
 	}
-	items, err := runtime.EnqueueMany(ctx, session, musics, request.MutationID)
+	items, err := runtime.EnqueueMany(ctx, session, musics, queueMutationID(session, request.MutationID), canonical(envelope.Type), request.Platform, request.PlaylistID, request.AlbumID)
 	if err != nil {
 		api.nack(client, "enqueue.nack", request.MutationID, err)
 		return
@@ -427,7 +461,7 @@ func (api *WebSocketAPI) enqueueRoomPlaylist(ctx context.Context, client *wsrunt
 	for i := range tracks {
 		musics[i] = tracks[i].Music
 	}
-	items, err := runtime.EnqueueMany(ctx, session, musics, request.MutationID)
+	items, err := runtime.EnqueueMany(ctx, session, musics, queueMutationID(session, request.MutationID), "room-playlist", request.PlaylistID)
 	if err != nil {
 		api.nack(client, "enqueue.nack", request.MutationID, err)
 		return
@@ -450,7 +484,7 @@ func (api *WebSocketAPI) enqueue(ctx context.Context, client *wsruntime.Client, 
 		return
 	}
 	music := storesqlite.Music{ID: playable.ID, Name: playable.Name, Artists: playable.Artists, Duration: playable.Duration, Platform: playable.Platform, CoverURL: playable.CoverURL}
-	item, err := runtime.Enqueue(ctx, session, music, request.MutationID)
+	item, err := runtime.Enqueue(ctx, session, music, queueMutationID(session, request.MutationID))
 	if err != nil {
 		api.nack(client, "enqueue.nack", request.MutationID, err)
 		return
@@ -566,10 +600,18 @@ func (api *WebSocketAPI) controlAck(client *wsruntime.Client, requestID, outcome
 }
 func (api *WebSocketAPI) nack(client *wsruntime.Client, kind, mutationID string, err error) {
 	reason := "PERSISTENCE_FAILED"
-	if errors.Is(err, realtime.ErrStaleQueue) {
+	if errors.Is(err, realtime.ErrMutationInvalid) {
+		reason = "PAYLOAD_INVALID"
+	} else if errors.Is(err, realtime.ErrQueueCapacity) {
+		reason = "QUEUE_CAPACITY"
+	} else if errors.Is(err, realtime.ErrMutationConflict) {
+		reason = "MUTATION_CONFLICT"
+	} else if errors.Is(err, realtime.ErrMutationCapacity) {
+		reason = "MUTATION_CAPACITY"
+	} else if errors.Is(err, realtime.ErrMutationUnknown) {
+		reason = "MUTATION_UNKNOWN"
+	} else if errors.Is(err, realtime.ErrStaleQueue) {
 		reason = "STALE_QUEUE"
-	} else if errors.Is(err, realtime.ErrDuplicate) {
-		reason = "DUPLICATE"
 	} else if errors.Is(err, realtime.ErrCommandQueueFull) {
 		reason = "COMMAND_REJECTED"
 	} else if err != nil && err.Error() == "guest" {

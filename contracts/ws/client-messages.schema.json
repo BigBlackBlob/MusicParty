@@ -494,6 +494,9 @@
               "type": "string"
             },
             "mutationId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "\\S",
               "type": "string"
             },
             "platform": {
@@ -539,6 +542,9 @@
               "type": "string"
             },
             "mutationId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "\\S",
               "type": "string"
             },
             "platform": {
@@ -581,6 +587,9 @@
           "additionalProperties": false,
           "properties": {
             "mutationId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "\\S",
               "type": "string"
             },
             "platform": {
@@ -626,6 +635,9 @@
           "additionalProperties": false,
           "properties": {
             "mutationId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "\\S",
               "type": "string"
             },
             "playlistId": {
@@ -743,6 +755,9 @@
               "type": "array"
             },
             "mutationId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "\\S",
               "type": "string"
             },
             "playlistId": {
@@ -789,6 +804,9 @@
           "additionalProperties": false,
           "properties": {
             "mutationId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "\\S",
               "type": "string"
             },
             "name": {
@@ -834,6 +852,9 @@
           "additionalProperties": false,
           "properties": {
             "mutationId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "\\S",
               "type": "string"
             },
             "playlistId": {
@@ -879,6 +900,9 @@
           "additionalProperties": false,
           "properties": {
             "mutationId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "\\S",
               "type": "string"
             },
             "playlistId": {
@@ -1008,6 +1032,9 @@
           "additionalProperties": false,
           "properties": {
             "mutationId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "\\S",
               "type": "string"
             },
             "playlistId": {
@@ -1060,6 +1087,9 @@
           "additionalProperties": false,
           "properties": {
             "mutationId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "\\S",
               "type": "string"
             },
             "name": {
@@ -1184,6 +1214,9 @@
           "additionalProperties": false,
           "properties": {
             "mutationId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "\\S",
               "type": "string"
             },
             "queueIds": {
@@ -1228,6 +1261,9 @@
           "additionalProperties": false,
           "properties": {
             "mutationId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "\\S",
               "type": "string"
             },
             "queueIds": {
@@ -1272,6 +1308,9 @@
           "additionalProperties": false,
           "properties": {
             "mutationId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "\\S",
               "type": "string"
             }
           },
@@ -1309,6 +1348,9 @@
           "additionalProperties": false,
           "properties": {
             "mutationId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "\\S",
               "type": "string"
             },
             "queueId": {
@@ -1350,6 +1392,9 @@
           "additionalProperties": false,
           "properties": {
             "mutationId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "\\S",
               "type": "string"
             },
             "newIndex": {
@@ -1402,6 +1447,9 @@
           "additionalProperties": false,
           "properties": {
             "mutationId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "\\S",
               "type": "string"
             },
             "queueId": {

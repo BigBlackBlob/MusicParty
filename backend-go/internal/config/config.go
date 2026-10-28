@@ -328,8 +328,14 @@ func (c Config) Validate() error {
 			problems = append(problems, fmt.Sprintf("ROOM_ACCESS_TOKEN_SECRET must be at least %d characters in production deployments", minRoomAccessTokenSecretLength))
 		}
 	}
-	if c.Queue.MaxSize <= 0 || c.Performance.WebSocketClientQueueCapacity <= 0 || c.Performance.RoomCommandQueueCapacity <= 0 || c.Performance.DBWriteQueueCapacity <= 0 {
+	if c.Queue.MaxSize <= 0 || c.Queue.MaxUserSongs <= 0 || c.Queue.HistorySize < 0 || c.Performance.WebSocketClientQueueCapacity <= 0 || c.Performance.RoomCommandQueueCapacity <= 0 || c.Performance.DBWriteQueueCapacity <= 0 {
 		problems = append(problems, "queue capacities must be positive")
+	}
+	if c.Auth.RateLimitEnabled && (c.Auth.MaxAttempts <= 0 || c.Auth.MaxTrackedIPs <= 0 || c.Auth.Window <= 0 || c.Auth.BlockDuration <= 0) {
+		problems = append(problems, "authentication rate limits must be positive")
+	}
+	if c.Chat.MinInterval < 0 || c.Chat.MaxHistorySize <= 0 || c.Chat.MaxMessageLength <= 0 {
+		problems = append(problems, "chat limits must be positive and interval nonnegative")
 	}
 	if c.Database.ConnectionTimeout <= 0 || c.Database.BusyTimeout < 0 {
 		problems = append(problems, "database timeouts are invalid")

@@ -19,17 +19,12 @@ import (
 var (
 	ErrCommandQueueFull   = errors.New("room command queue is full")
 	ErrStaleQueue         = errors.New("stale queue mutation")
-	ErrDuplicate          = errors.New("duplicate mutation")
 	ErrControlLocked      = errors.New("playback control is locked")
 	ErrControlDenied      = errors.New("playback control is denied")
 	ErrSeekForbidden      = errors.New("playback seek is forbidden")
 	ErrPreconditionFailed = errors.New("playback precondition failed")
 	ErrNoHistory          = errors.New("no playback history available")
 )
-
-// maxHistoryEntries bounds the in-memory playback history that powers
-// control.previous; older entries stay in the database but are not reachable.
-const maxHistoryEntries = 100
 
 type Broadcaster interface {
 	BroadcastRoom(string, string, any)
@@ -60,10 +55,16 @@ type Manager struct {
 	mu          sync.Mutex
 	runtimes    map[string]*RoomRuntime
 	closed      bool
+	limits      QueueLimits
+	chat        *chatPolicy
 }
 
-func NewManager(store *storesqlite.Store, queueSize int, timeout, idle time.Duration, broadcaster Broadcaster) *Manager {
-	return &Manager{store: store, queueSize: max(1, queueSize), timeout: timeout, idle: idle, broadcaster: broadcaster, runtimes: map[string]*RoomRuntime{}}
+func NewManager(store *storesqlite.Store, queueSize int, timeout, idle time.Duration, broadcaster Broadcaster, limits ...QueueLimits) *Manager {
+	queueLimits := QueueLimits{MaxSize: 1000, MaxUserSongs: 100, HistorySize: 50}
+	if len(limits) > 0 {
+		queueLimits = limits[0]
+	}
+	return &Manager{chat: newChatPolicy(ChatLimits{MinInterval: time.Second, MaxHistorySize: 1000, MaxMessageLength: 200}), limits: queueLimits, store: store, queueSize: max(1, queueSize), timeout: timeout, idle: idle, broadcaster: broadcaster, runtimes: map[string]*RoomRuntime{}}
 }
 
 func (m *Manager) Room(ctx context.Context, roomID string) (*RoomRuntime, error) {
@@ -86,7 +87,7 @@ func (m *Manager) Room(ctx context.Context, roomID string) (*RoomRuntime, error)
 		m.mu.Lock()
 		delete(m.runtimes, roomID)
 		m.mu.Unlock()
-	})
+	}, m.limits, m.chat)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +162,9 @@ type RoomRuntime struct {
 	done             chan struct{}
 	timeout          time.Duration
 	broadcaster      Broadcaster
-	mutations        map[string]struct{}
+	mutations        map[string]queueMutationRecord
+	limits           QueueLimits
+	chat             *chatPolicy
 	controlScope     string
 	controlMutations map[controlKey]controlRecord
 	idle             time.Duration
@@ -172,7 +175,7 @@ type RoomRuntime struct {
 	closeOnce        sync.Once
 }
 
-func newRoomRuntime(ctx context.Context, store *storesqlite.Store, roomID string, capacity int, timeout, idle time.Duration, broadcaster Broadcaster, onClose func()) (*RoomRuntime, error) {
+func newRoomRuntime(ctx context.Context, store *storesqlite.Store, roomID string, capacity int, timeout, idle time.Duration, broadcaster Broadcaster, onClose func(), limits QueueLimits, chat *chatPolicy) (*RoomRuntime, error) {
 	queueRepo := storesqlite.NewQueueRepository(store, time.Now)
 	queue, err := queueRepo.LoadQueue(ctx, roomID)
 	if err != nil {
@@ -188,8 +191,8 @@ func newRoomRuntime(ctx context.Context, store *storesqlite.Store, roomID string
 		state = &storesqlite.PlaybackState{RoomID: roomID, LikedUserIDs: map[string]struct{}{}, LikeMarkers: []int64{}, LastPersistedAt: now}
 	}
 	runtimeCtx, cancel := context.WithCancel(context.Background())
-	r := &RoomRuntime{roomID: roomID, queueRepo: queueRepo, stateRepo: stateRepo, realtimeRepo: storesqlite.NewRealtimeRepository(store, time.Now), chatRepo: storesqlite.NewChatRepository(store), playlistRepo: storesqlite.NewUserPlaylistRepository(store, time.Now, nil), queue: queue, state: *state, commands: make(chan command, capacity), ctx: runtimeCtx, cancel: cancel, done: make(chan struct{}), timeout: timeout, broadcaster: broadcaster, mutations: map[string]struct{}{}, idle: idle, lastActivity: time.Now(), onClose: onClose}
-	if history, historyErr := queueRepo.LoadHistory(ctx, roomID, maxHistoryEntries); historyErr == nil {
+	r := &RoomRuntime{roomID: roomID, queueRepo: queueRepo, stateRepo: stateRepo, realtimeRepo: storesqlite.NewRealtimeRepository(store, time.Now), chatRepo: storesqlite.NewChatRepository(store), playlistRepo: storesqlite.NewUserPlaylistRepository(store, time.Now, nil), queue: queue, state: *state, commands: make(chan command, capacity), ctx: runtimeCtx, cancel: cancel, done: make(chan struct{}), timeout: timeout, broadcaster: broadcaster, queueVersion: 1, limits: limits, chat: chat, mutations: map[string]queueMutationRecord{}, idle: idle, lastActivity: time.Now(), onClose: onClose}
+	if history, historyErr := queueRepo.LoadHistory(ctx, roomID, limits.HistorySize); historyErr == nil {
 		r.history = history
 	}
 	r.controlScope = uuid.NewString()
@@ -248,14 +251,14 @@ func (r *RoomRuntime) Detach(ctx context.Context) error {
 }
 
 func (r *RoomRuntime) Enqueue(ctx context.Context, session account.Session, music storesqlite.Music, mutationID string) (storesqlite.QueueItem, error) {
-	value, err := r.Execute(ctx, func(runtime *RoomRuntime) (any, error) {
-		if err := runtime.claimMutation(mutationID); err != nil {
-			return nil, err
-		}
+	value, err := r.executeQueue(ctx, mutationID, []any{"enqueue", session.PublicID, music.Platform, music.ID}, func(runtime *RoomRuntime) (any, error) {
 		item := storesqlite.QueueItem{QueueID: uuid.NewString(), Music: music, EnqueuedBy: storesqlite.UserSummary{PublicID: session.PublicID, Name: session.DisplayName, Guest: session.Guest}, Status: "PENDING"}
 		next := append(slices.Clone(runtime.queue), item)
 		nextState := clonePlaybackState(runtime.state)
 		started := startFirst(&nextState, &next)
+		if err := runtime.checkQueueCapacity(session.PublicID, next); err != nil {
+			return nil, err
+		}
 		if started {
 			if err := runtime.realtimeRepo.CommitRoomState(ctx, runtime.roomID, next, nextState, nil); err != nil {
 				return nil, err
@@ -265,9 +268,8 @@ func (r *RoomRuntime) Enqueue(ctx context.Context, session account.Session, musi
 		}
 		runtime.queue = next
 		runtime.state = nextState
-		runtime.rememberMutation(mutationID)
 		runtime.queueVersion++
-		runtime.broadcast("queue.patch", map[string]any{"operation": "append", "queueVersion": runtime.queueVersion, "items": []storesqlite.QueueItem{item}})
+		runtime.broadcast("queue.patch", map[string]any{"operation": "append", "queueEpoch": runtime.controlScope, "queueVersion": runtime.queueVersion, "items": []storesqlite.QueueItem{item}})
 		runtime.broadcastState()
 		return item, nil
 	})
@@ -277,11 +279,15 @@ func (r *RoomRuntime) Enqueue(ctx context.Context, session account.Session, musi
 	return value.(storesqlite.QueueItem), nil
 }
 
-func (r *RoomRuntime) EnqueueMany(ctx context.Context, session account.Session, musics []storesqlite.Music, mutationID string) ([]storesqlite.QueueItem, error) {
-	value, err := r.Execute(ctx, func(runtime *RoomRuntime) (any, error) {
-		if err := runtime.claimMutation(mutationID); err != nil {
-			return nil, err
-		}
+// EnqueueMany admits a whole batch or rejects it without changes. Collection
+// identifies the authorized source request so metadata and playlist edits do not
+// turn an identical retry into a new mutation.
+func (r *RoomRuntime) EnqueueMany(ctx context.Context, session account.Session, musics []storesqlite.Music, mutationID string, collection ...string) ([]storesqlite.QueueItem, error) {
+	fingerprint := []any{"enqueue-many", session.PublicID, musics}
+	if len(collection) > 0 {
+		fingerprint = []any{"enqueue-collection", session.PublicID, collection}
+	}
+	value, err := r.executeQueue(ctx, mutationID, fingerprint, func(runtime *RoomRuntime) (any, error) {
 		if len(musics) == 0 {
 			return nil, errors.New("playlist is empty")
 		}
@@ -292,6 +298,9 @@ func (r *RoomRuntime) EnqueueMany(ctx context.Context, session account.Session, 
 		next := append(slices.Clone(runtime.queue), items...)
 		nextState := clonePlaybackState(runtime.state)
 		started := startFirst(&nextState, &next)
+		if err := runtime.checkQueueCapacity(session.PublicID, next); err != nil {
+			return nil, err
+		}
 		if started {
 			if err := runtime.realtimeRepo.CommitRoomState(ctx, runtime.roomID, next, nextState, nil); err != nil {
 				return nil, err
@@ -301,9 +310,8 @@ func (r *RoomRuntime) EnqueueMany(ctx context.Context, session account.Session, 
 		}
 		runtime.queue = next
 		runtime.state = nextState
-		runtime.rememberMutation(mutationID)
 		runtime.queueVersion++
-		runtime.broadcast("queue.patch", map[string]any{"operation": "append", "queueVersion": runtime.queueVersion, "items": items})
+		runtime.broadcast("queue.patch", map[string]any{"operation": "append", "queueEpoch": runtime.controlScope, "queueVersion": runtime.queueVersion, "items": items})
 		runtime.broadcastState()
 		return items, nil
 	})
@@ -314,10 +322,7 @@ func (r *RoomRuntime) EnqueueMany(ctx context.Context, session account.Session, 
 }
 
 func (r *RoomRuntime) Remove(ctx context.Context, ids []string, mutationID string) error {
-	_, err := r.Execute(ctx, func(runtime *RoomRuntime) (any, error) {
-		if err := runtime.claimMutation(mutationID); err != nil {
-			return nil, err
-		}
+	_, err := r.executeQueue(ctx, mutationID, []any{"remove", ids}, func(runtime *RoomRuntime) (any, error) {
 		remove := map[string]struct{}{}
 		for _, id := range ids {
 			remove[id] = struct{}{}
@@ -330,9 +335,8 @@ func (r *RoomRuntime) Remove(ctx context.Context, ids []string, mutationID strin
 			return nil, err
 		}
 		runtime.queue = next
-		runtime.rememberMutation(mutationID)
 		runtime.queueVersion++
-		runtime.broadcast("queue.patch", map[string]any{"operation": "remove", "queueVersion": runtime.queueVersion, "queueIds": ids})
+		runtime.broadcast("queue.patch", map[string]any{"operation": "remove", "queueEpoch": runtime.controlScope, "queueVersion": runtime.queueVersion, "queueIds": ids})
 		runtime.broadcastState()
 		return nil, nil
 	})
@@ -340,10 +344,7 @@ func (r *RoomRuntime) Remove(ctx context.Context, ids []string, mutationID strin
 }
 
 func (r *RoomRuntime) Top(ctx context.Context, ids []string, mutationID string) error {
-	_, err := r.Execute(ctx, func(runtime *RoomRuntime) (any, error) {
-		if err := runtime.claimMutation(mutationID); err != nil {
-			return nil, err
-		}
+	_, err := r.executeQueue(ctx, mutationID, []any{"top", ids}, func(runtime *RoomRuntime) (any, error) {
 		selected := []storesqlite.QueueItem{}
 		rest := []storesqlite.QueueItem{}
 		wanted := map[string]struct{}{}
@@ -360,14 +361,20 @@ func (r *RoomRuntime) Top(ctx context.Context, ids []string, mutationID string) 
 		if len(selected) == 0 {
 			return nil, ErrStaleQueue
 		}
+		var priority int64
+		for _, item := range runtime.queue {
+			priority = max(priority, item.PlaybackPriority)
+		}
+		for i := range selected {
+			selected[i].PlaybackPriority = priority + int64(len(selected)-i)
+		}
 		next := append(selected, rest...)
 		if err := runtime.queueRepo.SynchronizeQueue(ctx, runtime.roomID, next); err != nil {
 			return nil, err
 		}
 		runtime.queue = next
-		runtime.rememberMutation(mutationID)
 		runtime.queueVersion++
-		runtime.broadcast("queue.patch", map[string]any{"operation": "snapshot", "queueVersion": runtime.queueVersion, "queue": next})
+		runtime.broadcast("queue.patch", map[string]any{"operation": "snapshot", "queueEpoch": runtime.controlScope, "queueVersion": runtime.queueVersion, "queue": next})
 		runtime.broadcastState()
 		return nil, nil
 	})
@@ -375,10 +382,7 @@ func (r *RoomRuntime) Top(ctx context.Context, ids []string, mutationID string) 
 }
 
 func (r *RoomRuntime) Reorder(ctx context.Context, oldIndex, newIndex int, mutationID string) error {
-	_, err := r.Execute(ctx, func(runtime *RoomRuntime) (any, error) {
-		if err := runtime.claimMutation(mutationID); err != nil {
-			return nil, err
-		}
+	_, err := r.executeQueue(ctx, mutationID, []any{"reorder", oldIndex, newIndex}, func(runtime *RoomRuntime) (any, error) {
 		if oldIndex < 0 || oldIndex >= len(runtime.queue) || newIndex < 0 || newIndex >= len(runtime.queue) {
 			return nil, ErrStaleQueue
 		}
@@ -390,9 +394,8 @@ func (r *RoomRuntime) Reorder(ctx context.Context, oldIndex, newIndex int, mutat
 			return nil, err
 		}
 		runtime.queue = next
-		runtime.rememberMutation(mutationID)
 		runtime.queueVersion++
-		runtime.broadcast("queue.patch", map[string]any{"operation": "snapshot", "queueVersion": runtime.queueVersion, "queue": next})
+		runtime.broadcast("queue.patch", map[string]any{"operation": "snapshot", "queueEpoch": runtime.controlScope, "queueVersion": runtime.queueVersion, "queue": next})
 		runtime.broadcastState()
 		return nil, nil
 	})
@@ -400,10 +403,7 @@ func (r *RoomRuntime) Reorder(ctx context.Context, oldIndex, newIndex int, mutat
 }
 
 func (r *RoomRuntime) ReorderByID(ctx context.Context, queueID, targetQueueID, placement, mutationID string) error {
-	_, err := r.Execute(ctx, func(runtime *RoomRuntime) (any, error) {
-		if err := runtime.claimMutation(mutationID); err != nil {
-			return nil, err
-		}
+	_, err := r.executeQueue(ctx, mutationID, []any{"reorder-id", queueID, targetQueueID, placement}, func(runtime *RoomRuntime) (any, error) {
 		if queueID == "" || targetQueueID == "" || queueID == targetQueueID {
 			return nil, ErrStaleQueue
 		}
@@ -438,9 +438,8 @@ func (r *RoomRuntime) ReorderByID(ctx context.Context, queueID, targetQueueID, p
 			return nil, err
 		}
 		runtime.queue = next
-		runtime.rememberMutation(mutationID)
 		runtime.queueVersion++
-		runtime.broadcast("queue.patch", map[string]any{"operation": "move", "queueVersion": runtime.queueVersion, "queueId": queueID, "targetQueueId": targetQueueID, "position": placement})
+		runtime.broadcast("queue.patch", map[string]any{"operation": "move", "queueEpoch": runtime.controlScope, "queueVersion": runtime.queueVersion, "queueId": queueID, "targetQueueId": targetQueueID, "position": placement})
 		runtime.broadcastState()
 		return nil, nil
 	})
@@ -690,10 +689,7 @@ func (r *RoomRuntime) historyCursor() int {
 }
 
 func (r *RoomRuntime) Clear(ctx context.Context, mutationID string) error {
-	_, err := r.Execute(ctx, func(runtime *RoomRuntime) (any, error) {
-		if err := runtime.claimMutation(mutationID); err != nil {
-			return nil, err
-		}
+	_, err := r.executeQueue(ctx, mutationID, []any{"clear"}, func(runtime *RoomRuntime) (any, error) {
 		if len(runtime.queue) == 0 {
 			return nil, ErrStaleQueue
 		}
@@ -702,9 +698,8 @@ func (r *RoomRuntime) Clear(ctx context.Context, mutationID string) error {
 			return nil, err
 		}
 		runtime.queue = next
-		runtime.rememberMutation(mutationID)
 		runtime.queueVersion++
-		runtime.broadcast("queue.patch", map[string]any{"operation": "clear", "queueVersion": runtime.queueVersion, "queue": next})
+		runtime.broadcast("queue.patch", map[string]any{"operation": "clear", "queueEpoch": runtime.controlScope, "queueVersion": runtime.queueVersion, "queue": next})
 		runtime.broadcastState()
 		return nil, nil
 	})
@@ -747,7 +742,7 @@ func (r *RoomRuntime) dropCurrentTrack(ctx context.Context, queue []storesqlite.
 	nextState.CurrentEnqueuerName = nil
 	nextState.LikedUserIDs = map[string]struct{}{}
 	nextState.LikeMarkers = []int64{}
-	// A reload is a removal, not a skip, so it ignores shuffle and takes the head of the queue.
+	// A removal ignores shuffle but still honors explicitly prioritized tracks.
 	skipShuffle := nextState.Shuffle
 	nextState.Shuffle = false
 	if len(nextQueue) > 0 {
@@ -773,7 +768,7 @@ func (r *RoomRuntime) dropCurrentTrack(ctx context.Context, queue []storesqlite.
 	r.queue = nextQueue
 	r.state = nextState
 	r.queueVersion++
-	r.broadcast("queue.patch", map[string]any{"operation": "snapshot", "queueVersion": r.queueVersion, "queue": nextQueue})
+	r.broadcast("queue.patch", map[string]any{"operation": "snapshot", "queueEpoch": r.controlScope, "queueVersion": r.queueVersion, "queue": nextQueue})
 	r.broadcastState()
 	return nil
 }
@@ -819,13 +814,13 @@ func (r *RoomRuntime) advance(ctx context.Context) error {
 	r.advancePending = false
 	if history != nil {
 		r.history = append([]storesqlite.HistoryEntry{*history}, r.history...)
-		if len(r.history) > maxHistoryEntries {
-			r.history = r.history[:maxHistoryEntries]
+		if len(r.history) > r.limits.HistorySize {
+			r.history = r.history[:r.limits.HistorySize]
 		}
 	}
 	r.historySkipped = 0
 	r.queueVersion++
-	r.broadcast("queue.patch", map[string]any{"operation": "snapshot", "queueVersion": r.queueVersion, "queue": nextQueue})
+	r.broadcast("queue.patch", map[string]any{"operation": "snapshot", "queueEpoch": r.controlScope, "queueVersion": r.queueVersion, "queue": nextQueue})
 	r.broadcastState()
 	return nil
 }
@@ -835,17 +830,29 @@ func (r *RoomRuntime) AppendChat(ctx context.Context, session account.Session, c
 	if content == "" {
 		return storesqlite.ChatMessage{}, errors.New("chat message is empty")
 	}
-	if len([]rune(content)) > 200 {
+	if len([]rune(content)) > r.chat.limits.MaxMessageLength {
 		return storesqlite.ChatMessage{}, errors.New("chat message is too long")
 	}
-	message := storesqlite.ChatMessage{ID: uuid.NewString(), UserID: session.PublicID, UserName: session.DisplayName, Content: content, Timestamp: time.Now().UnixMilli(), Type: "CHAT"}
+	stream := r.roomID
+	if public {
+		stream = ""
+	}
+	key := chatKey{stream: stream, user: session.PublicID}
+	reservation, err := r.chat.reserve(key)
+	if err != nil {
+		return storesqlite.ChatMessage{}, err
+	}
+	message := storesqlite.ChatMessage{ID: uuid.NewString(), UserID: session.PublicID, UserName: session.DisplayName, Content: content, Timestamp: reservation.UnixMilli(), Type: "CHAT"}
 	var room *string
 	messageType := "public-chat.message"
 	if !public {
 		room = &r.roomID
 		messageType = "chat.message"
 	}
-	if err := r.chatRepo.AppendMessage(ctx, room, message); err != nil {
+	if err := r.chatRepo.AppendMessageRetaining(ctx, room, message, r.chat.limits.MaxHistorySize); err != nil {
+		if ctx.Err() == nil && !errors.Is(err, storesqlite.ErrClosed) {
+			r.chat.release(key, reservation)
+		}
 		return storesqlite.ChatMessage{}, err
 	}
 	if public {
@@ -882,7 +889,7 @@ type PlaybackHistoryItem struct {
 
 // PlaybackHistoryPage answers `history.list`: the whole session, newest first, one page at a time.
 // Total counts every row the room ever wrote, which is deliberately larger than the
-// maxHistoryEntries window the runtime keeps for control.previous.
+// configured history window the runtime keeps for control.previous.
 type PlaybackHistoryPage struct {
 	RoomID string                `json:"roomId"`
 	Total  int                   `json:"total"`
@@ -970,11 +977,17 @@ func startFirst(state *storesqlite.PlaybackState, queue *[]storesqlite.QueueItem
 	return true
 }
 
-// takeNext selects and removes one item while preserving the order of the
-// remaining visible queue.
+// takeNext consumes explicit priority before shuffle while preserving the
+// visible order of the remaining queue.
 func takeNext(state *storesqlite.PlaybackState, queue *[]storesqlite.QueueItem) storesqlite.QueueItem {
 	index := 0
-	if state.Shuffle {
+	var priority int64
+	for i, item := range *queue {
+		if item.PlaybackPriority > priority {
+			index, priority = i, item.PlaybackPriority
+		}
+	}
+	if priority == 0 && state.Shuffle {
 		index = rand.IntN(len(*queue))
 	}
 	item := (*queue)[index]
@@ -1029,30 +1042,12 @@ func position(state storesqlite.PlaybackState, now int64) int64 {
 	}
 	return max(0, state.PositionAnchor+now-state.TimestampAnchor)
 }
-func (r *RoomRuntime) claimMutation(id string) error {
-	if id == "" {
-		return nil
-	}
-	if _, ok := r.mutations[id]; ok {
-		return ErrDuplicate
-	}
-	return nil
-}
-func (r *RoomRuntime) rememberMutation(id string) {
-	if id == "" {
-		return
-	}
-	if len(r.mutations) > 2048 {
-		clear(r.mutations)
-	}
-	r.mutations[id] = struct{}{}
-}
 func (r *RoomRuntime) snapshot() map[string]any {
 	var nowPlaying any
 	if r.state.CurrentMusic != nil {
 		nowPlaying = map[string]any{"music": r.state.CurrentMusic, "currentPosition": position(r.state, time.Now().UnixMilli()), "enqueuedById": r.state.CurrentEnqueuerID, "enqueuedByName": r.state.CurrentEnqueuerName, "likedUserIds": setValues(r.state.LikedUserIDs), "likeMarkers": r.state.LikeMarkers, "playEpoch": r.state.PlayEpoch, "positionUpdatedAt": r.state.PositionUpdatedAt}
 	}
-	return map[string]any{"nowPlaying": nowPlaying, "queue": r.queue, "isShuffle": r.state.Shuffle, "isPaused": r.state.Paused, "isPauseLocked": r.state.PauseLocked, "isSkipLocked": r.state.SkipLocked, "isShuffleLocked": r.state.ShuffleLocked, "isLoading": r.state.Loading, "serverTimestamp": time.Now().UnixMilli(), "stateVersion": r.state.StateVersion, "playEpoch": r.state.PlayEpoch, "queueVersion": r.queueVersion, "historyCursor": r.historyCursor(), "idempotencyScopeId": r.controlScope, "idempotencyTtlMs": ControlMutationTTL.Milliseconds()}
+	return map[string]any{"nowPlaying": nowPlaying, "queue": r.queue, "isShuffle": r.state.Shuffle, "isPaused": r.state.Paused, "isPauseLocked": r.state.PauseLocked, "isSkipLocked": r.state.SkipLocked, "isShuffleLocked": r.state.ShuffleLocked, "isLoading": r.state.Loading, "serverTimestamp": time.Now().UnixMilli(), "stateVersion": r.state.StateVersion, "playEpoch": r.state.PlayEpoch, "queueVersion": r.queueVersion, "queueEpoch": r.controlScope, "historyCursor": r.historyCursor(), "idempotencyScopeId": r.controlScope, "idempotencyTtlMs": ControlMutationTTL.Milliseconds()}
 }
 func (r *RoomRuntime) broadcastState() {
 	r.broadcast("player.state", r.snapshot())

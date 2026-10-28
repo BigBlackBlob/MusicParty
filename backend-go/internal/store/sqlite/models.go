@@ -97,10 +97,11 @@ type UserSummary struct {
 }
 
 type QueueItem struct {
-	QueueID    string      `json:"queueId"`
-	Music      Music       `json:"music"`
-	EnqueuedBy UserSummary `json:"enqueuedBy"`
-	Status     string      `json:"status"`
+	PlaybackPriority int64       `json:"playbackPriority,omitempty"`
+	QueueID          string      `json:"queueId"`
+	Music            Music       `json:"music"`
+	EnqueuedBy       UserSummary `json:"enqueuedBy"`
+	Status           string      `json:"status"`
 }
 
 type HistoryEntry struct {

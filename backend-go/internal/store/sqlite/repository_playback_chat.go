@@ -165,6 +165,25 @@ func (repository *ChatRepository) AppendMessage(ctx context.Context, roomID *str
 	})
 }
 
+// AppendMessageRetaining commits the new message and per-stream retention together.
+// IS handles the NULL room ID used by the single public chat stream.
+func (repository *ChatRepository) AppendMessageRetaining(ctx context.Context, roomID *string, message ChatMessage, limit int) error {
+	if limit <= 0 {
+		return fmt.Errorf("chat retention limit must be positive")
+	}
+	var room any
+	if roomID != nil {
+		room = *roomID
+	}
+	return repository.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		if err := appendChatMessage(ctx, tx, roomID, message); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `delete from chat_message where room_id is ? and id not in (select id from chat_message where room_id is ? order by created_at desc,rowid desc limit ?)`, room, room, limit)
+		return err
+	})
+}
+
 func (repository *ChatRepository) FetchMessages(ctx context.Context, roomID *string, offset, limit int) ([]ChatMessage, error) {
 	var room any
 	if roomID != nil {
@@ -174,7 +193,7 @@ func (repository *ChatRepository) FetchMessages(ctx context.Context, roomID *str
 		select id, user_id, user_name, content, type, created_at
 		from chat_message
 		where ((? is null and room_id is null) or room_id = ?)
-		order by created_at desc limit ? offset ?
+		order by created_at desc,rowid desc limit ? offset ?
 	`, room, room, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("fetch chat messages: %w", err)

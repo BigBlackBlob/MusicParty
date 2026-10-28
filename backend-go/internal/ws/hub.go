@@ -230,11 +230,19 @@ func (h *Hub) CloseRoom(roomID string) {
 // CloseSession immediately removes every realtime client associated with one
 // browser session. Session matching uses an irreversible fingerprint.
 func (h *Hub) CloseSession(sessionToken string) {
-	fingerprint := fingerprint(sessionToken)
-	if fingerprint == "" {
-		return
+	hash := fingerprint(sessionToken)
+	if hash != "" {
+		h.CloseSessionHashes([]string{hash})
 	}
-	clients, snapshots := h.detachSession(fingerprint)
+}
+
+// CloseSessionHashes removes connections for committed domain revocations.
+func (h *Hub) CloseSessionHashes(hashes []string) {
+	revoked := make(map[string]struct{}, len(hashes))
+	for _, hash := range hashes {
+		revoked[hash] = struct{}{}
+	}
+	clients, snapshots := h.detachSessions(revoked)
 	for _, client := range clients {
 		client.Close(websocket.StatusPolicyViolation, "Session revoked")
 	}
@@ -243,13 +251,13 @@ func (h *Hub) CloseSession(sessionToken string) {
 	}
 }
 
-func (h *Hub) detachSession(sessionFingerprint string) ([]*Client, []PresenceSnapshot) {
+func (h *Hub) detachSessions(revoked map[string]struct{}) ([]*Client, []PresenceSnapshot) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	clients := make([]*Client, 0)
 	changedRooms := map[string]struct{}{}
 	for id, client := range h.clients {
-		if client.sessionFingerprint != sessionFingerprint {
+		if _, ok := revoked[client.sessionFingerprint]; !ok {
 			continue
 		}
 		delete(h.clients, id)
