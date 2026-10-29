@@ -75,3 +75,14 @@ func TestProductionValidationMatchesJavaBaseline(t *testing.T) {
 		t.Fatal("Production = false, want true")
 	}
 }
+
+func TestPlaylistImportLimitMatchesProviderPagingRange(t *testing.T) {
+	for _, value := range []string{"1", "1000", "10500"} {
+		_, err := Load(lookup(map[string]string{"PLAYLIST_IMPORT_LIMIT": value}))
+		require.NoError(t, err, value)
+	}
+	for _, value := range []string{"0", "-1", "10501"} {
+		_, err := Load(lookup(map[string]string{"PLAYLIST_IMPORT_LIMIT": value}))
+		require.ErrorContains(t, err, "PLAYLIST_IMPORT_LIMIT", value)
+	}
+}

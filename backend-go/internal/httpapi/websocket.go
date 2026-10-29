@@ -424,7 +424,7 @@ func (api *WebSocketAPI) enqueueRemoteCollection(ctx context.Context, client *ws
 	if album {
 		values, err = service.AlbumSongs(ctx, request.AlbumID)
 	} else {
-		values, err = service.PlaylistSongs(ctx, request.PlaylistID, 0, api.cfg.Player.MaxPlaylistImportSize)
+		values, err = playlistImportSongs(ctx, service, request.PlaylistID, api.cfg.Player.MaxPlaylistImportSize)
 	}
 	if err != nil {
 		api.nack(client, "enqueue.nack", request.MutationID, err)
@@ -440,6 +440,32 @@ func (api *WebSocketAPI) enqueueRemoteCollection(ctx context.Context, client *ws
 		return
 	}
 	_ = client.Send("enqueue.ack", client.RoomID, map[string]any{"accepted": true, "count": len(items), "mutationId": request.MutationID})
+}
+
+// playlistImportSongs keeps the configured total independent of provider page
+// limits. Results are collected before the single atomic queue admission.
+func playlistImportSongs(ctx context.Context, service platform.Service, playlistID string, limit int) ([]platform.Music, error) {
+	if limit < 1 || limit > platform.MaxPlaylistImportLimit {
+		return nil, &platform.InputError{Message: "Invalid playlist import limit"}
+	}
+	songs := []platform.Music{}
+	for offset := 0; len(songs) < limit; {
+		pageSize := min(platform.MaxPlaylistLimit, limit-len(songs))
+		page, err := service.PlaylistSongs(ctx, playlistID, offset, pageSize)
+		if err != nil {
+			return nil, err
+		}
+		if len(page) == 0 {
+			break
+		}
+		count := min(len(page), limit-len(songs))
+		songs = append(songs, page[:count]...)
+		offset += len(page)
+		if len(page) < pageSize {
+			break
+		}
+	}
+	return songs, nil
 }
 
 func (api *WebSocketAPI) enqueueRoomPlaylist(ctx context.Context, client *wsruntime.Client, runtime *realtime.RoomRuntime, envelope inboundEnvelope) {

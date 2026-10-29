@@ -3,7 +3,9 @@ package subsonic
 import (
 	"context"
 	"crypto/md5"
+	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -30,6 +32,15 @@ func (s *Service) Label() string {
 	}
 	return s.cfg.ID
 }
+
+// CacheNamespace is stable across restarts and changes with upstream identity.
+// Labels and local access policies do not change the bytes owned by this source.
+func (s *Service) CacheNamespace() string {
+	encoded, _ := json.Marshal([]string{s.cfg.BaseURL, s.cfg.Username, s.cfg.Password, s.cfg.Client, s.cfg.Version})
+	digest := sha256.Sum256(encoded)
+	return hex.EncodeToString(digest[:])
+}
+
 func (s *Service) RoomID() string { return s.cfg.RoomID }
 func (s *Service) Available() bool {
 	return s.cfg.Enabled && s.cfg.BaseURL != "" && s.cfg.Username != "" && s.cfg.Password != ""

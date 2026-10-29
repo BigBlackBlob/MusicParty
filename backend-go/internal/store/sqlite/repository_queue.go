@@ -62,6 +62,11 @@ func (repository *QueueRepository) ReplaceQueue(ctx context.Context, roomID stri
 		if err := RequireActiveRoom(ctx, tx, roomID); err != nil {
 			return err
 		}
+		for _, item := range items {
+			if err := requireLocalTrackNotDeleted(ctx, tx, item.Music.Platform, item.Music.ID); err != nil {
+				return err
+			}
+		}
 		if _, err := tx.ExecContext(ctx, "delete from room_queue where room_id = ?", roomID); err != nil {
 			return err
 		}
@@ -91,6 +96,11 @@ func (repository *QueueRepository) SynchronizeQueue(ctx context.Context, roomID 
 func synchronizeQueueTx(ctx context.Context, tx *sql.Tx, now func() time.Time, roomID string, items []QueueItem, encoded []string) error {
 	if err := RequireActiveRoom(ctx, tx, roomID); err != nil {
 		return err
+	}
+	for _, item := range items {
+		if err := requireLocalTrackNotDeleted(ctx, tx, item.Music.Platform, item.Music.ID); err != nil {
+			return err
+		}
 	}
 	existing, err := loadPersistedQueueRows(ctx, tx, roomID)
 	if err != nil {
@@ -262,6 +272,9 @@ func (repository *QueueRepository) AppendHistory(ctx context.Context, entry Hist
 }
 
 func appendHistoryTx(ctx context.Context, tx *sql.Tx, entry HistoryEntry, musicJSON string) error {
+	if err := requireLocalTrackNotDeleted(ctx, tx, entry.Music.Platform, entry.Music.ID); err != nil {
+		return err
+	}
 	if err := RequireActiveRoom(ctx, tx, entry.RoomID); err != nil {
 		return err
 	}
@@ -297,6 +310,11 @@ func (repository *QueueRepository) ReplaceHistory(ctx context.Context, roomID st
 	return repository.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		if err := RequireActiveRoom(ctx, tx, roomID); err != nil {
 			return err
+		}
+		for _, music := range history {
+			if err := requireLocalTrackNotDeleted(ctx, tx, music.Platform, music.ID); err != nil {
+				return err
+			}
 		}
 		if _, err := tx.ExecContext(ctx, `delete from room_history where room_id = ?`, roomID); err != nil {
 			return err

@@ -297,7 +297,7 @@ func (api *MediaAPI) proxyPlatform(w http.ResponseWriter, r *http.Request, name,
 	if err != nil {
 		return err
 	}
-	cacheKey := name + ":" + id
+	cacheKey := platformCacheKey(source, name, id)
 	if !cover && api.cache != nil {
 		if path, release, ok := api.cache.Acquire(cacheKey); ok {
 			defer release()

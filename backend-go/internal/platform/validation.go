@@ -3,9 +3,10 @@ package platform
 import "strings"
 
 const (
-	MaxOffset        = 10000
-	MaxSearchLimit   = 100
-	MaxPlaylistLimit = 500
+	MaxOffset              = 10000
+	MaxSearchLimit         = 100
+	MaxPlaylistLimit       = 500
+	MaxPlaylistImportLimit = MaxOffset + MaxPlaylistLimit
 )
 
 // InputError distinguishes invalid caller input from an upstream failure.

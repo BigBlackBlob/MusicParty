@@ -127,3 +127,30 @@ func TestReloadQueueKeepsUnrelatedCurrentTrack(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "playing", after["nowPlaying"].(map[string]any)["music"].(*storesqlite.PlayableMusic).ID)
 }
+
+func TestReloadQueueRemovesDeletedHistoryAndPreservesCursor(t *testing.T) {
+	ctx := context.Background()
+	store := realtimeStore(t)
+	manager := NewManager(store, 10, time.Second, time.Hour, &recordingBroadcaster{})
+	t.Cleanup(manager.Close)
+	runtime, err := manager.Room(ctx, "lounge")
+	require.NoError(t, err)
+	session := account.Session{PublicID: "user", DisplayName: "User"}
+	for i, id := range []string{"older", "gone", "newer", "playing"} {
+		_, err = runtime.Enqueue(ctx, session, storesqlite.Music{ID: id, Name: id, Platform: "local", Duration: 60000}, id)
+		require.NoError(t, err)
+		if i > 0 {
+			_, err = runtime.Next(ctx)
+			require.NoError(t, err)
+		}
+	}
+	_, err = runtime.Previous(ctx, nil)
+	require.NoError(t, err)
+	require.NoError(t, storesqlite.NewLocalTrackRepository(store).DeleteLocalReferences(ctx, "gone"))
+	require.NoError(t, manager.ReloadQueue(ctx, "lounge", "gone"))
+	_, err = runtime.Previous(ctx, nil)
+	require.NoError(t, err)
+	snapshot, err := runtime.Snapshot(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "older", snapshot["nowPlaying"].(map[string]any)["music"].(*storesqlite.PlayableMusic).ID)
+}

@@ -243,15 +243,8 @@ func (l *LocalLibrary) Delete(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	// Collect the affected rooms before the references disappear from the database.
-	rooms, err := l.repository.RoomsReferencingLocalTrack(ctx, id)
+	rooms, err := l.repository.DeleteWithReferences(ctx, id, l.now().UnixMilli())
 	if err != nil {
-		return err
-	}
-	if err := l.repository.DeleteLocalReferences(ctx, id); err != nil {
-		return err
-	}
-	if err := l.repository.MarkDeleted(ctx, id, l.now().UnixMilli()); err != nil {
 		return err
 	}
 	l.notifyTracksRemoved(ctx, id, rooms)

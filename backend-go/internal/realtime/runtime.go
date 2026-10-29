@@ -714,6 +714,20 @@ func (r *RoomRuntime) ReloadQueue(ctx context.Context, removedTrackID string) er
 		if err != nil {
 			return nil, err
 		}
+		if removedTrackID != "" {
+			history := make([]storesqlite.HistoryEntry, 0, len(runtime.history))
+			skipped := 0
+			for index, entry := range runtime.history {
+				if entry.Music.Platform == "local" && entry.Music.ID == removedTrackID {
+					continue
+				}
+				history = append(history, entry)
+				if index < runtime.historySkipped {
+					skipped++
+				}
+			}
+			runtime.history, runtime.historySkipped = history, skipped
+		}
 		if removedTrackID != "" && runtime.isCurrentTrack(removedTrackID) {
 			return nil, runtime.dropCurrentTrack(ctx, next)
 		}

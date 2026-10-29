@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"github.com/stretchr/testify/require"
 	"testing"
 	"time"
 )
@@ -97,4 +98,55 @@ func TestRoomsReferencingLocalTrackAfterDeleteLocalReferences(t *testing.T) {
 	if len(after) != 0 {
 		t.Fatalf("RoomsReferencingLocalTrack() after delete = %v, want none", after)
 	}
+}
+
+func TestDeletedLocalTrackCannotBePersistedByStaleRuntime(t *testing.T) {
+	ctx := context.Background()
+	store := openLocalTrackTestStore(t)
+	seedReferenceRoom(t, store, "room")
+	local := NewLocalTrackRepository(store)
+	seedLocalTrack(t, local, "gone", "source/gone", "COMPLETED")
+	music := Music{ID: "gone", Name: "Gone", Platform: "local"}
+	queue := []QueueItem{{QueueID: "stale", Music: music}}
+	repo := NewQueueRepository(store, time.Now)
+	require.NoError(t, repo.SynchronizeQueue(ctx, "room", queue))
+	affected, err := local.DeleteWithReferences(ctx, "gone", 2)
+	require.NoError(t, err)
+	require.Equal(t, []string{"room"}, affected)
+	// Replay the interleaving after deletion and before ReloadQueue.
+	for name, write := range map[string]func() error{
+		"synchronize": func() error { return repo.SynchronizeQueue(ctx, "room", queue) },
+		"replace":     func() error { return repo.ReplaceQueue(ctx, "room", queue) },
+		"history":     func() error { return repo.AppendHistory(ctx, HistoryEntry{ID: "stale", RoomID: "room", Music: music}) },
+		"atomic state commit": func() error {
+			return NewRealtimeRepository(store, time.Now).CommitRoomState(ctx, "room", []QueueItem{{QueueID: "fresh", Music: Music{ID: "remote", Platform: "netease"}}}, PlaybackState{RoomID: "room", CurrentMusic: &PlayableMusic{ID: "gone", Platform: "local"}}, nil)
+		},
+		"playback": func() error {
+			return NewPlaybackStateRepository(store).Upsert(ctx, PlaybackState{RoomID: "room", CurrentMusic: &PlayableMusic{ID: "gone", Platform: "local"}})
+		},
+	} {
+		t.Run(name, func(t *testing.T) { require.ErrorIs(t, write(), ErrLocalTrackGone) })
+	}
+	persisted, err := repo.LoadQueue(ctx, "room")
+	require.NoError(t, err)
+	require.Empty(t, persisted)
+	queue[0].Music.Platform = "netease"
+	require.NoError(t, repo.SynchronizeQueue(ctx, "room", queue))
+}
+
+func TestDeleteWithReferencesRollsBackTombstoneOnCleanupFailure(t *testing.T) {
+	ctx := context.Background()
+	store := openLocalTrackTestStore(t)
+	local := NewLocalTrackRepository(store)
+	seedLocalTrack(t, local, "track-gone", "source/gone", "COMPLETED")
+	seedTrackReferences(t, store, "track-gone")
+	execReferenceSQL(t, store, `create trigger fail_reference_delete before delete on room_queue begin select raise(abort,'cleanup failed'); end`)
+	_, err := local.DeleteWithReferences(ctx, "track-gone", 2)
+	require.ErrorContains(t, err, "cleanup failed")
+	track, err := local.FindByID(ctx, "track-gone")
+	require.NoError(t, err)
+	require.Equal(t, "COMPLETED", track.Status)
+	rooms, err := local.RoomsReferencingLocalTrack(ctx, "track-gone")
+	require.NoError(t, err)
+	require.Equal(t, []string{"room-history", "room-playback", "room-queue"}, rooms)
 }

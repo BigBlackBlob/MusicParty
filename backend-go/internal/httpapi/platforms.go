@@ -147,12 +147,22 @@ func (api *PlatformAPI) UpdateCredential(name, credential string) error {
 	api.cacheMu.Unlock()
 	return nil
 }
+
+// A source snapshot owns its namespace, so an old in-flight request can only
+// populate that source's cache even if the registry changes before it completes.
+func platformCacheKey(source any, name, id string) string {
+	if scoped, ok := source.(interface{ CacheNamespace() string }); ok {
+		return name + ":" + scoped.CacheNamespace() + ":" + id
+	}
+	return name + ":" + id
+}
+
 func (api *PlatformAPI) ResolvePlayable(ctx context.Context, platformName, musicID, sessionToken string) (platform.PlayableMusic, error) {
 	service, err := api.authorizedPlatform(ctx, platformName, sessionToken)
 	if err != nil {
 		return platform.PlayableMusic{}, err
 	}
-	key := platformName + ":" + musicID
+	key := platformCacheKey(service, platformName, musicID)
 	now := time.Now()
 	api.cacheMu.Lock()
 	if cached, ok := api.cache[key]; ok && now.Before(cached.expiresAt) {

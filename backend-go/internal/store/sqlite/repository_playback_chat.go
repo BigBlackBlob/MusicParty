@@ -72,6 +72,11 @@ func encodePlaybackState(state PlaybackState) (encodedPlaybackState, error) {
 }
 
 func upsertPlaybackStateTx(ctx context.Context, tx *sql.Tx, state PlaybackState, values encodedPlaybackState) error {
+	if state.CurrentMusic != nil {
+		if err := requireLocalTrackNotDeleted(ctx, tx, state.CurrentMusic.Platform, state.CurrentMusic.ID); err != nil {
+			return err
+		}
+	}
 	if err := RequireActiveRoom(ctx, tx, state.RoomID); err != nil {
 		return err
 	}

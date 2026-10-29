@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform"
 )
 
 type LookupEnv func(string) (string, bool)
@@ -329,6 +331,9 @@ func (c Config) Validate() error {
 		case len(secret) < minRoomAccessTokenSecretLength:
 			problems = append(problems, fmt.Sprintf("ROOM_ACCESS_TOKEN_SECRET must be at least %d characters in production deployments", minRoomAccessTokenSecretLength))
 		}
+	}
+	if c.Player.MaxPlaylistImportSize < 1 || c.Player.MaxPlaylistImportSize > platform.MaxPlaylistImportLimit {
+		problems = append(problems, fmt.Sprintf("PLAYLIST_IMPORT_LIMIT must be between 1 and %d", platform.MaxPlaylistImportLimit))
 	}
 	if c.Queue.MaxSize <= 0 || c.Queue.MaxUserSongs <= 0 || c.Queue.HistorySize < 0 || c.Performance.WebSocketClientQueueCapacity <= 0 || c.Performance.RoomCommandQueueCapacity <= 0 || c.Performance.DBWriteQueueCapacity <= 0 {
 		problems = append(problems, "queue capacities must be positive")

@@ -2,8 +2,10 @@ package bilibili
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -32,4 +34,30 @@ func TestSearchSignsWBIAndMapsFixture(t *testing.T) {
 	require.Equal(t, "标题", songs[0].Name)
 	require.Equal(t, int64(62000), songs[0].Duration)
 	require.Equal(t, "https://img.test/a.jpg", songs[0].CoverURL)
+}
+
+func TestPlaylistSongsHonorsOffsetsAcrossUpstreamPages(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		page, _ := strconv.Atoi(r.URL.Query().Get("pn"))
+		size, _ := strconv.Atoi(r.URL.Query().Get("ps"))
+		if size != 20 {
+			http.Error(w, "upstream page limit", 400)
+			return
+		}
+		items := []map[string]any{}
+		for i := (page - 1) * size; i < min(47, page*size); i++ {
+			items = append(items, map[string]any{"bvid": strconv.Itoa(i), "title": "Song", "duration": 60, "upper": map[string]string{"name": "Artist"}})
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"medias": items}})
+	}))
+	defer server.Close()
+	service := New(&platform.Client{HTTP: server.Client(), MaxBody: 1 << 20}, server.URL, "cookie")
+	for _, test := range []struct{ offset, limit, count int }{{0, 45, 45}, {17, 25, 25}, {40, 5, 5}, {45, 20, 2}} {
+		songs, err := service.PlaylistSongs(context.Background(), "list", test.offset, test.limit)
+		require.NoError(t, err)
+		require.Len(t, songs, test.count)
+		for i, song := range songs {
+			require.Equal(t, strconv.Itoa(test.offset+i), song.ID)
+		}
+	}
 }

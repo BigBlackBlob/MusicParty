@@ -154,10 +154,16 @@ func (repository *LocalTrackRepository) MarkDeleted(ctx context.Context, id stri
 // RoomsReferencingLocalTrack lists the rooms whose queue, playback state or history still mentions the
 // track, so the realtime layer can reload the queue after those references are removed.
 func (repository *LocalTrackRepository) RoomsReferencingLocalTrack(ctx context.Context, trackID string) ([]string, error) {
+	return roomsReferencingLocalTrack(ctx, repository.store.reader, trackID)
+}
+
+func roomsReferencingLocalTrack(ctx context.Context, reader interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}, trackID string) ([]string, error) {
 	idNeedle := `"id":"` + strings.ReplaceAll(trackID, `"`, `\"`) + `"`
 	platformNeedle := `"platform":"local"`
 	platformPattern, idPattern := "%"+platformNeedle+"%", "%"+idNeedle+"%"
-	rows, err := repository.store.reader.QueryContext(ctx, `
+	rows, err := reader.QueryContext(ctx, `
 		select room_id from room_queue where music_json like ? and music_json like ?
 		union
 		select room_id from room_playback_state where current_music_json like ? and current_music_json like ?
@@ -181,28 +187,66 @@ func (repository *LocalTrackRepository) RoomsReferencingLocalTrack(ctx context.C
 }
 
 func (repository *LocalTrackRepository) DeleteLocalReferences(ctx context.Context, trackID string) error {
+	return repository.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		return deleteLocalReferencesTx(ctx, tx, trackID)
+	})
+}
+
+// DeleteWithReferences captures affected rooms and removes all references in the same
+// write transaction as the tombstone, so runtime writes cannot slip between them.
+func (repository *LocalTrackRepository) DeleteWithReferences(ctx context.Context, trackID string, updatedAt int64) ([]string, error) {
+	var rooms []string
+	err := repository.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		var err error
+		rooms, err = roomsReferencingLocalTrack(ctx, tx, trackID)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, "update local_track set status='DELETED', updated_at=? where id=?", updatedAt, trackID); err != nil {
+			return err
+		}
+		return deleteLocalReferencesTx(ctx, tx, trackID)
+	})
+	return rooms, err
+}
+
+// Runtime snapshots may outlive deletion. Reject tombstoned tracks inside the
+// writer transaction, including writes to playback and history, not just queues.
+func requireLocalTrackNotDeleted(ctx context.Context, tx *sql.Tx, platform, id string) error {
+	if platform != "local" {
+		return nil
+	}
+	var deleted bool
+	if err := tx.QueryRowContext(ctx, "select exists(select 1 from local_track where id=? and status='DELETED')", id).Scan(&deleted); err != nil {
+		return err
+	}
+	if deleted {
+		return ErrLocalTrackGone
+	}
+	return nil
+}
+
+func deleteLocalReferencesTx(ctx context.Context, tx *sql.Tx, trackID string) error {
 	idNeedle := `"id":"` + strings.ReplaceAll(trackID, `"`, `\"`) + `"`
 	platformNeedle := `"platform":"local"`
 	platformPattern, idPattern := "%"+platformNeedle+"%", "%"+idNeedle+"%"
-	return repository.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		statements := []struct {
-			query string
-			args  []any
-		}{
-			{"delete from room_queue where music_json like ? and music_json like ?", []any{platformPattern, idPattern}},
-			{"delete from room_history where music_json like ? and music_json like ?", []any{platformPattern, idPattern}},
-			{"delete from room_history_track where platform = ? and music_id = ?", []any{"local", trackID}},
-			{"delete from user_playlist_track where music_json like ? and music_json like ?", []any{platformPattern, idPattern}},
-			{"delete from room_playlist_track where music_json like ? and music_json like ?", []any{platformPattern, idPattern}},
-			{"update room_playback_state set current_music_json = null where current_music_json like ? and current_music_json like ?", []any{platformPattern, idPattern}},
+	statements := []struct {
+		query string
+		args  []any
+	}{
+		{"delete from room_queue where music_json like ? and music_json like ?", []any{platformPattern, idPattern}},
+		{"delete from room_history where music_json like ? and music_json like ?", []any{platformPattern, idPattern}},
+		{"delete from room_history_track where platform = ? and music_id = ?", []any{"local", trackID}},
+		{"delete from user_playlist_track where music_json like ? and music_json like ?", []any{platformPattern, idPattern}},
+		{"delete from room_playlist_track where music_json like ? and music_json like ?", []any{platformPattern, idPattern}},
+		{"update room_playback_state set current_music_json = null where current_music_json like ? and current_music_json like ?", []any{platformPattern, idPattern}},
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement.query, statement.args...); err != nil {
+			return err
 		}
-		for _, statement := range statements {
-			if _, err := tx.ExecContext(ctx, statement.query, statement.args...); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+	}
+	return nil
 }
 
 func (repository *LocalTrackRepository) FindAllowedUploadUsers(ctx context.Context) (map[string]struct{}, error) {

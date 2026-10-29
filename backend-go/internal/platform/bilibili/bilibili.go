@@ -251,9 +251,30 @@ func (s *Service) PlaylistSongs(ctx context.Context, playlistID string, offset, 
 	if strings.TrimSpace(s.credential()) == "" {
 		return nil, errors.New("bilibili SESSDATA is not configured")
 	}
-	limit = min(limit, 20)
-	page := offset/max(1, limit) + 1
-	query := url.Values{"media_id": {playlistID}, "ps": {strconv.Itoa(limit)}, "pn": {strconv.Itoa(page)}}
+	// The upstream caps pages at 20. Use a fixed page size so an arbitrary
+	// offset and a shorter final request never shift the page boundary.
+	result := []platform.Music{}
+	for len(result) < limit {
+		page, err := s.playlistPage(ctx, playlistID, offset/20+1)
+		if err != nil {
+			return nil, err
+		}
+		start := offset % 20
+		if start >= len(page) {
+			break
+		}
+		count := min(len(page)-start, limit-len(result))
+		result = append(result, page[start:start+count]...)
+		offset += count
+		if len(page) < 20 {
+			break
+		}
+	}
+	return result, nil
+}
+
+func (s *Service) playlistPage(ctx context.Context, playlistID string, page int) ([]platform.Music, error) {
+	query := url.Values{"media_id": {playlistID}, "ps": {"20"}, "pn": {strconv.Itoa(page)}}
 	var response struct {
 		Code int `json:"code"`
 		Data struct {
