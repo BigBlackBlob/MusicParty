@@ -37,4 +37,21 @@ describe('runtime generation recovery', () => {
     expect(runtime.queue.map(item => item.queueId)).toEqual(['rebuilt'])
     expect(realtimeClient.send).not.toHaveBeenCalled()
   })
+
+  it('applies socket state while the document is hidden', () => {
+    vi.useFakeTimers()
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+    try {
+      const sync = useRoomStateSynchronizer()
+      const runtime = useRoomRuntimeStore()
+      sync.scheduleSyncState(state('hidden', 1))
+      expect(runtime.queue).toEqual([])
+
+      vi.runAllTimers()
+      expect(runtime.queue.map(item => item.queueId)).toEqual(['hidden'])
+    } finally {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+      vi.useRealTimers()
+    }
+  })
 })

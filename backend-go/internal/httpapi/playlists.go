@@ -300,8 +300,14 @@ func (api *PlaylistAPI) likeSong(w http.ResponseWriter, r *http.Request) error {
 	if err := decodeJSONBody(r, &music); err != nil {
 		return badRequest("Invalid request body")
 	}
-	music.Platform = chi.URLParam(r, "platform")
-	music.ID = chi.URLParam(r, "musicId")
+	music.Platform, err = decodedURLParam(r, "platform")
+	if err != nil {
+		return err
+	}
+	music.ID, err = decodedURLParam(r, "musicId")
+	if err != nil {
+		return err
+	}
 	if !validPlaylistMusic(music) {
 		return badRequest("Invalid playlist music")
 	}
@@ -329,7 +335,15 @@ func (api *PlaylistAPI) unlikeSong(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return err
 	}
-	changed, err := api.users.DeleteTrackByMusicKey(r.Context(), session.PublicID, playlist.ID, chi.URLParam(r, "platform")+":"+chi.URLParam(r, "musicId"))
+	platformName, err := decodedURLParam(r, "platform")
+	if err != nil {
+		return err
+	}
+	musicID, err := decodedURLParam(r, "musicId")
+	if err != nil {
+		return err
+	}
+	changed, err := api.users.DeleteTrackByMusicKey(r.Context(), session.PublicID, playlist.ID, platformName+":"+musicID)
 	return noContentOrNotFound(w, changed, err)
 }
 func (api *PlaylistAPI) roomAccess(r *http.Request) error {

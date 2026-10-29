@@ -85,8 +85,14 @@ export const useRoomStateSynchronizer = defineStore('room-state-synchronizer', (
     hasInitialSnapshot.value = true
   }
 
-  const scheduleFrame = (callback: (timestamp: number) => void): number | ReturnType<typeof setTimeout> =>
-    typeof requestAnimationFrame === 'function' ? requestAnimationFrame(callback) : setTimeout(() => callback(0), 0)
+  const scheduleFrame = (callback: (timestamp: number) => void): number | ReturnType<typeof setTimeout> => {
+    // Hidden documents may pause requestAnimationFrame for minutes. Socket
+    // messages still arrive, so state application must use a timer there.
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      return setTimeout(() => callback(0), 0)
+    }
+    return typeof requestAnimationFrame === 'function' ? requestAnimationFrame(callback) : setTimeout(() => callback(0), 0)
+  }
 
   function scheduleSyncState(state: PlayerState): void {
     queuedState = state

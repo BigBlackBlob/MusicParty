@@ -22,16 +22,22 @@ const fromTrack = (track: LikedSongTrack): LikedSong => toLikedSong(track.music,
 
 export const useLikedSongsStore = defineStore('liked-songs', () => {
   const likedSongs = ref<LikedSong[]>([])
+  let activeAccountId = ''
 
-  try {
-    const saved: unknown = JSON.parse(localStorage.getItem(STORAGE_KEYS.LIKED_SONGS) ?? '[]')
-    likedSongs.value = Array.isArray(saved) ? saved as LikedSong[] : []
-  } catch {
-    likedSongs.value = []
+  const storageKey = (accountId: string): string => `${STORAGE_KEYS.LIKED_SONGS}:${accountId}`
+  const readCached = (accountId: string): LikedSong[] => {
+    if (!accountId) return []
+    try {
+      const saved: unknown = JSON.parse(localStorage.getItem(storageKey(accountId)) ?? '[]')
+      return Array.isArray(saved) ? saved as LikedSong[] : []
+    } catch {
+      return []
+    }
   }
 
   function persist(): void {
-    localStorage.setItem(STORAGE_KEYS.LIKED_SONGS, JSON.stringify(likedSongs.value))
+    if (!activeAccountId) return
+    localStorage.setItem(storageKey(activeAccountId), JSON.stringify(likedSongs.value))
   }
 
   function add(music: Music): void {
@@ -51,18 +57,19 @@ export const useLikedSongsStore = defineStore('liked-songs', () => {
     return Boolean(music && likedSongs.value.some(song => song.key === songKey(music)))
   }
 
-  async function syncFromServer(isGuest: boolean): Promise<void> {
-    if (isGuest) return
-    const localSongs = [...likedSongs.value]
-    likedSongs.value = (await personalPlaylistsApi.likedSongs()).map(fromTrack)
+  async function syncFromServer(accountId: string, isGuest: boolean): Promise<void> {
+    activeAccountId = accountId
+    likedSongs.value = readCached(accountId)
+    if (isGuest || !accountId) return
+    const serverSongs = (await personalPlaylistsApi.likedSongs()).map(fromTrack)
+    if (activeAccountId !== accountId) return
+    likedSongs.value = serverSongs
     persist()
-    const serverKeys = new Set(likedSongs.value.map(song => song.key))
-    const missing = localSongs.filter(song => !serverKeys.has(song.key))
-    for (const song of missing) await personalPlaylistsApi.likeSong(song)
-    if (missing.length) {
-      likedSongs.value = (await personalPlaylistsApi.likedSongs()).map(fromTrack)
-      persist()
-    }
+  }
+
+  function reset(): void {
+    activeAccountId = ''
+    likedSongs.value = []
   }
 
   async function removeAndSync(key: string, isGuest: boolean): Promise<void> {
@@ -98,5 +105,5 @@ export const useLikedSongsStore = defineStore('liked-songs', () => {
     return 'liked'
   }
 
-  return { likedSongs, add, remove, includes, syncFromServer, removeAndSync, toggle }
+  return { likedSongs, add, remove, includes, syncFromServer, removeAndSync, toggle, reset }
 })

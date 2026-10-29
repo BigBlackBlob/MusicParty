@@ -37,4 +37,13 @@ describe('chat timelines', () => {
     expect(chat.hasMore).toBe(true)
     expect(chat.publicMessages.map(item => item.id)).toEqual(['public'])
   })
+
+  it('deduplicates history and reconnect prepends', () => {
+    const chat = useChatStore()
+    chat.setHistory([message('one'), message('one'), message('two')])
+    expect(chat.messages.map(item => item.id)).toEqual(['one', 'two'])
+
+    chat.prependHistory([message('two'), message('three'), message('three')])
+    expect(chat.messages.map(item => item.id)).toEqual(['three', 'one', 'two'])
+  })
 })

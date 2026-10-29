@@ -1,4 +1,5 @@
 import type { ChatMessage, PlayerEvent, PresenceSnapshot, RoomSummary } from '../contracts/generated/models'
+import type { ControlAckServerEnvelope } from '../contracts/generated/websocket'
 import type { RealtimeCallbacks, RealtimeHandlers } from '../transport/realtimeClient'
 import { useToast } from '../composables/useToast'
 import { WS_DEST } from '../constants/api'
@@ -17,6 +18,7 @@ interface PlayerHandlers {
   settleQueueReorder?: (mutationId: string, accepted: boolean, reason?: string) => void
   settleQueueMutation?: (mutationId: string, accepted: boolean, reason?: string) => void
   settleEnqueue?: (mutationId: string, accepted: boolean, reason?: string) => void
+  settleLike?: (ack: ControlAckServerEnvelope['payload']) => void
   switchRoom?: (roomId: string) => void
 }
 
@@ -154,6 +156,7 @@ export function createSocketHandlers(stores: SocketHandlerStores = {}): Realtime
     'queue.mutation.nack': data => player?.settleQueueMutation?.(data.mutationId, false, data.reason),
     'enqueue.ack': data => player?.settleEnqueue?.(data.mutationId, true),
     'enqueue.nack': data => player?.settleEnqueue?.(data.mutationId, false, data.reason),
+    'control.ack': data => player?.settleLike?.(data),
     'player.events': event => handleGameEvent(event, stores),
     'chat.message': message => chatStore?.addMessage?.(message),
     'public-chat.message': message => chatStore?.addPublicMessage?.(message),

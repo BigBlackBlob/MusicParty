@@ -39,7 +39,7 @@ export const useRoomRealtimeCoordinator = defineStore('room-realtime-coordinator
   const chat = useChatStore()
   const user = useUserStore()
   const room = useRoomStore()
-  const { connected, lastPingSentAt, lastPongAt, lastResyncSentAt } = storeToRefs(connection)
+  const { connected, connectedAt, lastPingSentAt, lastPongAt, lastResyncSentAt } = storeToRefs(connection)
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let pingTimer: ReturnType<typeof setInterval> | null = null
   let switchOriginRoomId: string | null = null
@@ -125,6 +125,7 @@ export const useRoomRealtimeCoordinator = defineStore('room-realtime-coordinator
     synchronizer.reset()
     chat.resetRoomMessages()
     presence.reset()
+    likedSongs.reset()
   }
 
   function connect(targetRoomId = room.currentRoomId): void {
@@ -144,6 +145,7 @@ export const useRoomRealtimeCoordinator = defineStore('room-realtime-coordinator
         settleQueueReorder: commands.settleQueueReorder,
         settleQueueMutation: commands.settleQueueMutation,
         settleEnqueue: commands.settleEnqueue,
+        settleLike: commands.settleLike,
       },
       userStore: user,
       presence,
@@ -158,12 +160,13 @@ export const useRoomRealtimeCoordinator = defineStore('room-realtime-coordinator
     })
     handlers['user.me'] = (me) => {
       user.initUser(me.publicId, me.name, me.isGuest, me.role, me.isAdmin)
-      likedSongs.syncFromServer(user.isGuest).catch(error => console.warn('Failed to sync liked songs', error))
+      likedSongs.syncFromServer(user.publicId, user.isGuest).catch(error => console.warn('Failed to sync liked songs', error))
     }
 
     const callbacks = createSocketCallbacks({
       setConnected: value => {
         connected.value = value
+        connectedAt.value = value ? Date.now() : 0
         if (value || room.transition.status !== 'connecting') return
         const failedRoomId = room.transition.roomId
         const fallbackRoomId = switchOriginRoomId
@@ -218,7 +221,7 @@ export const useRoomRealtimeCoordinator = defineStore('room-realtime-coordinator
   }
 
   function tryReconnect(): void {
-    if (shouldForceSocketReconnect({ connected: connected.value, lastPongAt: lastPongAt.value })) realtimeClient.reconnectNow()
+    if (shouldForceSocketReconnect({ connected: connected.value, connectedAt: connectedAt.value, lastPongAt: lastPongAt.value })) realtimeClient.reconnectNow()
     else requestSyncRefresh('reconnect-check', true)
   }
 

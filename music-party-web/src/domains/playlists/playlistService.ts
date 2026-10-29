@@ -4,14 +4,14 @@ import { playlistsApi, type PlaylistMutationResult } from '../../api/playlists'
 import { queryKeys } from '../queryKeys'
 import { queryClient } from '../../app/providers'
 
-export type PlaylistScope = { type: 'personal' } | { type: 'room'; roomId: string }
+export type PlaylistScope = { type: 'personal'; publicId: string } | { type: 'room'; roomId: string }
 
 export const playlistKeys = {
   list: (scope: PlaylistScope) => scope.type === 'personal'
-    ? queryKeys.playlists.personal()
+    ? queryKeys.playlists.personal(scope.publicId)
     : queryKeys.playlists.room(scope.roomId),
   tracks: (scope: PlaylistScope, playlistId: string) => scope.type === 'personal'
-    ? queryKeys.playlists.personalTracks(playlistId)
+    ? queryKeys.playlists.personalTracks(scope.publicId, playlistId)
     : queryKeys.playlists.roomTracks(scope.roomId, playlistId)
 }
 
@@ -79,9 +79,9 @@ export async function importPlaylist(scope: PlaylistScope, playlistId: string, p
   return result
 }
 
-export async function addPersonalTracks(playlistId: string, musics: Music[]): Promise<PlaylistMutationResult> {
+export async function addPersonalTracks(publicId: string, playlistId: string, musics: Music[]): Promise<PlaylistMutationResult> {
   const result = await personalPlaylistsApi.addTracks(playlistId, musics)
-  const scope: PlaylistScope = { type: 'personal' }
+  const scope: PlaylistScope = { type: 'personal', publicId }
   await refresh(scope, playlistId)
   return result
 }

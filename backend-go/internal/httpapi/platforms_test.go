@@ -17,7 +17,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type fixturePlatform struct{ err error }
+type fixturePlatform struct {
+	err              error
+	playablePlatform string
+}
+
+type namedFixturePlatform struct {
+	fixturePlatform
+	name string
+}
+
+func (f namedFixturePlatform) Name() string { return f.name }
 
 type neteaseFixture struct{ err error }
 
@@ -54,7 +64,11 @@ func (f fixturePlatform) ResolvePlayable(_ context.Context, id string) (platform
 	if f.err != nil {
 		return platform.PlayableMusic{}, f.err
 	}
-	return platform.PlayableMusic{Music: platform.Music{ID: id, Name: "Resolved Track", Artists: []string{"Resolved Artist"}, Duration: 60_000, Platform: "local", CoverURL: "/api/local/cover/" + id}, URL: "/api/local/media/" + id}, nil
+	name := f.playablePlatform
+	if name == "" {
+		name = "local"
+	}
+	return platform.PlayableMusic{Music: platform.Music{ID: id, Name: "Resolved Track", Artists: []string{"Resolved Artist"}, Duration: 60_000, Platform: name, CoverURL: "/api/" + name + "/cover/" + id}, URL: "/api/" + name + "/media/" + id}, nil
 }
 func (fixturePlatform) UserPlaylists(context.Context, string) ([]platform.Playlist, error) {
 	return []platform.Playlist{}, nil
@@ -98,6 +112,15 @@ func TestPlatformRoutesMatchFrozenGoldenStatuses(t *testing.T) {
 		require.Equal(t, test.status, response.Code, test.path)
 		require.Contains(t, response.Body.String(), test.body, test.path)
 	}
+}
+
+func TestPlatformRouteDecodesEncodedPlatformNames(t *testing.T) {
+	cfg := testConfig(t)
+	service := namedFixturePlatform{fixturePlatform: fixturePlatform{}, name: "subsonic-local-navi@lounge"}
+	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewPlatformAPI(cfg, service))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/search/subsonic-local-navi%40lounge/song", nil))
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 }
 func TestPlatformUpstreamFailureIsBadGateway(t *testing.T) {
 	cfg := testConfig(t)

@@ -16,6 +16,14 @@ const pageSize = 50
 type HistoryDestination = 'chat.history.fetch' | 'public-chat.history.fetch'
 type ChatScope = 'room' | 'public'
 const timeline = (): ChatTimeline => ({ messages: [], cursor: null, hasMore: true, loading: false, unread: 0 })
+const uniqueMessages = (messages: ChatMessage[]): ChatMessage[] => {
+  const seen = new Set<string>()
+  return messages.filter(message => {
+    if (seen.has(message.id)) return false
+    seen.add(message.id)
+    return true
+  })
+}
 
 export const useChatStore = defineStore('chat', () => {
   const roomTimeline = reactive<ChatTimeline>(timeline())
@@ -33,23 +41,26 @@ export const useChatStore = defineStore('chat', () => {
   const isLoadingPublicMore = computed(() => publicTimeline.loading)
 
   function add(t: ChatTimeline, message: ChatMessage): void {
+    if (t.messages.some(existing => existing.id === message.id)) return
     t.messages.push(message)
     if (t.messages.length > 2000) t.messages = t.messages.slice(-1000)
     if (!isOpen.value && message.userId !== userStore.publicId && message.type === 'CHAT') t.unread += 1
   }
 
   function setHistory(t: ChatTimeline, history: ChatMessage[]): void {
-    t.messages = history
+    t.messages = uniqueMessages(history)
     t.unread = 0
     t.hasMore = history.length >= pageSize
     t.loading = false
   }
 
   function prepend(t: ChatTimeline, history: ChatMessage[]): void {
-    if (history.length === 0) t.hasMore = false
+    const existing = new Set(t.messages.map(message => message.id))
+    const fresh = uniqueMessages(history).filter(message => !existing.has(message.id))
+    if (fresh.length === 0) t.hasMore = false
     else {
-      t.messages = [...history, ...t.messages]
-      if (history.length < pageSize) t.hasMore = false
+      t.messages = [...fresh, ...t.messages]
+      if (fresh.length < pageSize) t.hasMore = false
     }
     t.loading = false
   }

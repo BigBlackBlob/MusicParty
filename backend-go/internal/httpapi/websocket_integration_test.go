@@ -113,6 +113,57 @@ func TestWebSocketInitialStateAliasEnqueueAckAndResync(t *testing.T) {
 	require.Equal(t, "lounge", resyncPresence.Payload.(map[string]any)["roomId"])
 }
 
+func TestWebSocketProviderFailureIsNotReportedAsPersistenceFailure(t *testing.T) {
+	store := httpStore(t)
+	insertStage5User(t, store, "member-token", "member", "MEMBER")
+	insertStage5Room(t, store, "lounge", "PUBLIC", 0)
+	accounts := account.New(store)
+	rooms := roomdomain.New(store, accounts)
+	cfg := testConfig(t)
+	hub := wsruntime.NewHub(256)
+	manager := realtime.NewManager(store, 100, 5*time.Second, time.Hour, hub)
+	api := NewWebSocketAPI(cfg, store, accounts, rooms, hub, manager, NewPlatformAPI(cfg, fixturePlatform{err: errors.New("provider failed")}))
+	server := httptest.NewServer(NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api))
+	t.Cleanup(func() {
+		server.Close()
+		hub.Close()
+		manager.Close()
+	})
+	connection := dialWebSocket(t, server, "member-token", "lounge")
+	readUntilType(t, connection, "player.state")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	require.NoError(t, connection.Write(ctx, websocket.MessageText, []byte(`{"type":"enqueue","payload":{"platform":"local","musicId":"track","mutationId":"m-provider"}}`)))
+	nack := readUntilType(t, connection, "enqueue.nack")
+	require.Equal(t, "PLATFORM_FAILED", nack.Payload.(map[string]any)["reason"])
+}
+
+func TestWebSocketBilibiliTrackPersistsThroughFirstPlayback(t *testing.T) {
+	store := httpStore(t)
+	insertStage5User(t, store, "member-token", "member", "MEMBER")
+	insertStage5Room(t, store, "lounge", "PUBLIC", 0)
+	accounts := account.New(store)
+	rooms := roomdomain.New(store, accounts)
+	cfg := testConfig(t)
+	hub := wsruntime.NewHub(256)
+	manager := realtime.NewManager(store, 100, 5*time.Second, time.Hour, hub)
+	provider := namedFixturePlatform{fixturePlatform: fixturePlatform{playablePlatform: "bilibili"}, name: "bilibili"}
+	api := NewWebSocketAPI(cfg, store, accounts, rooms, hub, manager, NewPlatformAPI(cfg, provider))
+	server := httptest.NewServer(NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api))
+	t.Cleanup(func() {
+		server.Close()
+		hub.Close()
+		manager.Close()
+	})
+	connection := dialWebSocket(t, server, "member-token", "lounge")
+	readUntilType(t, connection, "player.state")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	require.NoError(t, connection.Write(ctx, websocket.MessageText, []byte(`{"type":"enqueue","payload":{"platform":"bilibili","musicId":"BV1","mutationId":"m-bili"}}`)))
+	ack := readUntilType(t, connection, "enqueue.ack")
+	require.Equal(t, "m-bili", ack.Payload.(map[string]any)["mutationId"])
+}
+
 func TestWebSocketJoinBroadcastsVersionedPresence(t *testing.T) {
 	server, _ := websocketTestServer(t)
 	first := dialWebSocket(t, server, "member-token", "lounge")

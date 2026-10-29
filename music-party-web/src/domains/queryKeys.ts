@@ -16,9 +16,9 @@ export const queryKeys = {
       ['search', 'external-playlist', platform, playlistId, page] as const
   },
   playlists: {
-    personal: () => ['playlists', 'personal'] as const,
+    personal: (publicId: string) => ['playlists', 'personal', publicId] as const,
     room: (roomId: string) => ['playlists', 'room', roomId] as const,
-    personalTracks: (playlistId: string) => ['playlists', 'personal', playlistId, 'tracks'] as const,
+    personalTracks: (publicId: string, playlistId: string) => ['playlists', 'personal', publicId, playlistId, 'tracks'] as const,
     roomTracks: (roomId: string, playlistId: string) => ['playlists', 'room', roomId, playlistId, 'tracks'] as const
   },
   members: {

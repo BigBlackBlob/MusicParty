@@ -230,7 +230,15 @@ func (api *DesktopAPI) resolveMedia(w http.ResponseWriter, r *http.Request) erro
 	if err != nil {
 		return &APIError{Status: http.StatusUnauthorized, Name: "unauthorized", Message: "Authentication required"}
 	}
-	value, err := api.platforms.ResolvePlayable(r.Context(), chi.URLParam(r, "platform"), chi.URLParam(r, "songId"), session.SessionToken)
+	platformName, err := decodedURLParam(r, "platform")
+	if err != nil {
+		return err
+	}
+	songID, err := decodedURLParam(r, "songId")
+	if err != nil {
+		return err
+	}
+	value, err := api.platforms.ResolvePlayable(r.Context(), platformName, songID, session.SessionToken)
 	if err != nil {
 		return desktopMediaError(err)
 	}
@@ -254,7 +262,10 @@ func (api *DesktopAPI) mediaSession(r *http.Request) error {
 	if _, err := api.accounts.Resolve(r.Context(), sessionToken(r)); err != nil {
 		return &APIError{Status: 401, Name: "unauthorized", Message: "Authentication required"}
 	}
-	name := chi.URLParam(r, "platform")
+	name, err := decodedURLParam(r, "platform")
+	if err != nil {
+		return err
+	}
 	if !api.platforms.PlatformAllowed(r.Context(), name, sessionToken(r)) {
 		return &APIError{Status: 403, Name: "forbidden", Message: "Provider access denied"}
 	}
@@ -270,7 +281,11 @@ func (api *DesktopAPI) searchDesktop(w http.ResponseWriter, r *http.Request) err
 	if err != nil || platform.ValidateKeyword(q) != nil {
 		return &APIError{Status: 400, Name: "invalid-request", Message: "Invalid search parameters"}
 	}
-	service, ok := api.platforms.Service(chi.URLParam(r, "platform"))
+	name, err := decodedURLParam(r, "platform")
+	if err != nil {
+		return err
+	}
+	service, ok := api.platforms.Service(name)
 	if !ok {
 		return desktopMediaError(errors.New("unavailable"))
 	}
@@ -294,7 +309,11 @@ func (api *DesktopAPI) searchAlbumsDesktop(w http.ResponseWriter, r *http.Reques
 	if err != nil || platform.ValidateKeyword(q) != nil {
 		return &APIError{Status: http.StatusBadRequest, Name: "invalid-request", Message: "Invalid album search parameters"}
 	}
-	service, ok := api.platforms.Service(chi.URLParam(r, "platform"))
+	name, err := decodedURLParam(r, "platform")
+	if err != nil {
+		return err
+	}
+	service, ok := api.platforms.Service(name)
 	if !ok {
 		return desktopMediaError(errors.New("unavailable"))
 	}
@@ -313,11 +332,19 @@ func (api *DesktopAPI) albumSongsDesktop(w http.ResponseWriter, r *http.Request)
 	if err := api.mediaSession(r); err != nil {
 		return err
 	}
-	albumID := strings.TrimSpace(chi.URLParam(r, "albumId"))
+	platformName, err := decodedURLParam(r, "platform")
+	if err != nil {
+		return err
+	}
+	albumID, err := decodedURLParam(r, "albumId")
+	if err != nil {
+		return err
+	}
+	albumID = strings.TrimSpace(albumID)
 	if albumID == "" || len(albumID) > 64 {
 		return &APIError{Status: http.StatusBadRequest, Name: "invalid-request", Message: "Invalid album id"}
 	}
-	service, ok := api.platforms.Service(chi.URLParam(r, "platform"))
+	service, ok := api.platforms.Service(platformName)
 	if !ok {
 		return desktopMediaError(errors.New("unavailable"))
 	}
@@ -333,11 +360,19 @@ func (api *DesktopAPI) lyrics(w http.ResponseWriter, r *http.Request) error {
 	if err := api.mediaSession(r); err != nil {
 		return err
 	}
-	service, ok := api.platforms.Service(chi.URLParam(r, "platform"))
+	platformName, err := decodedURLParam(r, "platform")
+	if err != nil {
+		return err
+	}
+	songID, err := decodedURLParam(r, "songId")
+	if err != nil {
+		return err
+	}
+	service, ok := api.platforms.Service(platformName)
 	if !ok {
 		return desktopMediaError(errors.New("unavailable"))
 	}
-	value, err := service.Lyric(r.Context(), chi.URLParam(r, "songId"))
+	value, err := service.Lyric(r.Context(), songID)
 	if err != nil {
 		return desktopMediaError(err)
 	}
@@ -355,7 +390,15 @@ func (api *DesktopAPI) cover(w http.ResponseWriter, r *http.Request) error {
 	if err := api.mediaSession(r); err != nil {
 		return err
 	}
-	value, err := api.platforms.ResolvePlayable(r.Context(), chi.URLParam(r, "platform"), chi.URLParam(r, "songId"), sessionToken(r))
+	platformName, err := decodedURLParam(r, "platform")
+	if err != nil {
+		return err
+	}
+	songID, err := decodedURLParam(r, "songId")
+	if err != nil {
+		return err
+	}
+	value, err := api.platforms.ResolvePlayable(r.Context(), platformName, songID, sessionToken(r))
 	if err != nil {
 		return desktopMediaError(err)
 	}

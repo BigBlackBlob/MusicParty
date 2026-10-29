@@ -37,6 +37,20 @@ type cachedPlayable struct {
 	expiresAt time.Time
 }
 
+// decodedURLParam restores the complete value emitted by encodeURIComponent.
+// chi deliberately keeps escaped path bytes in URLParam so encoded slashes do
+// not change routing; application identifiers still need their decoded form.
+func decodedURLParam(r *http.Request, name string) (string, error) {
+	value, err := url.PathUnescape(chi.URLParam(r, name))
+	if err != nil {
+		// net/http may already have consumed part of an escape sequence. In
+		// that case retain the literal value instead of rejecting identifiers
+		// that legitimately contain a percent sign.
+		return chi.URLParam(r, name), nil
+	}
+	return value, nil
+}
+
 func NewPlatformAPI(cfg config.Config, services ...platform.Service) *PlatformAPI {
 	m := make(map[string]platform.Service, len(services))
 	for _, service := range services {
@@ -263,7 +277,11 @@ func (api *PlatformAPI) platforms(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 func (api *PlatformAPI) authorizedService(r *http.Request) (platform.Service, error) {
-	return api.authorizedPlatform(r.Context(), chi.URLParam(r, "platform"), sessionToken(r))
+	name, err := decodedURLParam(r, "platform")
+	if err != nil {
+		return nil, err
+	}
+	return api.authorizedPlatform(r.Context(), name, sessionToken(r))
 }
 
 func (api *PlatformAPI) authorizedPlatform(ctx context.Context, name, token string) (platform.Service, error) {

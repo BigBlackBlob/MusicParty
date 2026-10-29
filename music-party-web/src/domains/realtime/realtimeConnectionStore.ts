@@ -8,6 +8,7 @@ export const useRealtimeConnectionStore = defineStore('realtime-connection', () 
   const state = ref<ConnectionState>('idle')
   const lastPingSentAt = ref(0)
   const lastPongAt = ref(0)
+  const connectedAt = ref(0)
   const lastResyncSentAt = ref(0)
   const lastRttMs = ref<number | null>(null)
 
@@ -17,13 +18,14 @@ export const useRealtimeConnectionStore = defineStore('realtime-connection', () 
     state.value = 'idle'
     lastPingSentAt.value = 0
     lastPongAt.value = 0
+    connectedAt.value = 0
     lastResyncSentAt.value = 0
     lastRttMs.value = null
   }
 
   return {
     connected, hasInitialSnapshot, state,
-    lastPingSentAt, lastPongAt, lastResyncSentAt, lastRttMs,
+    lastPingSentAt, lastPongAt, connectedAt, lastResyncSentAt, lastRttMs,
     reset
   }
 })

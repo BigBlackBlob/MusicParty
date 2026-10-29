@@ -15,11 +15,12 @@ import {
   reorderPlaylistTracks,
   type PlaylistScope
 } from '../domains/playlists/playlistService'
-import { realtimeClient } from '../transport/realtimeClient'
 import { useRoomStore } from './room'
+import { useRoomCommandStore } from '../domains/realtime/roomCommandStore'
 
 export const useRoomPlaylistsStore = defineStore('roomPlaylists', () => {
   const roomStore = useRoomStore()
+  const commands = useRoomCommandStore()
   const selectedPlaylistId = ref('')
   const loading = ref(false)
   const error = ref('')
@@ -91,8 +92,7 @@ export const useRoomPlaylistsStore = defineStore('roomPlaylists', () => {
   }
 
   function playPlaylist(playlistId = selectedPlaylistId.value): boolean {
-    const mutationId = `room-playlist-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    return Boolean(playlistId && realtimeClient.send('enqueue.room-playlist', { playlistId, mutationId }))
+    return Boolean(playlistId && commands.enqueueRoomPlaylist(playlistId))
   }
 
   async function exportPlaylist(format = 'txt', playlistId = selectedPlaylistId.value): Promise<string> {

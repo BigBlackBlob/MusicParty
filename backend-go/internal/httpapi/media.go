@@ -285,12 +285,34 @@ func (api *MediaAPI) navidromeCover(w http.ResponseWriter, r *http.Request) erro
 	return api.proxyPlatform(w, r, "navidrome", chi.URLParam(r, "coverId"), true)
 }
 func (api *MediaAPI) subsonicStream(w http.ResponseWriter, r *http.Request) error {
-	roomID := defaultValue(chi.URLParam(r, "roomId"), "lounge")
-	return api.proxyPlatform(w, r, "subsonic-"+chi.URLParam(r, "sourceId")+"@"+roomID, chi.URLParam(r, "songId"), false)
+	roomID, err := decodedURLParam(r, "roomId")
+	if err != nil {
+		return err
+	}
+	sourceID, err := decodedURLParam(r, "sourceId")
+	if err != nil {
+		return err
+	}
+	songID, err := decodedURLParam(r, "songId")
+	if err != nil {
+		return err
+	}
+	return api.proxyPlatform(w, r, "subsonic-"+sourceID+"@"+defaultValue(roomID, "lounge"), songID, false)
 }
 func (api *MediaAPI) subsonicCover(w http.ResponseWriter, r *http.Request) error {
-	roomID := defaultValue(chi.URLParam(r, "roomId"), "lounge")
-	return api.proxyPlatform(w, r, "subsonic-"+chi.URLParam(r, "sourceId")+"@"+roomID, chi.URLParam(r, "coverId"), true)
+	roomID, err := decodedURLParam(r, "roomId")
+	if err != nil {
+		return err
+	}
+	sourceID, err := decodedURLParam(r, "sourceId")
+	if err != nil {
+		return err
+	}
+	coverID, err := decodedURLParam(r, "coverId")
+	if err != nil {
+		return err
+	}
+	return api.proxyPlatform(w, r, "subsonic-"+sourceID+"@"+defaultValue(roomID, "lounge"), coverID, true)
 }
 func (api *MediaAPI) proxyPlatform(w http.ResponseWriter, r *http.Request, name, id string, cover bool) error {
 	source, err := api.platforms.authorizedMediaSource(r, name)

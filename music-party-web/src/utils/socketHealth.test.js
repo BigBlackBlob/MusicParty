@@ -7,4 +7,10 @@ describe('socket health helpers', () => {
     expect(shouldForceSocketReconnect({ connected: true, lastPongAt: 1_000, now: 20_000 })).toBe(false);
     expect(shouldForceSocketReconnect({ connected: true, lastPongAt: 1_000, now: 40_000 })).toBe(true);
   });
+
+  it('uses connection age when no pong has arrived yet', () => {
+    expect(shouldForceSocketReconnect({ connected: true, connectedAt: 10_000, now: 39_999 })).toBe(false);
+    expect(shouldForceSocketReconnect({ connected: true, connectedAt: 10_000, now: 40_000 })).toBe(true);
+    expect(shouldForceSocketReconnect({ connected: true, connectedAt: 10_000, lastPongAt: 35_000, now: 40_000 })).toBe(false);
+  });
 });

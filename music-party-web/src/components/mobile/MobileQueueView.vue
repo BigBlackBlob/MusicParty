@@ -140,7 +140,7 @@
               <p class="font-caption text-caption text-text-secondary truncate">{{ formatArtists(song.artists) }}</p>
             </div>
             <button 
-              @click="liked.remove(song.key)"
+              @click="liked.removeAndSync(song.key, user.isGuest)"
               class="w-[44px] h-[44px] flex items-center justify-center rounded-full hover:bg-surface-raised transition-colors text-text-secondary hover:text-error opacity-0 group-hover:opacity-100"
             >
               <span class="material-symbols-outlined text-[20px]">delete</span>

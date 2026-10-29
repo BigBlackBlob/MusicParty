@@ -2,7 +2,7 @@ import { storeToRefs } from 'pinia'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { Music, QueueItem } from '../../contracts/generated/models'
-import type { ClientEnvelope, QueuePatchServerEnvelope } from '../../contracts/generated/websocket'
+import type { ClientEnvelope, ControlAckServerEnvelope, QueuePatchServerEnvelope } from '../../contracts/generated/websocket'
 import { useToast } from '../../composables/useToast'
 import { applyQueueReorder } from '../../utils/queueReorder'
 import { realtimeClient } from '../../transport/realtimeClient'
@@ -16,7 +16,7 @@ type ClientType = ClientEnvelope['type']
 type ClientPayload<T extends ClientType> = Extract<ClientEnvelope, { type: T }>['payload']
 type QueuePatch = QueuePatchServerEnvelope['payload']
 type DeferredQueueUpdate = { queue: QueueItem[]; version: number; snapshot: boolean; epoch: string }
-type EnqueueEnvelope = Extract<ClientEnvelope, { type: 'enqueue' | 'enqueue.album' | 'enqueue.playlist' }>
+type EnqueueEnvelope = Extract<ClientEnvelope, { type: 'enqueue' | 'enqueue.album' | 'enqueue.playlist' | 'enqueue.room-playlist' }>
 type QueueMutationEnvelope = Extract<ClientEnvelope, { type: 'queue.top' | 'queue.remove' | 'queue.batch-top' | 'queue.batch-remove' }>
 
 const localCooldownMs = 500
@@ -32,6 +32,7 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
   const lastControlTime = ref(0)
   let lastAuthPromptAt = 0
   let deferredQueueUpdate: DeferredQueueUpdate | null = null
+  const pendingLikes = new Map<string, { music: Music; result: 'liked' | 'unliked' }>()
 
   function notifyFailure(message: string, type: 'warning' | 'error' = 'warning'): void {
     useToast().show({ title: '操作未生效', message, type, duration: 2200 })
@@ -158,11 +159,57 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
 
   async function toggleLike(music: Music | null | undefined): Promise<void> {
     if (!music || !requireAuth()) return
-    if (await likedSongs.toggle(music) === 'liked') realtimeClient.send('control.like', {})
+    if (!connected.value || !realtimeClient.connected) {
+      notifyFailure('播放服务尚未连接，请稍后重试', 'error')
+      return
+    }
+    const result = await likedSongs.toggle(music)
+    const mutationId = mutationBus.createMutationId('like')
+    const sent = realtimeClient.sendEnvelope({
+      type: result === 'liked' ? 'control.like' : 'control.unlike',
+      payload: { mutationId }
+    })
+    if (!sent) {
+      await rollbackLike(music)
+      notifyFailure('红心操作未发送，请稍后重试', 'error')
+      return
+    }
+    pendingLikes.set(mutationId, { music, result })
+    mutationBus.beginMutation({
+      mutationId, kind: 'like', timeoutMs: 3000,
+      onTimeout: () => {
+        const pending = pendingLikes.get(mutationId)
+        pendingLikes.delete(mutationId)
+        if (!pending) return
+        void rollbackLike(pending.music)
+        notifyFailure('红心确认超时，请稍后重试', 'error')
+        requestResync('like-timeout', true)
+      }
+    })
+  }
+
+  async function rollbackLike(music: Music): Promise<void> {
+    try {
+      await likedSongs.toggle(music)
+    } catch (error) {
+      console.warn('Failed to roll back liked song', error)
+    }
+  }
+
+  function settleLike(ack: ControlAckServerEnvelope['payload']): void {
+    if (!ack.mutationId) return
+    const pending = pendingLikes.get(ack.mutationId)
+    if (!pending) return
+    pendingLikes.delete(ack.mutationId)
+    mutationBus.settleMutation(ack.mutationId)
+    if (ack.outcome === 'rejected') {
+      void rollbackLike(pending.music)
+      notifyFailure(ack.code || '红心操作未生效，请重试', 'error')
+    }
   }
 
   function sendEnqueue(
-    kind: Extract<QueueMutationKind, 'enqueue' | 'enqueue-album' | 'enqueue-playlist'>,
+    kind: Extract<QueueMutationKind, 'enqueue' | 'enqueue-album' | 'enqueue-playlist' | 'enqueue-room-playlist'>,
     buildEnvelope: (mutationId: string) => EnqueueEnvelope,
   ): boolean {
     if (!requireAuth()) return false
@@ -188,13 +235,18 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
   const enqueue = (platform: string, musicId: string): boolean => sendEnqueue('enqueue', mutationId => ({ type: 'enqueue', payload: { platform, musicId, mutationId } }))
   const enqueuePlaylist = (platform: string, playlistId: string): boolean => sendEnqueue('enqueue-playlist', mutationId => ({ type: 'enqueue.playlist', payload: { platform, playlistId, mutationId } }))
   const enqueueAlbum = (platform: string, albumId: string): boolean => sendEnqueue('enqueue-album', mutationId => ({ type: 'enqueue.album', payload: { platform, albumId, mutationId } }))
+  const enqueueRoomPlaylist = (playlistId: string): boolean => sendEnqueue('enqueue-room-playlist', mutationId => ({ type: 'enqueue.room-playlist', payload: { playlistId, mutationId } }))
 
   function sendQueueMutation(
     kind: Extract<QueueMutationKind, 'top' | 'remove' | 'batch-top' | 'batch-remove'>,
     buildEnvelope: (mutationId: string) => QueueMutationEnvelope,
   ): boolean {
     const mutationId = mutationBus.createMutationId(kind)
-    if (!realtimeClient.sendEnvelope(buildEnvelope(mutationId))) return false
+    if (!realtimeClient.sendEnvelope(buildEnvelope(mutationId))) {
+      notifyFailure('队列操作没有发出，请等待连接恢复后再试', 'error')
+      requestResync('queue-mutation-send-failed', true)
+      return false
+    }
     mutationBus.beginMutation({ mutationId, kind, timeoutMs: 1500, onTimeout: () => requestResync('queue-mutation-timeout', true) })
     return true
   }
@@ -231,14 +283,15 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
   function reset(): void {
     mutationBus.reset()
     deferredQueueUpdate = null
+    pendingLikes.clear()
     lastControlTime.value = 0
   }
 
   return {
     requireAuth,
     resetQueueGeneration, setQueue, applyQueuePatch, settleQueueReorder, settleQueueMutation, settleEnqueue,
-    requestResync, playNext, playPrevious, togglePause, toggleShuffle, seek, toggleLike,
-    enqueue, enqueuePlaylist, enqueueAlbum, topSong, removeSong, topSongs, removeSongs, reorderQueue,
+    requestResync, playNext, playPrevious, togglePause, toggleShuffle, seek, toggleLike, settleLike,
+    enqueue, enqueuePlaylist, enqueueAlbum, enqueueRoomPlaylist, topSong, removeSong, topSongs, removeSongs, reorderQueue,
     reset,
   }
 })

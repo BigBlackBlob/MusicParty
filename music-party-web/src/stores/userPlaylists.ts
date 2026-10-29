@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import type { Music } from '../contracts/generated/models'
 import { personalPlaylistsApi } from '../api/personalPlaylists'
@@ -18,8 +18,6 @@ import {
 } from '../domains/playlists/playlistService'
 import { useUserStore } from './user'
 
-const scope: PlaylistScope = { type: 'personal' }
-
 export const useUserPlaylistsStore = defineStore('userPlaylists', () => {
   const selectedPlaylistId = ref('')
   const loading = ref(false)
@@ -27,12 +25,15 @@ export const useUserPlaylistsStore = defineStore('userPlaylists', () => {
   const cacheRevision = ref(0)
   queryClient.getQueryCache().subscribe(() => { cacheRevision.value += 1 })
   const userStore = useUserStore()
+  const scope = computed<PlaylistScope>(() => ({ type: 'personal', publicId: userStore.publicId }))
 
-  const playlists = computed(() => { cacheRevision.value; return cachedPlaylists(scope) })
+  watch(() => userStore.publicId, () => { selectedPlaylistId.value = '' })
+
+  const playlists = computed(() => { cacheRevision.value; return cachedPlaylists(scope.value) })
   const selectedPlaylist = computed(() => playlists.value.find(item => item.id === selectedPlaylistId.value) ?? null)
   const selectedTracks = computed(() => {
     cacheRevision.value
-    return selectedPlaylistId.value ? cachedPlaylistTracks(scope, selectedPlaylistId.value) : []
+    return selectedPlaylistId.value ? cachedPlaylistTracks(scope.value, selectedPlaylistId.value) : []
   })
   const likedPlaylist = computed(() => playlists.value.find(item => item.systemKey === 'liked-songs') ?? null)
 
@@ -47,7 +48,7 @@ export const useUserPlaylistsStore = defineStore('userPlaylists', () => {
     loading.value = true
     error.value = ''
     try {
-      const values = await listPlaylists(scope)
+      const values = await listPlaylists(scope.value)
       if (!selectedPlaylistId.value && values.length) selectedPlaylistId.value = values[0]?.id ?? ''
       return values
     } catch (cause) {
@@ -60,12 +61,12 @@ export const useUserPlaylistsStore = defineStore('userPlaylists', () => {
 
   async function loadTracks(playlistId = selectedPlaylistId.value) {
     if (!playlistId || !requireNamedUser()) return []
-    return listPlaylistTracks(scope, playlistId)
+    return listPlaylistTracks(scope.value, playlistId)
   }
 
   async function createPlaylist(name: string) {
     if (!requireNamedUser()) return null
-    const playlist = await createScopedPlaylist(scope, name)
+    const playlist = await createScopedPlaylist(scope.value, name)
     selectedPlaylistId.value = playlist.id
     await loadPlaylists()
     return playlist
@@ -79,19 +80,19 @@ export const useUserPlaylistsStore = defineStore('userPlaylists', () => {
   }
 
   async function renamePlaylist(playlistId: string, name: string): Promise<void> {
-    await renameScopedPlaylist(scope, playlistId, name)
+    await renameScopedPlaylist(scope.value, playlistId, name)
     await loadPlaylists()
   }
 
   async function deletePlaylist(playlistId: string): Promise<void> {
-    await removeScopedPlaylist(scope, playlistId)
+    await removeScopedPlaylist(scope.value, playlistId)
     if (selectedPlaylistId.value === playlistId) selectedPlaylistId.value = ''
     await loadPlaylists()
   }
 
   async function addTracks(playlistId: string, musics: Music[]) {
     if (!playlistId || !requireNamedUser()) return null
-    const result = await addPersonalTracks(playlistId, musics)
+    const result = await addPersonalTracks(userStore.publicId, playlistId, musics)
     await Promise.all([loadPlaylists(), loadTracks(playlistId)])
     return result
   }
@@ -102,13 +103,13 @@ export const useUserPlaylistsStore = defineStore('userPlaylists', () => {
   }
 
   async function importPlaylist(playlistId: string, platform: string, externalPlaylistId: string) {
-    const result = await importScopedPlaylist(scope, playlistId, platform, externalPlaylistId)
+    const result = await importScopedPlaylist(scope.value, playlistId, platform, externalPlaylistId)
     await Promise.all([loadPlaylists(), loadTracks(playlistId)])
     return result
   }
 
   async function removeTrack(playlistId: string, trackId: string): Promise<void> {
-    await removePlaylistTrack(scope, playlistId, trackId)
+    await removePlaylistTrack(scope.value, playlistId, trackId)
     await Promise.all([loadPlaylists(), loadTracks(playlistId)])
   }
 

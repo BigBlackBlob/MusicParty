@@ -413,11 +413,11 @@ func (api *WebSocketAPI) enqueueRemoteCollection(ctx context.Context, client *ws
 	}
 	service, ok := api.platforms.Service(request.Platform)
 	if !ok {
-		api.nack(client, "enqueue.nack", request.MutationID, errors.New("platform unavailable"))
+		api.nackReason(client, "enqueue.nack", request.MutationID, "PLATFORM_UNAVAILABLE")
 		return
 	}
 	if !api.platforms.PlatformAllowed(ctx, request.Platform, session.SessionToken) {
-		api.nack(client, "enqueue.nack", request.MutationID, errors.New("forbidden"))
+		api.nackReason(client, "enqueue.nack", request.MutationID, "FORBIDDEN")
 		return
 	}
 	var values []platform.Music
@@ -427,7 +427,7 @@ func (api *WebSocketAPI) enqueueRemoteCollection(ctx context.Context, client *ws
 		values, err = playlistImportSongs(ctx, service, request.PlaylistID, api.cfg.Player.MaxPlaylistImportSize)
 	}
 	if err != nil {
-		api.nack(client, "enqueue.nack", request.MutationID, err)
+		api.nackReason(client, "enqueue.nack", request.MutationID, "PLATFORM_FAILED")
 		return
 	}
 	musics := make([]storesqlite.Music, 0, len(values))
@@ -506,8 +506,11 @@ func (api *WebSocketAPI) enqueue(ctx context.Context, client *wsruntime.Client, 
 	}
 	playable, err := api.platforms.ResolvePlayable(ctx, request.Platform, request.MusicID, session.SessionToken)
 	if err != nil {
-		api.nack(client, "enqueue.nack", request.MutationID, err)
+		api.nackReason(client, "enqueue.nack", request.MutationID, "PLATFORM_FAILED")
 		return
+	}
+	if playable.Platform == "" {
+		playable.Platform = request.Platform
 	}
 	music := storesqlite.Music{ID: playable.ID, Name: playable.Name, Artists: playable.Artists, Duration: playable.Duration, Platform: playable.Platform, CoverURL: playable.CoverURL}
 	item, err := runtime.Enqueue(ctx, session, music, queueMutationID(session, request.MutationID))
@@ -643,6 +646,9 @@ func (api *WebSocketAPI) nack(client *wsruntime.Client, kind, mutationID string,
 	} else if err != nil && err.Error() == "guest" {
 		reason = "GUEST"
 	}
+	api.nackReason(client, kind, mutationID, reason)
+}
+func (api *WebSocketAPI) nackReason(client *wsruntime.Client, kind, mutationID, reason string) {
 	payload := map[string]any{"mutationId": mutationID, "reason": reason}
 	if kind == "queue.reorder.nack" {
 		payload["queueVersion"] = nil

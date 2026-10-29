@@ -10,6 +10,8 @@ export type QueueMutationKind =
   | 'enqueue'
   | 'enqueue-album'
   | 'enqueue-playlist'
+  | 'enqueue-room-playlist'
+  | 'like'
 
 interface PendingMutation {
   kind: QueueMutationKind

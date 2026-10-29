@@ -55,6 +55,7 @@ export class RealtimeClient {
   }
   private readonly onOffline = () => {
     this.clearReconnectTimer()
+    this.connected = false
     this.setState('offline')
   }
   private readonly onVisibility = () => {
@@ -258,8 +259,8 @@ export class RealtimeClient {
       case 'playlist.nack': handlers['playlist.nack']?.(envelope.payload, envelope); return
       // History is the same shape of additive frame. No store subscribes yet.
       case 'history.page': handlers['history.page']?.(envelope.payload, envelope); return
-      // additive server frame; the web UI reacts to broadcasts and resolves nothing from acks yet
-      case 'control.ack': return
+      // Control acknowledgements are forwarded so mutations can settle or roll back.
+      case 'control.ack': handlers['control.ack']?.(envelope.payload, envelope); return
       default: assertNever(envelope)
     }
   }
