@@ -39,7 +39,7 @@ func SubsonicServices(client *platform.Client, sources []storesqlite.SubsonicSou
 	for _, binding := range bindings {
 		source, ok := byID[binding.SourceID]
 		if !ok {
-			return nil, nil, fmt.Errorf("Subsonic binding %q references missing source %q", binding.RoomID, binding.SourceID)
+			return nil, nil, fmt.Errorf("subsonic binding %q references missing source %q", binding.RoomID, binding.SourceID)
 		}
 		cfg, allowed := subsonicBindingConfig(source, binding, passwords[source.ID])
 		// Keep disabled entries to shadow any environment-provided service of the

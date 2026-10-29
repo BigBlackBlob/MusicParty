@@ -40,7 +40,6 @@ var (
 
 type accountDisabledError struct{}
 
-//lint:ignore ST1005 Java-compatible API message.
 func (accountDisabledError) Error() string { return "Account is disabled" }
 
 func (accountDisabledError) Is(target error) bool { return target == ErrUnknownSession }

@@ -10,6 +10,7 @@ import (
 
 func productionTestConfig(production bool, secret string) Config {
 	return Config{
+		Player: Player{MaxPlaylistImportSize: 100},
 		Server: Server{Port: 8080},
 		Application: Application{
 			Mode:           "server",
