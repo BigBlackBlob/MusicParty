@@ -33,6 +33,16 @@ export const personalPlaylistsApi = {
     client.get<string>(`${base}/${id(playlistId)}/export`, { params: { format } }),
   enqueue: (playlistId: string) => client.post<PlaylistMutationResult>(`${base}/${id(playlistId)}/enqueue`),
   likedSongs: () => client.get<LikedSongTrack[]>(likedBase),
-  likeSong: (music: Music) => client.put<Music, Music>(`${likedBase}/${id(music.platform)}/${id(music.id)}`, music),
+  likeSong: (music: Music) => {
+    const { id: musicId, name, artists, duration, platform, coverUrl } = music
+    return client.put<Music, Music>(`${likedBase}/${id(platform)}/${id(musicId)}`, {
+      id: musicId,
+      name,
+      artists,
+      duration,
+      platform,
+      coverUrl
+    })
+  },
   unlikeSong: (platform: string, musicId: string) => client.delete<void>(`${likedBase}/${id(platform)}/${id(musicId)}`)
 }
