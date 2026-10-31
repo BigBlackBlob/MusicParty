@@ -27,6 +27,19 @@ type namedFixturePlatform struct {
 	name string
 }
 
+type searchCapturePlatform struct {
+	fixturePlatform
+	name    string
+	keyword string
+}
+
+func (f *searchCapturePlatform) Name() string { return f.name }
+
+func (f *searchCapturePlatform) Search(_ context.Context, keyword string, _, _ int) ([]platform.Music, error) {
+	f.keyword = keyword
+	return []platform.Music{}, nil
+}
+
 func (f namedFixturePlatform) Name() string { return f.name }
 
 type neteaseFixture struct{ err error }
@@ -122,6 +135,17 @@ func TestPlatformRouteDecodesEncodedPlatformNames(t *testing.T) {
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/search/subsonic-local-navi%40lounge/song", nil))
 	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 }
+
+func TestPlatformSearchDecodesEncodedKeywordWithEncodedPlatform(t *testing.T) {
+	cfg := testConfig(t)
+	service := &searchCapturePlatform{name: "subsonic-local-navi@lounge"}
+	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewPlatformAPI(cfg, service))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/search/subsonic-local-navi%40lounge/%E5%B9%BB%E6%83%B3", nil))
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	require.Equal(t, "幻想", service.keyword)
+}
+
 func TestPlatformUpstreamFailureIsBadGateway(t *testing.T) {
 	cfg := testConfig(t)
 	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewPlatformAPI(cfg, fixturePlatform{err: errors.New("upstream")}))

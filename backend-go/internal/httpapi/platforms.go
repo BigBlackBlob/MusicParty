@@ -308,7 +308,10 @@ func queryPage(r *http.Request, maxLimit int) (int, int, error) {
 	return offset, limit, nil
 }
 func (api *PlatformAPI) search(w http.ResponseWriter, r *http.Request) error {
-	keyword := chi.URLParam(r, "keyword")
+	keyword, err := decodedURLParam(r, "keyword")
+	if err != nil {
+		return err
+	}
 	offset, limit, err := queryPage(r, platform.MaxSearchLimit)
 	if err != nil {
 		return err
@@ -327,14 +330,22 @@ func (api *PlatformAPI) search(w http.ResponseWriter, r *http.Request) error {
 	return writePlatformResult(w, result, err)
 }
 func (api *PlatformAPI) userPlaylists(w http.ResponseWriter, r *http.Request) error {
+	userID, err := decodedURLParam(r, "userId")
+	if err != nil {
+		return err
+	}
 	service, err := api.authorizedService(r)
 	if err != nil {
 		return err
 	}
-	v, err := service.UserPlaylists(r.Context(), chi.URLParam(r, "userId"))
+	v, err := service.UserPlaylists(r.Context(), userID)
 	return writePlatformResult(w, v, err)
 }
 func (api *PlatformAPI) playlistSongs(w http.ResponseWriter, r *http.Request) error {
+	playlistID, err := decodedURLParam(r, "playlistId")
+	if err != nil {
+		return err
+	}
 	offset, limit, err := queryPage(r, platform.MaxPlaylistLimit)
 	if err != nil {
 		return err
@@ -343,7 +354,7 @@ func (api *PlatformAPI) playlistSongs(w http.ResponseWriter, r *http.Request) er
 	if err != nil {
 		return err
 	}
-	v, err := service.PlaylistSongs(r.Context(), chi.URLParam(r, "playlistId"), offset, limit)
+	v, err := service.PlaylistSongs(r.Context(), playlistID, offset, limit)
 	if err != nil && chi.URLParam(r, "platform") == "netease" {
 		return mapNeteaseError(err)
 	}
@@ -363,22 +374,30 @@ func (api *PlatformAPI) searchAlbums(w http.ResponseWriter, r *http.Request) err
 	return writePlatformResult(w, v.Items, err)
 }
 func (api *PlatformAPI) albumSongs(w http.ResponseWriter, r *http.Request) error {
+	albumID, err := decodedURLParam(r, "albumId")
+	if err != nil {
+		return err
+	}
 	service, err := api.authorizedService(r)
 	if err != nil {
 		return err
 	}
-	v, err := service.AlbumSongs(r.Context(), chi.URLParam(r, "albumId"))
+	v, err := service.AlbumSongs(r.Context(), albumID)
 	return writePlatformResult(w, v, err)
 }
 func (api *PlatformAPI) searchUsers(w http.ResponseWriter, r *http.Request) error {
-	if err := platform.ValidateKeyword(chi.URLParam(r, "keyword")); err != nil {
+	keyword, err := decodedURLParam(r, "keyword")
+	if err != nil {
+		return err
+	}
+	if err := platform.ValidateKeyword(keyword); err != nil {
 		return mapPlatformError(err)
 	}
 	service, err := api.authorizedService(r)
 	if err != nil {
 		return err
 	}
-	v, err := service.SearchUsers(r.Context(), chi.URLParam(r, "keyword"))
+	v, err := service.SearchUsers(r.Context(), keyword)
 	return writePlatformResult(w, v, err)
 }
 func (api *PlatformAPI) lyric(w http.ResponseWriter, r *http.Request) error {
@@ -386,7 +405,11 @@ func (api *PlatformAPI) lyric(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	v, err := service.Lyric(r.Context(), chi.URLParam(r, "musicId"))
+	musicID, err := decodedURLParam(r, "musicId")
+	if err != nil {
+		return err
+	}
+	v, err := service.Lyric(r.Context(), musicID)
 	if err != nil {
 		return mapPlatformError(err)
 	}
@@ -399,7 +422,11 @@ func (api *PlatformAPI) lyricDetail(w http.ResponseWriter, r *http.Request) erro
 	if err != nil {
 		return err
 	}
-	v, err := service.Lyric(r.Context(), chi.URLParam(r, "musicId"))
+	musicID, err := decodedURLParam(r, "musicId")
+	if err != nil {
+		return err
+	}
+	v, err := service.Lyric(r.Context(), musicID)
 	return writePlatformResult(w, v, err)
 }
 func (api *PlatformAPI) coverColor(w http.ResponseWriter, r *http.Request) error {
