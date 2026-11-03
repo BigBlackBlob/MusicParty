@@ -133,7 +133,7 @@ jobs:
         run: pnpm audit --audit-level=moderate --registry=https://registry.npmjs.org
 
   browser-e2e:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v6
@@ -153,13 +153,27 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Install Chromium
         working-directory: music-party-web
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm exec playwright install chromium
       - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        run: |
+          choco install ffmpeg -y --no-progress --limit-output
+          $ffmpeg = Get-ChildItem 'C:\ProgramData\chocolatey\lib\ffmpeg\tools' -Filter ffmpeg.exe -Recurse | Select-Object -First 1
+          if (-not $ffmpeg) { throw 'FFmpeg installation did not provide ffmpeg.exe' }
+          $ffmpeg.DirectoryName | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
       - name: Build frontend and backend
         run: |
-          cd music-party-web && pnpm build
-          cd ../backend-go && go build -trimpath -o "$RUNNER_TEMP/musicparty" ./cmd/musicparty
+          Push-Location music-party-web
+          try {
+            pnpm build
+            if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed' }
+          }
+          finally { Pop-Location }
+          Push-Location backend-go
+          try {
+            go build -trimpath -o (Join-Path $env:RUNNER_TEMP 'musicparty.exe') ./cmd/musicparty
+            if ($LASTEXITCODE -ne 0) { throw 'Backend build failed' }
+          }
+          finally { Pop-Location }
       - name: Start isolated Go server
         env:
           SERVER_PORT: '18081'
@@ -178,24 +192,35 @@ jobs:
           NAVIDROME_ENABLED: 'false'
           SQUIDIFY_ENABLED: 'false'
         run: |
-          export DB_PATH="$RUNNER_TEMP/musicparty-e2e.db"
-          export LOCAL_LIBRARY_PATH="$RUNNER_TEMP/musicparty-e2e-local"
-          export STATIC_PATH="$GITHUB_WORKSPACE/music-party-web/dist"
-          "$RUNNER_TEMP/musicparty" >"$RUNNER_TEMP/musicparty-e2e.log" 2>&1 &
-          echo $! >"$RUNNER_TEMP/musicparty-e2e.pid"
-          for _ in {1..30}; do
-            if curl --fail --silent http://127.0.0.1:18081/actuator/health/readiness >/dev/null; then
+          $env:DB_PATH = Join-Path $env:RUNNER_TEMP 'musicparty-e2e.db'
+          $env:LOCAL_LIBRARY_PATH = Join-Path $env:RUNNER_TEMP 'musicparty-e2e-local'
+          $env:STATIC_PATH = Join-Path $env:GITHUB_WORKSPACE 'music-party-web/dist'
+          $server = Start-Process -FilePath (Join-Path $env:RUNNER_TEMP 'musicparty.exe') -PassThru -WindowStyle Hidden -RedirectStandardOutput (Join-Path $env:RUNNER_TEMP 'musicparty-e2e.log') -RedirectStandardError (Join-Path $env:RUNNER_TEMP 'musicparty-e2e.err.log')
+          $server.Id | Out-File (Join-Path $env:RUNNER_TEMP 'musicparty-e2e.pid')
+          for ($attempt = 0; $attempt -lt 60; $attempt++) {
+            try {
+              Invoke-WebRequest -Uri 'http://127.0.0.1:18081/actuator/health/readiness' -TimeoutSec 2 | Out-Null
               exit 0
-            fi
-            sleep 1
-          done
-          cat "$RUNNER_TEMP/musicparty-e2e.log"
-          exit 1
-      - name: Run browser flows
+            } catch {
+              if ($server.HasExited) { break }
+              Start-Sleep -Seconds 1
+            }
+          }
+          Get-Content (Join-Path $env:RUNNER_TEMP 'musicparty-e2e.log') -ErrorAction SilentlyContinue
+          Get-Content (Join-Path $env:RUNNER_TEMP 'musicparty-e2e.err.log') -ErrorAction SilentlyContinue
+          throw 'Isolated Go server did not become ready'
+      - name: Run Windows browser flows and visual baselines
         working-directory: music-party-web
         env:
           E2E_BASE_URL: http://127.0.0.1:18081
-        run: pnpm test:e2e
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/headless
+        run: pnpm test:e2e --output=test-results/headless
+      - name: Verify real hidden-tab playback on Windows
+        working-directory: music-party-web
+        env:
+          E2E_BASE_URL: http://127.0.0.1:18081
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/headed
+        run: pnpm test:e2e --headed --grep 'desktop playback clock' --output=test-results/headed
       - name: Upload browser artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -204,13 +229,17 @@ jobs:
           path: |
             music-party-web/playwright-report
             music-party-web/test-results
+            ${{ runner.temp }}/musicparty-e2e.log
+            ${{ runner.temp }}/musicparty-e2e.err.log
           if-no-files-found: ignore
       - name: Stop isolated Go server
         if: always()
         run: |
-          if test -f "$RUNNER_TEMP/musicparty-e2e.pid"; then
-            kill "$(cat "$RUNNER_TEMP/musicparty-e2e.pid")" || true
-          fi
+          $pidFile = Join-Path $env:RUNNER_TEMP 'musicparty-e2e.pid'
+          if (Test-Path $pidFile) {
+            $serverPid = [int](Get-Content $pidFile)
+            Stop-Process -Id $serverPid -ErrorAction SilentlyContinue
+          }
 
   container:
     needs: [contracts, go, go-race, frontend, browser-e2e]
