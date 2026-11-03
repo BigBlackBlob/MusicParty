@@ -1,17 +1,45 @@
-import { expect, test, type Browser, type Page } from '@playwright/test'
+import { spawn } from 'node:child_process'
+import { mkdir, readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { chromium, expect, test, type Browser, type Page } from '@playwright/test'
+import type { ClientEnvelope, ServerEnvelope } from '../src/contracts/generated/websocket'
+import { decodeServerEnvelope } from '../src/transport/realtimeDecoder'
 
 const adminUsername = process.env.E2E_ADMIN_USERNAME || 'e2e-admin'
 const adminPassword = process.env.E2E_ADMIN_PASSWORD || 'E2E-Password-2026!'
 
 test.setTimeout(180_000)
 
-async function loginAsAdmin(page: Page): Promise<void> {
-  await page.goto('/')
+async function loginAsAdmin(page: Page, url = '/'): Promise<void> {
+  await page.goto(url)
   await page.getByRole('button', { name: '平台管理员登录' }).click()
   await page.getByLabel('管理员账号').fill(adminUsername)
   await page.getByLabel('管理员密码').fill(adminPassword)
   await page.getByRole('button', { name: '平台管理员登录' }).click()
   await expect(page.getByPlaceholder('Create a room...')).toBeVisible()
+}
+
+// A normal Playwright context forces focus on every page. Attach to our own
+// disposable browser without those overrides to exercise native tab visibility.
+async function openDesktopBrowser(profilePath: string) {
+  await mkdir(profilePath, { recursive: true })
+  const browserProcess = spawn(chromium.executablePath(), [
+    '--remote-debugging-port=0', `--user-data-dir=${profilePath}`,
+    '--no-first-run', '--no-default-browser-check', 'about:blank',
+  ], { windowsHide: true, stdio: 'ignore' })
+  try {
+    let port = ''
+    await expect.poll(async () => {
+      port = await readFile(join(profilePath, 'DevToolsActivePort'), 'utf8')
+        .then(value => value.split('\n')[0] ?? '').catch(() => '')
+      return port
+    }, { timeout: 10_000 }).toMatch(/^\d+$/)
+    const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`, { noDefaults: true })
+    return { browser, close: async () => { try { await browser.close() } finally { browserProcess.kill() } } }
+  } catch (error) {
+    browserProcess.kill()
+    throw error
+  }
 }
 
 async function createRoom(page: Page, name: string): Promise<void> {
@@ -39,7 +67,7 @@ async function loginAndEnterLounge(page: Page): Promise<void> {
 async function uploadFixture(page: Page, title: string): Promise<void> {
   await page.evaluate(async ({ title }) => {
     const sampleRate = 8_000
-    const samples = sampleRate * 10
+    const samples = sampleRate * 30
     const bytes = new ArrayBuffer(44 + samples * 2)
     const view = new DataView(bytes)
     const write = (offset: number, value: string) => [...value].forEach((character, index) => view.setUint8(offset + index, character.charCodeAt(0)))
@@ -47,9 +75,10 @@ async function uploadFixture(page: Page, title: string): Promise<void> {
     view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true)
     view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true)
     write(36, 'data'); view.setUint32(40, samples * 2, true)
-    const seed = [...title].reduce((total, character) => total + character.charCodeAt(0), 0)
     for (let sample = 0; sample < samples; sample += 1) {
-      view.setInt16(44 + sample * 2, (sample + seed) % 128 < 64 ? 4_000 : -4_000, true)
+      // Preserve the title in the PCM bytes so deduplication cannot merge fixtures.
+      const identity = sample < title.length ? title.charCodeAt(sample) : 0
+      view.setInt16(44 + sample * 2, (sample % 128 < 64 ? 4_000 : -4_000) + identity, true)
     }
     const form = new FormData()
     form.set('file', new File([bytes], `${title}.wav`, { type: 'audio/wav' }))
@@ -142,7 +171,29 @@ test('local tracks use the Go search, queue priority reorder, multi-client sync,
   }
 })
 
-test('playback like settles through the server and remains after reload', async ({ browser, page }) => {
+test('playback like settles through the server and remains after reload', async ({ page }) => {
+  const sent: Array<Extract<ClientEnvelope, { type: 'control.like' | 'control.unlike' }>> = []
+  const received: ServerEnvelope[] = []
+  page.on('websocket', socket => {
+    socket.on('framesent', frame => {
+      const envelope = JSON.parse(frame.payload.toString()) as ClientEnvelope
+      if (envelope.type === 'control.like' || envelope.type === 'control.unlike') sent.push(envelope)
+    })
+    socket.on('framereceived', frame => {
+      const envelope = decodeServerEnvelope(frame.payload.toString())
+      if (envelope) received.push(envelope)
+    })
+  })
+  async function expectControlAck(type: 'control.like' | 'control.unlike', index: number): Promise<void> {
+    await expect.poll(() => sent.filter(frame => frame.type === type).length).toBe(index + 1)
+    const command = sent.filter(frame => frame.type === type)[index]!
+    const mutationId = command.payload.mutationId
+    expect(mutationId).toBeTruthy()
+    await expect.poll(() => received.find(frame => frame.type === 'control.ack'
+      && frame.payload.mutationId === mutationId)).toMatchObject({
+      payload: { mutationId, outcome: 'applied' },
+    })
+  }
   const title = `Like Fixture ${Date.now()}`
   const roomName = `Like Room ${Date.now()}`
   await loginAsAdmin(page)
@@ -156,7 +207,14 @@ test('playback like settles through the server and remains after reload', async 
   await expect(heart).toBeVisible({ timeout: 15_000 })
   await expect(heart).toHaveAttribute('aria-label', /^(Like|喜欢)$/)
   await heart.click()
+  await expectControlAck('control.like', 0)
   await expect(heart).toHaveAttribute('aria-label', /^(Remove from liked|取消喜欢)$/, { timeout: 5_000 })
+  // A second command proves the first ACK released the pending mutation guard.
+  await heart.click()
+  await expectControlAck('control.unlike', 0)
+  await expect(heart).toHaveAttribute('aria-label', /^(Like|喜欢)$/)
+  await heart.click()
+  await expectControlAck('control.like', 1)
   await expect.poll(async () => page.evaluate(async expectedTitle => {
     const response = await fetch('/api/me/liked-songs')
     if (!response.ok) return false
@@ -171,38 +229,50 @@ test('playback like settles through the server and remains after reload', async 
   await expect(restoredHeart).toBeVisible({ timeout: 15_000 })
 })
 
-test('desktop playback clock advances in hidden-page state and lyrics catch up on return', async ({ page }) => {
-  const title = `Background Fixture ${Date.now()}`
-  const roomName = `Background Room ${Date.now()}`
-  await page.route('**/api/music/lyric-detail/local/**', route => route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify({ lyric: '[00:00.00]First line\n[00:01.00]Second line\n[00:02.00]Third line\n[00:03.00]Fourth line\n[00:04.00]Fifth line\n[00:05.00]Sixth line' }),
-  }))
-  await loginAsAdmin(page)
-  await createRoom(page, roomName)
-  await uploadFixture(page, title)
-  await enqueueLocalTrack(page, title)
-  await page.getByRole('dialog').getByRole('button', { name: /Close|关闭/ }).click()
+test('desktop playback clock advances in a hidden tab and lyrics catch up on return', async ({ headless, baseURL }, testInfo) => {
+  test.skip(process.platform !== 'win32' || headless, 'Real tab visibility acceptance runs on Windows with --headed.')
+  const desktop = await openDesktopBrowser(testInfo.outputPath('browser-profile'))
+  const context = desktop.browser.contexts()[0]!
+  try {
+    const page = await context.newPage()
+    const title = `Background Fixture ${Date.now()}`
+    const roomName = `Background Room ${Date.now()}`
+    await page.route('**/api/music/lyric-detail/local/**', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ lyric: '[00:00.00]First line\n[00:01.00]Second line\n[00:02.00]Third line\n[00:03.00]Fourth line\n[00:04.00]Fifth line\n[00:05.00]Sixth line' }),
+    }))
+    await loginAsAdmin(page, baseURL)
+    await createRoom(page, roomName)
+    await uploadFixture(page, title)
+    await enqueueLocalTrack(page, title)
+    await page.getByRole('dialog').getByRole('button', { name: /Close|关闭/ }).click()
 
-  const audio = page.locator('audio').first()
-  await expect.poll(() => audio.evaluate(element => (element as HTMLAudioElement).paused)).toBe(false)
-  await expect(page.locator('.lyrics-line--active')).toBeVisible({ timeout: 15_000 })
-  const before = await audio.evaluate(element => (element as HTMLAudioElement).currentTime)
-  await page.evaluate(() => {
-    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
-    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
-    document.dispatchEvent(new Event('visibilitychange'))
-  })
-  await expect.poll(() => page.evaluate(() => document.hidden)).toBe(true)
-  await page.waitForTimeout(2_000)
-  await expect.poll(async () => audio.evaluate(element => (element as HTMLAudioElement).currentTime))
-    .toBeGreaterThan(before + 1.5)
-  await page.evaluate(() => {
-    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
-    Object.defineProperty(document, 'hidden', { configurable: true, get: () => false })
-    document.dispatchEvent(new Event('visibilitychange'))
-  })
-  await expect.poll(() => page.evaluate(() => document.hidden)).toBe(false)
-  await expect(page.locator('.lyrics-line--active')).toContainText(/Second|Third|Fourth|Fifth|Sixth/)
+    const audio = page.locator('audio').first()
+    await expect.poll(() => audio.evaluate(element => (element as HTMLAudioElement).paused)).toBe(false)
+    await expect(page.locator('.lyrics-line--active')).toBeVisible({ timeout: 15_000 })
+    const before = await audio.evaluate(element => (element as HTMLAudioElement).currentTime)
+    const foregroundPage = await context.newPage()
+    await foregroundPage.bringToFront()
+    await expect.poll(() => page.evaluate(() => document.hidden)).toBe(true)
+    const hiddenVisibility = await page.evaluate(() => document.visibilityState)
+    await page.waitForTimeout(2_000)
+    let hiddenTime = before
+    await expect.poll(async () => {
+      hiddenTime = await audio.evaluate(element => (element as HTMLAudioElement).currentTime)
+      return hiddenTime
+    }).toBeGreaterThan(before + 1.5)
+    await page.bringToFront()
+    await expect.poll(() => page.evaluate(() => document.hidden)).toBe(false)
+    await expect(page.locator('.lyrics-line--active')).toContainText(/Second|Third|Fourth|Fifth|Sixth/)
+    await testInfo.attach('desktop-playback-observation', {
+      contentType: 'application/json',
+      body: JSON.stringify({ hiddenVisibility, before, hiddenTime, elapsed: hiddenTime - before,
+        restoredVisibility: await page.evaluate(() => document.visibilityState),
+        activeLyric: await page.locator('.lyrics-line--active').textContent() }),
+    })
+    await foregroundPage.close()
+  } finally {
+    await desktop.close()
+  }
 })

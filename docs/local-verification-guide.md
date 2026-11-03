@@ -48,3 +48,14 @@ Container and browser acceptance:
 ```
 
 The verification script builds the root Dockerfile, creates a uniquely named temporary container and SQLite directory, checks health/readiness, runs Playwright, and cleans up only resources created by that invocation. It does not create `.env.test` or touch a daily-use Compose project.
+
+On Windows, compare visual baselines in the default headless mode, then run desktop background playback acceptance in a visible browser against the same isolated server:
+
+```powershell
+$env:E2E_BASE_URL = 'http://127.0.0.1:18848'
+cd music-party-web
+pnpm test:e2e
+pnpm test:e2e --headed --grep 'desktop playback clock'
+```
+
+The hidden-tab case launches a disposable Chromium profile and connects without Playwright's default focus emulation. It checks native tab visibility, advancing audio time, and lyric recovery. It skips headless and non-Windows runs; those runs do not satisfy desktop background playback acceptance. Its trace and temporary browser profile are kept under the ignored `test-results/` directory.
