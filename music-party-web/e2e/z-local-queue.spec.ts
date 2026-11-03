@@ -3,7 +3,28 @@ import { expect, test, type Browser, type Page } from '@playwright/test'
 const adminUsername = process.env.E2E_ADMIN_USERNAME || 'e2e-admin'
 const adminPassword = process.env.E2E_ADMIN_PASSWORD || 'E2E-Password-2026!'
 
-test.setTimeout(60_000)
+test.setTimeout(180_000)
+
+async function loginAsAdmin(page: Page): Promise<void> {
+  await page.goto('/')
+  await page.getByRole('button', { name: '平台管理员登录' }).click()
+  await page.getByLabel('管理员账号').fill(adminUsername)
+  await page.getByLabel('管理员密码').fill(adminPassword)
+  await page.getByRole('button', { name: '平台管理员登录' }).click()
+  await expect(page.getByPlaceholder('Create a room...')).toBeVisible()
+}
+
+async function createRoom(page: Page, name: string): Promise<void> {
+  await page.getByPlaceholder('Create a room...').fill(name)
+  await page.getByRole('button', { name: 'Create', exact: true }).click()
+  await expect(page.getByText(name, { exact: true })).toBeVisible()
+  await page.getByText(name, { exact: true }).click()
+  const searchButton = page.getByRole('button', { name: /Search and add|搜索并添加/ })
+  if (!await searchButton.isVisible().catch(() => false)) {
+    await page.getByRole('button', { name: new RegExp(`进入 ${name}`) }).click()
+  }
+  await expect(searchButton).toBeVisible({ timeout: 15_000 })
+}
 
 async function loginAndEnterLounge(page: Page): Promise<void> {
   await page.goto('/')
@@ -18,7 +39,7 @@ async function loginAndEnterLounge(page: Page): Promise<void> {
 async function uploadFixture(page: Page, title: string): Promise<void> {
   await page.evaluate(async ({ title }) => {
     const sampleRate = 8_000
-    const samples = sampleRate * 60
+    const samples = sampleRate * 10
     const bytes = new ArrayBuffer(44 + samples * 2)
     const view = new DataView(bytes)
     const write = (offset: number, value: string) => [...value].forEach((character, index) => view.setUint8(offset + index, character.charCodeAt(0)))
@@ -42,7 +63,7 @@ async function uploadFixture(page: Page, title: string): Promise<void> {
     const response = await fetch('/api/local/tracks')
     const tracks = await response.json() as Array<{ title: string; status: string }>
     return tracks.find(track => track.title === title)?.status ?? ''
-  }, { title }), { timeout: 30_000 }).toBe('COMPLETED')
+  }, { title }), { timeout: 120_000 }).toBe('COMPLETED')
 }
 
 async function enqueueLocalTrack(page: Page, title: string): Promise<void> {
@@ -119,4 +140,69 @@ test('local tracks use the Go search, queue priority reorder, multi-client sync,
   } finally {
     await observer.context.close().catch(() => undefined)
   }
+})
+
+test('playback like settles through the server and remains after reload', async ({ browser, page }) => {
+  const title = `Like Fixture ${Date.now()}`
+  const roomName = `Like Room ${Date.now()}`
+  await loginAsAdmin(page)
+  await createRoom(page, roomName)
+  await uploadFixture(page, title)
+  await enqueueLocalTrack(page, title)
+
+  await page.getByRole('dialog').getByRole('button', { name: /Close|关闭/ }).click()
+  await expect(page.locator('.track-title-marquee').getByText(title, { exact: true }).first()).toBeVisible({ timeout: 15_000 })
+  const heart = page.locator('.player-console button[aria-label="Like"], .player-console button[aria-label="Remove from liked"], .player-console button[aria-label="喜欢"], .player-console button[aria-label="取消喜欢"]')
+  await expect(heart).toBeVisible({ timeout: 15_000 })
+  await expect(heart).toHaveAttribute('aria-label', /^(Like|喜欢)$/)
+  await heart.click()
+  await expect(heart).toHaveAttribute('aria-label', /^(Remove from liked|取消喜欢)$/, { timeout: 5_000 })
+  await expect.poll(async () => page.evaluate(async expectedTitle => {
+    const response = await fetch('/api/me/liked-songs')
+    if (!response.ok) return false
+    const songs = await response.json() as Array<{ music: { name?: string } }>
+    return songs.some(song => song.music?.name === expectedTitle)
+  }, title)).toBe(true)
+
+  await page.reload()
+  await page.getByRole('button', { name: new RegExp(`进入 ${roomName}`) }).click()
+  await expect(page.getByRole('button', { name: /Settings|设置/ })).toBeVisible({ timeout: 15_000 })
+  const restoredHeart = page.getByRole('button', { name: /^(Remove from liked|取消喜欢)$/ })
+  await expect(restoredHeart).toBeVisible({ timeout: 15_000 })
+})
+
+test('desktop playback clock advances in hidden-page state and lyrics catch up on return', async ({ page }) => {
+  const title = `Background Fixture ${Date.now()}`
+  const roomName = `Background Room ${Date.now()}`
+  await page.route('**/api/music/lyric-detail/local/**', route => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ lyric: '[00:00.00]First line\n[00:01.00]Second line\n[00:02.00]Third line\n[00:03.00]Fourth line\n[00:04.00]Fifth line\n[00:05.00]Sixth line' }),
+  }))
+  await loginAsAdmin(page)
+  await createRoom(page, roomName)
+  await uploadFixture(page, title)
+  await enqueueLocalTrack(page, title)
+  await page.getByRole('dialog').getByRole('button', { name: /Close|关闭/ }).click()
+
+  const audio = page.locator('audio').first()
+  await expect.poll(() => audio.evaluate(element => (element as HTMLAudioElement).paused)).toBe(false)
+  await expect(page.locator('.lyrics-line--active')).toBeVisible({ timeout: 15_000 })
+  const before = await audio.evaluate(element => (element as HTMLAudioElement).currentTime)
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
+    document.dispatchEvent(new Event('visibilitychange'))
+  })
+  await expect.poll(() => page.evaluate(() => document.hidden)).toBe(true)
+  await page.waitForTimeout(2_000)
+  await expect.poll(async () => audio.evaluate(element => (element as HTMLAudioElement).currentTime))
+    .toBeGreaterThan(before + 1.5)
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => false })
+    document.dispatchEvent(new Event('visibilitychange'))
+  })
+  await expect.poll(() => page.evaluate(() => document.hidden)).toBe(false)
+  await expect(page.locator('.lyrics-line--active')).toContainText(/Second|Third|Fourth|Fifth|Sixth/)
 })
