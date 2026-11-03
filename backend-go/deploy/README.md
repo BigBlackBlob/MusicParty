@@ -27,6 +27,21 @@ sh backend-go/deploy/cutover.sh verify ./music_party/backups/musicparty-<timesta
 
 The tool uses the image's `/app/dbsnapshot` and `/app/dbcheck` binaries and prints the snapshot SHA-256. Existing snapshots are never overwritten.
 
+## Local rehearsal
+
+`prepare-isolated.py` copies a running deployment into an isolation directory and writes the runtime contract for a rehearsal container started from the same image:
+
+```sh
+python backend-go/deploy/prepare-isolated.py /opt/musicparty-rehearsal-<date>
+python backend-go/deploy/prepare-isolated.py --verify-runtime-env /opt/musicparty-rehearsal-<date>
+```
+
+Rehearsals run with `APP_ENV=production`, so the binary refuses to start unless `ROOM_ACCESS_TOKEN_SECRET` is present. The script therefore provisions it into `runtime.env` and never copies the source container's key, because a rehearsal must not mint room access proofs the source deployment accepts. Resolution order is: the value exported by the operator, then the value already persisted in that isolation directory, then a generated 32-byte `secrets.token_urlsafe` value. The key is written at mode `0600`, chowned to the runtime uid/gid, and `rehearsal.json` only records its origin (`provided`/`persisted`/`generated`) and length. Rerunning the script against an existing isolation directory only refreshes `runtime.env`; it never re-copies data or rotates a persisted key.
+
+```sh
+python -m unittest discover -s backend-go/deploy -p 'test_*.py'
+```
+
 ## Start and rollback
 
 Start with the base Compose file only:

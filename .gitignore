@@ -38,6 +38,7 @@ build/
 /music_party/backups/
 /backend-go/bin/
 /backend-go/data/
+__pycache__/
 /backend-go/coverage.out
 /playwright-acceptance.png
 /music-party-web/playwright-report/
