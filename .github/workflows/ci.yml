@@ -174,7 +174,8 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Backend build failed' }
           }
           finally { Pop-Location }
-      - name: Start isolated Go server
+      - name: Run Windows browser acceptance with isolated Go server
+        working-directory: music-party-web
         env:
           SERVER_PORT: '18081'
           APP_MODE: server
@@ -191,36 +192,35 @@ jobs:
           YOUTUBE_ENABLED: 'false'
           NAVIDROME_ENABLED: 'false'
           SQUIDIFY_ENABLED: 'false'
+          E2E_BASE_URL: http://127.0.0.1:18081
         run: |
           $env:DB_PATH = Join-Path $env:RUNNER_TEMP 'musicparty-e2e.db'
           $env:LOCAL_LIBRARY_PATH = Join-Path $env:RUNNER_TEMP 'musicparty-e2e-local'
           $env:STATIC_PATH = Join-Path $env:GITHUB_WORKSPACE 'music-party-web/dist'
           $server = Start-Process -FilePath (Join-Path $env:RUNNER_TEMP 'musicparty.exe') -PassThru -WindowStyle Hidden -RedirectStandardOutput (Join-Path $env:RUNNER_TEMP 'musicparty-e2e.log') -RedirectStandardError (Join-Path $env:RUNNER_TEMP 'musicparty-e2e.err.log')
-          $server.Id | Out-File (Join-Path $env:RUNNER_TEMP 'musicparty-e2e.pid')
-          for ($attempt = 0; $attempt -lt 60; $attempt++) {
-            try {
-              Invoke-WebRequest -Uri 'http://127.0.0.1:18081/actuator/health/readiness' -TimeoutSec 2 | Out-Null
-              exit 0
-            } catch {
-              if ($server.HasExited) { break }
-              Start-Sleep -Seconds 1
+          try {
+            $ready = $false
+            for ($attempt = 0; $attempt -lt 60; $attempt++) {
+              try {
+                Invoke-WebRequest -Uri 'http://127.0.0.1:18081/actuator/health/readiness' -TimeoutSec 2 | Out-Null
+                $ready = $true
+                break
+              } catch {
+                if ($server.HasExited) { break }
+                Start-Sleep -Seconds 1
+              }
             }
+            if (-not $ready) { throw 'Isolated Go server did not become ready' }
+            $env:PLAYWRIGHT_HTML_OUTPUT_DIR = 'playwright-report/headless'
+            pnpm test:e2e --output=test-results/headless
+            if ($LASTEXITCODE -ne 0) { throw 'Windows browser flows or visual baselines failed' }
+            $env:PLAYWRIGHT_HTML_OUTPUT_DIR = 'playwright-report/headed'
+            pnpm test:e2e --headed --grep 'desktop playback clock' --output=test-results/headed
+            if ($LASTEXITCODE -ne 0) { throw 'Windows hidden-tab playback acceptance failed' }
+          } finally {
+            Stop-Process -Id $server.Id -ErrorAction SilentlyContinue
+            Get-Content (Join-Path $env:RUNNER_TEMP 'musicparty-e2e.err.log') -ErrorAction SilentlyContinue
           }
-          Get-Content (Join-Path $env:RUNNER_TEMP 'musicparty-e2e.log') -ErrorAction SilentlyContinue
-          Get-Content (Join-Path $env:RUNNER_TEMP 'musicparty-e2e.err.log') -ErrorAction SilentlyContinue
-          throw 'Isolated Go server did not become ready'
-      - name: Run Windows browser flows and visual baselines
-        working-directory: music-party-web
-        env:
-          E2E_BASE_URL: http://127.0.0.1:18081
-          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/headless
-        run: pnpm test:e2e --output=test-results/headless
-      - name: Verify real hidden-tab playback on Windows
-        working-directory: music-party-web
-        env:
-          E2E_BASE_URL: http://127.0.0.1:18081
-          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/headed
-        run: pnpm test:e2e --headed --grep 'desktop playback clock' --output=test-results/headed
       - name: Upload browser artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -232,14 +232,6 @@ jobs:
             ${{ runner.temp }}/musicparty-e2e.log
             ${{ runner.temp }}/musicparty-e2e.err.log
           if-no-files-found: ignore
-      - name: Stop isolated Go server
-        if: always()
-        run: |
-          $pidFile = Join-Path $env:RUNNER_TEMP 'musicparty-e2e.pid'
-          if (Test-Path $pidFile) {
-            $serverPid = [int](Get-Content $pidFile)
-            Stop-Process -Id $serverPid -ErrorAction SilentlyContinue
-          }
 
   container:
     needs: [contracts, go, go-race, frontend, browser-e2e]
