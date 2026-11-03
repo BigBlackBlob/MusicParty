@@ -32,6 +32,8 @@ export const useRoomRuntimeStore = defineStore('room-runtime', () => {
   const lastStateVersion = ref(0)
   const lastQueueVersion = ref(0)
   const queueEpoch = ref('')
+  const idempotencyScopeId = ref('')
+  const idempotencyTtlMs = ref(0)
   const retiredQueueEpochs = new Set<string>()
 
   // Only a full player.state snapshot may establish a runtime generation.
@@ -116,6 +118,8 @@ export const useRoomRuntimeStore = defineStore('room-runtime', () => {
     lastStateVersion.value = 0
     lastQueueVersion.value = 0
     queueEpoch.value = ''
+    idempotencyScopeId.value = ''
+    idempotencyTtlMs.value = 0
     retiredQueueEpochs.clear()
     lastPlayEpoch.value = 0
     lastServerTimestamp.value = 0
@@ -130,7 +134,7 @@ export const useRoomRuntimeStore = defineStore('room-runtime', () => {
     isPauseLocked, isSkipLocked, isShuffleLocked, isLoading, historyCursor,
     lastStateVersion, lastQueueVersion, lastPlayEpoch, lastServerTimestamp,
     remotePosition, lastSyncTime, serverClockOffset, hasClockSample,
-    queueEpoch, acceptQueueEpoch, replaceQueue, applyQueuePatch,
+    queueEpoch, idempotencyScopeId, idempotencyTtlMs, acceptQueueEpoch, replaceQueue, applyQueuePatch,
     reset
   }
 })

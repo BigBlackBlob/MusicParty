@@ -58,6 +58,10 @@ export const useRoomStateSynchronizer = defineStore('room-state-synchronizer', (
     if (state.stateVersion < lastStateVersion.value) return
     if (state.stateVersion === lastStateVersion.value && state.serverTimestamp < lastServerTimestamp.value) return
     lastStateVersion.value = state.stateVersion
+    const nextScopeId = state.idempotencyScopeId ?? ''
+    if (runtime.idempotencyScopeId && nextScopeId !== runtime.idempotencyScopeId) commands.resetQueueGeneration()
+    runtime.idempotencyScopeId = nextScopeId
+    runtime.idempotencyTtlMs = Number.isFinite(state.idempotencyTtlMs) ? Math.max(0, state.idempotencyTtlMs ?? 0) : 0
     lastServerTimestamp.value = state.serverTimestamp
     if (state.playEpoch !== lastPlayEpoch.value) {
       lastPlayEpoch.value = state.playEpoch
@@ -83,6 +87,7 @@ export const useRoomStateSynchronizer = defineStore('room-state-synchronizer', (
     lastSyncTime.value = state.serverTimestamp
     if (!state.nowPlaying) audio.setPlaybackPosition(0)
     hasInitialSnapshot.value = true
+    commands.retryPendingCommands(runtime.idempotencyScopeId)
   }
 
   const scheduleFrame = (callback: (timestamp: number) => void): number | ReturnType<typeof setTimeout> => {

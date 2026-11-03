@@ -91,11 +91,19 @@ describe('socketService', () => {
     socketService.client.message(JSON.stringify({
       type: 'player.state',
       roomId: 'lounge',
-      payload: { isPaused: true, stateVersion: 1, queueVersion: 1, playEpoch: 1 }
+      payload: {
+        isPaused: true, stateVersion: 1, queueVersion: 1, playEpoch: 1,
+        serverTimestamp: 100, historyCursor: 0, queue: [], isShuffle: false,
+        isPauseLocked: false, isSkipLocked: false, isShuffleLocked: false, isLoading: false,
+      }
     }));
 
     expect(handler).toHaveBeenCalledWith(
-      { isPaused: true, stateVersion: 1, queueVersion: 1, playEpoch: 1 },
+      {
+        isPaused: true, stateVersion: 1, queueVersion: 1, playEpoch: 1,
+        serverTimestamp: 100, historyCursor: 0, queue: [], isShuffle: false,
+        isPauseLocked: false, isSkipLocked: false, isShuffleLocked: false, isLoading: false,
+      },
       expect.objectContaining({ roomId: 'lounge' })
     );
   });

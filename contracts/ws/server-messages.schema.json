@@ -364,8 +364,15 @@
               "type": "boolean"
             },
             "nowPlaying": {
-              "type": "object",
-              "x-typescript-type": "NowPlaying"
+              "oneOf": [
+                {
+                  "type": "object",
+                  "x-typescript-type": "NowPlaying"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "playEpoch": {
               "type": "number"
@@ -881,7 +888,14 @@
               "type": "string"
             },
             "queueVersion": {
-              "type": "number"
+              "oneOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "reason": {
               "type": "string"

@@ -2,7 +2,7 @@ import { ref, computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useUserStore } from '../stores/user.js';
 import { useRoomRealtimeCoordinator } from '../domains/realtime/roomRealtimeCoordinator';
-import { musicApi } from '../api/music.js';
+import { findPlatformUsers, listPlatformUserPlaylists, loadPlatformPlaylistPage } from '../domains/search/searchService';
 import { useDebounceFn } from '@vueuse/core';
 import { useToast } from './useToast';
 import { extractErrorMessage } from '../utils/errors.js';
@@ -38,7 +38,7 @@ export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef)
         }
         isPlaylistsLoading.value = true;
         try {
-            const data = await musicApi.getUserPlaylists(platformRef.value, uid);
+            const data = await listPlatformUserPlaylists(platformRef.value, uid);
             playlists.value = data;
         } catch (e) {
             console.error('Fetch playlists failed:', e);
@@ -55,7 +55,7 @@ export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef)
         isSearchingUser.value = true;
         userSearchResults.value = [];
         try {
-            const data = await musicApi.searchUser(platformRef.value, searchUserKeyword.value);
+            const data = await findPlatformUsers(platformRef.value, searchUserKeyword.value);
             userSearchResults.value = data;
         } catch (e) {
             console.error('User search failed:', e);
@@ -77,7 +77,7 @@ export function usePlaylistLogic(platformRef, songsRef, listModeRef, loadingRef)
     const fetchSongsPage = async () => {
         if (!currentPlaylistId.value) return;
         try {
-            const rawSongs = await musicApi.getPlaylistSongs(
+            const rawSongs = await loadPlatformPlaylistPage(
                 platformRef.value,
                 currentPlaylistId.value,
                 offset.value,

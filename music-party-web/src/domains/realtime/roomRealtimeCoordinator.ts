@@ -145,6 +145,7 @@ export const useRoomRealtimeCoordinator = defineStore('room-realtime-coordinator
         settleQueueReorder: commands.settleQueueReorder,
         settleQueueMutation: commands.settleQueueMutation,
         settleEnqueue: commands.settleEnqueue,
+        settleControl: commands.settleControl,
         settleLike: commands.settleLike,
       },
       userStore: user,

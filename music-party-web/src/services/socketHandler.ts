@@ -19,6 +19,7 @@ interface PlayerHandlers {
   settleQueueMutation?: (mutationId: string, accepted: boolean, reason?: string) => void
   settleEnqueue?: (mutationId: string, accepted: boolean, reason?: string) => void
   settleLike?: (ack: ControlAckServerEnvelope['payload']) => void
+  settleControl?: (ack: ControlAckServerEnvelope['payload']) => void
   switchRoom?: (roomId: string) => void
 }
 
@@ -156,7 +157,7 @@ export function createSocketHandlers(stores: SocketHandlerStores = {}): Realtime
     'queue.mutation.nack': data => player?.settleQueueMutation?.(data.mutationId, false, data.reason),
     'enqueue.ack': data => player?.settleEnqueue?.(data.mutationId, true),
     'enqueue.nack': data => player?.settleEnqueue?.(data.mutationId, false, data.reason),
-    'control.ack': data => player?.settleLike?.(data),
+    'control.ack': data => { player?.settleControl?.(data); player?.settleLike?.(data) },
     'player.events': event => handleGameEvent(event, stores),
     'chat.message': message => chatStore?.addMessage?.(message),
     'public-chat.message': message => chatStore?.addPublicMessage?.(message),

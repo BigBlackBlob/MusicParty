@@ -1,14 +1,12 @@
 import { ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useToast } from './useToast';
-import { musicApi } from '../api/music.js';
 import { extractErrorMessage } from '../utils/errors.js';
 import { useRoomCommandStore } from '../domains/realtime/roomCommandStore';
 import { useRoomStore } from '../stores/room.js';
 import { usePlatforms } from './usePlatforms.js';
 import { useExternalPlaylist, parseNeteasePlaylistId } from './useExternalPlaylist.js';
-import { queryKeys } from '../domains/queryKeys';
-import { queryClient } from '../app/providers';
+import { clearSearchCache, hasMissingCovers, loadAlbumTracks, searchAlbums, searchTracks } from '../domains/search/searchService';
 
 export function useSearchLogic() {
     const { success, error } = useToast();
@@ -58,7 +56,7 @@ export function useSearchLogic() {
 
 const doSearch = async (page = 1) => {
         const requestSeq = ++searchRequestSeq;
-        await queryClient.cancelQueries({ queryKey: ['search'] });
+        await clearSearchCache();
         const val = keyword.value.trim();
         const isLocal = platform.value === 'local';
         if (!val && searchType.value !== 'playlist' && !isLocal) return;
@@ -103,27 +101,19 @@ const doSearch = async (page = 1) => {
         
         try {
             if (searchType.value === 'album' && supportsAlbumSearch.value) {
-                const data = await queryClient.fetchQuery({
-                    queryKey: queryKeys.search.albums(roomStore.currentRoomId, platform.value, val),
-                    queryFn: ({ signal }) => musicApi.searchAlbums(platform.value, val, roomStore.currentRoomId, signal)
-                });
+                const data = await searchAlbums(platform.value, val, roomStore.currentRoomId);
                 if (requestSeq !== searchRequestSeq) return;
                 albums.value = data;
                 canGoNext.value = false;
             } else {
-                const data = await queryClient.fetchQuery({
-                    queryKey: queryKeys.search.tracks(roomStore.currentRoomId, platform.value, effectiveKeyword, page),
-                    queryFn: ({ signal }) => musicApi.search(platform.value, effectiveKeyword, offset, SEARCH_LIMIT, roomStore.currentRoomId, signal)
-                });
+                const data = await searchTracks(platform.value, effectiveKeyword, offset, SEARCH_LIMIT, roomStore.currentRoomId);
                 if (requestSeq !== searchRequestSeq) return;
                 songs.value = data;
                 
                 // 如果返回的数量达到 Limit，假设还有下一页
                 canGoNext.value = data.length === SEARCH_LIMIT;
 
-                const missingCoverCount = Array.isArray(data)
-                    ? data.filter(song => !song?.coverUrl || !String(song.coverUrl).trim()).length
-                    : 0;
+                const missingCoverCount = Array.isArray(data) ? hasMissingCovers(data) : 0;
                 if (missingCoverCount > 0) {
                     console.warn(`[search] ${platform.value} results missing coverUrl: ${missingCoverCount}/${data.length}`);
                 }
@@ -194,10 +184,7 @@ const doSearch = async (page = 1) => {
 
         try {
             loadingAlbumIds.value.add(albumId);
-            const data = await queryClient.fetchQuery({
-                queryKey: queryKeys.search.albumTracks(roomStore.currentRoomId, platform.value, albumId),
-                queryFn: ({ signal }) => musicApi.getAlbumSongs(platform.value, albumId, roomStore.currentRoomId, signal)
-            });
+            const data = await loadAlbumTracks(platform.value, albumId, roomStore.currentRoomId);
             albumSongs.value[albumId] = data;
         } catch (e) {
             console.error('Failed to load album songs:', e);

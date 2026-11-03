@@ -7,11 +7,13 @@ export type QueueMutationKind =
   | 'batch-top'
   | 'batch-remove'
   | 'reorder'
+  | 'pause'
   | 'enqueue'
   | 'enqueue-album'
   | 'enqueue-playlist'
   | 'enqueue-room-playlist'
   | 'like'
+  | 'unlike'
 
 interface PendingMutation {
   kind: QueueMutationKind

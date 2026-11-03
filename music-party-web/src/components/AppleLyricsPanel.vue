@@ -95,7 +95,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { mergeTranslatedLyrics, parseLyrics } from '../utils/parser';
-import { pairByTime, parseYrc } from '../utils/yrc';
+import { pairLyricExtras, parseYrc } from '../utils/yrc';
 import { useUiStore } from '../stores/ui';
 
 const uiStore = useUiStore();
@@ -172,20 +172,15 @@ const hasRomanization = computed(() =>
 );
 const lines = computed(() => {
   if (wordLines.value.length) {
-    const translations = props.showTranslation ? pairByTime(wordLines.value, parseYrc(props.wordTranslatedLyric)) : [];
-    const romanizations = props.showRomanization ? pairByTime(wordLines.value, parseYrc(props.wordRomanizedLyric)) : [];
-    // Netease often leaves ytlrc/yromalrc empty or serves them as plain LRC;
-    // fill any word line still missing its extra track from the legacy
-    // line-level fields, paired by the same time-window rule.
-    const legacyTranslations = props.showTranslation && translations.some((text) => !text)
-      ? pairByTime(wordLines.value, parseYrc(props.translatedLyrics)) : null;
-    const legacyRomanizations = props.showRomanization && romanizations.some((text) => !text)
-      ? pairByTime(wordLines.value, parseYrc(props.romanizedLyrics)) : null;
+    const translations = props.showTranslation
+      ? pairLyricExtras(wordLines.value, props.wordTranslatedLyric, props.lyrics, props.translatedLyrics) : [];
+    const romanizations = props.showRomanization
+      ? pairLyricExtras(wordLines.value, props.wordRomanizedLyric, props.lyrics, props.romanizedLyrics) : [];
     return wordLines.value.map((line, index) => ({
       time: line.start,
       text: line.text,
-      translation: translations[index] || (legacyTranslations ? legacyTranslations[index] : '') || '',
-      romanization: romanizations[index] || (legacyRomanizations ? legacyRomanizations[index] : '') || '',
+      translation: translations[index] || '',
+      romanization: romanizations[index] || '',
       segments: line.segments
     }));
   }

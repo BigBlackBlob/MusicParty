@@ -9,13 +9,13 @@ const likedBase = '/api/me/liked-songs'
 const id = (value: string) => encodeURIComponent(value)
 
 export const personalPlaylistsApi = {
-  list: () => client.get<PlaylistSummary[]>(base),
+  list: (signal?: AbortSignal) => client.get<PlaylistSummary[]>(base, signal ? { signal } : {}),
   create: (name: string) => client.post<PlaylistSummary, { name: string }>(base, { name }),
   rename: (playlistId: string, name: string) =>
     client.patch<PlaylistSummary, { name: string }>(`${base}/${id(playlistId)}`, { name }),
   remove: (playlistId: string) => client.delete<void>(`${base}/${id(playlistId)}`),
-  tracks: (playlistId: string, offset = 0, limit = 100) =>
-    client.get<PlaylistTrack[]>(`${base}/${id(playlistId)}/tracks`, { params: { offset, limit } }),
+  tracks: (playlistId: string, offset = 0, limit = 100, signal?: AbortSignal) =>
+    client.get<PlaylistTrack[]>(`${base}/${id(playlistId)}/tracks`, { params: { offset, limit }, ...(signal ? { signal } : {}) }),
   addTracks: (playlistId: string, musics: Music[]) =>
     client.post<PlaylistMutationResult, { musics: Music[] }>(`${base}/${id(playlistId)}/tracks/batch`, { musics }),
   removeTrack: (playlistId: string, trackId: string) =>

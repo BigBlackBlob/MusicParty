@@ -113,8 +113,6 @@ export default {
     connection: 'Connection',
     connected: 'Connected',
     disconnected: 'Disconnected',
-    autoLiteMode: 'Auto Lite Mode',
-    liteMode: 'Lite Mode',
     on: 'On',
     off: 'Off',
     english: 'English',
@@ -425,13 +423,6 @@ export default {
     loginToChat: 'Login to chat',
     readOnly: 'System messages are read-only',
     tabAria: 'Message type'
-  },
-  liteMode: {
-    status: 'Lite Mode',
-    nowPlaying: 'Now Playing',
-    roomIdle: 'Room Idle',
-    autoLiteWhenInactive: 'Auto-Lite when inactive',
-    returnToMainView: 'Return to Main View'
   },
   lyrics: {
     empty: 'No lyrics available',

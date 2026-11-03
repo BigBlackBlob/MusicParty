@@ -113,8 +113,6 @@ export default {
     connection: '连接状态',
     connected: '已连接',
     disconnected: '已断开',
-    autoLiteMode: '自动精简模式',
-    liteMode: '精简模式',
     on: '开启',
     off: '关闭',
     english: '英文',
@@ -424,13 +422,6 @@ export default {
     loginToChat: '登录后即可发言',
     readOnly: '系统消息只读',
     tabAria: '消息类型'
-  },
-  liteMode: {
-    status: '精简模式',
-    nowPlaying: '当前播放',
-    roomIdle: '房间空闲',
-    autoLiteWhenInactive: '闲置时自动进入精简模式',
-    returnToMainView: '返回主视图'
   },
   lyrics: {
     empty: '暂无歌词',

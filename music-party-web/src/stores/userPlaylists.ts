@@ -1,16 +1,17 @@
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
+import { useQuery } from '@tanstack/vue-query'
+import { queryClient } from '../app/providers'
 import type { Music } from '../contracts/generated/models'
 import { personalPlaylistsApi } from '../api/personalPlaylists'
-import { queryClient } from '../app/providers'
 import {
   addPersonalTracks,
-  cachedPlaylists,
-  cachedPlaylistTracks,
   createPlaylist as createScopedPlaylist,
   importPlaylist as importScopedPlaylist,
   listPlaylists,
   listPlaylistTracks,
+  playlistListQueryOptions,
+  playlistTracksQueryOptions,
   removePlaylist as removeScopedPlaylist,
   removePlaylistTrack,
   renamePlaylist as renameScopedPlaylist,
@@ -20,22 +21,29 @@ import { useUserStore } from './user'
 
 export const useUserPlaylistsStore = defineStore('userPlaylists', () => {
   const selectedPlaylistId = ref('')
-  const loading = ref(false)
-  const error = ref('')
-  const cacheRevision = ref(0)
-  queryClient.getQueryCache().subscribe(() => { cacheRevision.value += 1 })
   const userStore = useUserStore()
-  const scope = computed<PlaylistScope>(() => ({ type: 'personal', publicId: userStore.publicId }))
+  const scope = computed<Extract<PlaylistScope, { type: 'personal' }>>(() => ({ type: 'personal', publicId: userStore.publicId }))
+  const canQueryPersonalPlaylists = computed(() => userStore.hasDisplayName && !userStore.isGuest)
+  const listQuery = useQuery(computed(() => ({
+    ...playlistListQueryOptions(scope.value),
+    enabled: canQueryPersonalPlaylists.value,
+  })), queryClient)
+  const tracksQuery = useQuery(computed(() => ({
+    ...playlistTracksQueryOptions(scope.value, selectedPlaylistId.value),
+    enabled: Boolean(selectedPlaylistId.value),
+  })), queryClient)
 
   watch(() => userStore.publicId, () => { selectedPlaylistId.value = '' })
 
-  const playlists = computed(() => { cacheRevision.value; return cachedPlaylists(scope.value) })
+  const playlists = computed(() => listQuery.data.value ?? [])
   const selectedPlaylist = computed(() => playlists.value.find(item => item.id === selectedPlaylistId.value) ?? null)
-  const selectedTracks = computed(() => {
-    cacheRevision.value
-    return selectedPlaylistId.value ? cachedPlaylistTracks(scope.value, selectedPlaylistId.value) : []
-  })
+  const selectedTracks = computed(() => selectedPlaylistId.value ? tracksQuery.data.value ?? [] : [])
   const likedPlaylist = computed(() => playlists.value.find(item => item.systemKey === 'liked-songs') ?? null)
+  const loading = computed(() => listQuery.isFetching.value || tracksQuery.isFetching.value)
+  const error = computed(() => {
+    const cause = listQuery.error.value ?? tracksQuery.error.value
+    return cause instanceof Error ? cause.message : ''
+  })
 
   function requireNamedUser(): boolean {
     if (!userStore.isGuest) return true
@@ -45,18 +53,9 @@ export const useUserPlaylistsStore = defineStore('userPlaylists', () => {
 
   async function loadPlaylists() {
     if (!requireNamedUser()) return []
-    loading.value = true
-    error.value = ''
-    try {
-      const values = await listPlaylists(scope.value)
-      if (!selectedPlaylistId.value && values.length) selectedPlaylistId.value = values[0]?.id ?? ''
-      return values
-    } catch (cause) {
-      error.value = cause instanceof Error ? cause.message : 'Failed to load personal playlists'
-      throw cause
-    } finally {
-      loading.value = false
-    }
+    const values = await listPlaylists(scope.value)
+    if (!selectedPlaylistId.value && values.length) selectedPlaylistId.value = values[0]?.id ?? ''
+    return values
   }
 
   async function loadTracks(playlistId = selectedPlaylistId.value) {
@@ -68,7 +67,6 @@ export const useUserPlaylistsStore = defineStore('userPlaylists', () => {
     if (!requireNamedUser()) return null
     const playlist = await createScopedPlaylist(scope.value, name)
     selectedPlaylistId.value = playlist.id
-    await loadPlaylists()
     return playlist
   }
 
@@ -76,24 +74,25 @@ export const useUserPlaylistsStore = defineStore('userPlaylists', () => {
     if (!requireNamedUser()) return null
     if (!playlists.value.length) await loadPlaylists()
     if (selectedPlaylistId.value) return selectedPlaylistId.value
+    if (playlists.value.length) {
+      selectedPlaylistId.value = playlists.value[0]?.id ?? ''
+      if (selectedPlaylistId.value) return selectedPlaylistId.value
+    }
     return (await createPlaylist(name))?.id ?? ''
   }
 
   async function renamePlaylist(playlistId: string, name: string): Promise<void> {
     await renameScopedPlaylist(scope.value, playlistId, name)
-    await loadPlaylists()
   }
 
   async function deletePlaylist(playlistId: string): Promise<void> {
     await removeScopedPlaylist(scope.value, playlistId)
     if (selectedPlaylistId.value === playlistId) selectedPlaylistId.value = ''
-    await loadPlaylists()
   }
 
   async function addTracks(playlistId: string, musics: Music[]) {
     if (!playlistId || !requireNamedUser()) return null
     const result = await addPersonalTracks(userStore.publicId, playlistId, musics)
-    await Promise.all([loadPlaylists(), loadTracks(playlistId)])
     return result
   }
 
@@ -104,13 +103,11 @@ export const useUserPlaylistsStore = defineStore('userPlaylists', () => {
 
   async function importPlaylist(playlistId: string, platform: string, externalPlaylistId: string) {
     const result = await importScopedPlaylist(scope.value, playlistId, platform, externalPlaylistId)
-    await Promise.all([loadPlaylists(), loadTracks(playlistId)])
     return result
   }
 
   async function removeTrack(playlistId: string, trackId: string): Promise<void> {
     await removePlaylistTrack(scope.value, playlistId, trackId)
-    await Promise.all([loadPlaylists(), loadTracks(playlistId)])
   }
 
   async function exportPlaylist(playlistId: string, format = 'txt'): Promise<string> {

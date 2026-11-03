@@ -15,6 +15,7 @@ export interface ChatTimeline {
 const pageSize = 50
 type HistoryDestination = 'chat.history.fetch' | 'public-chat.history.fetch'
 type ChatScope = 'room' | 'public'
+type MessageDestination = 'chat.message' | 'public-chat.message'
 const timeline = (): ChatTimeline => ({ messages: [], cursor: null, hasMore: true, loading: false, unread: 0 })
 const uniqueMessages = (messages: ChatMessage[]): ChatMessage[] => {
   const seen = new Set<string>()
@@ -71,6 +72,11 @@ export const useChatStore = defineStore('chat', () => {
     if (!realtimeClient.send(destination, { offset: t.messages.length, limit: pageSize })) t.loading = false
   }
 
+  function sendMessage(destination: MessageDestination, content: string): boolean {
+    const text = content.trim()
+    return Boolean(text) && realtimeClient.send(destination, { content: text })
+  }
+
   function resetRoomMessages(): void {
     Object.assign(roomTimeline, timeline())
   }
@@ -108,6 +114,8 @@ export const useChatStore = defineStore('chat', () => {
     prependPublicHistory: (history: ChatMessage[]) => prepend(publicTimeline, history),
     loadMoreHistory: () => loadMore(roomTimeline, 'chat.history.fetch'),
     loadMorePublicHistory: () => loadMore(publicTimeline, 'public-chat.history.fetch'),
+    sendRoomMessage: (content: string) => sendMessage('chat.message', content),
+    sendPublicMessage: (content: string) => sendMessage('public-chat.message', content),
     markAsRead,
     resetRoomMessages,
     toggleChat

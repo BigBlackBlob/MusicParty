@@ -2,7 +2,6 @@ import { computed, reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { NowPlaying } from '../contracts/generated/models'
 import { useAudioPlaybackStore } from '../domains/playback/audioPlaybackStore'
-import { useLikedSongsStore } from '../domains/playback/likedSongs'
 import { useLyricsStore } from '../domains/playback/lyrics'
 import { useRoomCommandStore } from '../domains/realtime/roomCommandStore'
 import { useRoomRuntimeStore } from '../domains/realtime/roomRuntimeStore'
@@ -27,7 +26,6 @@ export function useNowPlayingViewModel(options: { artistSeparator?: string } = {
   const audio = useAudioPlaybackStore()
   const commands = useRoomCommandStore()
   const lyrics = useLyricsStore()
-  const liked = useLikedSongsStore()
   const ui = useUiStore()
   const user = useUserStore()
   const presence = useRoomPresenceStore()
@@ -81,7 +79,7 @@ export function useNowPlayingViewModel(options: { artistSeparator?: string } = {
     && durationMs.value > 0
     && (!nowPlaying.value?.enqueuedById || isRequester.value || user.capabilities.canManageCurrentRoom),
   ))
-  const isLiked = computed(() => liked.includes(music.value))
+  const isLiked = computed(() => Boolean(nowPlaying.value?.likedUserIds.includes(user.publicId)))
   const activeUserCount = computed(() => presence.count)
   const ambientAccent = computed(() => (ui.dynamicAccent as { accent?: string } | null)?.accent || '#ede1ff')
 

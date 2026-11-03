@@ -13,7 +13,11 @@ export const queryKeys = {
     albumTracks: (roomId: string, platform: string, albumId: string) =>
       ['search', 'album-tracks', roomId, platform, albumId] as const,
     externalPlaylist: (platform: string, playlistId: string, page: number) =>
-      ['search', 'external-playlist', platform, playlistId, page] as const
+      ['search', 'external-playlist', platform, playlistId, page] as const,
+    userPlaylists: (platform: string, userId: string) => ['search', 'user-playlists', platform, userId] as const,
+    userSearch: (platform: string, keyword: string) => ['search', 'user-search', platform, keyword] as const,
+    userPlaylistTracks: (platform: string, playlistId: string, offset: number, limit: number) =>
+      ['search', 'user-playlist-tracks', platform, playlistId, offset, limit] as const
   },
   playlists: {
     personal: (publicId: string) => ['playlists', 'personal', publicId] as const,

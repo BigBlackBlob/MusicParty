@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { pairByTime, parseYrc } from './yrc'
+import { pairByTime, pairLyricExtras, parseYrc } from './yrc'
 
 const CLING_CLING_SAMPLE = [
   '{"t":0,"c":[{"tx":"作词: "},{"tx":"中田ヤスタカ"}]}',
@@ -69,14 +69,48 @@ describe('pairByTime', () => {
     expect(pairByTime(main, extra)).toEqual(['one two'])
   })
 
-  it('assigns a leading extra line to the first main line', () => {
+  it('leaves a distant leading extra unpaired', () => {
     const main = parseYrc('[2000,3000](2000,1000,0)X')
     const extra = parseYrc('[0,500](0,500,0)intro')
-    expect(pairByTime(main, extra)).toEqual(['intro'])
+    expect(pairByTime(main, extra)).toEqual([''])
   })
 
   it('returns empty strings when no extra lines exist', () => {
     const main = parseYrc('[0,3000](0,1000,0)A')
     expect(pairByTime(main, [])).toEqual([''])
+  })
+
+  it('handles slightly early onsets and ignores distant trailing extras', () => {
+    const main = parseYrc('[1000,3000]first\n[4000,2000]second')
+    expect(pairByTime(main, parseYrc('[00:03.990]second translation\n[00:12.000]unrelated'))).toEqual(['', 'second translation'])
+  })
+
+  it('prefers an exact onset over an overlapping earlier window', () => {
+    const main = parseYrc('[1000,10000]first\n[4000,2000]second')
+    expect(pairByTime(main, parseYrc('[00:04.000]second translation'))).toEqual(['', 'second translation'])
+  })
+})
+
+describe('pairLyricExtras', () => {
+  // NetEase 1850706852, Secret (Your Fire): legacy and word timestamps drift independently.
+  const main = '[134220,3060]You\'re like just what I like\n[138660,2040]Make another friend\n[142440,1350]You think you know me'
+  const legacy = '[02:14.363]You\'re like just what I like\n[02:18.648]Make another friend\n[02:22.046]You think you know me'
+  const extra = '[02:14.363]你正合我心意\n[02:18.648]结识新友吧\n[02:22.046]你自以为了解我'
+
+  it('prefers word translations and uses legacy text anchors for missing rows', () => {
+    expect(pairLyricExtras(parseYrc(main), '[02:14.220]逐字译文\n[02:22.440]你自以为了解我', legacy, extra)).toEqual(['逐字译文', '结识新友吧', '你自以为了解我'])
+    expect(pairLyricExtras(parseYrc(main), '', legacy, extra)).toEqual(['你正合我心意', '结识新友吧', '你自以为了解我'])
+  })
+
+  it('does not fill an untranslated La line with the following Sickness translation', () => {
+    const lines = parseYrc('[174120,2820]La la la la la\n[177510,2100]Sickness')
+    expect(pairLyricExtras(lines, '[02:57.510]病态', '[02:54.186]La la la la la\n[02:57.497]Sickness', '[02:57.497]病态')).toEqual(['', '病态'])
+  })
+
+  it('matches repeated original texts in order even when timing differs by seconds', () => {
+    const lines = parseYrc('[1000,1000]HELLO!\n[2000,1000]unmatched\n[20000,1000]Hello\n[30000,1000]Final line')
+    const plain = '[00:01.100]Hello\n[00:20.200]Hello\n[00:36.000]Final line'
+    const translated = '[00:01.100]first\n[00:20.200]second\n[00:36.000]final'
+    expect(pairLyricExtras(lines, '', plain, translated)).toEqual(['first', '', 'second', 'final'])
   })
 })

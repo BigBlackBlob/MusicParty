@@ -3,6 +3,8 @@ import { personalPlaylistsApi } from '../../api/personalPlaylists'
 import { playlistsApi, type PlaylistMutationResult } from '../../api/playlists'
 import { queryKeys } from '../queryKeys'
 import { queryClient } from '../../app/providers'
+import type { QueryFunctionContext } from '@tanstack/vue-query'
+import type { QueryKey } from '@tanstack/vue-query'
 
 export type PlaylistScope = { type: 'personal'; publicId: string } | { type: 'room'; roomId: string }
 
@@ -15,11 +17,36 @@ export const playlistKeys = {
     : queryKeys.playlists.roomTracks(scope.roomId, playlistId)
 }
 
+export function playlistListQueryOptions(scope: Extract<PlaylistScope, { type: 'personal' }>) {
+  return { queryKey: playlistKeys.list(scope) as QueryKey, queryFn: () => personalPlaylistsApi.list() }
+}
+
+export function roomPlaylistListQueryOptions(scope: Extract<PlaylistScope, { type: 'room' }>) {
+  return {
+    queryKey: playlistKeys.list(scope) as QueryKey,
+    queryFn: ({ signal }: QueryFunctionContext) => playlistsApi.list(scope.roomId, signal),
+  }
+}
+
+export function playlistTracksQueryOptions(scope: Extract<PlaylistScope, { type: 'personal' }>, playlistId: string, limit?: number) {
+  return {
+    queryKey: playlistKeys.tracks(scope, playlistId) as QueryKey,
+    queryFn: () => personalPlaylistsApi.tracks(playlistId, 0, limit ?? 500),
+  }
+}
+
+export function roomPlaylistTracksQueryOptions(scope: Extract<PlaylistScope, { type: 'room' }>, playlistId: string, limit = 500) {
+  return {
+    queryKey: playlistKeys.tracks(scope, playlistId) as QueryKey,
+    queryFn: ({ signal }: QueryFunctionContext) => playlistsApi.tracks(scope.roomId, playlistId, 0, limit, signal),
+  }
+}
+
 export async function listPlaylists(scope: PlaylistScope): Promise<PlaylistSummary[]> {
   return queryClient.fetchQuery({
     queryKey: playlistKeys.list(scope),
     queryFn: () => scope.type === 'personal' ? personalPlaylistsApi.list() : playlistsApi.list(scope.roomId),
-    staleTime: 0
+    staleTime: 0,
   })
 }
 
@@ -29,7 +56,7 @@ export async function listPlaylistTracks(scope: PlaylistScope, playlistId: strin
     queryFn: () => scope.type === 'personal'
       ? personalPlaylistsApi.tracks(playlistId, 0, limit)
       : playlistsApi.tracks(scope.roomId, playlistId, 0, limit),
-    staleTime: 0
+    staleTime: 0,
   })
 }
 
@@ -84,12 +111,4 @@ export async function addPersonalTracks(publicId: string, playlistId: string, mu
   const scope: PlaylistScope = { type: 'personal', publicId }
   await refresh(scope, playlistId)
   return result
-}
-
-export function cachedPlaylists(scope: PlaylistScope): PlaylistSummary[] {
-  return queryClient.getQueryData<PlaylistSummary[]>(playlistKeys.list(scope)) ?? []
-}
-
-export function cachedPlaylistTracks(scope: PlaylistScope, playlistId: string): PlaylistTrack[] {
-  return queryClient.getQueryData<PlaylistTrack[]>(playlistKeys.tracks(scope, playlistId)) ?? []
 }

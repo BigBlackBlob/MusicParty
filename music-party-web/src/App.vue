@@ -174,10 +174,9 @@
 
 <script setup>
 import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue';
-import { useEventListener, useWindowSize } from '@vueuse/core';
+import { useWindowSize } from '@vueuse/core';
 import { useRoomRealtimeCoordinator } from './domains/realtime/roomRealtimeCoordinator';
 import { useRealtimeConnectionStore } from './domains/realtime/realtimeConnectionStore';
-import { useRoomRuntimeStore } from './domains/realtime/roomRuntimeStore';
 import { useUserStore } from './stores/user';
 import { useUiStore } from './stores/ui';
 import { useRoomStore } from './stores/room';
@@ -201,7 +200,6 @@ import MobilePreviewShell from './components/mobile/MobilePreviewShell.vue';
 
 const player = useRoomRealtimeCoordinator();
 const realtimeConnection = useRealtimeConnectionStore();
-const playerRuntime = useRoomRuntimeStore();
 const userStore = useUserStore();
 const uiStore = useUiStore();
 const roomStore = useRoomStore();
@@ -244,15 +242,9 @@ const usePreviewShell = computed(() => uiStore.forceMobileLayout && width.value 
 
 const showChatOverlay = computed(() =>
   hasStarted.value &&
-  !uiStore.isLiteMode &&
   !isMobileLayout.value &&
   !layoutStore.placedModuleIds.includes('chat')
 );
-
-let autoLiteTimer = null;
-let lastInteractionAt = Date.now();
-const AUTO_LITE_DELAY_MS = 180000;
-const ACTIVITY_EVENTS = ['pointerdown', 'pointermove', 'keydown', 'touchstart', 'wheel'];
 
 const setAppViewportHeight = () => {
   const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
@@ -442,49 +434,6 @@ const confirmDeleteRoom = async () => {
   }
 };
 
-const clearAutoLiteTimer = () => {
-  if (autoLiteTimer) {
-    clearTimeout(autoLiteTimer);
-    autoLiteTimer = null;
-  }
-};
-
-const recordInteraction = () => {
-  lastInteractionAt = Date.now();
-};
-
-// 自动性能优化：后台停留较久后才进入精简模式，避免短暂切换应用时频繁触发。
-useEventListener(document, 'visibilitychange', () => {
-  clearAutoLiteTimer();
-
-  if (document.visibilityState === 'hidden') {
-    if (
-      hasStarted.value &&
-      !playerRuntime.isPaused &&
-      uiStore.autoLiteMode &&
-      !uiStore.isLiteMode
-    ) {
-      const hiddenAt = Date.now();
-      autoLiteTimer = setTimeout(() => {
-        if (
-          document.visibilityState === 'hidden' &&
-          hasStarted.value &&
-          !playerRuntime.isPaused &&
-          uiStore.autoLiteMode &&
-          lastInteractionAt <= hiddenAt
-        ) {
-          uiStore.isLiteMode = true;
-        }
-      }, AUTO_LITE_DELAY_MS);
-    }
-    return;
-  }
-});
-
-ACTIVITY_EVENTS.forEach(eventName => {
-  useEventListener(window, eventName, recordInteraction, { passive: true });
-});
-
 const handleSearchClick = () => {
   // 简单的搜索逻辑代理
   if (!userStore.hasDisplayName) {
@@ -524,7 +473,6 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  clearAutoLiteTimer();
   window.removeEventListener('resize', setAppViewportHeight);
   window.removeEventListener('orientationchange', setAppViewportHeight);
   window.visualViewport?.removeEventListener('resize', setAppViewportHeight);

@@ -108,12 +108,6 @@ test.describe('visual baselines', () => {
       maxDiffPixelRatio: 0.12,
     })
 
-    await page.getByRole('button', { name: /General|通用设置/ }).click()
-    await page.getByRole('button', { name: /Lite Mode|精简模式/ }).click()
-    await expect(page.getByText(/Lite Mode|精简模式/).first()).toBeVisible()
-    await expect(page).toHaveScreenshot('desktop-lite-mode-1440x900.png', {
-      animations: 'disabled', caret: 'hide', fullPage: true,
-    })
   })
 
   test('mobile now playing and settings retain their visual structure', async ({ page }) => {

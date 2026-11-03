@@ -109,7 +109,7 @@ func serverMessageSpecs() []messageSpec {
 		{"enqueue.nack", fields("accepted", "boolean?", "mutationId", "string", "reason", "string", "queueVersion", "number?")},
 		{"history.page", fields("roomId", "string", "total", "number", "offset", "number", "items", "PlaybackHistoryItem[]")},
 		directMessage("player.events", "PlayerEvent"),
-		{"player.state", fields("nowPlaying", "NowPlaying?", "queue", "QueueItem[]", "isShuffle", "boolean", "isPaused", "boolean", "isPauseLocked", "boolean", "isSkipLocked", "boolean", "isShuffleLocked", "boolean", "isLoading", "boolean", "serverTimestamp", "number", "stateVersion", "number", "playEpoch", "number", "queueVersion", "number", "queueEpoch", "string?", "historyCursor", "number", "idempotencyScopeId", "string?", "idempotencyTtlMs", "number?")},
+		{"player.state", fields("nowPlaying", "NowPlaying | null?", "queue", "QueueItem[]", "isShuffle", "boolean", "isPaused", "boolean", "isPauseLocked", "boolean", "isSkipLocked", "boolean", "isShuffleLocked", "boolean", "isLoading", "boolean", "serverTimestamp", "number", "stateVersion", "number", "playEpoch", "number", "queueVersion", "number", "queueEpoch", "string?", "historyCursor", "number", "idempotencyScopeId", "string?", "idempotencyTtlMs", "number?")},
 		{"playlist.ack", fields("operation", "string", "scope", "string", "mutationId", "string", "playlist", "PlaylistSummary?", "playlistId", "string?", "playlists", "PlaylistSummary[]?", "tracks", "PlaylistTrack[]?", "addedCount", "number?", "skippedCount", "number?", "removedCount", "number?", "count", "number?")},
 		{"playlist.data", fields("operation", "string", "scope", "string", "playlists", "PlaylistSummary[]?", "playlistId", "string?", "tracks", "PlaylistTrack[]?")},
 		{"playlist.nack", fields("operation", "string", "reason", "string", "scope", "string?", "mutationId", "string?")},
@@ -119,7 +119,7 @@ func serverMessageSpecs() []messageSpec {
 		{"queue.mutation.nack", fields("mutationId", "string", "reason", "string", "queueVersion", "number?")},
 		{"queue.patch", fields("operation", "QueuePatchOperation", "queueVersion", "number", "queueEpoch", "string?", "items", "QueueItem[]?", "item", "Partial<QueueItem>?", "queue", "QueueItem[]?", "queueIds", "string[]?", "queueId", "string?", "targetQueueId", "string?", "position", "string?", "status", "string?")},
 		{"queue.reorder.ack", fields("mutationId", "string")},
-		{"queue.reorder.nack", fields("mutationId", "string", "reason", "string", "queueVersion", "number?")},
+		{"queue.reorder.nack", fields("mutationId", "string", "reason", "string", "queueVersion", "number | null?")},
 		directMessage("rooms.created", "RoomSummary"),
 		directMessage("rooms.list", "RoomSummary[]"),
 		{"sync.pong", fields("pingId", "string", "clientSendTime", "number", "serverReceiveTime", "number", "serverSendTime", "number")},
@@ -198,6 +198,9 @@ func websocketSchema(title string, messages []messageSpec) map[string]any {
 func nullableStringSchema() map[string]any { return map[string]any{"type": []string{"string", "null"}} }
 
 func schemaForType(typeName string) map[string]any {
+	if strings.HasSuffix(typeName, " | null") {
+		return map[string]any{"oneOf": []any{schemaForType(strings.TrimSuffix(typeName, " | null")), map[string]any{"type": "null"}}}
+	}
 	if strings.HasSuffix(typeName, "[]") {
 		return map[string]any{"type": "array", "items": schemaForType(strings.TrimSuffix(typeName, "[]"))}
 	}
@@ -243,7 +246,7 @@ export interface RoomInvite { id: string; secret?: string; label: string; expire
 export interface PlatformDescriptor { id: string; label: string; supportsAlbumSearch: boolean; subsonic: boolean }
 export interface Music { id: string; name: string; artists: string[]; duration: number; platform: string; coverUrl: string }
 export interface PlayableMusic extends Music { url: string; needsProxy: boolean }
-export interface NowPlaying { music: PlayableMusic; currentPosition: number; enqueuedById?: string; enqueuedByName?: string; likedUserIds: string[]; likeMarkers: number[]; playEpoch: number; positionUpdatedAt: number }
+export interface NowPlaying { music: PlayableMusic; currentPosition: number; enqueuedById?: string | null; enqueuedByName?: string | null; likedUserIds: string[]; likeMarkers: number[]; playEpoch: number; positionUpdatedAt: number }
 export interface QueueItem { playbackPriority?: number; queueId: string; music: Music; enqueuedBy: UserSummary; status: string }
 export interface PlaylistSummary { id: string; ownerPublicId?: string; roomId?: string; name: string; systemKey: string | null; trackCount: number; createdAt: number; updatedAt: number }
 export interface PlaylistTrack { id: string; playlistId: string; music: Music; sortOrder: number; createdAt: number }

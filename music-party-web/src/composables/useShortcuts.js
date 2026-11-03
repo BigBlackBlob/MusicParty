@@ -45,12 +45,8 @@ export function useShortcuts(actions = {}) {
         ui.setVolume(ui.volume > 0 ? 0 : 0.5);
         break;
 
-      case 'escape': // Esc: Close modals or exit Lite mode
-        if (ui.isLiteMode) {
-          ui.toggleLiteMode();
-        } else {
-          actions.onCloseModals?.();
-        }
+      case 'escape': // Esc: Close modals
+        actions.onCloseModals?.();
         break;
     }
   };
@@ -71,7 +67,7 @@ export function useShortcuts(actions = {}) {
       { key: 'Ctrl + →', label: '下一首' },
       { key: '/', label: '快速搜索' },
       { key: 'M', label: '静音切换' },
-      { key: 'Esc', label: '退出模式 / 关闭' },
+      { key: 'Esc', label: '关闭' },
     ]
   };
 }

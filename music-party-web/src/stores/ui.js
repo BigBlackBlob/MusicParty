@@ -11,7 +11,7 @@ export const useUiStore = defineStore('ui', () => {
     const initialTheme = localStorage.getItem('theme') || 'dark';
     const isDarkMode = ref(initialTheme !== 'light');
     const locale = ref(localStorage.getItem('mp_locale') || 'en');
-    const isLiteMode = ref(false);
+    localStorage.removeItem('mp_auto_lite_mode');
     const forceMobileLayout = ref(localStorage.getItem('mp_force_mobile_layout') === 'true');
     const mobilePreviewWidth = ref(parseInt(localStorage.getItem('mp_mobile_preview_width') || '390', 10));
     const mobileActiveTab = ref(localStorage.getItem('mp_mobile_active_tab') || 'now');
@@ -22,7 +22,6 @@ export const useUiStore = defineStore('ui', () => {
     const showLyricTranslation = ref(localStorage.getItem(STORAGE_KEYS.LYRIC_TRANSLATION) !== 'false');
     const showLyricRomanization = ref(localStorage.getItem(STORAGE_KEYS.LYRIC_ROMANIZATION) === 'true');
     const lyricAlignment = ref(localStorage.getItem('mp_lyric_alignment') || 'center');
-    const autoLiteMode = ref(localStorage.getItem('mp_auto_lite_mode') === 'true'); // 默认 false
 
     const authorName = ref('ThorNex');
     const backWords = ref('THORNEX');
@@ -133,10 +132,6 @@ export const useUiStore = defineStore('ui', () => {
         root.style.setProperty('--accent-muted', active.accentMuted);
         root.style.setProperty('--accent-subtle', active.accentSubtle);
         root.style.setProperty('--border-accent', active.borderAccent || deriveBorderAccent(active.accent));
-    };
-
-    const toggleLiteMode = () => {
-        isLiteMode.value = !isLiteMode.value;
     };
 
     const setForceMobileLayout = (val) => {
@@ -288,10 +283,6 @@ export const useUiStore = defineStore('ui', () => {
         localStorage.setItem(STORAGE_KEYS.LYRIC_ROMANIZATION, newVal.toString());
     });
 
-    watch(autoLiteMode, (newVal) => {
-        localStorage.setItem('mp_auto_lite_mode', newVal.toString());
-    });
-
     watch(forceMobileLayout, (newVal) => {
         localStorage.setItem('mp_force_mobile_layout', newVal.toString());
     });
@@ -326,8 +317,6 @@ export const useUiStore = defineStore('ui', () => {
     }, { immediate: true });
 
     return {
-        isLiteMode,
-        toggleLiteMode,
         forceMobileLayout,
         setForceMobileLayout,
         toggleForceMobileLayout,
@@ -355,7 +344,6 @@ export const useUiStore = defineStore('ui', () => {
         setLyricTranslation,
         lyricAlignment,
         setLyricAlignment,
-        autoLiteMode,
         authorName,
         backWords,
         fetchConfig,

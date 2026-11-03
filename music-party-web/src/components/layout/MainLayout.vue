@@ -19,17 +19,6 @@
     <!-- Background Vignette/Masking for depth -->
     <div class="pointer-events-none fixed inset-0 z-10 shadow-[inset_0_0_200px_var(--surface-scrim)]"></div>
 
-    <!-- Lite Mode Overlay -->
-    <LiteModeView
-      v-if="uiStore.isLiteMode"
-      :now-playing="playerRuntime.nowPlaying"
-      v-model:volume="uiStore.volume"
-      v-model:auto-lite="uiStore.autoLiteMode"
-      @exit="uiStore.toggleLiteMode"
-      class="z-[var(--z-overlay)]"
-    />
-
-    <template v-else>
       <!-- Top Navigation Bar -->
       <header class="fixed top-0 z-50 flex h-[64px] w-full items-center justify-between bg-transparent px-5">
         <div class="flex min-w-0 items-center gap-5">
@@ -206,7 +195,6 @@
           <slot />
         </div>
       </main>
-    </template>
   </div>
 </template>
 
@@ -216,7 +204,6 @@ import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import SettingsCenter from '../SettingsCenter.vue';
 import PrivateRoomAccessDialog from '../PrivateRoomAccessDialog.vue';
-import LiteModeView from './LiteModeView.vue';
 import UserList from '../UserList.vue';
 import { useUserStore } from '../../stores/user';
 import { useUiStore } from '../../stores/ui';

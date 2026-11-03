@@ -43,4 +43,14 @@ describe('liked songs account isolation', () => {
 
     expect(store.likedSongs.map(item => item.id)).toEqual(['a'])
   })
+
+  it('supports local playback previews without writing the personal playlist API', () => {
+    const store = useLikedSongsStore()
+    expect(store.toggleLocal(song('current-track'))).toBe('liked')
+    expect(store.includes(song('current-track'))).toBe(true)
+    expect(store.toggleLocal(song('current-track'))).toBe('unliked')
+    expect(store.includes(song('current-track'))).toBe(false)
+    expect(personalPlaylistsApi.likeSong).not.toHaveBeenCalled()
+    expect(personalPlaylistsApi.unlikeSong).not.toHaveBeenCalled()
+  })
 })

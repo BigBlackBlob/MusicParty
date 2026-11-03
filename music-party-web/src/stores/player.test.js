@@ -60,6 +60,7 @@ describe('player controls', () => {
     queryClient.clear();
     setActivePinia(createPinia());
     vi.clearAllMocks();
+    useRoomRuntimeStore().idempotencyScopeId = 'test-scope';
     socketService.connected = false;
     socketService.send.mockReturnValue(true);
     socketService.sendEnvelope.mockReturnValue(true);
@@ -144,17 +145,20 @@ describe('player controls', () => {
 
     expect(sent).toBe(true);
     expect(player.queue.map(item => item.queueId)).toEqual(['b', 'c', 'a']);
-    expect(socketService.send).toHaveBeenCalledWith(WS_DEST.QUEUE_REORDER, expect.objectContaining({
-      oldIndex: 0,
-      newIndex: 2,
-      queueId: 'a',
-      targetQueueId: 'c',
-      position: 'after',
-      mutationId: expect.any(String)
+    expect(socketService.sendEnvelope).toHaveBeenCalledWith(expect.objectContaining({
+      type: WS_DEST.QUEUE_REORDER,
+      payload: expect.objectContaining({
+        oldIndex: 0,
+        newIndex: 2,
+        queueId: 'a',
+        targetQueueId: 'c',
+        position: 'after',
+        mutationId: expect.any(String)
+      })
     }));
     expect(socketService.send).not.toHaveBeenCalledWith(WS_DEST.RESYNC, expect.anything());
 
-    vi.advanceTimersByTime(1499);
+    vi.advanceTimersByTime(58_999);
     expect(socketService.send).not.toHaveBeenCalledWith(WS_DEST.RESYNC, expect.anything());
     vi.advanceTimersByTime(1);
     expect(socketService.send).toHaveBeenCalledWith(WS_DEST.RESYNC, {});
@@ -168,7 +172,8 @@ describe('player controls', () => {
     player.queue = [{ queueId: 'a' }, { queueId: 'b' }, { queueId: 'c' }];
 
     player.reorderQueue(0, 2, 'a', 'c', 'after');
-    const payload = socketService.send.mock.calls.find(([type]) => type === WS_DEST.QUEUE_REORDER)[1];
+    const reorder = socketService.sendEnvelope.mock.calls.find(([envelope]) => envelope.type === WS_DEST.QUEUE_REORDER)[0];
+    const payload = reorder.payload;
     player.setQueue([{ queueId: 'a' }, { queueId: 'b' }, { queueId: 'c' }], 2);
 
     expect(player.queue.map(item => item.queueId)).toEqual(['b', 'c', 'a']);

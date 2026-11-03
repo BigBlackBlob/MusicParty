@@ -53,6 +53,16 @@ export const useLikedSongsStore = defineStore('liked-songs', () => {
     return existing
   }
 
+  function toggleLocal(music: Music): 'liked' | 'unliked' {
+    const key = songKey(music)
+    if (includes(music)) {
+      remove(key)
+      return 'unliked'
+    }
+    add(music)
+    return 'liked'
+  }
+
   function includes(music: Music | null | undefined): boolean {
     return Boolean(music && likedSongs.value.some(song => song.key === songKey(music)))
   }
@@ -105,5 +115,5 @@ export const useLikedSongsStore = defineStore('liked-songs', () => {
     return 'liked'
   }
 
-  return { likedSongs, add, remove, includes, syncFromServer, removeAndSync, toggle, reset }
+  return { likedSongs, add, remove, includes, syncFromServer, removeAndSync, toggle, toggleLocal, reset }
 })

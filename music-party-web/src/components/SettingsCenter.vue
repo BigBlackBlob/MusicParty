@@ -38,14 +38,6 @@
                 <span>{{ t('settings.language') }}</span>
                 <strong>{{ ui.locale === 'en' ? t('settings.english') : t('settings.chinese') }}</strong>
               </button>
-              <button class="settings-row" type="button" @click="ui.toggleLiteMode">
-                <span>{{ t('settings.liteMode') }}</span>
-                <strong>{{ ui.isLiteMode ? t('settings.on') : t('settings.off') }}</strong>
-              </button>
-              <label class="settings-row">
-                <span>{{ t('settings.autoLiteMode') }}</span>
-                <input v-model="ui.autoLiteMode" type="checkbox" class="settings-checkbox" />
-              </label>
             </div>
 
             <div class="settings-control-block">

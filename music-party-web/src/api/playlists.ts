@@ -13,13 +13,13 @@ const base = (roomId: string) => `/api/rooms/${encodeURIComponent(roomId || 'lou
 const id = (value: string) => encodeURIComponent(value)
 
 export const playlistsApi = {
-  list: (roomId: string) => client.get<PlaylistSummary[]>(base(roomId)),
+  list: (roomId: string, signal?: AbortSignal) => client.get<PlaylistSummary[]>(base(roomId), signal ? { signal } : {}),
   create: (roomId: string, name: string) => client.post<PlaylistSummary, { name: string }>(base(roomId), { name }),
   rename: (roomId: string, playlistId: string, name: string) =>
     client.patch<PlaylistSummary, { name: string }>(`${base(roomId)}/${id(playlistId)}`, { name }),
   remove: (roomId: string, playlistId: string) => client.delete<void>(`${base(roomId)}/${id(playlistId)}`),
-  tracks: (roomId: string, playlistId: string, offset = 0, limit = 100) =>
-    client.get<PlaylistTrack[]>(`${base(roomId)}/${id(playlistId)}/tracks`, { params: { offset, limit } }),
+  tracks: (roomId: string, playlistId: string, offset = 0, limit = 100, signal?: AbortSignal) =>
+    client.get<PlaylistTrack[]>(`${base(roomId)}/${id(playlistId)}/tracks`, { params: { offset, limit }, ...(signal ? { signal } : {}) }),
   addTrack: (roomId: string, playlistId: string, music: Music) =>
     client.post<PlaylistTrack, { music: Music }>(`${base(roomId)}/${id(playlistId)}/tracks`, { music }),
   removeTrack: (roomId: string, playlistId: string, trackId: string) =>

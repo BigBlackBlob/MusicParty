@@ -52,4 +52,40 @@ describe('userPlaylists store', () => {
     expect(user.showNameModal).toBe(true);
     expect(personalPlaylistsApi.addTracks).not.toHaveBeenCalled();
   });
+
+  it('uses an already loaded playlist instead of creating a duplicate', async () => {
+    personalPlaylistsApi.list.mockResolvedValue([{ id: 'existing', name: 'Existing' }]);
+    personalPlaylistsApi.addTracks.mockResolvedValue({ addedCount: 1, skippedCount: 0, tracks: [] });
+
+    const store = useUserPlaylistsStore();
+    await vi.waitFor(() => expect(personalPlaylistsApi.list).toHaveBeenCalled());
+    const result = await store.addTracksToSelected([{ id: 's1', platform: 'netease', name: 'Song' }]);
+
+    expect(result).toMatchObject({ addedCount: 1 });
+    expect(personalPlaylistsApi.create).not.toHaveBeenCalled();
+    expect(personalPlaylistsApi.addTracks).toHaveBeenCalledWith('existing', expect.any(Array));
+  });
+
+  it('does not query or create a personal playlist automatically for guests', async () => {
+    const user = useUserStore();
+    user.initUser('u_guest', '游客', true);
+
+    useUserPlaylistsStore();
+    await Promise.resolve();
+
+    expect(personalPlaylistsApi.list).not.toHaveBeenCalled();
+    expect(personalPlaylistsApi.create).not.toHaveBeenCalled();
+  });
+
+  it('enables the personal playlist query after a named user is initialized', async () => {
+    const user = useUserStore();
+    user.initUser('', '', true);
+    personalPlaylistsApi.list.mockResolvedValue([]);
+
+    useUserPlaylistsStore();
+    expect(personalPlaylistsApi.list).not.toHaveBeenCalled();
+
+    user.initUser('u_named', 'Named', false);
+    await vi.waitFor(() => expect(personalPlaylistsApi.list).toHaveBeenCalledOnce());
+  });
 });

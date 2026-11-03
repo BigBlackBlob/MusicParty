@@ -1,7 +1,6 @@
 import dayjs from 'dayjs'
 import { computed, nextTick, type Ref } from 'vue'
 import type { ChatMessage } from '../contracts/generated/models'
-import { realtimeClient } from '../transport/realtimeClient'
 import { useChatStore } from '../stores/chat'
 import { useUserStore } from '../stores/user'
 
@@ -46,8 +45,9 @@ export function useChatViewModel(activeTabRef: Ref<ChatTab>) {
       user.showNameModal = true
       return false
     }
-    const destination = activeTabRef.value === 'PUBLIC' ? 'public-chat.message' : 'chat.message'
-    return realtimeClient.send(destination, { content: text })
+    return activeTabRef.value === 'PUBLIC'
+      ? chat.sendPublicMessage(text)
+      : chat.sendRoomMessage(text)
   }
 
   async function scrollToBottom(listRef: Ref<HTMLElement | null>, force = false): Promise<void> {
