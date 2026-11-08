@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyQueueReorder, buildQueueReorderPayload, buildQueueReorderPayloadFromDom, isQueueReorderSourceCurrent } from './queueReorder';
+import { applyQueueReorder, buildQueueReorderPayload, buildQueueReorderPayloadFromDom, isQueueReorderSourceCurrent, restoreDraggedNode } from './queueReorder';
 
 const queue = [
   { queueId: 'a' },
@@ -109,5 +109,44 @@ describe('applyQueueReorder', () => {
       targetQueueId: 'b',
       position: 'before'
     }).map(item => item.queueId)).toEqual(['a', 'd', 'b', 'c']);
+  });
+});
+
+describe('restoreDraggedNode', () => {
+  const list = () => {
+    const parent = document.createElement('div');
+    for (const id of ['a', 'b', 'c']) {
+      const row = document.createElement('div');
+      row.dataset.queueId = id;
+      parent.appendChild(row);
+    }
+    return parent;
+  };
+  const order = parent => [...parent.children].map(row => row.dataset.queueId);
+
+  it('puts a Sortable-moved row back so Vue owns the order', () => {
+    const parent = list();
+    const item = parent.children[0];
+    const anchor = item.nextSibling;
+    parent.appendChild(item);
+    expect(order(parent)).toEqual(['b', 'c', 'a']);
+    expect(restoreDraggedNode({ from: parent, item }, anchor)).toBe(true);
+    expect(order(parent)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('restores the last row when it had no following sibling', () => {
+    const parent = list();
+    const item = parent.children[2];
+    parent.insertBefore(item, parent.children[0]);
+    expect(restoreDraggedNode({ from: parent, item }, null)).toBe(true);
+    expect(order(parent)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('leaves the DOM alone when the anchor is no longer in the list', () => {
+    const parent = list();
+    const item = parent.children[0];
+    const anchor = parent.children[1];
+    anchor.remove();
+    expect(restoreDraggedNode({ from: parent, item }, anchor)).toBe(false);
   });
 });

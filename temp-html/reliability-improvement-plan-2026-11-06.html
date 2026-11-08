@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MusicParty 协同可靠性改进计划</title>
+  <style>
+    :root { color-scheme: dark; font: 15px/1.6 system-ui, "Microsoft YaHei", sans-serif; background: #000; color: #fff; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { width: min(1120px, 100%); margin: 0 auto; padding: 28px 20px 64px; }
+    h1 { margin: 0 0 8px; font-size: 28px; line-height: 1.25; }
+    h2 { margin: 34px 0 10px; padding-bottom: 7px; border-bottom: 1px solid #444; font-size: 20px; }
+    h3 { margin: 18px 0 5px; font-size: 16px; }
+    p { margin: 8px 0; max-width: 95ch; }
+    .meta, .muted { color: #bbb; }
+    .callout { border-left: 3px solid #8bd5ca; padding: 8px 14px; margin: 18px 0; background: #101413; }
+    .table-wrap { overflow-x: auto; margin: 12px 0; }
+    table { width: 100%; border-collapse: collapse; min-width: 680px; }
+    th, td { border: 1px solid #444; text-align: left; vertical-align: top; padding: 9px 11px; }
+    th { background: #171717; }
+    code { color: #e4e4e4; overflow-wrap: anywhere; }
+    ol, ul { padding-left: 23px; }
+    li { margin: 5px 0; max-width: 100ch; }
+    .gate { color: #a7e3b1; }
+    .risk { color: #ffd28b; }
+    @media (max-width: 600px) { main { padding: 20px 14px 44px; } h1 { font-size: 24px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>MusicParty 协同可靠性改进计划</h1>
+  <p class="meta">规划日期：2026-11-06 · 代码分支：NRT-Base · 范围：小房间队列命令、重连收敛与播放状态一致性</p>
+
+  <div class="callout">
+    <strong>执行原则：</strong>先证明正确，再提高操作成功率，再降低延迟，最后才优化网络成本。2 秒和 5 秒是候选验收门槛，必须由规定矩阵实测；它们不是当前整体达标声明。播放状态一致也不能替代实际音频同步测量。
+  </div>
+
+  <h2>目标与判定</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>范围</th><th>候选验收</th><th>如何取证</th></tr></thead>
+    <tbody>
+      <tr><td>规模</td><td>2、3、5 个客户端；待播队列 3、10、30 首</td><td>每格使用固定操作脚本和独立房间，保留客户端、服务端和数据库快照</td></tr>
+      <tr><td>正常在线操作</td><td>每条已接受操作 2 秒内所有客户端与服务端一致</td><td>操作端 DOM/store、观察端 DOM/store、ACK/广播、服务端权威状态及新加入客户端快照逐项比较</td></tr>
+      <tr><td>网络恢复</td><td>连接恢复后 5 秒内完成重连、全量同步并可继续操作</td><td>用网络代理切断并恢复传输；分别记录链路恢复、WS open、完整快照、操作重新启用和最终收敛时间</td></tr>
+      <tr><td>离线行为</td><td>禁止拖拽和切歌；离线新命令不发送、不排队</td><td>检查控件状态、命令层拒绝、WS 出站帧计数及恢复后的队列，确认没有离线新命令补发</td></tr>
+      <tr><td>正确性</td><td>无丢歌、重复执行、跨房间误操作</td><td>比较 queueId 集合、次序、版本、房间 ID、mutationId 和持久化结果；对 ACK 丢失进行同 ID 重放</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>当前基线</h2>
+  <ul>
+    <li>电脑短队列真实鼠标拖拽已修复，含 Sortable DOM 生命周期和 Vue 状态回渲协调。</li>
+    <li>桌面长距离自动滚动探针已覆盖 30 首队列，验证滚动位置、完整目标顺序、本地状态、观察者和新加入客户端快照。</li>
+    <li>ACK 注入已用 Playwright WebSocket 双向代理实现：只丢弃一个指定 reorder ACK，不关闭连接；重放原始 envelope 后版本只增加一次。</li>
+    <li>并发拖拽与另一客户端加歌/删歌已有测试；离线门控和恢复也有浏览器探针。</li>
+    <li>四项核心场景各重复 10 次共 40/40 通过；扩大规模原报告 239/240，唯一失败是异步帧观察断言，修正后 5 客户端 / 10 首 ACK 复验 10/10 通过。</li>
+    <li>扩展矩阵无队列完整性问题或在线操作 2 秒门槛违例。5 客户端下断线恢复 p95 为 4.576 秒；TCP 下行黑洞故障发现 17.544 秒，恢复后同步 1.956 秒。</li>
+    <li>切房 scope E2E 已验证 ACK 丢失后的 pending 清理、旧 mutation 不重放及房间隔离。独立 WAV 双客户端样本实测 25.71ms 播放位置差；操作消息为客户端出站 2 帧/323 字节、服务端下行 4 帧/2,208 字节。</li>
+    <li class="risk">音频与消息成本各只有单次 2 客户端样本；scope 切换经页面内协调器执行，不覆盖菜单交互。真实输出音频、暂停/切歌偏差、登出/换用户 scope、TCP 全丢/重置/上行丢包和触摸拖拽仍未测。</li>
+  </ul>
+
+  <h2>2026-11-09 验收记录</h2>
+  <p>测试使用本机隔离 Go 服务、独立 SQLite 和本地 WAV 夹具，未连接生产数据库或日常预览环境。四类重复结果见 <code>music-party-web/test-results/reliability-matrix/2026-11-08T12-44-13-243Z/playwright.log</code>；扩展矩阵、TCP 半开、scope 切换和音频/消息成本报告分别见执行方案列出的 JSON 报告。</p>
+  <p class="risk">TCP 测试从真实传输静默开始计时，发现故障需 17.544 秒。现有恢复门槛按链路恢复后计时，所以该结果满足恢复指标，但暴露了心跳故障发现时间较长的问题；尚未据此调整心跳或重连策略。</p>
+
+  <h2>分阶段实施</h2>
+  <ol>
+    <li><strong>冻结可重复基线。</strong>固定测试数据、操作顺序、浏览器版本、独立 SQLite 文件和本地音频夹具。矩阵先取 2 客户端 × 3/10/30 首，每格至少 30 次；再取 3 和 5 客户端。记录失败样本的 DOM、Pinia、出站帧、ACK/NACK、服务端快照、DB 队列与新客户端状态。</li>
+    <li><strong>正确性门。</strong>覆盖同一 mutationId 的重复提交、ACK 丢失、ACK 与状态广播先后顺序、版本缺口、服务端重启/epoch 变化、切房和换用户。离线新命令必须保持零出站、零延迟补发；在途命令只能在房间、用户、scope 和 TTL 均相同的安全上下文内重放。任何跨房间、重复执行或状态丢失都先阻断后续优化。</li>
+    <li><strong>提高操作成功率。</strong>跑短队列、队列清空后重建、初始已有队列、长距离自动滚动、并发加歌/删歌、多人连续拖拽。每个用例必须用真实鼠标动作；触摸设备调试条件具备后再单列移动端，不把桌面结果外推为触摸覆盖。</li>
+    <li><strong>验证恢复路径。</strong>通过可控 TCP/HTTP 代理切断指定连接的读写，保持浏览器 <code>navigator.onLine</code> 为 true，分别测试半开连接、单向丢包、全丢包、连接重置和恢复。记录心跳超时发现时间和恢复时间；浏览器 offline 模拟作为独立场景，不能代替真实传输故障。</li>
+    <li><strong>满足延迟门。</strong>只有正确性和成功率无违例后，统计每操作的收敛 p50、p95、最大值以及恢复 p50/p95/max。在线操作门槛按 2 秒，恢复门槛按 5 秒；样本不满足就定位具体阶段，逐机制修复，不以平均值掩盖尾部超时。</li>
+    <li><strong>最后优化网络成本。</strong>统计每次操作的客户端帧、服务端广播、快照字节、重连次数、重传次数和心跳数量。仅当成本有明确改善空间且前述正确性/成功率/延迟不退化时，才调整合并、背压或心跳策略；每次调整复跑同一矩阵。</li>
+  </ol>
+
+  <h2>建议测试矩阵</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>场景</th><th>客户端 / 队列</th><th>重复与结果</th></tr></thead>
+    <tbody>
+      <tr><td>正常拖拽与长滚动</td><td>2、3、5 / 3、10、30</td><td>每格至少 30 次；记录成功率、服务端收敛和各端收敛延迟</td></tr>
+      <tr><td>并发加歌、删除、多人排序</td><td>2–5 / 3、10、30</td><td>固定并发时序；核验 queueId 集合及顺序，不丢、不重</td></tr>
+      <tr><td>只丢 ACK，连接保持</td><td>2–5 / 3、10、30</td><td>逐类覆盖 enqueue、reorder、remove/control；同 ID 重放后确认恰好一次提交</td></tr>
+      <tr><td>真实断链与恢复</td><td>2–5 / 3、10、30</td><td>至少覆盖双向中断、单向丢包、半开与重置；恢复后 5 秒内快照一致</td></tr>
+      <tr><td>离线和作用域切换</td><td>2–5 / 3、10、30</td><td>离线发拖拽/切歌/新命令，再切房或换用户；验证零离线命令及无错误重放</td></tr>
+      <tr><td>实际音频同步</td><td>2、3、5 / 3、10、30</td><td>单独测开始播放偏差、暂停/恢复偏差、切歌偏差和缓冲差异；不由状态消息代替</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>指标与停止条件</h2>
+  <ul>
+    <li><strong>正确性违例数：</strong>丢失、重复、跨房间、版本回退、离线新命令发送、错误 scope 重放。候选目标为 0。</li>
+    <li><strong>操作成功率：</strong>操作在 2 秒内形成权威一致状态的比例；分规模、场景报告，不合并成单一平均数。</li>
+    <li><strong>延迟：</strong>用户动作结束到服务端提交、ACK、操作者本地态、最后一个观察者收敛的分段耗时，报告 p50/p95/max。</li>
+    <li><strong>恢复：</strong>链路恢复到 WS 重连、权威快照完成、各端一致、命令重新可用分别计时；目标 5 秒。</li>
+    <li><strong>成本：</strong>每操作消息数/字节数、心跳、重试、快照量和连接抖动，只作为最后一阶段的优化指标。</li>
+    <li class="gate">任何正确性违例立即停止当前阶段并保留复现记录；没有固定矩阵结果时只报告“未测”，不宣称达标。</li>
+  </ul>
+
+  <h2>实施顺序与交付</h2>
+  <p>先把固定矩阵脚本化并输出机器可读逐次记录，再补真实网络代理故障注入和范围切换场景，之后扩大客户端规模与队列规模，最后独立测音频同步及消息成本。每轮交付包含代码证据、复现步骤、前后数据、违例数、延迟分布、恢复分布和未测范围。暂不重构实时架构或替换拥塞算法；只有矩阵指出具体机制瓶颈后再提出对应改动。</p>
+</main>
+</body>
+</html>

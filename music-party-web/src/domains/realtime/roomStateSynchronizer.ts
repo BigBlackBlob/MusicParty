@@ -21,7 +21,7 @@ export const useRoomStateSynchronizer = defineStore('room-state-synchronizer', (
     lastStateVersion, lastPlayEpoch, lastServerTimestamp, remotePosition, lastSyncTime,
     serverClockOffset, hasClockSample,
   } = storeToRefs(runtime)
-  const { hasInitialSnapshot, lastPongAt, lastRttMs } = storeToRefs(connection)
+  const { hasInitialSnapshot, synced, lastPongAt, lastRttMs } = storeToRefs(connection)
   const { forceNextSyncSeek } = storeToRefs(audio)
   let queuedState: PlayerState | null = null
   let queuedPatches: QueuePatch[] = []
@@ -87,6 +87,7 @@ export const useRoomStateSynchronizer = defineStore('room-state-synchronizer', (
     lastSyncTime.value = state.serverTimestamp
     if (!state.nowPlaying) audio.setPlaybackPosition(0)
     hasInitialSnapshot.value = true
+    synced.value = true
     commands.retryPendingCommands(runtime.idempotencyScopeId)
   }
 

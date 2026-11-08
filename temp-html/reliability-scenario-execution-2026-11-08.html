@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MusicParty 四类可靠性场景执行方案</title>
+<style>
+:root{color-scheme:dark;background:#000;color:#fff;font:15px/1.65 system-ui,"Microsoft YaHei",sans-serif}*{box-sizing:border-box}body{margin:0}main{width:min(1080px,100%);margin:0 auto;padding:28px 20px 64px}h1{font-size:27px;margin:0 0 8px}h2{font-size:20px;margin:30px 0 8px;border-bottom:1px solid #444;padding-bottom:6px}p{max-width:100ch;margin:8px 0}table{width:100%;border-collapse:collapse;min-width:760px}th,td{border:1px solid #444;padding:8px;text-align:left;vertical-align:top}th{background:#171717}.scroll{overflow:auto;margin:12px 0}code,pre{font:13px/1.5 ui-monospace,Consolas,monospace;overflow-wrap:anywhere}pre{white-space:pre-wrap;background:#101010;padding:12px;border-left:2px solid #777}.meta{color:#bbb}.gate{color:#a7e3b1}@media(max-width:650px){main{padding:20px 14px 44px}h1{font-size:23px}}
+</style>
+</head>
+<body><main>
+<h1>四类可靠性场景执行方案</h1>
+<p class="meta">2026-11-08 · 本机隔离 Go 服务、每轮独立 SQLite、本地 WAV 夹具 · 不连接生产数据库或日常预览环境</p>
+<p>这轮覆盖长距离自动滚动、丢弃一个 ACK 但保持 WebSocket、真实 WebSocket 断开与恢复、拖拽期间并发加歌和删歌。目标是先做四项各一次的最小验证，再对每项重复 10 次；出现任何正确性违例就停止扩大测试并保留对应报告。</p>
+<h2>场景与通过条件</h2>
+<div class="scroll"><table><thead><tr><th>场景</th><th>注入 / 动作</th><th>必须记录</th><th>通过条件</th></tr></thead><tbody>
+<tr><td>长距离自动滚动</td><td>30 首队列，真实鼠标从首行拖到末行，跨越滚动容器</td><td>scrollTop、源/目标 queueId、拖拽前后 DOM/store、客户端发送、ACK、观察者和新加入客户端快照</td><td>确实滚动；最终顺序等于移动首项到末尾；恰好一个重排命令和一个 ACK；2 秒内所有状态一致，无丢歌/重复</td></tr>
+<tr><td>单个 ACK 丢失</td><td>双向 WebSocket 代理只丢弃服务端对首次 reorder 的 ACK；连接保持；随后用同 mutationId 重放原命令</td><td>原始 envelope、丢弃 ACK 数、重放次数、收到 ACK、queueVersion、socket 数和服务端快照</td><td>恰好丢一个 ACK，连接未重建；同 ID 重放后服务端版本只增一，客户端收到 ACK，最终队列与新加入客户端一致</td></tr>
+<tr><td>真实 WebSocket 断开</td><td>代理关闭 actor 的服务端 WebSocket 端点，不调用 browserContext.setOffline；观察者在线修改队列</td><td>navigator.onLine、close/open 时间、连接状态、断线期间操作和出站命令、重连快照、恢复耗时</td><td>navigator.onLine 始终 true；断线期间禁用切歌/拖拽且不发新命令；重连后 5 秒内同步远端修改并可继续操作</td></tr>
+<tr><td>并发加歌和删歌</td><td>观察者在 actor 真实鼠标拖拽中加一首并删除一首</td><td>命令时间线、mutationId、最终 queueId 集合/顺序、actor/observer 和新加入客户端快照</td><td>加歌恰好一首、删除目标不存在、没有其他歌曲丢失或重复；各端及服务端快照一致，2 秒内收敛</td></tr>
+</tbody></table></div>
+<h2>执行顺序</h2>
+<ol><li>运行单次最小集，先发现配置或夹具问题，不计为稳定性样本。</li><li>最小集全绿后，用 <code>--repeat-each=10</code> 对四项各跑 10 次。每个场景报告通过率、p50/p95/max；真实断线单独报告重连和快照收敛时间。</li><li>10 次全绿后，按 2、3、5 客户端扩张：拖拽、并发和 ACK 丢失各用 3、10、30 首队列，每格 10 次。真实断线先用 2 客户端跑 10 次，再扩到 3/5 客户端。</li><li>先评估所有正确性指标。未达到零违例时暂停扩张，按保留的原始帧和状态定位；不先调消息合并或拥塞策略。</li></ol>
+<h2>命令</h2>
+<p>四项最小验证使用单个隔离服务：</p>
+<pre>$env:RELIABILITY_GREP='auto-scroll drag converges|single dropped reorder ACK|real WebSocket disconnect|concurrent enqueue and remove'
+$env:RELIABILITY_REPEAT_EACH='1'
+Set-Location music-party-web
+node .\scripts\run-reliability-matrix.mjs</pre>
+<p>四项各重复 10 次：</p>
+<pre>$env:RELIABILITY_GREP='auto-scroll drag converges|single dropped reorder ACK|real WebSocket disconnect|concurrent enqueue and remove'
+$env:RELIABILITY_REPEAT_EACH='10'
+node .\scripts\run-reliability-matrix.mjs</pre>
+<p>场景扩张可以只跑一项。例如 ACK 丢失 5 客户端，队列 3、10、30 首，每格 10 次：</p>
+<pre>$env:RELIABILITY_GREP='single dropped reorder ACK'
+$env:RELIABILITY_CLIENT_COUNTS='5'
+$env:RELIABILITY_QUEUE_SIZES='3,10,30'
+$env:RELIABILITY_REPEAT_EACH='10'
+node .\scripts\run-reliability-matrix.mjs</pre>
+<h2>当前准备状态</h2>
+<p class="gate">四个原定场景已各重复 10 次，Playwright 日志为 40/40 通过：<code>music-party-web/test-results/reliability-matrix/2026-11-08T12-44-13-243Z/playwright.log</code>。扩展矩阵原始报告为 239/240；唯一失败是 ACK 重放帧的异步观察断言，未发现队列状态错误。修正观察断言后，5 客户端 / 10 首 ACK 场景另跑 10/10 通过。矩阵所有有效样本都没有队列完整性问题或在线操作 2 秒门槛违例。</p>
+<p>扩展矩阵报告：<code>music-party-web/test-results/reliability-matrix/2026-11-08T13-15-06-569Z/report.json</code>；ACK 复验：<code>music-party-web/test-results/reliability-matrix/2026-11-08T15-08-38-199Z/report.json</code>。自动滚动最大 363ms，并发加删最大 1.618s，ACK 重放最大 528ms。断线恢复 p50/p95/max：2 客户端 2.079/2.237/2.237s，3 客户端 2.598/2.892/2.892s，5 客户端 3.811/4.576/4.576s。</p>
+<p>TCP 单向下行黑洞测试通过：浏览器 <code>navigator.onLine</code> 始终为 true，故障发现 17.544s，恢复转发后同步 1.956s；恢复满足候选 5 秒目标，故障发现耗时单独保留为当前限制。</p>
+<p>作用域切换 E2E 通过一次：房间 A 丢弃重排 ACK 后确认存在 pending，切到 B 后 pending 清零、旧 mutationId 未重放，A/B 新客户端快照分别一致。切换通过页面内 realtime coordinator 执行，未覆盖菜单点击路径。独立 WAV 与消息成本样本通过：两端真实播放，位置差 25.71ms；操作窗口内客户端出站 2 帧/323 字节，服务端下行 4 帧/2,208 字节。音频只测 2 客户端单次，字节是 JSON envelope，不含 TCP/TLS 开销。作用域报告：<code>music-party-web/test-results/reliability-matrix/2026-11-08T16-17-05-612Z/report.json</code>；音频与成本：<code>music-party-web/test-results/reliability-matrix/2026-11-08T16-20-33-311Z/report.json</code>。</p>
+<p>新增测试只改 E2E harness 和 runner，没有产品逻辑修改。扩展过程中的失败均是测试断言或定位问题；已修正并复跑通过。</p>
+<p>单次用例的隔离报告保存在 <code>music-party-web/test-results/reliability-matrix/&lt;runId&gt;/report.json</code>，并包含服务端、Playwright 和进度日志。场景测试不生成常规拖拽样本，因此验收依赖 Playwright 断言和逐次场景日志；运行后还需人工汇总恢复时间及实际重复数。</p>
+<h2>不在本轮范围</h2>
+<p>尚未覆盖用户登出/换账号时的 pending 命令隔离、房间菜单点击路径、真实声卡输出或环回录音、暂停/恢复与切歌的多客户端音频偏差、3/5 客户端音频偏差、TCP 双向全丢/连接重置/上行单向丢包，以及移动端真实触摸。单向下行黑洞的 17.544 秒故障发现时间明显高于 5 秒恢复门槛；当前 5 秒目标只从链路恢复时刻计时，不代表故障检测也在 5 秒内完成。</p>
+</main></body></html>

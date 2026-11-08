@@ -139,7 +139,7 @@
         <div class="flex-1 flex justify-center items-center">
           <button 
             @click="player.playNext"
-            :disabled="player.isSkipLocked"
+            :disabled="player.isSkipLocked || !player.canOperate"
             class="w-[44px] h-[44px] flex items-center justify-center text-primary hover:text-white transition-colors active:scale-90"
           >
             <span class="material-symbols-outlined text-[36px]" style="font-variation-settings: 'FILL' 1;">skip_next</span>

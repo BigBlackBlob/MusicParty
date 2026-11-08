@@ -187,6 +187,7 @@ export const useRoomRealtimeCoordinator = defineStore('room-realtime-coordinator
       userStore: user,
       roomStore: room,
     })
+    callbacks.onStateChange = connection.setState
     realtimeClient.connect({ 'room-id': targetRoomId }, callbacks, handlers)
   }
 

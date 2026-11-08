@@ -28,6 +28,7 @@ describe('liked song control confirmation', () => {
     realtimeClient.generation = 1
     useUserStore().initUser('member', 'Member', false)
     useRealtimeConnectionStore().connected = true
+    useRealtimeConnectionStore().state = 'connected'
     useRoomStateSynchronizer().syncState({
       idempotencyScopeId: 'room-scope', queueEpoch: 'room-generation',
       queueVersion: 1, stateVersion: 1, playEpoch: 1, serverTimestamp: Date.now(), queue: [],
@@ -216,5 +217,59 @@ describe('liked song control confirmation', () => {
     expect(realtimeClient.sendEnvelope).toHaveBeenCalledTimes(2)
     expect(vi.mocked(realtimeClient.sendEnvelope).mock.calls[1]?.[0]).toEqual(original)
     commands.settleLike({ outcome: 'applied', mutationId: original.payload.mutationId })
+  })
+})
+
+describe('offline command gating', () => {
+  const items = () => [
+    { queueId: 'a', status: 'PENDING' as const, music, enqueuedBy: { publicId: 'member', name: 'Member', isGuest: false } },
+    { queueId: 'b', status: 'PENDING' as const, music: { ...music, id: 'track-2' }, enqueuedBy: { publicId: 'member', name: 'Member', isGuest: false } },
+  ]
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    useUserStore().initUser('member', 'Member', false)
+  })
+
+  it('refuses reorder, queue mutations and skips while offline without queueing or optimistic moves', () => {
+    const connection = useRealtimeConnectionStore()
+    connection.connected = true
+    connection.state = 'connected'
+    connection.synced = true
+    connection.setState('offline')
+    const commands = useRoomCommandStore()
+    const runtime = useRoomRuntimeStore()
+    runtime.queue = items()
+
+    expect(connection.connected).toBe(false)
+    expect(commands.canOperate).toBe(false)
+    expect(commands.reorderQueue(0, 1, 'a', 'b', 'after')).toBe(false)
+    expect(commands.topSong('b')).toBe(false)
+    expect(commands.removeSong('a')).toBe(false)
+    expect(commands.playNext()).toBe(false)
+    expect(commands.playPrevious()).toBe(false)
+    expect(realtimeClient.sendEnvelope).not.toHaveBeenCalled()
+    expect(runtime.queue.map(item => item.queueId)).toEqual(['a', 'b'])
+    expect(useRoomCommandBus().hasPendingMutations).toBe(false)
+  })
+
+  it('stays refused after reconnect until the new socket applies a snapshot', () => {
+    const connection = useRealtimeConnectionStore()
+    connection.setState('recovering')
+    connection.connected = true
+    connection.setState('connected')
+    const commands = useRoomCommandStore()
+    useRoomRuntimeStore().queue = items()
+
+    expect(commands.reorderQueue(0, 1, 'a', 'b', 'after')).toBe(false)
+    useRoomStateSynchronizer().syncState({
+      idempotencyScopeId: 'room-scope', queueEpoch: 'room-generation',
+      queueVersion: 1, stateVersion: 1, playEpoch: 1, serverTimestamp: Date.now(), queue: items(),
+      isShuffle: false, isPaused: true, isPauseLocked: false, isSkipLocked: false,
+      isShuffleLocked: false, isLoading: false, historyCursor: 0,
+    })
+    expect(commands.canOperate).toBe(true)
+    expect(commands.reorderQueue(0, 1, 'a', 'b', 'after')).toBe(true)
   })
 })

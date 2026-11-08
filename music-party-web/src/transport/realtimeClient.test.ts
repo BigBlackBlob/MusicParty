@@ -65,4 +65,21 @@ describe('RealtimeClient decoded message dispatch', () => {
     expect(syncState).toHaveBeenCalledWith(state)
     client.disconnect()
   })
+
+  it('closes a silent socket after the heartbeat timeout', () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const client = new RealtimeClient()
+    client.connect({ 'room-id': 'lounge' })
+    const socket = client.client as unknown as FakeWebSocket
+    const close = vi.spyOn(socket, 'close')
+    client.connected = true
+    client.lastMessageAt = Date.now() - client.heartbeatTimeout - 1
+
+    vi.advanceTimersByTime(client.heartbeatInterval)
+
+    expect(close).toHaveBeenCalledOnce()
+    client.disconnect()
+    vi.useRealTimers()
+  })
 })

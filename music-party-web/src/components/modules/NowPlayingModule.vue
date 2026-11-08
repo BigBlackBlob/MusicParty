@@ -76,7 +76,7 @@
           </button>
           <button
             class="flex h-12 w-12 items-center justify-center rounded-full text-text-secondary transition-all hover:bg-[var(--surface-control-hover)] hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-35"
-            :disabled="player.isSkipLocked || !player.historyCursor"
+            :disabled="player.isSkipLocked || !player.canOperate || !player.historyCursor"
             @click="player.playPrevious"
             :aria-label="player.historyCursor ? t('player.prev') : t('player.prevUnavailable')"
             :title="player.historyCursor ? t('player.prev') : t('player.prevUnavailable')"
@@ -95,7 +95,7 @@
           </button>
           <button
             class="flex h-12 w-12 items-center justify-center rounded-full text-text-secondary transition-all hover:bg-[var(--surface-control-hover)] hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-35"
-            :disabled="player.isSkipLocked"
+            :disabled="player.isSkipLocked || !player.canOperate"
             @click="player.playNext"
             :aria-label="t('player.next')"
             :title="t('player.next')"

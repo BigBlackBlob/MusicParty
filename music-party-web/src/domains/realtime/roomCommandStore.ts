@@ -28,7 +28,7 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
   const user = useUserStore()
   const likedSongs = useLikedSongsStore()
   const { queue } = storeToRefs(runtime)
-  const { connected, lastResyncSentAt } = storeToRefs(connection)
+  const { connected, canOperate, lastResyncSentAt } = storeToRefs(connection)
   const lastControlTime = ref(0)
   let lastAuthPromptAt = 0
   let deferredQueueUpdate: DeferredQueueUpdate | null = null
@@ -48,6 +48,13 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
       lastAuthPromptAt = now
       notifyFailure('请先设置昵称再控制播放')
     }
+    return false
+  }
+
+  // Offline or unsynced commands are refused, never queued for later.
+  function requireLive(message: string): boolean {
+    if (canOperate.value && realtimeClient.connected) return true
+    notifyFailure(message, 'error')
     return false
   }
 
@@ -198,11 +205,7 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
     cooldown = true,
   ): boolean {
     if (!requireAuth()) return false
-    if (!connected.value || !realtimeClient.connected) {
-      notifyFailure('播放服务尚未连接，请稍后重试', 'error')
-      requestResync('control-disconnected', true)
-      return false
-    }
+    if (!requireLive('播放服务尚未连接或同步，请稍后重试')) return false
     if (cooldown && !checkCooldown()) return false
     if (realtimeClient.sendEnvelope({ type: destination, payload } as ClientEnvelope)) return true
     notifyFailure('指令没有发出，请等待连接恢复后再试', 'error')
@@ -348,6 +351,7 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
     kind: Extract<QueueMutationKind, 'top' | 'remove' | 'batch-top' | 'batch-remove'>,
     buildEnvelope: (mutationId: string) => QueueMutationEnvelope,
   ): boolean {
+    if (!requireLive('连接已断开或尚未同步，队列操作未发送')) return false
     const mutationId = mutationBus.createMutationId(kind)
     if (!realtimeClient.sendEnvelope(buildEnvelope(mutationId))) {
       notifyFailure('队列操作没有发出，请等待连接恢复后再试', 'error')
@@ -365,6 +369,7 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
 
   function reorderQueue(oldIndex: number, newIndex: number, queueId?: string | null, targetQueueId?: string | null, position = 'before'): boolean {
     if (!requireAuth()) return false
+    if (!requireLive('连接已断开或尚未同步，排序未发送')) return false
     const mutationId = mutationBus.createMutationId('reorder')
     const payload = {
       oldIndex, newIndex, position, mutationId,
@@ -393,7 +398,7 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
   }
 
   return {
-    requireAuth,
+    requireAuth, canOperate,
     resetQueueGeneration, retryPendingCommands, setQueue, applyQueuePatch, settleQueueReorder, settleQueueMutation, settleEnqueue,
     settleControl,
     requestResync, playNext, playPrevious, togglePause, toggleShuffle, seek, toggleLike, settleLike,

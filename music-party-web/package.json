@@ -12,6 +12,7 @@
     "test": "node ./scripts/run-vitest.mjs",
     "test:run": "node ./scripts/run-vitest.mjs run",
     "test:e2e": "playwright test",
+    "reliability:matrix": "node ./scripts/run-reliability-matrix.mjs",
     "typecheck": "vue-tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json",
     "benchmark:queue-state": "node ./scripts/queue-state-benchmark.mjs"
   },

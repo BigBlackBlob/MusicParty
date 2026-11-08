@@ -38,6 +38,7 @@ export function useNowPlayingViewModel(options: { artistSeparator?: string } = {
     get isShuffle() { return runtime.isShuffle },
     get isPauseLocked() { return runtime.isPauseLocked },
     get isSkipLocked() { return runtime.isSkipLocked },
+    get canOperate() { return commands.canOperate },
     get isShuffleLocked() { return runtime.isShuffleLocked },
     get isLoading() { return runtime.isLoading },
     get historyCursor() { return runtime.historyCursor },

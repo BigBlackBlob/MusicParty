@@ -75,3 +75,13 @@ export const applyQueueReorder = (queue, { oldIndex, newIndex, queueId, targetQu
   snapshot.splice(insertIndex, 0, item);
   return snapshot;
 };
+
+// Sortable moves the dragged node itself, behind Vue's back. Put it back at the
+// sibling captured on drag start so Vue re-renders the order from the store.
+export const restoreDraggedNode = (evt, anchor) => {
+  const parent = evt?.from;
+  if (!parent || evt.item?.parentNode !== parent) return false;
+  if (anchor && anchor.parentNode !== parent) return false;
+  parent.insertBefore(evt.item, anchor ?? null);
+  return true;
+};

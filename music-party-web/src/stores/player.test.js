@@ -41,7 +41,12 @@ const usePlayerStore = () => {
     get queue() { return runtime.queue; },
     set queue(value) { runtime.queue = value; },
     get connected() { return connection.connected; },
-    set connected(value) { connection.connected = value; },
+    // A live test connection is also synced, which is what makes commands operable.
+    set connected(value) {
+      connection.connected = value;
+      connection.state = value ? 'connected' : 'idle';
+      connection.synced = value;
+    },
     togglePause: commands.togglePause,
     toggleShuffle: commands.toggleShuffle,
     playNext: commands.playNext,
@@ -139,6 +144,8 @@ describe('player controls', () => {
     const user = useUserStore();
     user.initUser('u1', 'Alice', false);
     const player = usePlayerStore();
+    player.connected = true;
+    socketService.connected = true;
     player.queue = [{ queueId: 'a' }, { queueId: 'b' }, { queueId: 'c' }];
 
     const sent = player.reorderQueue(0, 2, 'a', 'c', 'after');
@@ -169,6 +176,8 @@ describe('player controls', () => {
     const user = useUserStore();
     user.initUser('u1', 'Alice', false);
     const player = usePlayerStore();
+    player.connected = true;
+    socketService.connected = true;
     player.queue = [{ queueId: 'a' }, { queueId: 'b' }, { queueId: 'c' }];
 
     player.reorderQueue(0, 2, 'a', 'c', 'after');

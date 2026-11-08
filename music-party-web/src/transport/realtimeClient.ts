@@ -49,6 +49,10 @@ export class RealtimeClient {
   intentionalClose = false
   requestSeq = 0
   generation = 0
+  heartbeatTimer: ReturnType<typeof setInterval> | null = null
+  lastMessageAt = 0
+  readonly heartbeatInterval = 5_000
+  readonly heartbeatTimeout = 15_000
 
   private readonly onOnline = () => {
     if (!this.intentionalClose && this.socketConfig && !this.connected) this.reconnectNow()
@@ -85,6 +89,8 @@ export class RealtimeClient {
     const socketGeneration = ++this.generation
     const socket = new WebSocket(this.buildUrl(authParams))
     this.client = socket
+    this.lastMessageAt = Date.now()
+    this.startHeartbeat()
     this.setState(this.connected ? 'recovering' : 'connecting')
 
     socket.onopen = (event) => {
@@ -96,6 +102,7 @@ export class RealtimeClient {
     }
     socket.onmessage = (event) => {
       if (!this.isCurrent(socket, socketGeneration) || typeof event.data !== 'string') return
+      this.lastMessageAt = Date.now()
       const envelope = decodeServerEnvelope(event.data)
       if (!envelope) {
         console.warn('Ignoring malformed socket message')
@@ -110,6 +117,7 @@ export class RealtimeClient {
     }
     socket.onclose = (event) => {
       if (!this.isCurrent(socket, socketGeneration)) return
+      this.stopHeartbeat()
       this.connected = false
       callbacks.onDisconnect?.(event)
       if (event.code === 1008) {
@@ -188,7 +196,25 @@ export class RealtimeClient {
       if (this.isSocketActive(socket)) socket.close()
     }
     this.connected = false
+    this.stopHeartbeat()
     this.setState('idle')
+  }
+
+  startHeartbeat(): void {
+    this.stopHeartbeat()
+    this.heartbeatTimer = setInterval(() => {
+      if (!this.connected) return
+      if (Date.now() - this.lastMessageAt > this.heartbeatTimeout) {
+        this.client?.close()
+        return
+      }
+      this.send('sync.ping', { pingId: this.nextRequestId('heartbeat'), clientSendTime: Date.now() })
+    }, this.heartbeatInterval)
+  }
+
+  stopHeartbeat(): void {
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer)
+    this.heartbeatTimer = null
   }
 
   scheduleReconnect(): void {

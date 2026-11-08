@@ -192,7 +192,7 @@ import { useLikedSongsStore } from '../../domains/playback/likedSongs';
 import { useUserStore } from '../../stores/user';
 import { useRoomStore } from '../../stores/room';
 import { createLikedSongsFilename, createLikedSongsText } from '../../utils/likedSongs';
-import { buildQueueReorderPayload, buildQueueReorderPayloadFromDom, isQueueReorderSourceCurrent } from '../../utils/queueReorder';
+import { buildQueueReorderPayload, buildQueueReorderPayloadFromDom, isQueueReorderSourceCurrent, restoreDraggedNode } from '../../utils/queueReorder';
 import { useQueueSelection } from '../../composables/useQueueSelection';
 import { useVirtualQueue } from '../../composables/useVirtualQueue';
 import CoverImage from '../CoverImage.vue';
@@ -214,6 +214,7 @@ const queueListRef = ref(null);
 const queueScrollerRef = ref(null);
 let sortableInstance = null;
 let dragStartedInInteractiveZone = false;
+let dragAnchor = null;
 const { virtualized, interactiveQueue, visibleQueue, topPadding, bottomPadding, onScroll, observeScroller } = useVirtualQueue(queue);
 
 const {
@@ -234,13 +235,16 @@ onMounted(() => {
   initSortable();
 });
 
-watch([activeView, selectionMode, queueListRef, () => user.isGuest], async () => {
+const dragDisabled = computed(() => selectionMode.value || user.isGuest || !commands.canOperate);
+
+watch([activeView, dragDisabled, queueListRef], async () => {
   await nextTick();
   if (activeView.value === 'queue') {
+    if (sortableInstance && sortableInstance.el !== queueListRef.value) destroySortable();
     if (!sortableInstance) {
       initSortable();
-    } else if (sortableInstance) {
-      sortableInstance.option('disabled', selectionMode.value || user.isGuest);
+    } else {
+      sortableInstance.option('disabled', dragDisabled.value);
     }
   } else {
     destroySortable();
@@ -260,15 +264,23 @@ const initSortable = () => {
     ghostClass: 'opacity-40',
     delay: 100,
     delayOnTouchOnly: true,
-    disabled: selectionMode.value || user.isGuest,
+    disabled: dragDisabled.value,
+    // onChoose runs before Sortable inserts its hidden clone next to the item.
+    onChoose: (evt) => { dragAnchor = evt.item.nextSibling; },
     onStart: (evt) => { dragStartedInInteractiveZone = evt.oldIndex < 50; },
     onMove: (evt) => dragStartedInInteractiveZone && [...queueListRef.value.children].indexOf(evt.related) < 50,
     onEnd: (evt) => {
-      if (!dragStartedInInteractiveZone) return;
+      if (!dragStartedInInteractiveZone) {
+        restoreDraggedNode(evt, dragAnchor);
+        dragAnchor = null;
+        return;
+      }
       const payload = buildQueueReorderPayloadFromDom(evt)
         || (isQueueReorderSourceCurrent(queue.value, evt)
           ? buildQueueReorderPayload(queue.value, evt.oldIndex, evt.newIndex)
           : null);
+      restoreDraggedNode(evt, dragAnchor);
+      dragAnchor = null;
       if (payload && payload.oldIndex < 50 && payload.newIndex < 50) commands.reorderQueue(payload.oldIndex, payload.newIndex, payload.queueId, payload.targetQueueId, payload.position);
       else if (evt.oldIndex !== evt.newIndex) commands.requestResync('queue-reorder-stale-dom', true);
       dragStartedInInteractiveZone = false;
