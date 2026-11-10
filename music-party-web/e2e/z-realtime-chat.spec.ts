@@ -8,11 +8,10 @@ async function enterAsGuest(page: Page, name: string): Promise<void> {
   await page.getByLabel('昵称').fill(name)
   await page.getByRole('button', { name: '立即进入' }).click()
   await page.getByRole('button', { name: /Enter Lounge|进入 Lounge/ }).click()
-  await expect(page.getByRole('button', { name: /Chat|聊天/ })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByPlaceholder(/Send a message|发送消息/)).toBeVisible({ timeout: 15_000 })
 }
 
 async function openChat(page: Page): Promise<void> {
-  await page.getByRole('button', { name: /Chat|聊天/ }).click()
   await expect(page.getByPlaceholder(/Send a message|发送消息/)).toBeVisible()
 }
 

@@ -97,7 +97,7 @@ test.describe('visual baselines', () => {
     })
     await searchDialog.getByRole('button', { name: /Close|关闭/ }).click()
 
-    await page.getByRole('button', { name: /Chat|聊天/ }).click()
+    // Chat is a permanent column module — no button click needed
     await expect(page.getByPlaceholder(/Send a message|发送消息/)).toBeVisible()
     await expect(page).toHaveScreenshot('desktop-chat-1440x900.png', {
       animations: 'disabled', caret: 'hide', fullPage: true,
@@ -105,7 +105,6 @@ test.describe('visual baselines', () => {
       // Keep the static shell strict while allowing its unmasked messages.
       maxDiffPixels: 6_000,
     })
-    await page.getByRole('button', { name: /Close|关闭/ }).click()
 
     await page.getByRole('button', { name: /Settings|设置/ }).click()
     await expect(page.getByRole('navigation', { name: 'Settings sections' })).toBeVisible()
