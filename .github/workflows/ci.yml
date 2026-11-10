@@ -353,7 +353,7 @@ jobs:
           retention-days: 1
 
   publish-backup:
-    if: github.event_name == 'workflow_dispatch' && inputs.publish_backup_image && github.ref == 'refs/heads/backup/desktop-20260930'
+    if: "!failure() && !cancelled() && github.event_name == 'workflow_dispatch' && inputs.publish_backup_image && github.ref == 'refs/heads/backup/desktop-20260930'"
     needs: container
     runs-on: ubuntu-latest
     steps:
@@ -385,7 +385,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   publish:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/NRT-Base'
+    if: "!failure() && !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/NRT-Base'"
     needs: container
     runs-on: ubuntu-latest
     steps:
