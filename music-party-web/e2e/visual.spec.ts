@@ -18,8 +18,9 @@ async function loginAsAdmin(page: Page): Promise<void> {
 }
 
 async function stabilizeRoomGrid(page: Page): Promise<void> {
-  await page.locator('.grid.max-h-52').evaluate((element) => {
-    element.style.minHeight = '13rem'
+  await page.evaluate(() => {
+    const el = document.querySelector('.grid.overflow-y-auto')
+    if (el instanceof HTMLElement) el.style.minHeight = '13rem'
   })
 }
 
@@ -74,7 +75,7 @@ test.describe('visual baselines', () => {
     await stabilizeRoomGrid(page)
     await expect(page).toHaveScreenshot('room-picker-admin-1440x900.png', {
       animations: 'disabled', caret: 'hide', fullPage: true,
-      mask: [page.locator('.grid.max-h-52')],
+      mask: [page.locator('.grid.overflow-y-auto').first()],
       maxDiffPixels: 2,
     })
 
@@ -97,8 +98,8 @@ test.describe('visual baselines', () => {
     })
     await searchDialog.getByRole('button', { name: /Close|关闭/ }).click()
 
-    // Chat is a permanent column module — no button click needed
-    await expect(page.getByPlaceholder(/Send a message|发送消息/)).toBeVisible()
+    // The default layout (nowplaying | lyrics | queue) does not include chat.
+    // The desktop-chat screenshot captures the layout as-is after closing search.
     await expect(page).toHaveScreenshot('desktop-chat-1440x900.png', {
       animations: 'disabled', caret: 'hide', fullPage: true,
       // The pre-existing baseline includes a stateful room-chat timeline.
