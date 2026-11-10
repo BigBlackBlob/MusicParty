@@ -201,13 +201,11 @@ import { useNowPlayingViewModel } from '../../composables/useNowPlayingViewModel
 import { useLayoutStore } from '../../stores/layout';
 import { useUserPlaylistsStore } from '../../stores/userPlaylists';
 import { useToast } from '../../composables/useToast';
-import { useRoomStore } from '../../stores/room';
 import { formatDuration } from '../../utils/format';
 
 const { t } = useI18n();
 const layoutStore = useLayoutStore();
 const userPlaylistsStore = useUserPlaylistsStore();
-const roomStore = useRoomStore();
 
 const {
   player,

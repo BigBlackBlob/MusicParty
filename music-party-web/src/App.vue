@@ -205,7 +205,6 @@ const realtimeConnection = useRealtimeConnectionStore();
 const userStore = useUserStore();
 const uiStore = useUiStore();
 const roomStore = useRoomStore();
-const layoutStore = useLayoutStore();
 const hasStarted = ref(false);
 const pendingStart = ref(false);
 const pendingRoomCreate = ref(null);
