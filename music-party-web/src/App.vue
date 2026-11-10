@@ -184,7 +184,6 @@ import { useRealtimeConnectionStore } from './domains/realtime/realtimeConnectio
 import { useUserStore } from './stores/user';
 import { useUiStore } from './stores/ui';
 import { useRoomStore } from './stores/room';
-import { useLayoutStore } from './stores/layout';
 import { useToast } from './composables/useToast';
 import { useShortcuts } from './composables/useShortcuts';
 import { isAPIError } from './transport/errors';

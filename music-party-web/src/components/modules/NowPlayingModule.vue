@@ -208,7 +208,6 @@ const { t } = useI18n();
 const layoutStore = useLayoutStore();
 const userPlaylistsStore = useUserPlaylistsStore();
 const roomStore = useRoomStore();
-const roomName = computed(() => roomStore.currentRoom?.name || t('app.lounge'));
 
 const {
   player,
