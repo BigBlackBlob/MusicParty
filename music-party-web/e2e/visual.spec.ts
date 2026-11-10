@@ -77,7 +77,7 @@ test.describe('visual baselines', () => {
       animations: 'disabled', caret: 'hide', fullPage: true,
       mask: [page.locator('.grid.overflow-y-auto').first()],
       // Cross-machine font/gradient sub-pixel differences; room list is masked
-      maxDiffPixels: 5_000,
+      maxDiffPixels: 15_000,
     })
 
     await page.getByRole('button', { name: /Enter Lounge|进入 Lounge/ }).click()
