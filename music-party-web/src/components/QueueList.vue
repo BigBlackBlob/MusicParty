@@ -1,21 +1,23 @@
 <template>
-  <div class="glass-panel flex h-full min-h-0 w-full flex-col overflow-hidden rounded-lg p-4">
+  <div class="flex h-full min-h-0 w-full flex-col overflow-hidden border-l border-border-subtle bg-transparent p-4">
     <!-- Header -->
     <div class="mb-3 flex flex-shrink-0 items-center justify-between gap-3 px-1">
-      <div class="flex items-center rounded-md border border-border-subtle bg-[var(--surface-control)] p-1">
+      <div class="flex min-w-0 flex-1 gap-1 border-b border-border-subtle">
         <button
-          class="px-3 py-1 rounded font-section-label text-section-label uppercase tracking-widest transition-colors shadow-sm"
-          :class="activeView === 'queue' ? 'bg-[var(--surface-control-active)] text-primary' : 'text-text-muted hover:text-text-primary'"
+          class="relative px-3 py-2 text-xs font-semibold tracking-wide transition-colors"
+          :class="activeView === 'queue' ? 'text-text-primary' : 'text-text-tertiary hover:text-text-secondary'"
           @click="activeView = 'queue'"
         >
           {{ t('queue.upNext') }}
+          <span v-if="activeView === 'queue'" class="absolute inset-x-2 -bottom-px h-[2px] rounded-full bg-primary"></span>
         </button>
         <button
-          class="px-3 py-1 rounded font-section-label text-section-label uppercase tracking-widest transition-colors shadow-sm"
-          :class="activeView === 'liked' ? 'bg-[var(--surface-control-active)] text-primary' : 'text-text-muted hover:text-text-primary'"
+          class="relative px-3 py-2 text-xs font-semibold tracking-wide transition-colors"
+          :class="activeView === 'liked' ? 'text-text-primary' : 'text-text-tertiary hover:text-text-secondary'"
           @click="activeView = 'liked'"
         >
           {{ t('queue.liked') }}
+          <span v-if="activeView === 'liked'" class="absolute inset-x-2 -bottom-px h-[2px] rounded-full bg-primary"></span>
         </button>
       </div>
 
@@ -44,6 +46,7 @@
       <!-- Liked View -->
       <div v-if="activeView === 'liked'" class="flex flex-col gap-2">
         <div v-if="liked.likedSongs.length === 0" class="py-16 text-center">
+          <span class="material-symbols-outlined mb-3 block text-[30px] text-[var(--accent)] opacity-70" aria-hidden="true">favorite</span>
           <div class="text-sm font-bold text-text-primary">{{ t('queue.noLiked') }}</div>
           <div class="mt-1 text-xs text-text-muted">{{ t('queue.likedDesc') }}</div>
         </div>
@@ -68,9 +71,10 @@
 
       <!-- Queue View -->
       <div v-else class="flex min-h-0 flex-1 flex-col gap-2">
-        <div v-if="queue.length === 0" class="py-16 text-center">
-          <div class="text-sm font-bold text-text-primary">{{ t('queue.empty') }}</div>
-          <div class="mt-1 text-xs text-text-muted">{{ t('queue.emptyDesc') }}</div>
+        <div v-if="queue.length === 0" class="flex min-h-0 flex-1 flex-col items-center justify-center text-center">
+          <span class="queue-empty__icon material-symbols-outlined" aria-hidden="true">queue_music</span>
+          <div class="mt-3 text-sm font-bold text-text-primary">{{ t('queue.empty') }}</div>
+          <div class="mt-1 max-w-[190px] text-xs leading-relaxed text-text-muted">{{ t('queue.emptyDesc') }}</div>
         </div>
 
           <div v-else class="flex min-h-0 flex-1 flex-col gap-2">
@@ -244,3 +248,11 @@ const removeLikedSong = (key) => liked.removeAndSync(key, user.isGuest);
 const formatArtists = (artists) => Array.isArray(artists) && artists.length ? artists.join(' / ') : t('common.unknownArtist');
 
 </script>
+
+<style scoped>
+.queue-empty__icon {
+  color: var(--accent);
+  font-size: 28px;
+  opacity: 0.70;
+}
+</style>

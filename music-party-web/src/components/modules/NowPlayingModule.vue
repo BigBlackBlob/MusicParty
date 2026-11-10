@@ -1,6 +1,9 @@
 <template>
   <div class="flex h-full min-h-0 min-w-0 flex-col items-center justify-center overflow-hidden gap-5">
-    <div class="now-playing-cover-stage relative flex min-h-0 w-full flex-1 items-center justify-center group">
+    <div
+      v-if="music || player.isLoading || player.isBuffering || player.isErrorState"
+      class="now-playing-cover-stage relative flex min-h-0 w-full flex-1 items-center justify-center group"
+    >
       <div
         class="now-playing-cover relative aspect-square shrink overflow-hidden rounded-xl bg-surface-raised album-shadow transition-transform duration-700 hover:scale-[1.02]"
         :class="player.isPaused ? 'saturate-[0.86]' : 'saturate-100'"
@@ -20,15 +23,20 @@
           <span class="font-micro text-micro uppercase text-text-secondary">{{ player.isBuffering ? t('player.buffering') : t('player.loading') }}</span>
         </div>
 
-        <div v-if="player.isErrorState" class="absolute inset-x-5 bottom-5 rounded-lg border border-error/30 bg-error-container/70 px-4 py-3 text-on-error-container backdrop-blur-md">
-          <div class="font-section-label text-section-label uppercase">{{ t('player.playbackError') }}</div>
-          <div class="mt-1 text-caption text-on-error-container/80">{{ t('player.loadError') }}</div>
+        <div v-if="player.isErrorState" class="absolute inset-x-5 bottom-5 rounded-lg border border-error/30 bg-[var(--error-soft-bg)] px-4 py-3 backdrop-blur-md">
+          <div class="font-micro text-micro uppercase text-[var(--error-soft-text)]">{{ t('player.playbackError') }}</div>
+          <div class="mt-1 text-xs text-[var(--error-soft-text)] opacity-80">{{ t('player.loadError') }}</div>
         </div>
       </div>
     </div>
 
-    <div class="glass-panel player-console w-full shrink-0 h-[256px] flex flex-col rounded-xl px-6 py-5">
-      <div class="text-center">
+    <div v-else class="w-full min-h-0 flex-1" aria-hidden="true"></div>
+
+    <div
+      class="player-console w-full shrink-0 flex flex-col border-t border-border-default bg-transparent px-4 py-5"
+      :class="music ? 'h-[256px]' : 'h-[204px]'"
+    >
+      <div v-if="music" class="text-center">
         <div class="mb-2 flex min-w-0 items-center justify-center gap-2">
           <span class="rounded bg-[var(--surface-control)] px-2 py-1 font-micro text-micro uppercase text-text-muted">{{ platformLabel }}</span>
           <span v-if="requesterName" class="min-w-0 max-w-[150px] truncate rounded bg-[var(--surface-control)] px-2 py-1 font-micro text-micro text-text-muted">{{ t('player.requestedBy', { name: requesterName }) }}</span>
@@ -65,7 +73,7 @@
 
         <div class="flex items-center justify-center gap-5">
           <button
-            class="flex h-10 w-10 items-center justify-center text-text-muted transition-colors hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-35"
+            class="flex h-11 w-11 items-center justify-center text-text-muted transition-colors hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-35"
             :class="player.isShuffle ? 'text-primary' : ''"
             :disabled="player.isShuffleLocked"
             @click="player.toggleShuffle"
@@ -84,7 +92,8 @@
             <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">skip_previous</span>
           </button>
           <button
-            class="flex h-[52px] w-[52px] items-center justify-center rounded-lg bg-primary text-on-primary shadow-lg transition-colors hover:bg-[var(--accent-hover)] active:bg-primary disabled:cursor-not-allowed disabled:opacity-45"
+            class="flex h-[52px] w-[52px] items-center justify-center rounded-lg transition-colors active:bg-primary disabled:cursor-not-allowed disabled:opacity-45"
+            :class="music ? 'bg-primary text-on-primary shadow-lg hover:bg-[var(--accent-hover)]' : 'bg-surface-raised text-text-secondary shadow-none hover:bg-[var(--surface-control-hover)] hover:text-text-primary'"
             :disabled="player.isPauseLocked && !player.isPaused"
             @click="player.togglePause"
             :aria-label="player.isPaused ? t('player.play') : t('player.pause')"
@@ -103,7 +112,7 @@
             <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">skip_next</span>
           </button>
           <button
-            class="flex h-10 w-10 items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-control-hover)] hover:text-primary"
+            class="flex h-11 w-11 items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-control-hover)] hover:text-primary"
             :class="isLiked ? 'text-primary' : 'text-text-muted'"
             @click="toggleLike"
             :aria-label="isLiked ? t('player.unlike') : t('player.like')"
@@ -112,7 +121,7 @@
             <span class="material-symbols-outlined text-[20px]" :style="isLiked ? `font-variation-settings: 'FILL' 1;` : ''">favorite</span>
           </button>
           <button
-            class="flex h-10 w-10 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-[var(--surface-control-hover)] hover:text-primary"
+            class="flex h-11 w-11 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-[var(--surface-control-hover)] hover:text-primary"
             @click="saveCurrentToPersonalPlaylist"
             :aria-label="t('personalPlaylists.saveSong')"
             :title="t('personalPlaylists.saveSong')"
@@ -126,7 +135,12 @@
             <span class="material-symbols-outlined text-[20px] text-primary" style="font-variation-settings: 'FILL' 1;">graphic_eq</span>
             <div class="min-w-0 text-left">
               <div class="font-micro text-micro uppercase leading-none text-text-muted">{{ t('player.nowPlayingIn') }}</div>
-              <div class="mt-1 truncate font-compact text-compact leading-none text-text-primary">{{ t('app.lounge') }} • {{ activeUserCount }} {{ t('settings.active') }}</div>
+              <div class="mt-1 flex items-center gap-1.5 truncate leading-none">
+                <span class="font-compact text-compact font-semibold text-text-primary">{{ roomName }}</span>
+                <span class="text-text-muted">·</span>
+                <span class="font-compact text-compact font-bold text-primary tabular-nums">{{ activeUserCount }}</span>
+                <span class="font-micro text-micro text-text-secondary uppercase">{{ t('settings.active') }}</span>
+              </div>
             </div>
           </div>
           <div class="flex items-center gap-4">
@@ -184,15 +198,19 @@ import { useNowPlayingViewModel } from '../../composables/useNowPlayingViewModel
 import { useLayoutStore } from '../../stores/layout';
 import { useUserPlaylistsStore } from '../../stores/userPlaylists';
 import { useToast } from '../../composables/useToast';
+import { useRoomStore } from '../../stores/room';
 import { formatDuration } from '../../utils/format';
 
 const { t } = useI18n();
 const layoutStore = useLayoutStore();
 const userPlaylistsStore = useUserPlaylistsStore();
+const roomStore = useRoomStore();
+const roomName = computed(() => roomStore.currentRoom?.name || t('app.lounge'));
 
 const {
   player,
   ui: uiStore,
+  music,
   coverUrl: currentCover,
   trackTitle,
   artistLine,
@@ -304,11 +322,7 @@ watch(trackTitle, async () => {
 
 <style scoped>
 .lounge-volume {
-  accent-color: #ede1ff;
-}
-
-.player-console {
-  min-height: 256px;
+  accent-color: var(--accent);
 }
 
 .now-playing-cover {
@@ -327,7 +341,7 @@ watch(trackTitle, async () => {
   overflow: hidden;
   white-space: nowrap;
   font-family: var(--font-display, Geist, sans-serif);
-  font-size: 25px;
+  font-size: clamp(1.25rem, 1.8vw, 1.625rem);
   font-weight: 800;
   line-height: 1.12;
   letter-spacing: 0;

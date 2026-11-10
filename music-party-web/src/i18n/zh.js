@@ -7,6 +7,8 @@ export default {
     close: '关闭',
     refresh: '刷新',
     export: '导出',
+    retry: '重试',
+    connecting: '正在连接…',
     unknownArtist: '未知艺术家',
     by: '点歌人',
     cancel: '取消',
@@ -77,6 +79,7 @@ export default {
     title: '房间',
     currentRoom: '当前房间：{name}',
     create: '创建',
+    enter: '进入 {name}',
     delete: '删除房间',
     newRoomPlaceholder: '新房间名称...',
     createPrivate: '私有房间',
@@ -89,6 +92,7 @@ export default {
     verifyAndEnter: '验证并进入'
   },
   settings: {
+    sectionNames: { account: '个人资料', general: '通用', members: '成员', room: '房间', library: '音乐库', sources: '音乐源', admin: '管理' },
     title: '设置',
     workbench: '设置工作台',
     general: '通用设置',
@@ -294,6 +298,7 @@ export default {
     requestedBy: '点歌人 {name}',
     waiting: '等待播放',
     waitingFirstTrack: '等待第一首歌曲',
+    waitingFirstTrackHint: '下一首歌曲会显示在这里。',
     nowPlayingIn: '当前所在房间',
     requestedByShort: '点歌',
     listenersShort: '收听'
@@ -331,6 +336,7 @@ export default {
     savedResult: '已添加 {added} 首，跳过重复 {skipped} 首'
   },
   search: {
+    results: '搜索结果',
     title: '搜索',
     discoverMusic: '发现音乐',
     platforms: '音乐平台',
@@ -415,6 +421,8 @@ export default {
     messages: '条消息',
     tabChat: '聊天',
     tabSystem: '系统',
+    tabPublic: '公频',
+    publicPlaceholder: '发送到公频…',
     empty: '暂无消息',
     loading: '加载中...',
     placeholder: '发送消息...',
@@ -438,6 +446,7 @@ export default {
     netease: '网易云',
     bilibili: '哔哩哔哩',
     youtube: 'YouTube',
-    navidrome: 'Navidrome'
+    navidrome: 'Navidrome',
+    local: '本地'
   }
 };

@@ -59,5 +59,37 @@ async function copy() {
 </template>
 
 <style scoped>
-.debug-invite{background:#000;color:#fff;padding:16px 0;border-block:1px solid #444}.debug-invite h3{font-size:16px;margin:0 0 8px}.invite-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #333}.invite-row>span,.invite-row>label{flex:1}.invite-row input,.invite-row select{min-width:0;flex:1;background:#000;color:#fff;border:1px solid #777;padding:7px}.invite-row button{background:#fff;color:#000;border:0;padding:7px 12px;cursor:pointer}.invite-row button:disabled{opacity:.5;cursor:default}.debug-invite p{font-size:12px;margin:8px 0}
+.debug-invite {
+  padding: 20px 0;
+  border-block: 1px solid var(--border-default);
+  color: var(--text-primary);
+}
+.debug-invite h3 { font-size: 16px; margin-bottom: 12px; font-weight: 700; }
+.invite-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.invite-row > span, .invite-row > label { flex: 1; font-size: 12px; color: var(--text-secondary); }
+.invite-row input, .invite-row select {
+  min-width: 0;
+  min-height: 36px;
+  flex: 1;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--surface-1);
+  padding: 7px 10px;
+  color: var(--text-primary);
+  font-size: 13px;
+  color-scheme: dark;
+}
+.invite-row button {
+  min-height: 36px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--surface-2);
+  padding: 7px 10px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.invite-row button:disabled { opacity: .55; cursor: default; }
+.debug-invite p { margin-top: 8px; color: var(--text-secondary); font-size: 12px; }
 </style>

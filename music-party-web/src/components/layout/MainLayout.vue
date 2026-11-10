@@ -1,7 +1,7 @@
 <template>
   <div class="h-[var(--app-height)] w-full relative flex flex-col overflow-hidden bg-bg-base text-text-primary font-body text-body selection:bg-primary selection:text-on-primary" style="--top-bar-height: 64px;">
     <!-- Full-Bleed Ambient Canvas -->
-    <div class="fixed inset-0 ambient-canvas z-0 opacity-40"></div>
+    <div class="fixed inset-0 ambient-canvas z-0"></div>
     <Transition name="desktop-cover-fade" mode="out-in">
       <div
         v-if="currentCover"
@@ -34,7 +34,7 @@
             </button>
             <span
               class="h-2 w-2 rounded-full"
-              :class="realtimeConnection.connected ? 'bg-[#22C55E] shadow-[0_0_14px_rgba(34,197,94,0.45)]' : 'bg-error'"
+              :class="realtimeConnection.connected ? 'bg-success shadow-[0_0_14px_color-mix(in_srgb,var(--success)_45%,transparent)]' : 'bg-error'"
               :title="realtimeConnection.connected ? t('settings.connected') : t('settings.disconnected')"
             />
           </div>
@@ -178,7 +178,7 @@
       />
 
       <!-- Main Immersive Canvas -->
-      <main class="relative z-20 flex w-full items-center justify-center px-5 pt-[var(--top-bar-height)]" style="height: var(--app-height);">
+      <main class="relative z-20 flex w-full items-center justify-center px-3 lg:px-5 pt-[var(--top-bar-height)]" style="height: var(--app-height);">
         <div
           class="flex w-full min-h-0 items-stretch overflow-visible transition-all duration-300"
           :style="{
@@ -349,35 +349,39 @@ const getInitials = (name = '') => {
 
 <style scoped>
 .desktop-page-cover-blur {
-  left: clamp(-120px, 5vw, 96px);
+  left: 50%;
   top: 50%;
-  width: min(78vw, 1180px);
-  height: min(118vh, 1180px);
-  transform: translateY(-50%) scale(1.08);
+  width: min(160vw, 2000px);
+  height: min(140vh, 1600px);
+  transform: translate(-50%, -50%) scale(1.04);
   background-position: center;
   background-size: cover;
   background-repeat: no-repeat;
-  opacity: 0.22;
-  filter: blur(78px) saturate(1.2) brightness(0.82);
+  opacity: 0.26;
+  filter: blur(96px) saturate(1.4) brightness(0.82);
   will-change: transform, opacity, filter;
-  mask-image: radial-gradient(circle at 44% 50%, black 0%, black 42%, transparent 76%);
+  mask-image: radial-gradient(ellipse at 50% 50%, black 0%, black 50%, transparent 82%);
 }
 
 .desktop-page-cover-wash {
   background:
-    radial-gradient(circle at 30% 48%, rgba(0, 0, 0, 0.04), transparent 34%),
-    linear-gradient(90deg, transparent 0%, var(--surface-scrim) 74%, var(--surface-scrim) 100%);
+    radial-gradient(ellipse at 50% -8%, rgba(0, 0, 0, 0.42) 0%, transparent 55%),
+    radial-gradient(ellipse at 50% 108%, rgba(0, 0, 0, 0.55) 0%, transparent 55%),
+    radial-gradient(ellipse at -4% 50%, rgba(0, 0, 0, 0.28) 0%, transparent 38%),
+    radial-gradient(ellipse at 104% 50%, rgba(0, 0, 0, 0.28) 0%, transparent 38%);
 }
 
 .light .desktop-page-cover-blur {
-  opacity: 0.14;
-  filter: blur(82px) saturate(1.05) brightness(1.08);
+  opacity: 0.16;
+  filter: blur(92px) saturate(1.18) brightness(1.06);
 }
 
 .light .desktop-page-cover-wash {
   background:
-    radial-gradient(circle at 30% 48%, rgba(255, 255, 255, 0.08), transparent 34%),
-    linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.58) 72%, rgba(255, 255, 255, 0.76) 100%);
+    radial-gradient(ellipse at 50% -8%, rgba(255, 255, 255, 0.32) 0%, transparent 55%),
+    radial-gradient(ellipse at 50% 108%, rgba(255, 255, 255, 0.40) 0%, transparent 55%),
+    radial-gradient(ellipse at -4% 50%, rgba(255, 255, 255, 0.22) 0%, transparent 38%),
+    radial-gradient(ellipse at 104% 50%, rgba(255, 255, 255, 0.22) 0%, transparent 38%);
 }
 
 .desktop-cover-fade-enter-active,

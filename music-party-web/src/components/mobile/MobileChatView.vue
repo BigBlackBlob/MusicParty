@@ -3,7 +3,7 @@
     <!-- Header Section -->
     <header class="z-20 bg-surface-panel border-b border-border-default pt-md px-md pb-3 flex flex-col gap-4 flex-shrink-0 safe-area-top">
       <div class="flex justify-between items-center">
-        <h1 class="font-title text-title text-primary">{{ t('chat.title') }}</h1>
+        <h1 class="font-title text-title text-text-primary">{{ t('chat.title') }}</h1>
         <div class="flex items-center gap-2">
           <span v-if="filteredMessages.length > 0" class="px-2 py-0.5 rounded-full bg-accent-subtle border border-primary/20 text-[10px] font-bold text-primary uppercase tracking-widest">
             {{ filteredMessages.length }} {{ t('chat.messages') }}
@@ -12,14 +12,14 @@
       </div>
 
       <!-- Segmented Tabs -->
-      <div class="bg-bg-base p-[4px] rounded-xl flex items-center justify-between shadow-inner">
+      <div class="mobile-segment">
         <button 
           v-for="tab in ['CHAT', 'SYSTEM']"
           :key="tab"
           type="button"
           @click="activeTab = tab"
-          class="flex-1 py-1.5 rounded-lg font-section-label text-section-label transition-all"
-          :class="activeTab === tab ? 'bg-surface-raised text-primary shadow-sm border border-border-strong' : 'text-text-secondary hover:text-primary'"
+          class="mobile-segment__option font-section-label text-section-label transition-all"
+          :class="{ 'mobile-segment__option--active': activeTab === tab }"
         >
           {{ tab === 'CHAT' ? t('chat.tabChat').toUpperCase() : t('chat.tabSystem').toUpperCase() }}
         </button>
@@ -32,9 +32,9 @@
         <span class="material-symbols-outlined animate-spin">refresh</span>
       </div>
 
-      <div v-if="processedMessages.length === 0" class="flex flex-col items-center justify-center py-20 text-center opacity-40">
-        <span class="material-symbols-outlined text-[48px] mb-2">chat_bubble</span>
-        <p class="font-compact text-compact uppercase tracking-widest">{{ t('chat.empty') }}</p>
+      <div v-if="processedMessages.length === 0" class="mobile-content-state">
+        <span class="material-symbols-outlined mobile-content-state__icon">chat_bubble</span>
+        <p class="font-compact text-compact">{{ t('chat.empty') }}</p>
       </div>
 
       <div

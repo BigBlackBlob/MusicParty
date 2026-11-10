@@ -8,8 +8,9 @@
         @focusin="showControlsNow"
         @focusout="scheduleControlsHide"
       >
-        <div v-if="showEmptyState" class="lyrics-empty-state flex min-h-0 w-full flex-1 items-center justify-center text-center text-sm font-medium" :class="emptyStateClass">
-          {{ t('lyrics.empty') }}
+        <div v-if="showEmptyState" class="lyrics-empty-state flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-3 text-center">
+          <span class="lyrics-empty-state__icon material-symbols-outlined" aria-hidden="true">music_note</span>
+          <span class="lyrics-empty-state__label text-sm font-medium" :style="emptyStateClass">{{ t('lyrics.empty') }}</span>
         </div>
 
         <template v-else>
@@ -572,6 +573,16 @@ onBeforeUnmount(() => {
   background: transparent;
 }
 
+@media (min-width: 768px) {
+  .lyrics-scroll__content {
+    max-width: min(820px, 92%);
+  }
+
+  .lyrics-line--active {
+    transform-origin: center center;
+  }
+}
+
 .lyrics-scroll {
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -716,6 +727,18 @@ onBeforeUnmount(() => {
   line-height: 1;
   transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
   opacity: 0.72;
+}
+
+.lyrics-empty-state__icon {
+  font-size: 36px;
+  font-variation-settings: 'wght' 300;
+  color: var(--lyrics-accent-glow, var(--accent));
+  opacity: 0.55;
+  filter: drop-shadow(0 0 18px color-mix(in srgb, var(--lyrics-accent-glow, var(--accent)) 40%, transparent));
+}
+
+.lyrics-empty-state__label {
+  letter-spacing: 0.01em;
 }
 
 .lyrics-controls {

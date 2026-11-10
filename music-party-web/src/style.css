@@ -67,11 +67,11 @@
   --radius-full: 9999px;
 
   /* Colors - Dark (Stitch Spec) */
-  --surface-0: #121212;
-  --surface-1: #1A1A1A;
-  --surface-2: #222222;
-  --surface-3: #2A2A2A;
-  --surface-4: #333333;
+  --surface-0: #000000;
+  --surface-1: #141414;
+  --surface-2: #1C1C1C;
+  --surface-3: #242424;
+  --surface-4: #2C2C2C;
   --surface-overlay: #0B0B0C;
   --surface-panel: var(--surface-1);
   --surface-stage: var(--surface-2);
@@ -91,9 +91,9 @@
   --ambient-filter: blur(48px) saturate(1.05) brightness(0.82);
   --ambient-opacity: 0.16;
 
-  --text-primary: #F0F0F0;
+  --text-primary: #FFFFFF;
   --text-secondary: #B8B8B8;
-  --text-tertiary: #8A8A8A;
+  --text-tertiary: #A0A0A0;
   --text-inverse: #F9F9FA;
 
   --border-default: #303033;
@@ -135,10 +135,10 @@
   }
 
   .ambient-canvas {
-    background: radial-gradient(circle at 20% 30%, #362951 0%, transparent 50%),
-                radial-gradient(circle at 80% 70%, #1a2b6a 0%, transparent 50%),
-                radial-gradient(circle at 50% 50%, #121212 0%, #0B0B0C 100%);
-    transition: background 0.7s cubic-bezier(0.2, 0, 0, 1);
+    background:
+      radial-gradient(ellipse at 20% 30%, rgba(54, 41, 81, 0.78) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 70%, rgba(26, 43, 106, 0.62) 0%, transparent 50%),
+      #000000;
   }
 
   .album-shadow {
@@ -243,12 +243,24 @@ html {
   overflow: hidden;
 }
 
-:lang(zh-CN) {
-  font-family: "Geist", "HarmonyOS Sans SC", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "微软雅黑", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+:lang(zh-CN), :lang(zh-TW), :lang(zh-HK) {
+  font-family: "HarmonyOS Sans SC", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "微软雅黑", Geist, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+:lang(ja) {
+  font-family: "HarmonyOS Sans JP", "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", "Meiryo UI", Meiryo, Geist, system-ui, sans-serif;
+}
+
+:lang(ko) {
+  font-family: "HarmonyOS Sans KR", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", Geist, system-ui, sans-serif;
 }
 
 .font-mono:lang(zh-CN),
-:lang(zh-CN) .font-mono {
+.font-mono:lang(zh-TW),
+.font-mono:lang(zh-HK),
+:lang(zh-CN) .font-mono,
+:lang(zh-TW) .font-mono,
+:lang(zh-HK) .font-mono {
   font-family: "JetBrains Mono", "HarmonyOS Sans SC", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "微软雅黑", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
@@ -330,13 +342,13 @@ input[type="range"]::-webkit-slider-runnable-track {
 
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
-  height: 14px;
-  width: 14px;
+  height: 16px;
+  width: 16px;
   border-radius: 999px;
   background: var(--accent);
-  margin-top: -5px;
+  margin-top: -6px;
   border: none;
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 input[type="range"]::-moz-range-track {
@@ -346,12 +358,12 @@ input[type="range"]::-moz-range-track {
 }
 
 input[type="range"]::-moz-range-thumb {
-  height: 14px;
-  width: 14px;
+  height: 16px;
+  width: 16px;
   border-radius: 999px;
   background: var(--accent);
   border: none;
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -376,4 +388,99 @@ html[data-page-hidden] .animate-pulse,
 html[data-page-hidden] .animate-spin,
 html[data-page-hidden] .animate-bounce {
   animation-play-state: paused !important;
+}
+
+/* Empty views share the same alignment without dimming their text as a group. */
+.mobile-content-state {
+  flex: 1 0 auto;
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px 24px;
+  text-align: left;
+  color: var(--text-secondary);
+}
+.material-symbols-outlined.mobile-content-state__icon {
+  font-size: 30px;
+  color: var(--accent);
+  opacity: 0.9;
+  font-variation-settings: 'wght' 300;
+}
+.mobile-content-state p {
+  margin: 0;
+  max-width: 32ch;
+  line-height: 1.45;
+}
+.mobile-content-state > p:first-of-type {
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 600;
+}
+.mobile-content-state > p + p {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-primary);
+  font-family: "Geist", sans-serif;
+}
+.brand-lockup__mark {
+  color: var(--accent);
+  font-size: 30px;
+  font-variation-settings: 'wght' 350;
+}
+.brand-lockup__type {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  line-height: 1;
+}
+.brand-lockup__overline {
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+}
+.brand-lockup__name {
+  color: var(--text-primary);
+  font-size: 24px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.mobile-segment {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--surface-0);
+}
+.mobile-segment__option {
+  display: flex;
+  min-width: 0;
+  min-height: 36px;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  transition: color var(--motion-press) var(--motion-ease-out), background-color var(--motion-press) var(--motion-ease-out);
+}
+.mobile-segment__option:hover {
+  color: var(--text-primary);
+}
+.mobile-segment__option--active {
+  border-color: var(--border-strong);
+  background: var(--surface-3);
+  color: var(--text-primary);
 }

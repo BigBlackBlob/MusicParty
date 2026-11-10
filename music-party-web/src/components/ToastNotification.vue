@@ -7,7 +7,7 @@
       leave-active-class="transition duration-200 ease-in"
       leave-from-class="translate-y-0 opacity-100 scale-100"
       leave-to-class="translate-y-2 opacity-0 scale-95"
-      class="fixed top-10 left-1/2 -translate-x-1/2 z-[var(--z-toast)] flex flex-col items-center gap-2 pointer-events-none"
+      class="fixed bottom-[calc(88px+env(safe-area-inset-bottom))] md:bottom-6 left-1/2 -translate-x-1/2 z-[var(--z-toast)] flex flex-col items-center gap-2 pointer-events-none"
       role="status"
       aria-live="polite"
       aria-atomic="true"
@@ -15,7 +15,7 @@
     <div
         v-for="toast in toastStore.toasts"
         :key="toast.id"
-        class="flex min-w-[320px] max-w-[min(92vw,720px)] cursor-pointer items-start gap-3 rounded-2xl border px-5 py-3 text-[var(--text-primary)] shadow-[var(--toast-shadow)] backdrop-blur-xl pointer-events-auto"
+        class="flex w-[min(92vw,480px)] cursor-pointer items-start gap-3 rounded-lg border border-border-default bg-bg-base px-4 py-3 text-[var(--text-primary)] shadow-[var(--toast-shadow)] pointer-events-auto"
         :class="getTypeClass(toast.type)"
         @click="toastStore.remove(toast.id)"
     >

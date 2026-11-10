@@ -2,7 +2,6 @@
   <div class="personal-info">
     <header class="personal-info__header">
       <div>
-        <p class="personal-info__eyebrow">{{ t('settings.account.kicker') }}</p>
         <h3 class="personal-info__title">{{ t('settings.account.title') }}</h3>
       </div>
       <span class="personal-info__role" :class="{ 'personal-info__role--admin': userStore.accountType === 'admin' }">
@@ -210,7 +209,7 @@ const logout = async () => {
 .personal-info {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 0;
 }
 
 .personal-info__header,
@@ -218,9 +217,9 @@ const logout = async () => {
 .personal-info__section,
 .personal-info__empty,
 .personal-info__stats {
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  background: var(--surface-control);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .personal-info__header {
@@ -228,12 +227,12 @@ const logout = async () => {
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding: 14px;
+  padding: 0 0 20px;
 }
 
 .personal-info__eyebrow {
   font-size: 10px;
-  font-weight: 900;
+  font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--text-tertiary);
@@ -241,7 +240,7 @@ const logout = async () => {
 
 .personal-info__title {
   font-size: 18px;
-  font-weight: 900;
+  font-weight: 600;
   color: var(--text-primary);
 }
 
@@ -249,16 +248,16 @@ const logout = async () => {
   flex: 0 0 auto;
   border-radius: 999px;
   padding: 6px 10px;
-  background: var(--surface-raised);
+  background: var(--surface-2);
   color: var(--text-secondary);
   font-size: 11px;
-  font-weight: 900;
+  font-weight: 600;
   text-transform: uppercase;
   transition: background 160ms var(--ease-out, ease), color 160ms var(--ease-out, ease);
 }
 
 .personal-info__role--admin {
-  background: var(--primary);
+  background: var(--accent);
   color: var(--on-primary);
 }
 
@@ -279,7 +278,8 @@ const logout = async () => {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 12px;
-  padding: 14px;
+  padding: 20px 0;
+  border-top: 1px solid var(--border-default);
 }
 
 .personal-info__avatar {
@@ -288,10 +288,10 @@ const logout = async () => {
   height: 52px;
   place-items: center;
   border-radius: 8px;
-  background: var(--surface-raised);
+  background: var(--surface-2);
   color: var(--text-primary);
   font-size: 15px;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .personal-info__identity {
@@ -309,7 +309,7 @@ const logout = async () => {
 .personal-info__identity strong {
   color: var(--text-primary);
   font-size: 17px;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .personal-info__identity span {
@@ -327,9 +327,7 @@ const logout = async () => {
 
 .personal-info__facts div {
   min-width: 0;
-  border-radius: 8px;
-  background: var(--surface-raised);
-  padding: 10px;
+  padding: 8px 0;
 }
 
 .personal-info__facts dt,
@@ -346,18 +344,19 @@ const logout = async () => {
   white-space: nowrap;
   color: var(--text-primary);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .personal-info__section {
-  padding: 14px;
+  padding: 24px 0;
+  border-top: 1px solid var(--border-default);
 }
 
 .personal-info__section h4 {
   margin-bottom: 10px;
   color: var(--text-primary);
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .personal-info__form {
@@ -379,7 +378,7 @@ const logout = async () => {
   margin-bottom: 6px;
   color: var(--text-tertiary);
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .personal-info__form input {
@@ -410,10 +409,10 @@ const logout = async () => {
   border: 1px solid transparent;
   border-radius: 8px;
   padding: 10px 14px;
-  background: var(--primary);
+  background: var(--accent);
   color: var(--on-primary);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 1;
   transition: background 160ms var(--ease-out, ease), color 160ms var(--ease-out, ease), opacity 160ms var(--ease-out, ease), transform 120ms var(--ease-out, ease);
 }
@@ -440,7 +439,7 @@ const logout = async () => {
 }
 
 .personal-info__form button:disabled {
-  opacity: 0.55;
+  opacity: 0.8;
 }
 
 .personal-info__actions {
@@ -455,7 +454,7 @@ const logout = async () => {
   line-height: 1.5;
 }
 
-/* Keep the security actions explicit: --primary is not a theme token. */
+/* Security actions use a neutral surface while profile saving uses the accent. */
 .personal-info__actions > .personal-info__secondary {
   border-color: var(--border-default);
   background: var(--surface-2);
@@ -468,35 +467,36 @@ const logout = async () => {
   color: var(--text-primary);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text-primary) 8%, transparent);
   /* 增加字体粗细和字号提升可读性 */
-  font-weight: 800;
+  font-weight: 600;
   font-size: 13px;
 }
 
 .personal-info__secondary:hover {
   background: var(--surface-1);
   color: var(--text-primary);
-  border-color: var(--border-hover);
-  font-weight: 900;
+  border-color: var(--border-strong);
+  font-weight: 600;
 }
 
 .personal-info__secondary--danger {
   /* 使用更高对比度的错误色 */
   border-color: var(--error);
   background: var(--error-soft-bg);
-  color: var(--error-text);
-  font-weight: 900;
+  color: var(--error-soft-text);
+  font-weight: 600;
 }
 
 .personal-info__secondary--danger:hover {
-  background: var(--error-bg);
-  color: var(--error-text);
+  background: var(--error-soft-bg);
+  color: var(--error-soft-text);
   border-color: var(--error);
 }
 
 .personal-info__stats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  padding: 10px 12px;
+  padding: 20px 0;
+  border-top: 1px solid var(--border-default);
 }
 
 .personal-info__stat {
@@ -513,7 +513,7 @@ const logout = async () => {
 
 .personal-info__stat span {
   flex: 0 0 auto;
-  color: var(--primary);
+  color: var(--accent);
   font-size: 20px;
 }
 
@@ -529,7 +529,7 @@ const logout = async () => {
 .personal-info__stat strong {
   color: var(--text-primary);
   font-size: 18px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
 }
@@ -552,7 +552,7 @@ const logout = async () => {
   align-items: center;
   gap: 8px;
   border-radius: 8px;
-  background: var(--surface-raised);
+  background: var(--surface-2);
   padding: 8px 10px;
 }
 

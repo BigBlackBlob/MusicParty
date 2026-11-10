@@ -1,14 +1,14 @@
 <template>
   <section class="flex flex-col h-full bg-bg-base relative overflow-hidden">
     <!-- Header Section (Fixed Top) -->
-    <header class="w-full z-20 bg-bg-base/95 backdrop-blur-md border-b border-border-default pt-4 pb-3 px-panelPadding flex flex-col gap-4 flex-shrink-0 safe-area-top">
+    <header class="w-full z-20 bg-bg-base border-b border-border-default pt-3 pb-2 px-panelPadding flex flex-col gap-3 flex-shrink-0 safe-area-top">
       <!-- Search Bar & Cancel -->
       <form class="flex items-center gap-3" @submit.prevent="handleSearchAction">
         <div class="flex-1 flex items-center bg-surface-panel h-[40px] rounded-full px-3 border border-border-default focus-within:border-primary/50 transition-colors group">
           <span class="material-symbols-outlined text-text-secondary text-[20px] group-focus-within:text-primary">search</span>
           <input 
             v-model="keyword"
-            class="flex-1 bg-transparent border-none outline-none text-body font-body text-primary placeholder-text-muted px-2 w-full" 
+            class="flex-1 bg-transparent border-none outline-none text-body font-body text-text-primary placeholder-text-muted px-2 w-full"
             :placeholder="t('search.placeholder')" 
             type="text"
             autocomplete="off"
@@ -34,14 +34,14 @@
       </form>
 
       <!-- Platform Selector -->
-      <div class="bg-surface-panel p-[4px] rounded-xl flex items-center justify-between shadow-inner">
+      <div class="mobile-segment mobile-search-platforms">
         <button 
           v-for="p in platforms"
           :key="p.id"
           type="button"
           @click="platform = p.id"
-          class="flex-1 py-1.5 rounded-lg font-section-label text-section-label transition-all"
-          :class="platform === p.id ? 'bg-surface-raised text-primary shadow-sm border border-border-strong' : 'text-text-secondary hover:text-primary'"
+          class="mobile-segment__option font-section-label text-section-label transition-all"
+          :class="{ 'mobile-segment__option--active': platform === p.id }"
         >
           <div class="flex items-center justify-center gap-1.5">
             <div 
@@ -58,18 +58,18 @@
         </button>
       </div>
 
-      <div v-if="supportsAlbumSearch" class="flex p-xs bg-bg-base rounded-lg">
+      <div v-if="supportsAlbumSearch" class="mobile-segment mobile-search-types">
         <button 
           @click="searchType = 'song'"
-          class="flex-1 py-1.5 text-center rounded-md font-section-label text-section-label transition-all"
-          :class="searchType === 'song' ? 'bg-surface-raised text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'"
+          class="mobile-segment__option font-section-label text-section-label transition-all"
+          :class="{ 'mobile-segment__option--active': searchType === 'song' }"
         >
           {{ t('search.song').toUpperCase() }}
         </button>
         <button 
           @click="searchType = 'album'"
-          class="flex-1 py-1.5 text-center rounded-md font-section-label text-section-label transition-all"
-          :class="searchType === 'album' ? 'bg-surface-raised text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'"
+          class="mobile-segment__option font-section-label text-section-label transition-all"
+          :class="{ 'mobile-segment__option--active': searchType === 'album' }"
         >
           {{ t('search.album').toUpperCase() }}
         </button>
@@ -79,15 +79,21 @@
 
     <!-- Scrollable Results Area -->
     <main class="flex-1 overflow-y-auto px-panelPadding py-2 flex flex-col">
-      <div v-if="loading" class="flex flex-col items-center justify-center py-20 text-center opacity-40">
-        <span class="material-symbols-outlined text-[48px] animate-spin mb-2">refresh</span>
-        <p class="font-compact text-compact uppercase tracking-widest">{{ t('search.loading') }}</p>
+      <div v-if="loading" class="mobile-content-state">
+        <span class="material-symbols-outlined mobile-content-state__icon">refresh</span>
+        <p class="font-compact text-compact">{{ t('search.loading') }}</p>
+      </div>
+
+      <div v-else-if="searchError" class="mobile-content-state" role="status">
+        <span class="material-symbols-outlined mobile-content-state__icon">cloud_off</span>
+        <p class="font-compact text-compact">{{ t('search.failed') }}</p>
+        <p class="text-xs text-text-secondary">{{ t('search.noResultsDesc') }}</p>
       </div>
 
       <template v-else-if="resultMode === 'album'">
-        <div v-if="albums.length === 0" class="flex flex-col items-center justify-center py-20 text-center opacity-40">
-          <span class="material-symbols-outlined text-[48px] mb-2">album</span>
-          <p class="font-compact text-compact uppercase tracking-widest">{{ hasSearched ? t('search.noAlbums') : t('search.searchAlbums') }}</p>
+        <div v-if="albums.length === 0" class="mobile-content-state">
+          <span class="material-symbols-outlined mobile-content-state__icon">album</span>
+          <p class="font-compact text-compact">{{ hasSearched ? t('search.noAlbums') : t('search.searchAlbums') }}</p>
         </div>
 
         <div v-else>
@@ -102,7 +108,7 @@
                   <CoverImage :src="album.coverUrl" class="w-full h-full object-cover" />
                 </div>
                 <div class="flex-1 min-w-0 flex flex-col justify-center">
-                  <p class="font-compact text-compact text-primary truncate leading-tight">{{ album.name }}</p>
+                  <p class="font-compact text-compact text-text-primary truncate leading-tight">{{ album.name }}</p>
                   <p class="font-caption text-caption text-text-secondary truncate leading-tight mt-0.5">
                     {{ album.artistName || t('common.unknownArtist') }} • {{ album.trackCount || 0 }} {{ t('queue.tracks') }}
                   </p>
@@ -166,9 +172,9 @@
       </template>
 
       <template v-else>
-        <div v-if="songs.length === 0" class="flex flex-col items-center justify-center py-20 text-center opacity-40">
-          <span class="material-symbols-outlined text-[48px] mb-2">music_note</span>
-          <p class="font-compact text-compact uppercase tracking-widest">{{ hasSearched ? t('search.noResults') : t('search.searchSongs') }}</p>
+        <div v-if="songs.length === 0" class="mobile-content-state">
+          <span class="material-symbols-outlined mobile-content-state__icon">music_note</span>
+          <p class="font-compact text-compact">{{ hasSearched ? t('search.noResults') : t('search.searchSongs') }}</p>
         </div>
 
         <div v-else>
@@ -187,7 +193,7 @@
                 </div>
               </div>
               <div class="flex-1 min-w-0 flex flex-col justify-center">
-                <p class="font-compact text-compact text-primary truncate leading-tight">{{ song.name }}</p>
+                <p class="mobile-search-track-title font-compact text-compact text-text-primary leading-tight">{{ song.name }}</p>
                 <p class="font-caption text-caption text-text-secondary truncate leading-tight mt-0.5">
                   {{ formatArtists(song.artists) }} • {{ song.platform || platform }}
                 </p>
@@ -233,6 +239,7 @@ const {
   songs,
   albums,
   loading,
+  searchError,
   searchType,
   hasSubmittedSearch,
   doSearch,
@@ -307,6 +314,31 @@ onMounted(loadPlatforms);
 </script>
 
 <style scoped>
+.mobile-search-platforms,
+.mobile-search-types {
+  padding: 2px;
+}
+
+.mobile-search-platforms .mobile-segment__option,
+.mobile-search-types .mobile-segment__option {
+  min-height: 32px;
+}
+
+.mobile-search-track-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 360px) {
+  .mobile-search-track-title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+  }
+}
+
 .safe-area-top {
   padding-top: calc(env(safe-area-inset-top) + 16px);
 }

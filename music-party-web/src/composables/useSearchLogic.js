@@ -34,6 +34,7 @@ export function useSearchLogic() {
     } = useExternalPlaylist();
 
     const loading = ref(false);
+    const searchError = ref('');
     const hasSubmittedSearch = ref(false);
     const currentPage = ref(1);
     const canGoNext = ref(true);
@@ -56,12 +57,13 @@ export function useSearchLogic() {
 
 const doSearch = async (page = 1) => {
         const requestSeq = ++searchRequestSeq;
+        searchError.value = '';
         await clearSearchCache();
         const val = keyword.value.trim();
         const isLocal = platform.value === 'local';
         if (!val && searchType.value !== 'playlist' && !isLocal) return;
 
-        const effectiveKeyword = (!val && isLocal) ? ' ' : val;
+        const effectiveKeyword = (!val && isLocal) ? '%' : val;
 
         // 1. 歌单解析逻辑
         if (searchType.value === 'playlist') {
@@ -81,6 +83,8 @@ const doSearch = async (page = 1) => {
                 hasSubmittedSearch.value = true;
                 return;
             } catch (e) {
+                if (requestSeq !== searchRequestSeq) return;
+                searchError.value = extractErrorMessage(e, t('search.playlistFailed'));
                 error(extractErrorMessage(e, t('search.playlistFailed')));
             } finally {
                 if (requestSeq === searchRequestSeq) loading.value = false;
@@ -121,6 +125,7 @@ const doSearch = async (page = 1) => {
         } catch (e) {
             if (requestSeq !== searchRequestSeq) return;
             console.error('Search failed:', e);
+            searchError.value = extractErrorMessage(e, t('search.failed'));
             error(extractErrorMessage(e, t('search.failed')));
         } finally {
             if (requestSeq === searchRequestSeq) loading.value = false;
@@ -128,6 +133,7 @@ const doSearch = async (page = 1) => {
     };
 
     const clearSearchState = () => {
+        searchError.value = '';
         songs.value = [];
         albums.value = [];
         clearExternalPlaylist();
@@ -206,6 +212,7 @@ const doSearch = async (page = 1) => {
         playlistSongs,
         playlistId,
         loading,
+        searchError,
         listMode,
         searchType,
         hasSubmittedSearch,

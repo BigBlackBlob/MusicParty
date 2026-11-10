@@ -28,6 +28,24 @@ pnpm install --frozen-lockfile
 VITE_BACKEND_URL=http://127.0.0.1:18081 pnpm dev
 ```
 
+## Local UI preview with fixture music
+
+The preview API supplies clearly labeled placeholder platforms, songs, and albums. Other REST requests pass through to a local Go backend; the frontend WebSocket connects directly to that backend.
+
+Start a local Go backend with an isolated database on port `18083`, then run these commands in separate terminals:
+
+```powershell
+$env:PREVIEW_BACKEND_URL = 'http://127.0.0.1:18083'
+$env:PREVIEW_API_PORT = '18082'
+pnpm preview:api
+```
+
+```powershell
+$env:VITE_BACKEND_URL = 'http://127.0.0.1:18083'
+$env:VITE_API_URL = 'http://127.0.0.1:18082'
+pnpm dev -- --host 127.0.0.1 --port 5174
+```
+
 ## Checks
 
 ```bash

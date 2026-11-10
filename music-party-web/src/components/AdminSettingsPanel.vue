@@ -633,7 +633,7 @@ watch(
 .admin-page-header h3 {
   color: var(--text-primary);
   font-size: 18px;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .admin-page-header p {
@@ -659,16 +659,14 @@ watch(
   min-width: 0;
   flex-direction: column;
   gap: 10px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--surface-control) 78%, transparent);
-  padding: 12px;
+  border-top: 1px solid var(--border-default);
+  padding: 16px 0;
 }
 
 .admin-panel h4 {
   color: var(--text-secondary);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .admin-subheader {
@@ -680,11 +678,11 @@ watch(
 
 .admin-count {
   border-radius: 999px;
-  background: var(--surface-raised);
+  background: var(--surface-2);
   padding: 2px 8px;
   color: var(--text-tertiary);
   font-size: 11px;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .admin-hint {
@@ -718,6 +716,7 @@ watch(
 }
 
 .admin-input {
+  min-width: 0;
   width: 100%;
   border-radius: 6px;
   border: 1px solid var(--border-default);
@@ -824,5 +823,20 @@ watch(
   .admin-page-header {
     flex-direction: column;
   }
+}
+
+@media (max-width: 480px) {
+  .admin-panel > .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.admin-input::file-selector-button {
+  margin-right: 10px;
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  background: var(--surface-2);
+  padding: 6px 8px;
+  color: var(--text-primary);
 }
 </style>

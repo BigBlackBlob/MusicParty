@@ -7,6 +7,8 @@ export default {
     close: 'Close',
     refresh: 'Refresh',
     export: 'Export',
+    retry: 'Try again',
+    connecting: 'Connecting…',
     unknownArtist: 'Unknown Artist',
     by: 'by',
     cancel: 'Cancel',
@@ -77,6 +79,7 @@ export default {
     title: 'Rooms',
     currentRoom: 'Current room: {name}',
     create: 'Create',
+    enter: 'Enter {name}',
     delete: 'Delete room',
     newRoomPlaceholder: 'New room name...',
     createPrivate: 'Private room',
@@ -89,6 +92,7 @@ export default {
     verifyAndEnter: 'Verify and enter'
   },
   settings: {
+    sectionNames: { account: 'Profile', general: 'General', members: 'Members', room: 'Room', library: 'Library', sources: 'Sources', admin: 'Admin' },
     title: 'Settings',
     workbench: 'Settings workbench',
     general: 'General',
@@ -294,6 +298,7 @@ export default {
     requestedBy: 'by {name}',
     waiting: 'Waiting for music',
     waitingFirstTrack: 'Waiting for the first track',
+    waitingFirstTrackHint: 'The next song will appear here.',
     nowPlayingIn: 'Now playing in',
     requestedByShort: 'Req',
     listenersShort: 'Listeners'
@@ -331,6 +336,7 @@ export default {
     savedResult: 'Added {added}, skipped {skipped} duplicates'
   },
   search: {
+    results: 'Results',
     title: 'Search',
     discoverMusic: 'Discover Music',
     platforms: 'Platforms',
@@ -416,6 +422,8 @@ export default {
     messages: 'Messages',
     tabChat: 'Chat',
     tabSystem: 'System',
+    tabPublic: 'Public',
+    publicPlaceholder: 'Message public channel…',
     empty: 'No messages yet',
     loading: 'Loading...',
     placeholder: 'Send a message...',
@@ -439,6 +447,7 @@ export default {
     netease: 'Netease',
     bilibili: 'Bilibili',
     youtube: 'YouTube',
-    navidrome: 'Navidrome'
+    navidrome: 'Navidrome',
+    local: 'Local'
   }
 };

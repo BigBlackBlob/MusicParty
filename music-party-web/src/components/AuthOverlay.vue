@@ -1,6 +1,13 @@
 <template>
-  <div class="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-[var(--surface-0)]/90 p-4 backdrop-blur-xl">
-    <main class="w-full max-w-md rounded-xl bg-[var(--surface-4)] p-8 shadow-xl">
+  <div class="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center ambient-canvas p-4 backdrop-blur-xl">
+    <main class="w-full max-w-md rounded-2xl border border-[var(--border-default)] bg-[var(--surface-1)] px-5 py-8">
+      <div class="brand-lockup mb-8" aria-hidden="true">
+        <span class="material-symbols-outlined brand-lockup__mark">graphic_eq</span>
+        <span class="brand-lockup__type">
+          <span class="brand-lockup__overline">MUSIC</span>
+          <span class="brand-lockup__name">PARTY</span>
+        </span>
+      </div>
       <template v-if="mode === 'loading'">
         <h1 class="text-xl font-semibold text-[var(--text-primary)]">MusicParty</h1>
         <p class="mt-2 text-sm text-[var(--text-secondary)]">正在恢复会话…</p>
@@ -10,7 +17,7 @@
         <h1 class="text-xl font-semibold text-[var(--text-primary)]">欢迎来到 MusicParty</h1>
         <p class="mt-2 text-sm text-[var(--text-secondary)]">选择进入方式，房间将在下一步选择。</p>
         <div class="mt-6 space-y-3">
-          <button type="button" class="min-h-[40px] w-full rounded-md bg-[var(--accent)] font-semibold text-[var(--text-inverse)]" @click="mode = 'guest'">
+          <button type="button" class="min-h-[40px] w-full rounded-md bg-[var(--accent)] font-semibold text-[var(--on-primary)]" @click="mode = 'guest'">
             以访客身份进入
           </button>
           <button type="button" class="min-h-[40px] w-full rounded-md border border-[var(--border-default)] text-sm font-semibold text-[var(--text-secondary)] hover:bg-[var(--surface-3)] hover:text-[var(--text-primary)]" @click="mode = 'admin'">
@@ -33,7 +40,7 @@
           <input id="guest-name" v-model.trim="guestName" autofocus maxlength="32" autocomplete="nickname"
             class="w-full rounded-md bg-[var(--surface-2)] px-3 py-2 text-[var(--text-primary)] outline-none focus:ring-2 focus:ring-[var(--accent-muted)]"
             placeholder="你想被怎样称呼" />
-          <button class="min-h-[40px] w-full rounded-md bg-[var(--accent)] font-semibold text-[var(--text-inverse)] disabled:opacity-50"
+          <button class="min-h-[40px] w-full rounded-md bg-[var(--accent)] font-semibold text-[var(--on-primary)] disabled:opacity-50"
             :disabled="loading || !guestName">
             {{ loading ? '正在进入…' : '立即进入' }}
           </button>

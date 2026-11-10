@@ -98,6 +98,7 @@ export default {
         "toolbarGap": "8px"
       },
       fontFamily: {
+        "sans": ["Geist", "ui-sans-serif", "system-ui", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
         "compact": ["Geist", "sans-serif"],
         "title": ["Geist", "sans-serif"],
         "caption": ["Geist", "sans-serif"],

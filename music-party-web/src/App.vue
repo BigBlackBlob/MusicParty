@@ -10,15 +10,20 @@
 
     <!-- 2. 启动页 (Start Screen) -->
     <!-- 注意：点击 Connect 后，我们先不销毁它，直到 socket 连接成功，或者直接切换布局 -->
-    <div v-if="userStore.isAuthPassed && !hasStarted" class="absolute inset-0 z-[var(--z-overlay)] bg-[radial-gradient(circle_at_top,rgba(211,194,243,0.08),transparent_42%),var(--surface-0)] flex flex-col items-center justify-center space-y-8">
-      <div class="text-4xl md:text-5xl font-bold tracking-tight text-[var(--text-primary)]">MUSIC PARTY</div>
-      <div class="font-mono text-xs text-[var(--text-tertiary)] tracking-[0.3em]">准备就绪</div>
-      <div class="w-full max-w-md rounded-2xl border border-[var(--border-default)] bg-[var(--surface-4)]/80 p-4 shadow-lg backdrop-blur">
+    <div v-if="userStore.isAuthPassed && !hasStarted" class="absolute inset-0 z-[var(--z-overlay)] ambient-canvas flex flex-col items-center justify-center gap-8 px-5">
+      <div class="brand-lockup" aria-hidden="true">
+        <span class="material-symbols-outlined brand-lockup__mark">graphic_eq</span>
+        <span class="brand-lockup__type">
+          <span class="brand-lockup__overline">MUSIC</span>
+          <span class="brand-lockup__name">PARTY</span>
+        </span>
+      </div>
+      <div class="w-full max-w-md border-y border-[var(--border-default)] py-5">
         <div class="mb-3 flex items-center justify-between">
-          <span class="text-xs font-semibold tracking-[0.18em] text-[var(--text-tertiary)]">LISTENING ROOMS</span>
-          <button @click="roomStore.fetchRooms" class="text-xs text-[var(--accent)]">Refresh</button>
+          <span class="text-base font-semibold text-[var(--text-primary)]">{{ $t('rooms.title') }}</span>
+          <button @click="roomStore.fetchRooms" class="text-xs text-[var(--accent)]">{{ $t('common.refresh') }}</button>
         </div>
-        <div class="grid max-h-52 gap-2 overflow-y-auto">
+        <div class="grid max-h-[40vh] sm:max-h-52 gap-2 overflow-y-auto">
           <div
               v-for="room in roomStore.rooms"
               :key="room.roomId"
@@ -30,7 +35,7 @@
                 <span v-if="room.privateRoom" class="material-symbols-outlined text-[15px] text-[var(--accent)]">lock</span>
                 <span class="truncate">{{ room.name }}</span>
               </span>
-              <span class="text-xs text-[var(--text-tertiary)]">{{ room.onlineCount || 0 }} active</span>
+              <span class="text-xs text-[var(--text-tertiary)]">{{ room.onlineCount || 0 }} {{ $t('settings.active') }}</span>
             </button>
             <div v-if="canManageRoom(room)" class="flex flex-shrink-0 items-center gap-1">
               <button
@@ -57,7 +62,7 @@
               placeholder="Create a room..."
               @keyup.enter="createRoom"
           />
-          <button @click="createRoom" class="rounded-xl bg-[var(--accent)] px-4 text-sm font-semibold text-[var(--text-inverse)]">Create</button>
+          <button @click="createRoom" class="rounded-xl bg-[var(--accent)] px-4 text-sm font-semibold text-[var(--text-inverse)]">{{ $t('rooms.create') }}</button>
         </div>
         <label v-if="userStore.capabilities.canCreateRoom" class="mt-2 flex items-center gap-2 text-xs text-[var(--text-secondary)]">
           <input v-model="newRoomPrivate" type="checkbox" class="h-4 w-4 accent-[var(--accent)]" />
@@ -76,9 +81,9 @@
       <button
           @click="startGame"
           :disabled="roomStore.transition.status === 'connecting'"
-          class="min-h-[44px] px-12 py-4 bg-[var(--accent)] text-[var(--text-inverse)] font-semibold text-lg hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-colors rounded-xl shadow-lg"
+          class="min-h-[44px] px-8 py-3 sm:px-12 sm:py-4 bg-[var(--accent)] text-[var(--on-primary)] font-semibold text-base sm:text-lg hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-colors rounded-xl shadow-lg"
       >
-        {{ roomStore.transition.status === 'connecting' ? '正在连接…' : `进入 ${roomStore.currentRoom?.name || 'Lounge'}` }}
+        {{ roomStore.transition.status === 'connecting' ? $t('common.connecting') : $t('rooms.enter', { name: roomStore.currentRoom?.name || $t('app.lounge') }) }}
       </button>
       <p v-if="roomStore.transition.status === 'failed' && !privateRoomDialogOpen" class="max-w-md text-center text-sm text-[var(--error-soft-text)]" role="alert">
         {{ roomStore.transition.error.message }}

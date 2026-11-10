@@ -3,7 +3,7 @@
     <!-- Header / Tab View -->
     <header class="w-full z-40 bg-surface-panel border-b border-border-default pt-md px-md flex-shrink-0 safe-area-top">
       <div class="flex justify-between items-center mb-md">
-        <h1 class="font-title text-title text-primary">{{ roomStore.currentRoom?.name || 'Lounge' }}</h1>
+        <h1 class="font-title text-title text-text-primary">{{ roomStore.currentRoom?.name || 'Lounge' }}</h1>
         <div class="flex items-center">
           <button 
             v-if="activeView === 'queue' && player.queue.length > 0"
@@ -26,18 +26,18 @@
         </div>
       </div>
       <!-- Segmented Control -->
-      <div class="flex p-xs bg-bg-base rounded-lg mb-md">
+      <div class="mobile-segment mb-md">
         <button 
           @click="activeView = 'queue'"
-          class="flex-1 py-sm text-center rounded-md font-section-label text-section-label transition-all"
-          :class="activeView === 'queue' ? 'bg-surface-raised text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'"
+          class="mobile-segment__option font-section-label text-section-label transition-all"
+          :class="{ 'mobile-segment__option--active': activeView === 'queue' }"
         >
           {{ t('nav.queue').toUpperCase() }}
         </button>
         <button 
           @click="activeView = 'liked'"
-          class="flex-1 py-sm text-center rounded-md font-section-label text-section-label transition-all"
-          :class="activeView === 'liked' ? 'bg-surface-raised text-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'"
+          class="mobile-segment__option font-section-label text-section-label transition-all"
+          :class="{ 'mobile-segment__option--active': activeView === 'liked' }"
         >
           {{ t('queue.liked').toUpperCase() }}
         </button>
@@ -45,11 +45,11 @@
     </header>
 
     <!-- Main Content Area -->
-    <main ref="queueScrollerRef" class="flex-1 overflow-y-auto px-md py-4" :class="{ 'pb-[100px]': selectionMode }" @scroll.passive="onScroll">
+    <main ref="queueScrollerRef" class="flex-1 min-h-0 overflow-y-auto px-md py-4 flex flex-col" :class="{ 'pb-[100px]': selectionMode }" @scroll.passive="onScroll">
       <template v-if="activeView === 'queue'">
-        <div v-if="player.queue.length === 0" class="flex flex-col items-center justify-center py-20 text-center opacity-40">
-          <span class="material-symbols-outlined text-[48px] mb-2">queue_music</span>
-          <p class="font-compact text-compact uppercase tracking-widest">{{ t('queue.empty') }}</p>
+        <div v-if="player.queue.length === 0" class="mobile-content-state">
+          <span class="material-symbols-outlined mobile-content-state__icon">queue_music</span>
+          <p class="font-compact text-compact">{{ t('queue.empty') }}</p>
         </div>
 
         <div v-else class="flex flex-col gap-xs">
@@ -121,9 +121,9 @@
       </template>
 
       <template v-else>
-        <div v-if="liked.likedSongs.length === 0" class="flex flex-col items-center justify-center py-20 text-center opacity-40">
-          <span class="material-symbols-outlined text-[48px] mb-2">favorite</span>
-          <p class="font-compact text-compact uppercase tracking-widest">{{ t('queue.noLiked') }}</p>
+        <div v-if="liked.likedSongs.length === 0" class="mobile-content-state">
+          <span class="material-symbols-outlined mobile-content-state__icon">favorite</span>
+          <p class="font-compact text-compact">{{ t('queue.noLiked') }}</p>
         </div>
 
         <div v-else class="flex flex-col gap-xs">

@@ -14,6 +14,7 @@ const platformLabelKeyMap: Record<string, string> = {
   bilibili: 'platforms.bilibili',
   youtube: 'platforms.youtube',
   navidrome: 'platforms.navidrome',
+  local: 'platforms.local',
 }
 
 const resolveRequesterName = (nowPlaying: NowPlaying | null, user: ReturnType<typeof useUserStore>, presence: ReturnType<typeof useRoomPresenceStore>): string => {

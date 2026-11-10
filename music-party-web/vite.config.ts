@@ -4,6 +4,7 @@ import { defineConfig } from 'vite'
 import { resolveVendorChunk } from './config/vendorChunks.js'
 
 const backendUrl = process.env.VITE_BACKEND_URL || 'http://localhost:8080'
+const apiUrl = process.env.VITE_API_URL || backendUrl
 const projectRoot = fileURLToPath(new URL('.', import.meta.url))
 
 export default defineConfig({
@@ -29,7 +30,7 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api': { target: backendUrl, changeOrigin: true },
+      '/api': { target: apiUrl, changeOrigin: true },
       '/ws': { target: backendUrl, ws: true, changeOrigin: true },
       '/proxy': { target: backendUrl, changeOrigin: true },
       '/media': { target: backendUrl, changeOrigin: true }

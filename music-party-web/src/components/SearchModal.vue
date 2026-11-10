@@ -4,13 +4,13 @@
       <DialogOverlay class="fixed inset-0 z-[var(--z-overlay)] bg-[var(--overlay-backdrop)] backdrop-blur-md transition-all duration-300" />
       <DialogContent class="fixed inset-0 z-[var(--z-overlay)] flex items-center justify-center p-8 outline-none">
         <!-- New Search UI Container -->
-        <div class="w-full max-w-5xl h-[80vh] bg-surface-panel rounded-xl border border-border-default shadow-2xl flex flex-col overflow-hidden">
+        <div class="w-full max-w-5xl h-[80vh] bg-bg-base rounded-xl border border-border-default shadow-2xl flex flex-col overflow-hidden">
           <!-- Search Header -->
-          <div class="p-6 border-b border-border-default bg-surface-panel">
+          <div class="p-6 border-b border-border-default bg-bg-base">
             <div class="flex items-center justify-between mb-6">
               <div class="flex items-center gap-2">
                 <span class="material-symbols-outlined text-primary text-[16px]">search</span>
-                <h2 class="text-[10px] font-black uppercase tracking-[0.2em] text-text-tertiary">{{ t('search.discoverMusic') }}</h2>
+                <h2 class="text-xl font-semibold text-text-primary">{{ t('search.title') }}</h2>
               </div>
               <div class="flex items-center gap-3">
                 <button class="text-text-muted transition-colors hover:text-text-primary" @click="refreshSearchSources" :aria-label="t('search.refreshSources')" :title="t('search.refreshSources')">
@@ -36,28 +36,31 @@
             </div>
 
             <!-- Search Type Tabs -->
-            <div class="flex gap-2 mt-4">
+            <div class="flex gap-1 mt-4 border-b border-border-subtle">
               <button
                 @click="searchType = SONG_SEARCH_TYPE"
-                class="px-4 py-1.5 rounded-[var(--radius-sm)] text-[10px] font-black uppercase tracking-widest transition-colors"
-                :class="searchType === SONG_SEARCH_TYPE ? 'bg-surface-raised border border-border-default text-primary' : 'bg-transparent border border-transparent text-text-muted hover:text-text-primary'"
+                class="relative px-4 py-2 text-xs font-semibold tracking-wide transition-colors"
+                :class="searchType === SONG_SEARCH_TYPE ? 'text-text-primary' : 'text-text-tertiary hover:text-text-secondary'"
               >
                 {{ t('search.song') }}
+                <span v-if="searchType === SONG_SEARCH_TYPE" class="absolute inset-x-2 -bottom-px h-[2px] rounded-full bg-primary"></span>
               </button>
               <button
                 @click="searchType = ALBUM_SEARCH_TYPE"
                 :disabled="!supportsAlbumSearch"
-                class="px-4 py-1.5 rounded-[var(--radius-sm)] text-[10px] font-black uppercase tracking-widest transition-colors"
-                :class="searchType === ALBUM_SEARCH_TYPE ? 'bg-surface-raised border border-border-default text-primary' : 'bg-transparent border border-transparent text-text-muted hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-text-muted'"
+                class="relative px-4 py-2 text-xs font-semibold tracking-wide transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                :class="searchType === ALBUM_SEARCH_TYPE ? 'text-text-primary' : 'text-text-tertiary hover:text-text-secondary disabled:hover:text-text-tertiary'"
               >
                 {{ t('search.album') }}
+                <span v-if="searchType === ALBUM_SEARCH_TYPE" class="absolute inset-x-2 -bottom-px h-[2px] rounded-full bg-primary"></span>
               </button>
               <button
                 @click="searchType = PLAYLIST_SEARCH_TYPE"
-                class="px-4 py-1.5 rounded-[var(--radius-sm)] text-[10px] font-black uppercase tracking-widest transition-colors"
-                :class="searchType === PLAYLIST_SEARCH_TYPE ? 'bg-surface-raised border border-border-default text-primary' : 'bg-transparent border border-transparent text-text-muted hover:text-text-primary'"
+                class="relative px-4 py-2 text-xs font-semibold tracking-wide transition-colors"
+                :class="searchType === PLAYLIST_SEARCH_TYPE ? 'text-text-primary' : 'text-text-tertiary hover:text-text-secondary'"
               >
                 {{ t('search.playlist') }}
+                <span v-if="searchType === PLAYLIST_SEARCH_TYPE" class="absolute inset-x-2 -bottom-px h-[2px] rounded-full bg-primary"></span>
               </button>
             </div>
           </div>
@@ -65,8 +68,7 @@
           <!-- Main Results Area -->
           <div class="flex-1 flex overflow-hidden">
             <!-- Sidebar -->
-            <aside class="w-64 border-r border-border-default p-4 overflow-y-auto bg-surface-panel" v-if="searchType !== PLAYLIST_SEARCH_TYPE">
-              <h3 class="text-[10px] font-black uppercase tracking-widest text-text-tertiary mb-4 px-2">{{ t('search.platforms') }}</h3>
+            <aside class="w-48 border-r border-border-default p-4 overflow-y-auto bg-bg-base" :aria-label="t('search.platforms')" v-if="searchType !== PLAYLIST_SEARCH_TYPE">
               <div class="space-y-1">
                 <button
                   v-for="p in platforms" :key="p.id"
@@ -80,8 +82,25 @@
             </aside>
 
             <!-- Results -->
-            <main class="flex-1 p-6 overflow-y-auto bg-surface-stage space-y-2">
-              <div v-if="loading" class="text-text-muted text-center py-20 font-compact">{{ t('search.loading') }}</div>
+            <main class="flex-1 p-6 overflow-y-auto bg-bg-base space-y-2">
+              <div v-if="loading" class="space-y-2" aria-busy="true" :aria-label="t('search.loading')">
+                <div v-for="i in 6" :key="i" class="flex items-center gap-4 rounded-lg p-3">
+                  <div class="h-10 w-10 shrink-0 rounded animate-shimmer bg-[var(--surface-control)]"></div>
+                  <div class="flex flex-1 flex-col gap-2">
+                    <div class="h-3 w-3/5 rounded animate-shimmer bg-[var(--surface-control)]"></div>
+                    <div class="h-2.5 w-2/5 rounded animate-shimmer bg-[var(--surface-control)]"></div>
+                  </div>
+                  <div class="h-7 w-7 shrink-0 rounded animate-shimmer bg-[var(--surface-control)]"></div>
+                </div>
+              </div>
+              <div v-else-if="searchError" class="flex flex-col items-center justify-center py-20 text-center gap-3" role="status">
+                <span class="material-symbols-outlined text-[36px] text-primary opacity-70">cloud_off</span>
+                <p class="text-sm font-semibold text-text-primary">{{ t('search.failed') }}</p>
+                <p class="text-xs text-text-secondary">{{ t('search.noResultsDesc') }}</p>
+                <button @click="handleSearchAction" class="mt-1 px-4 py-1.5 rounded-md border border-border-default text-xs font-semibold text-text-secondary hover:text-text-primary hover:bg-[var(--surface-control-hover)] transition-colors">
+                  {{ t('common.retry') }}
+                </button>
+              </div>
               <div v-else-if="displayItems.length === 0" class="flex flex-col items-center justify-center text-center py-20">
                 <div class="text-[14px] text-text-primary font-bold">{{ emptyTitle }}</div>
                 <div class="text-[12px] text-text-muted mt-1">{{ emptyMessage }}</div>
@@ -188,7 +207,7 @@
                             <p class="truncate text-[12px] text-text-primary font-bold">{{ song.name }}</p>
                             <p class="truncate text-[10px] text-text-muted">{{ formatArtists(song.artists) }}</p>
                          </div>
-                         <button @click.stop="playerStore.enqueue(song.platform || platform, song.id)" class="text-text-muted hover:text-primary transition-colors opacity-0 group-hover:opacity-100">
+                         <button @click.stop="playerStore.enqueue(song.platform || platform, song.id)" class="text-text-muted hover:text-primary transition-colors opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--border-accent)] rounded">
                             <span class="material-symbols-outlined text-[18px]">add_circle</span>
                          </button>
                       </div>
@@ -267,7 +286,7 @@ const ALBUM_SEARCH_TYPE = 'album';
 const PLAYLIST_SEARCH_TYPE = 'playlist';
 
 const { 
-  platform, platforms, supportsAlbumSearch, keyword, songs, albums, playlistSongs, loading, searchType, doSearch, loadPlatforms, refreshPlatformsAndClear, hasSubmittedSearch, 
+  platform, platforms, supportsAlbumSearch, keyword, songs, albums, playlistSongs, loading, searchError, searchType, doSearch, loadPlatforms, refreshPlatformsAndClear, hasSubmittedSearch,
   currentPage, currentPlaylistPage, canGoNext, canGoPlaylistNext, nextPage, prevPage, addAllPlaylistSongs,
   albumSongs, loadingAlbumIds, expandedAlbumIds, toggleAlbum
 } = useSearchLogic();

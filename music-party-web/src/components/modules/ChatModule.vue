@@ -9,18 +9,18 @@
       </div>
     </div>
 
-    <div class="flex border-b border-[var(--border-default)] bg-[var(--surface-2)]">
+    <div class="flex border-b border-border-subtle">
       <button
           v-for="tab in chatTabs"
           :key="tab.value"
           @click="activeTab = tab.value"
-          class="relative flex-1 px-3 py-2 text-xs font-semibold tracking-[0.14em] transition-colors"
-          :class="activeTab === tab.value ? 'text-[var(--text-primary)] bg-[var(--surface-3)]' : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-3)]/60'"
+          class="relative flex-1 px-3 py-2 text-xs font-semibold tracking-wide transition-colors"
+          :class="activeTab === tab.value ? 'text-text-primary' : 'text-text-tertiary hover:text-text-secondary'"
           :aria-label="tab.label"
           :title="tab.label"
       >
         {{ tab.label }}
-        <span v-if="activeTab === tab.value" class="absolute inset-x-3 bottom-0 h-px bg-[var(--accent)]"></span>
+        <span v-if="activeTab === tab.value" class="absolute inset-x-2 -bottom-px h-[2px] rounded-full bg-primary"></span>
       </button>
     </div>
 
@@ -33,8 +33,9 @@
         <Loader2 class="w-4 h-4 animate-spin text-[var(--accent)]/60" />
       </div>
 
-      <div v-if="processedMessages.length === 0" class="py-8 text-center text-xs text-[var(--text-tertiary)]">
-        {{ t('chat.empty') }}
+      <div v-if="processedMessages.length === 0" class="flex flex-col items-center gap-2 py-8 text-center">
+        <MessageSquare class="h-5 w-5 text-[var(--text-tertiary)] opacity-50" aria-hidden="true" />
+        <span class="text-xs text-[var(--text-tertiary)]">{{ t('chat.empty') }}</span>
       </div>
 
       <div v-for="item in processedMessages" :key="item.msg.id">
@@ -81,11 +82,11 @@
       </div>
     </div>
 
-    <div v-if="activeTab === CHAT_TAB || activeTab === PUBLIC_TAB" class="flex gap-2 border-t border-[var(--border-default)] bg-[var(--surface-1)] p-2">
+    <div v-if="activeTab === CHAT_TAB || activeTab === PUBLIC_TAB" class="flex gap-2 border-t border-border-subtle bg-transparent p-2">
       <input
           v-model="inputContent"
           @keyup.enter="send"
-          :placeholder="activeTab === PUBLIC_TAB ? 'Message public channel...' : t('chat.placeholder')"
+          :placeholder="activeTab === PUBLIC_TAB ? t('chat.publicPlaceholder') : t('chat.placeholder')"
           class="min-w-0 flex-1 rounded-xl border border-[var(--border-default)] bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none transition-colors placeholder:text-[var(--text-tertiary)] focus:border-[var(--border-accent)] focus:ring-2 focus:ring-[var(--accent-muted)]"
           :aria-label="t('chat.placeholder')"
       />
@@ -98,7 +99,7 @@
       </button>
     </div>
 
-    <div v-else class="flex h-8 items-center justify-center border-t border-[var(--border-default)] bg-[var(--surface-1)]">
+    <div v-else class="flex h-8 items-center justify-center border-t border-border-subtle bg-transparent">
       <span class="text-xs font-mono text-[var(--text-tertiary)]">{{ t('chat.readOnly') }}</span>
     </div>
   </div>
@@ -122,7 +123,7 @@ const PUBLIC_TAB = 'PUBLIC';
 const chatTabs = [
   { value: CHAT_TAB, label: t('chat.tabChat') },
   { value: SYSTEM_TAB, label: t('chat.tabSystem') },
-  { value: PUBLIC_TAB, label: 'PUBLIC' }
+  { value: PUBLIC_TAB, label: t('chat.tabPublic') }
 ];
 
 const inputContent = ref('');

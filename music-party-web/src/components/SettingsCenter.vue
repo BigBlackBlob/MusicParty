@@ -3,7 +3,6 @@
     <div class="settings-center__shell" :class="{ 'settings-center__shell--mobile': mobile }">
       <header class="settings-center__header">
         <div>
-          <p class="settings-center__eyebrow">{{ t('settings.workbench') }}</p>
           <h2 class="settings-center__title">{{ t('settings.title') }}</h2>
         </div>
         <button type="button" class="settings-center__close" :aria-label="t('common.close')" @click="$emit('close')">
@@ -18,11 +17,13 @@
             :key="section.id"
             type="button"
             class="settings-center__nav-item"
+            :aria-label="section.label"
+            :title="section.label"
             :class="{ 'settings-center__nav-item--active': activeSection === section.id }"
             @click="activeSection = section.id"
           >
             <span class="material-symbols-outlined text-[18px]">{{ section.icon }}</span>
-            <span>{{ section.label }}</span>
+            <span>{{ t(`settings.sectionNames.${section.id}`) }}</span>
           </button>
         </nav>
 
@@ -231,7 +232,7 @@ const getInitials = (name = '') => {
   overflow: hidden;
   border: 1px solid var(--border-default);
   border-radius: 12px;
-  background: var(--surface-panel);
+  background: var(--surface-0);
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
 }
 
@@ -253,7 +254,7 @@ const getInitials = (name = '') => {
 
 .settings-center__eyebrow {
   font-size: 10px;
-  font-weight: 900;
+  font-weight: 600;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--text-tertiary);
@@ -261,7 +262,7 @@ const getInitials = (name = '') => {
 
 .settings-center__title {
   font-size: 22px;
-  font-weight: 900;
+  font-weight: 600;
   color: var(--text-primary);
 }
 
@@ -311,7 +312,7 @@ const getInitials = (name = '') => {
   padding: 10px 12px;
   text-align: left;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 600;
   color: var(--text-secondary);
   transition: background 160ms var(--ease-out, ease), color 160ms var(--ease-out, ease), box-shadow 160ms var(--ease-out, ease);
 }
@@ -319,7 +320,7 @@ const getInitials = (name = '') => {
 .settings-center__nav-item:hover,
 .settings-center__nav-item--active {
   background: var(--surface-control-hover);
-  color: var(--primary);
+  color: var(--text-primary);
 }
 
 .settings-center__content {
@@ -336,7 +337,7 @@ const getInitials = (name = '') => {
 
 .settings-section__title {
   font-size: 16px;
-  font-weight: 900;
+  font-weight: 600;
   color: var(--text-primary);
 }
 
@@ -344,14 +345,14 @@ const getInitials = (name = '') => {
   width: 100%;
   border: 1px solid var(--border-default);
   border-radius: 8px;
-  background: var(--surface-raised);
+  background: var(--surface-1);
   padding: 10px 12px;
   color: var(--text-primary);
   outline: none;
 }
 
 .settings-input:focus {
-  border-color: var(--primary);
+  border-color: var(--accent);
 }
 
 .settings-grid {
@@ -363,9 +364,10 @@ const getInitials = (name = '') => {
 .settings-row,
 .settings-control-block,
 .settings-member {
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  background: var(--surface-control);
+  border: 0;
+  border-bottom: 1px solid var(--border-default);
+  border-radius: 0;
+  background: transparent;
 }
 
 .settings-row {
@@ -418,14 +420,14 @@ const getInitials = (name = '') => {
   border-radius: 6px;
   padding: 8px;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   color: var(--text-secondary);
-  background: var(--surface-raised);
+  background: var(--surface-2);
   transition: background 160ms var(--ease-out, ease), color 160ms var(--ease-out, ease), box-shadow 160ms var(--ease-out, ease);
 }
 
 .settings-segment button.active {
-  background: var(--primary);
+  background: var(--accent);
   color: var(--on-primary);
 }
 
@@ -448,10 +450,10 @@ const getInitials = (name = '') => {
   flex: 0 0 auto;
   place-items: center;
   border-radius: 8px;
-  background: var(--surface-raised);
+  background: var(--surface-2);
   color: var(--text-primary);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .settings-member small {
@@ -465,21 +467,30 @@ const getInitials = (name = '') => {
 
   .settings-center__body {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .settings-center__nav {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    overflow-x: auto;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: stretch;
+    align-content: start;
+    gap: 4px;
     border-right: 0;
     border-bottom: 1px solid var(--border-default);
   }
 
   .settings-center__nav-item {
-    flex: 0 0 auto;
-    width: auto;
-    white-space: nowrap;
+    min-width: 0;
+    min-height: 40px;
+    flex-direction: row;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 4px;
+    text-align: center;
+    font-size: 11px;
+    line-height: 1.2;
+    white-space: normal;
   }
 
   .settings-grid {

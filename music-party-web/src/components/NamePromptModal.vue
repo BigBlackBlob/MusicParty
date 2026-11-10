@@ -24,7 +24,7 @@
         <button @click="userStore.showNameModal = false" class="flex-1 min-h-[44px] py-3 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--surface-3)] active:scale-[0.98] rounded-xl">
           {{ t('common.cancel') }}
         </button>
-        <button @click="confirm" class="flex-1 min-h-[44px] bg-[var(--accent)] text-[var(--text-inverse)] font-semibold py-3 hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-colors rounded-xl">
+        <button @click="confirm" class="flex-1 min-h-[44px] bg-[var(--accent)] text-[var(--on-primary)] font-semibold py-3 hover:bg-[var(--accent-hover)] active:scale-[0.98] transition-colors rounded-xl">
           {{ t('common.confirm') }}
         </button>
       </div>

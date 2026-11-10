@@ -6,6 +6,7 @@
   "packageManager": "pnpm@11.10.0",
   "scripts": {
     "dev": "vite",
+    "preview:api": "node scripts/preview-api.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint .",

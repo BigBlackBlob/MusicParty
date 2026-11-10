@@ -144,6 +144,28 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.layout-module-wrapper {
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--surface-panel);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.layout-module-wrapper[data-id="lyrics"] {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.layout-module-wrapper[data-id="nowplaying"],
+.layout-module-wrapper[data-id="queue"] {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .module-list {
   scrollbar-width: none;
 }

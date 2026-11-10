@@ -22,10 +22,18 @@
     </header>
 
     <!-- Main Content Area -->
-    <main class="flex-1 flex flex-col px-md w-full overflow-y-auto overflow-x-hidden py-4">
+    <main class="mobile-now-playing-main flex-1 flex flex-col px-md w-full overflow-y-auto overflow-x-hidden py-4">
       <!-- Artwork Section -->
-      <div class="w-full aspect-square max-h-[42dvh] mb-6 rounded-2xl overflow-hidden shadow-[0_30px_60px_rgba(0,0,0,0.6)] flex-shrink-0 relative z-10 group mx-auto">
+      <div
+        v-if="music || player.isLoading || player.isBuffering || player.isErrorState"
+        class="mobile-now-playing-art w-full aspect-square max-h-[42dvh] mb-6 rounded-2xl overflow-hidden flex-shrink-0 relative z-10 group mx-auto"
+        :class="music ? 'shadow-[0_30px_60px_rgba(0,0,0,0.6)]' : 'mobile-empty-art'"
+      >
+        <div v-if="!music && !player.isLoading && !player.isBuffering" class="mobile-empty-art__content" aria-hidden="true">
+          <span class="material-symbols-outlined mobile-empty-art__icon">graphic_eq</span>
+        </div>
         <CoverImage
+          v-else
           :src="music?.coverUrl"
           :alt="trackTitle"
           loading="eager"
@@ -38,11 +46,31 @@
         </div>
       </div>
 
+      <section v-else class="mobile-now-playing-empty" :aria-label="t('player.nowPlaying')">
+        <div class="mobile-now-playing-empty__copy">
+          <div class="mobile-now-playing-empty__meta">
+            <span class="font-micro text-micro uppercase text-text-muted">{{ roomStore.currentRoom?.name || t('app.brand') }} · {{ t('player.nowPlaying') }}</span>
+            <button
+              @click="toggleLike"
+              :disabled="!music"
+              class="mobile-now-playing-like flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full text-primary hover:bg-accent-subtle transition-colors"
+              :aria-label="isLiked ? t('player.unlike') : t('player.like')"
+              :title="isLiked ? t('player.unlike') : t('player.like')"
+            >
+              <span class="material-symbols-outlined text-[26px]" :style="isLiked ? 'font-variation-settings: \'FILL\' 1;' : ''">favorite</span>
+            </button>
+          </div>
+          <h1 class="mobile-now-playing-empty__title">{{ trackTitle }}</h1>
+          <p class="mobile-now-playing-empty__hint">{{ t('player.waitingFirstTrackHint') }}</p>
+        </div>
+        <span class="material-symbols-outlined mobile-now-playing-empty__icon" aria-hidden="true">graphic_eq</span>
+      </section>
+
       <!-- Track Info & Like -->
-      <div v-if="!hasLyrics" class="flex-1 min-h-4"></div>
-      <div class="flex items-center justify-between mb-8 flex-shrink-0 z-10 px-1">
-        <div class="flex flex-col overflow-hidden">
-          <h1 class="font-title text-title text-primary truncate tracking-tight">{{ trackTitle }}</h1>
+      <div v-if="!hasLyrics && music" class="flex-1 min-h-4"></div>
+      <div v-if="music || player.isLoading || player.isBuffering || player.isErrorState" class="mobile-now-playing-track flex items-center justify-between mb-8 flex-shrink-0 z-10 px-1">
+        <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <h1 class="font-title text-title text-text-primary line-clamp-2 break-words leading-snug tracking-tight">{{ trackTitle }}</h1>
           <p class="font-body text-body text-text-secondary truncate mt-1">{{ artistLine }}</p>
         </div>
         <button 
@@ -55,7 +83,7 @@
       </div>
 
       <!-- Progress Bar -->
-      <div class="flex flex-col gap-xs mb-8 flex-shrink-0 z-10 px-1">
+      <div class="mobile-now-playing-progress flex flex-col gap-xs mb-8 flex-shrink-0 z-10 px-1">
         <ProgressScrubber
           :current-ms="player.playbackPositionMs"
           :duration="durationMs"
@@ -76,7 +104,7 @@
       </div>
 
       <!-- Playback Controls -->
-      <div class="flex items-center mb-8 flex-shrink-0 z-10 w-full max-w-[420px] mx-auto px-1">
+      <div class="mobile-now-playing-controls flex items-center mb-8 flex-shrink-0 z-10 w-full max-w-[420px] mx-auto px-1">
         <!-- 1. Volume -->
         <div class="flex-1 flex justify-center items-center">
           <div class="relative" ref="volumePanelContainerRef">
@@ -127,7 +155,8 @@
           <button 
             @click="player.togglePause"
             :disabled="player.isPauseLocked && !player.isPaused"
-            class="w-[64px] h-[64px] flex items-center justify-center text-primary hover:text-white hover:scale-105 transition-all active:scale-95 shadow-lg shadow-primary/20 rounded-full bg-accent-subtle"
+            class="w-[64px] h-[64px] flex items-center justify-center rounded-full transition-colors active:scale-95"
+            :class="music ? 'text-primary bg-accent-subtle shadow-lg shadow-primary/20 hover:text-white hover:scale-105' : 'text-text-secondary bg-surface-raised hover:bg-[var(--surface-control-hover)] hover:text-text-primary'"
           >
             <span class="material-symbols-outlined text-[40px]" style="font-variation-settings: 'FILL' 1;">
               {{ player.isPaused ? 'play_arrow' : 'pause' }}
@@ -252,6 +281,106 @@ defineEmits(['close', 'open-settings']);
 </script>
 
 <style scoped>
+@media (max-width: 360px) and (max-height: 740px) {
+  .mobile-now-playing-main {
+    padding-block: 8px;
+  }
+
+  .mobile-now-playing-art {
+    max-height: 38dvh;
+    margin-bottom: 16px;
+  }
+
+  .mobile-now-playing-track,
+  .mobile-now-playing-progress {
+    margin-bottom: 16px;
+  }
+
+  .mobile-now-playing-controls {
+    margin-bottom: 12px;
+  }
+}
+
+.mobile-empty-art {
+  border: 1px solid var(--border-default);
+  background: var(--surface-0);
+}
+
+.mobile-empty-art__content {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+}
+
+.mobile-empty-art__icon {
+  color: var(--accent);
+  font-size: 76px;
+  opacity: 0.72;
+}
+
+.mobile-now-playing-empty {
+  display: flex;
+  min-height: 200px;
+  flex: 1 0 200px;
+  flex-direction: column;
+  justify-content: center;
+  padding: 14px 4px;
+}
+
+.mobile-now-playing-empty__copy {
+  min-width: 0;
+}
+
+.mobile-now-playing-empty__meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mobile-now-playing-empty__meta > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-now-playing-like:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.mobile-now-playing-empty__title {
+  max-width: 100%;
+  margin: 10px 0 0;
+  color: var(--text-primary);
+  font-size: 26px;
+  font-weight: 650;
+  line-height: 1.14;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+.mobile-now-playing-empty__hint {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.mobile-now-playing-empty__icon {
+  align-self: flex-end;
+  margin-top: 16px;
+  padding: 0 3px 6px;
+  border-bottom: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 30px;
+  opacity: 0.88;
+}
+
 .mobile-volume-popover-enter-active,
 .mobile-volume-popover-leave-active {
   transition: opacity 240ms cubic-bezier(0.16, 1, 0.3, 1), transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
