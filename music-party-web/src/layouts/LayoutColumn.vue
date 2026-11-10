@@ -158,8 +158,7 @@ onBeforeUnmount(() => {
   box-shadow: none;
 }
 
-.layout-module-wrapper[data-id="nowplaying"],
-.layout-module-wrapper[data-id="queue"] {
+.layout-module-wrapper[data-id="nowplaying"] {
   border: 0;
   border-radius: 0;
   background: transparent;

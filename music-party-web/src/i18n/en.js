@@ -299,7 +299,7 @@ export default {
     waiting: 'Waiting for music',
     waitingFirstTrack: 'Waiting for the first track',
     waitingFirstTrackHint: 'The next song will appear here.',
-    nowPlayingIn: 'Now playing in',
+    nowPlayingIn: 'NOW PLAYING',
     requestedByShort: 'Req',
     listenersShort: 'Listeners'
   },

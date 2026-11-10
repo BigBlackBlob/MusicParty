@@ -2,17 +2,17 @@
   <div class="flex h-full min-h-0 min-w-0 flex-col items-center justify-center overflow-hidden gap-5">
     <div
       v-if="music || player.isLoading || player.isBuffering || player.isErrorState"
-      class="now-playing-cover-stage relative flex min-h-0 w-full flex-1 items-center justify-center group"
+      class="now-playing-cover-stage relative flex min-h-0 w-full flex-1 items-center justify-center"
     >
       <div
-        class="now-playing-cover relative aspect-square shrink overflow-hidden rounded-xl bg-surface-raised album-shadow transition-transform duration-700 hover:scale-[1.02]"
+        class="now-playing-cover relative aspect-square shrink overflow-hidden rounded-xl bg-surface-raised album-shadow"
         :class="player.isPaused ? 'saturate-[0.86]' : 'saturate-100'"
         @click="handleCoverClick"
       >
         <CoverImage
           :src="currentCover"
           :alt="trackTitle"
-          class="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.04]"
+          class="absolute inset-0 h-full w-full object-cover"
           loading="eager"
         />
         <div class="absolute inset-0 bg-gradient-to-b from-[var(--album-gradient-top)] via-transparent to-[var(--album-gradient-bottom)]" />
@@ -32,8 +32,13 @@
 
     <div v-else class="w-full min-h-0 flex-1" aria-hidden="true"></div>
 
+    <div class="pointer-events-none relative h-6 w-full shrink-0 -mt-6"
+         aria-hidden="true"
+         style="background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--surface-0) 60%, transparent))">
+    </div>
+
     <div
-      class="player-console w-full shrink-0 flex flex-col border-t border-border-default bg-transparent px-4 py-5"
+      class="player-console w-full shrink-0 flex flex-col bg-transparent px-4 py-5"
       :class="music ? 'h-[256px]' : 'h-[204px]'"
     >
       <div v-if="music" class="text-center">
@@ -73,7 +78,7 @@
 
         <div class="flex items-center justify-center gap-5">
           <button
-            class="flex h-11 w-11 items-center justify-center text-text-muted transition-colors hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-35"
+            class="flex h-11 w-11 items-center justify-center text-text-muted transition-colors hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] rounded-md"
             :class="player.isShuffle ? 'text-primary' : ''"
             :disabled="player.isShuffleLocked"
             @click="player.toggleShuffle"
@@ -83,7 +88,7 @@
             <span class="material-symbols-outlined text-[20px]" :aria-label="playModeLabel" :title="playModeLabel">shuffle</span>
           </button>
           <button
-            class="flex h-12 w-12 items-center justify-center rounded-full text-text-secondary transition-all hover:bg-[var(--surface-control-hover)] hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-35"
+            class="flex h-12 w-12 items-center justify-center rounded-full text-text-secondary transition-all hover:bg-[var(--surface-control-hover)] hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
             :disabled="player.isSkipLocked || !player.canOperate || !player.historyCursor"
             @click="player.playPrevious"
             :aria-label="player.historyCursor ? t('player.prev') : t('player.prevUnavailable')"
@@ -92,7 +97,7 @@
             <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">skip_previous</span>
           </button>
           <button
-            class="flex h-[52px] w-[52px] items-center justify-center rounded-lg transition-colors active:bg-primary disabled:cursor-not-allowed disabled:opacity-45"
+            class="flex h-[52px] w-[52px] items-center justify-center rounded-lg transition-colors active:bg-primary disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
             :class="music ? 'bg-primary text-on-primary shadow-lg hover:bg-[var(--accent-hover)]' : 'bg-surface-raised text-text-secondary shadow-none hover:bg-[var(--surface-control-hover)] hover:text-text-primary'"
             :disabled="player.isPauseLocked && !player.isPaused"
             @click="player.togglePause"
@@ -103,7 +108,7 @@
             <span v-else class="material-symbols-outlined text-[28px]" style="font-variation-settings: 'FILL' 1;">pause</span>
           </button>
           <button
-            class="flex h-12 w-12 items-center justify-center rounded-full text-text-secondary transition-all hover:bg-[var(--surface-control-hover)] hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-35"
+            class="flex h-12 w-12 items-center justify-center rounded-full text-text-secondary transition-all hover:bg-[var(--surface-control-hover)] hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
             :disabled="player.isSkipLocked || !player.canOperate"
             @click="player.playNext"
             :aria-label="t('player.next')"
@@ -112,7 +117,7 @@
             <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">skip_next</span>
           </button>
           <button
-            class="flex h-11 w-11 items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-control-hover)] hover:text-primary"
+            class="flex h-11 w-11 items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-control-hover)] hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
             :class="isLiked ? 'text-primary' : 'text-text-muted'"
             @click="toggleLike"
             :aria-label="isLiked ? t('player.unlike') : t('player.like')"
@@ -121,7 +126,7 @@
             <span class="material-symbols-outlined text-[20px]" :style="isLiked ? `font-variation-settings: 'FILL' 1;` : ''">favorite</span>
           </button>
           <button
-            class="flex h-11 w-11 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-[var(--surface-control-hover)] hover:text-primary"
+            class="flex h-11 w-11 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-[var(--surface-control-hover)] hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
             @click="saveCurrentToPersonalPlaylist"
             :aria-label="t('personalPlaylists.saveSong')"
             :title="t('personalPlaylists.saveSong')"
@@ -136,8 +141,6 @@
             <div class="min-w-0 text-left">
               <div class="font-micro text-micro uppercase leading-none text-text-muted">{{ t('player.nowPlayingIn') }}</div>
               <div class="mt-1 flex items-center gap-1.5 truncate leading-none">
-                <span class="font-compact text-compact font-semibold text-text-primary">{{ roomName }}</span>
-                <span class="text-text-muted">·</span>
                 <span class="font-compact text-compact font-bold text-primary tabular-nums">{{ activeUserCount }}</span>
                 <span class="font-micro text-micro text-text-secondary uppercase">{{ t('settings.active') }}</span>
               </div>
@@ -166,7 +169,7 @@
                   @pointercancel="hideVolumeValueSoon"
                 />
                 <span
-                  class="pointer-events-none absolute top-full mt-1 rounded-md border border-border-subtle bg-surface-panel px-1.5 py-0.5 font-mono text-[10px] font-bold tabular-nums text-text-muted shadow-lg transition-opacity duration-150"
+                  class="pointer-events-none absolute top-full mt-1 rounded-md border border-border-subtle bg-surface-panel px-1.5 py-0.5 font-mono text-[10px] font-bold tabular-nums text-text-muted shadow-lg transition-[left,opacity] duration-75"
                   :style="{ left: `calc(${Math.round(uiStore.volume * 100)}% - 16px)` }"
                   :class="volumeValueVisible ? 'opacity-100' : 'opacity-0'"
                 >
@@ -323,6 +326,14 @@ watch(trackTitle, async () => {
 <style scoped>
 .lounge-volume {
   accent-color: var(--accent);
+}
+
+.lounge-volume::-webkit-slider-runnable-track {
+  background: var(--volume-track);
+}
+
+.lounge-volume::-moz-range-track {
+  background: var(--volume-track);
 }
 
 .now-playing-cover {

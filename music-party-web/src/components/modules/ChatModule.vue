@@ -4,7 +4,7 @@
         class="flex h-11 select-none items-center justify-between border-b border-border-subtle bg-[var(--surface-control)] px-3"
     >
       <div class="flex items-center gap-2 text-xs font-semibold tracking-[0.12em] text-[var(--text-secondary)]">
-        <MessageSquare class="w-3.5 h-3.5 text-[var(--accent)]" />
+        <span class="material-symbols-outlined text-[14px] text-[var(--accent)]" style="font-variation-settings:'FILL' 0,'wght' 300">chat</span>
         {{ t('chat.title') }}
       </div>
     </div>
@@ -30,11 +30,11 @@
         class="chat-scroll flex-1 space-y-4 overflow-y-auto bg-transparent px-3 py-3"
     >
       <div v-if="chatStore.isLoadingMore" class="flex justify-center py-2">
-        <Loader2 class="w-4 h-4 animate-spin text-[var(--accent)]/60" />
+        <div class="h-4 w-4 animate-spin rounded-full border-2 border-[var(--surface-control-active)] border-t-[var(--accent)]" />
       </div>
 
       <div v-if="processedMessages.length === 0" class="flex flex-col items-center gap-2 py-8 text-center">
-        <MessageSquare class="h-5 w-5 text-[var(--text-tertiary)] opacity-50" aria-hidden="true" />
+        <span class="material-symbols-outlined text-[20px] text-[var(--text-tertiary)] opacity-50" aria-hidden="true" style="font-variation-settings:'FILL' 0,'wght' 300">chat</span>
         <span class="text-xs text-[var(--text-tertiary)]">{{ t('chat.empty') }}</span>
       </div>
 
@@ -60,7 +60,7 @@
         </div>
 
         <div v-else-if="item.msg.type === 'SYSTEM'" class="flex items-start gap-2 px-1 text-xs text-[var(--text-secondary)]/90">
-          <Terminal class="mt-0.5 h-3 w-3 flex-shrink-0 text-[var(--text-tertiary)]" />
+          <span class="material-symbols-outlined mt-0.5 flex-shrink-0 text-[12px] text-[var(--text-tertiary)]" style="font-variation-settings:'FILL' 0,'wght' 300">terminal</span>
           <span class="select-text break-all font-sans text-xs leading-relaxed">
             {{ item.msg.content }}
           </span>
@@ -68,7 +68,7 @@
 
         <div v-else-if="item.msg.type === 'LIKE'" class="my-1 flex justify-center">
           <div class="flex items-center gap-1.5 rounded-full border border-[var(--border-default)] bg-[var(--accent-subtle)] px-3 py-1 text-xs font-semibold text-[var(--accent)]">
-            <Zap class="h-3 w-3 fill-current" />
+            <span class="material-symbols-outlined text-[12px]" style="font-variation-settings:'FILL' 1,'wght' 400">bolt</span>
             <span>{{ item.msg.content }}</span>
           </div>
         </div>
@@ -95,7 +95,7 @@
           class="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl bg-[var(--accent)] px-3 text-[var(--text-inverse)] transition-colors hover:bg-[var(--accent-hover)] active:scale-[0.96]"
           :aria-label="t('chat.send')"
       >
-        <Send class="h-4 w-4" />
+        <span class="material-symbols-outlined text-[18px]" style="font-variation-settings:'FILL' 1,'wght' 400">send</span>
       </button>
     </div>
 
@@ -111,7 +111,6 @@ import { useI18n } from 'vue-i18n';
 import { useChatStore } from '../../stores/chat';
 import { useUserStore } from '../../stores/user';
 import { useChatViewModel } from '../../composables/useChatViewModel';
-import { MessageSquare, Send, Terminal, Zap, Loader2 } from 'lucide-vue-next';
 
 const chatStore = useChatStore();
 const userStore = useUserStore();

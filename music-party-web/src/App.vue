@@ -173,7 +173,6 @@
     <!-- 4. 全局弹窗 -->
     <SearchModal v-if="!isMobileLayout" :isOpen="showSearch" @close="showSearch = false" />
     <NamePromptModal />
-    <ChatOverlay v-if="showChatOverlay" ref="chatOverlayRef" />
   </div>
 </template>
 
@@ -197,7 +196,6 @@ import AudioEngine from './components/AudioEngine.vue';
 import AuthOverlay from './components/AuthOverlay.vue';
 import SearchModal from './components/SearchModal.vue';
 import NamePromptModal from './components/NamePromptModal.vue';
-import ChatOverlay from './components/ChatOverlay.vue';
 import ToastNotification from './components/ToastNotification.vue';
 import PrivateRoomAccessDialog from './components/PrivateRoomAccessDialog.vue';
 import MobileLayout from './components/mobile/MobileLayout.vue';
@@ -231,7 +229,6 @@ const roomForm = ref({
   keepExistingPassword: true
 });
 const toastInstance = ref(null);
-const chatOverlayRef = ref(null);
 const { register } = useToast();
 
 useShortcuts({
@@ -244,12 +241,6 @@ useShortcuts({
 const { width } = useWindowSize();
 const isMobileLayout = computed(() => uiStore.forceMobileLayout || width.value < 768);
 const usePreviewShell = computed(() => uiStore.forceMobileLayout && width.value >= 768);
-
-const showChatOverlay = computed(() =>
-  hasStarted.value &&
-  !isMobileLayout.value &&
-  !layoutStore.placedModuleIds.includes('chat')
-);
 
 const setAppViewportHeight = () => {
   const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
@@ -450,15 +441,7 @@ const handleSearchClick = () => {
 };
 
 const handleMobileChat = () => {
-  if (!userStore.hasDisplayName) {
-    userStore.setPostNameAction(() => {
-      chatOverlayRef.value?.toggleChat?.();
-    });
-    userStore.showNameModal = true;
-    return;
-  }
-
-  chatOverlayRef.value?.toggleChat?.();
+  // chat is a layout module on desktop; no overlay needed
 };
 
 onMounted(() => {

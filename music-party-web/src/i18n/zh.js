@@ -299,7 +299,7 @@ export default {
     waiting: '等待播放',
     waitingFirstTrack: '等待第一首歌曲',
     waitingFirstTrackHint: '下一首歌曲会显示在这里。',
-    nowPlayingIn: '当前所在房间',
+    nowPlayingIn: '正在播放',
     requestedByShort: '点歌',
     listenersShort: '收听'
   },
