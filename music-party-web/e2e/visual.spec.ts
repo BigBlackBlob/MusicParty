@@ -78,7 +78,7 @@ test.describe('visual baselines', () => {
       maxDiffPixels: 2,
     })
 
-    await page.getByRole('button', { name: /进入 Lounge/ }).click()
+    await page.getByRole('button', { name: /Enter Lounge|进入 Lounge/ }).click()
     await expect(page.getByRole('button', { name: /Settings|设置/ })).toBeVisible({ timeout: 15_000 })
     await expect(page).toHaveScreenshot('desktop-main-1440x900.png', {
       animations: 'disabled', caret: 'hide', fullPage: true,
@@ -133,7 +133,7 @@ test.describe('visual baselines', () => {
   test('mobile now playing and settings retain their visual structure', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
     await loginAsAdmin(page)
-    await page.getByRole('button', { name: /进入 Lounge/ }).click()
+    await page.getByRole('button', { name: /Enter Lounge|进入 Lounge/ }).click()
     const settingsButton = page.getByRole('button', { name: /Settings|设置/ })
     await expect(settingsButton).toBeVisible({ timeout: 15_000 })
     await hidePlaybackStateGlyph(page)

@@ -119,7 +119,7 @@ async function enterRoom(page: Page, name: string, create = false): Promise<void
   await page.getByText(name, { exact: true }).click()
   const searchButton = page.getByRole('button', { name: /Search and add|搜索并添加/ })
   if (!await searchButton.isVisible().catch(() => false)) {
-    await page.getByRole('button', { name: new RegExp(`进入 ${name}`) }).click()
+    await page.getByRole('button', { name: new RegExp(`(Enter|进入) ${name}`) }).click()
   }
   await expect(searchButton).toBeVisible({ timeout: 15_000 })
   await expect.poll(() => storeQueue(page).then(() => true).catch(() => false)).toBe(true)

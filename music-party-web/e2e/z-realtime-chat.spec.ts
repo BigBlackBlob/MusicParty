@@ -7,7 +7,7 @@ async function enterAsGuest(page: Page, name: string): Promise<void> {
   await page.getByRole('button', { name: '以访客身份进入' }).click()
   await page.getByLabel('昵称').fill(name)
   await page.getByRole('button', { name: '立即进入' }).click()
-  await page.getByRole('button', { name: /进入 Lounge/ }).click()
+  await page.getByRole('button', { name: /Enter Lounge|进入 Lounge/ }).click()
   await expect(page.getByRole('button', { name: /Chat|聊天/ })).toBeVisible({ timeout: 15_000 })
 }
 

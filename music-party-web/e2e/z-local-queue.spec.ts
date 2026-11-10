@@ -49,7 +49,7 @@ async function createRoom(page: Page, name: string): Promise<void> {
   await page.getByText(name, { exact: true }).click()
   const searchButton = page.getByRole('button', { name: /Search and add|搜索并添加/ })
   if (!await searchButton.isVisible().catch(() => false)) {
-    await page.getByRole('button', { name: new RegExp(`进入 ${name}`) }).click()
+    await page.getByRole('button', { name: new RegExp(`(Enter|进入) ${name}`) }).click()
   }
   await expect(searchButton).toBeVisible({ timeout: 15_000 })
 }
@@ -60,7 +60,7 @@ async function loginAndEnterLounge(page: Page): Promise<void> {
   await page.getByLabel('管理员账号').fill(adminUsername)
   await page.getByLabel('管理员密码').fill(adminPassword)
   await page.getByRole('button', { name: '平台管理员登录' }).click()
-  await page.getByRole('button', { name: /进入 Lounge/ }).click()
+  await page.getByRole('button', { name: /Enter Lounge|进入 Lounge/ }).click()
   await expect(page.getByRole('button', { name: /Search and add|搜索并添加/ })).toBeVisible({ timeout: 15_000 })
 }
 
@@ -223,7 +223,7 @@ test('playback like settles through the server and remains after reload', async 
   }, title)).toBe(true)
 
   await page.reload()
-  await page.getByRole('button', { name: new RegExp(`进入 ${roomName}`) }).click()
+  await page.getByRole('button', { name: new RegExp(`(Enter|进入) ${roomName}`) }).click()
   await expect(page.getByRole('button', { name: /Settings|设置/ })).toBeVisible({ timeout: 15_000 })
   const restoredHeart = page.getByRole('button', { name: /^(Remove from liked|取消喜欢)$/ })
   await expect(restoredHeart).toBeVisible({ timeout: 15_000 })
