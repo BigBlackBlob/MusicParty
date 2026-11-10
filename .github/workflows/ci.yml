@@ -47,6 +47,36 @@ env:
   LEGACY_GHCR_ALIAS_ENABLED: 'true'
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.detect.outputs.backend }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Detect backend file changes
+        id: detect
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            changed=$(git diff --name-only "$base" HEAD)
+          else
+            changed=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
+          fi
+          echo "Changed files: $changed"
+          # Treat empty diff (e.g. force-push of same tree) as backend to be safe
+          if [[ -z "$changed" ]] || echo "$changed" | grep -qE '^(backend-go/|contracts/|Dockerfile|docker-compose|\.dockerignore|\.github/workflows/)'; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "backend=false" >> "$GITHUB_OUTPUT"
+          fi
+
   contracts:
     runs-on: ubuntu-latest
     steps:
@@ -90,6 +120,8 @@ jobs:
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
 
   go-race:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -133,6 +165,8 @@ jobs:
         run: pnpm audit --audit-level=moderate --registry=https://registry.npmjs.org
 
   browser-e2e:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -234,7 +268,14 @@ jobs:
           if-no-files-found: ignore
 
   container:
-    needs: [contracts, go, go-race, frontend, browser-e2e]
+    needs: [changes, contracts, go, go-race, frontend, browser-e2e]
+    if: |
+      !failure() &&
+      needs.contracts.result == 'success' &&
+      needs.go.result == 'success' &&
+      needs.frontend.result == 'success' &&
+      (needs.go-race.result == 'success' || needs.go-race.result == 'skipped') &&
+      (needs.browser-e2e.result == 'success' || needs.browser-e2e.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

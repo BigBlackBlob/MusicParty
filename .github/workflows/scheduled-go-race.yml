@@ -1,0 +1,34 @@
+name: Weekly Race Detector
+
+on:
+  schedule:
+    # Every Monday at 03:00 UTC
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: weekly-race-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: '1.27.3'
+
+jobs:
+  go-race:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend-go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: backend-go/go.sum
+      - name: Race detector (full suite)
+        env:
+          CGO_ENABLED: '1'
+        run: go test -race -count=1 ./...
