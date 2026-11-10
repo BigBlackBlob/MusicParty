@@ -11,7 +11,7 @@ async function enterAsGuest(page: Page, name = 'E2E Guest') {
   await page.getByLabel('昵称').fill(name)
   await page.getByRole('button', { name: '立即进入' }).click()
   await expect(page.getByRole('heading', { name: '欢迎来到 MusicParty' })).toBeHidden()
-  await expect(page.getByText('MUSIC PARTY', { exact: true })).toBeVisible()
+  await expect(page.locator('.brand-lockup').first()).toBeVisible()
 }
 
 async function loginAsAdmin(page: Page) {
@@ -43,7 +43,7 @@ test.describe('Go-first entry and room flow', () => {
     expect(Object.keys(storage)).not.toContain('mp_account_username')
 
     await page.reload()
-    await expect(page.getByText('MUSIC PARTY', { exact: true })).toBeVisible()
+    await expect(page.locator('.brand-lockup').first()).toBeVisible()
     await expect(page.getByLabel('昵称')).toBeHidden()
   })
 
