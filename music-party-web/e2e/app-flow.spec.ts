@@ -77,15 +77,15 @@ test.describe('Go-first entry and room flow', () => {
 
     await expect(guestPage.getByRole('dialog', { name: /加入私有房间|Join private room/ })).toBeVisible()
     await guestPage.getByLabel(/Room password|房间密码/).fill('wrong-password')
-    await guestPage.getByRole('button', { name: /Verify and enter|进入房间/ }).click()
+    await guestPage.getByRole('button', { name: /Verify and enter|验证并进入|进入房间/ }).click()
     const accessDialog = guestPage.getByRole('dialog')
     await expect(accessDialog.getByRole('alert')).toHaveText(/Invalid room password|密码/)
     await expect(accessDialog).toBeVisible()
 
     await guestPage.getByLabel(/Room password|房间密码/).fill(password)
-    await guestPage.getByRole('button', { name: /Verify and enter|进入房间/ }).click()
+    await guestPage.getByRole('button', { name: /Verify and enter|验证并进入|进入房间/ }).click()
     await expect(guestPage.getByRole('dialog')).toBeHidden()
-    await expect(guestPage.getByRole('button', { name: `进入 ${roomName}` })).toBeVisible()
+    await expect(guestPage.getByRole('button', { name: new RegExp(`(Enter|进入) ${roomName}`) })).toBeVisible()
     await guestContext.close()
   })
 
@@ -112,7 +112,7 @@ test.describe('mobile flow', () => {
 
   test('administrator can reach room settings without horizontal overflow', async ({ page }) => {
     await loginAsAdmin(page)
-    await page.getByRole('button', { name: /进入 Lounge/ }).click()
+    await page.getByRole('button', { name: /Enter Lounge|进入 Lounge/ }).click()
     await expect(page.getByRole('button', { name: /Settings|设置/ })).toBeVisible({ timeout: 15_000 })
     await page.getByRole('button', { name: /Settings|设置/ }).click()
 
