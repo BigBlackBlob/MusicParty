@@ -71,7 +71,7 @@ jobs:
           fi
           echo "Changed files: $changed"
           # Treat empty diff (e.g. force-push of same tree) as backend to be safe
-          if [[ -z "$changed" ]] || echo "$changed" | grep -qE '^(backend-go/|contracts/|Dockerfile|docker-compose|\.dockerignore|\.github/workflows/)'; then
+          if [[ -z "$changed" ]] || echo "$changed" | grep -qE '^(backend-go/|contracts/|Dockerfile|docker-compose|\.dockerignore|\.github/workflows/|music-party-web/e2e/)'; then
             echo "backend=true" >> "$GITHUB_OUTPUT"
           else
             echo "backend=false" >> "$GITHUB_OUTPUT"
