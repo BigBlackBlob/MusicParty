@@ -406,7 +406,6 @@
             "isShuffleLocked",
             "isSkipLocked",
             "playEpoch",
-            "queue",
             "queueVersion",
             "serverTimestamp",
             "stateVersion"

@@ -83,3 +83,24 @@ describe('RealtimeClient decoded message dispatch', () => {
     vi.useRealTimers()
   })
 })
+
+
+describe('room access revocation', () => {
+  it('stops reconnecting on 4403 and requires a new explicit connection', () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const client = new RealtimeClient()
+    const rejected = vi.fn()
+    client.connect({ 'room-id': 'private' }, { onRoomAccessRejected: rejected })
+    const socket = client.client as unknown as FakeWebSocket
+    socket.onclose?.(new CloseEvent('close', { code: 4403, reason: 'Room access changed' }))
+    expect(client.state).toBe('room-access-rejected')
+    expect(rejected).toHaveBeenCalledOnce()
+    expect(client.reconnectTimer).toBeNull()
+    window.dispatchEvent(new Event('online'))
+    vi.advanceTimersByTime(20_000)
+    expect(client.client).toBe(socket)
+    client.disconnect()
+    vi.useRealTimers()
+  })
+})

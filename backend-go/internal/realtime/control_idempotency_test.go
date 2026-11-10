@@ -100,7 +100,7 @@ func TestControlMutationConcurrentTTLAndCapacity(t *testing.T) {
 		require.Equal(t, int64(1), result.Committed.StateVersion)
 	}
 	require.Equal(t, 1, executions)
-	for i := 1; i < controlMutationCapacity; i++ {
+	for i := 1; i < 64; i++ {
 		m.MutationID = fmt.Sprint(i)
 		_, err := r.ToggleShuffle(ctx, m)
 		require.NoError(t, err)
@@ -108,11 +108,13 @@ func TestControlMutationConcurrentTTLAndCapacity(t *testing.T) {
 	m.MutationID = "overflow"
 	_, err := r.ToggleShuffle(ctx, m)
 	require.ErrorIs(t, err, ErrMutationCapacity)
+	_, err = r.ToggleShuffle(ctx, ControlMutation{ScopeID: r.controlScope, ActorID: "other-user", MutationID: "still-admitted"})
+	require.NoError(t, err, "one actor cannot consume another actor's budget")
 	m.MutationID = "same"
 	replay, err := r.ToggleShuffle(ctx, m)
 	require.NoError(t, err)
 	require.True(t, replay.Replayed)
-	_, err = r.Execute(ctx, func(runtime *RoomRuntime) (any, error) {
+	_, err = r.Execute(ctx, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
 		key := controlKey{actor: "user", mutation: "same"}
 		record := runtime.controlMutations[key]
 		record.expires = time.Now().Add(-time.Second)
@@ -125,29 +127,23 @@ func TestControlMutationConcurrentTTLAndCapacity(t *testing.T) {
 	require.False(t, result.Replayed)
 }
 
-func TestControlMutationUnknownIsReservedUntilScopeEnds(t *testing.T) {
+func TestFailedControlMutationIsRetryableAndDoesNotReserveCapacity(t *testing.T) {
 	r := controlTestRuntime(t)
 	ctx := context.Background()
-	m := ControlMutation{ScopeID: r.controlScope, ActorID: "user", MutationID: "unknown"}
+	m := ControlMutation{ScopeID: r.controlScope, ActorID: "user", MutationID: "failed"}
 	calls := 0
-	apply := func(*RoomRuntime) (any, error) { calls++; return nil, errors.New("uncertain commit") }
-	_, err := r.executeControl(ctx, "control.next", 0, nil, []ControlMutation{m}, apply)
-	require.Error(t, err)
-	_, err = r.Execute(ctx, func(runtime *RoomRuntime) (any, error) {
-		key := controlKey{actor: "user", mutation: "unknown"}
-		record := runtime.controlMutations[key]
-		record.expires = time.Now().Add(-time.Hour)
-		runtime.controlMutations[key] = record
+	failure := errors.New("transaction rolled back")
+	apply := func(*RoomRuntime, context.Context) (any, error) { calls++; return nil, failure }
+	for range 300 {
+		_, err := r.executeControl(ctx, "control.next", 0, nil, []ControlMutation{m}, apply)
+		require.ErrorIs(t, err, failure)
+	}
+	require.Equal(t, 300, calls)
+	_, err := r.Execute(ctx, func(runtime *RoomRuntime, _ context.Context) (any, error) {
+		require.Empty(t, runtime.controlMutations)
 		return nil, nil
 	})
 	require.NoError(t, err)
-	_, err = r.executeControl(ctx, "control.next", 0, nil, []ControlMutation{m}, apply)
-	require.ErrorIs(t, err, ErrMutationUnknown)
-	require.Equal(t, 1, calls)
-	other := controlTestRuntime(t)
-	require.NotEqual(t, r.controlScope, other.controlScope)
-	_, err = other.Next(ctx, m)
-	require.ErrorIs(t, err, ErrMutationScope)
 }
 
 func TestControlMutationPauseAndNextExecuteOnce(t *testing.T) {
@@ -161,7 +157,7 @@ func TestControlMutationPauseAndNextExecuteOnce(t *testing.T) {
 	first, err := r.TogglePause(ctx, m)
 	require.NoError(t, err)
 	var expiry time.Time
-	_, err = r.Execute(ctx, func(runtime *RoomRuntime) (any, error) {
+	_, err = r.Execute(ctx, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
 		expiry = runtime.controlMutations[controlKey{actor: "user", mutation: "pause"}].expires
 		return nil, nil
 	})
@@ -170,7 +166,7 @@ func TestControlMutationPauseAndNextExecuteOnce(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, replayed.Replayed)
 	require.Equal(t, first.Committed, replayed.Committed)
-	_, err = r.Execute(ctx, func(runtime *RoomRuntime) (any, error) {
+	_, err = r.Execute(ctx, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
 		require.True(t, runtime.state.Paused)
 		require.Equal(t, expiry, runtime.controlMutations[controlKey{actor: "user", mutation: "pause"}].expires)
 		return nil, nil

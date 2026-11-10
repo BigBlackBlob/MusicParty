@@ -176,6 +176,7 @@ export const useRoomRealtimeCoordinator = defineStore('room-realtime-coordinator
         if (fallbackRoomId && fallbackRoomId !== failedRoomId) setTimeout(() => connect(fallbackRoomId), 100)
       },
       resetSyncGate: synchronizer.resetSyncGate,
+      resetPresence: () => presence.reset(targetRoomId),
       requestPing,
       requestResync,
       requestPresence,

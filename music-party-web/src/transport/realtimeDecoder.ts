@@ -156,8 +156,7 @@ function validPayload(type: ServerEnvelope['type'], payload: unknown): boolean {
       && typeof payload.playEpoch === 'number'
       && typeof payload.serverTimestamp === 'number'
       && typeof payload.historyCursor === 'number'
-      && Array.isArray(payload.queue)
-      && payload.queue.every(isQueueItem)
+      && (payload.queue === undefined || (Array.isArray(payload.queue) && payload.queue.every(isQueueItem)))
       && (payload.nowPlaying === undefined || payload.nowPlaying === null || isNowPlaying(payload.nowPlaying))
       && ['isLoading', 'isPauseLocked', 'isPaused', 'isShuffle', 'isShuffleLocked', 'isSkipLocked'].every(key => typeof payload[key] === 'boolean')
       && isOptionalString(payload.queueEpoch)

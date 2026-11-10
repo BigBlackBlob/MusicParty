@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -18,9 +19,10 @@ import (
 var coalescible = map[string]struct{}{"player.state": {}, "player.queue": {}, "users.online": {}, "rooms.list": {}, "player.progress": {}}
 
 type Message struct {
-	Type   string
-	RoomID any
-	Data   []byte
+	Type     string
+	RoomID   any
+	Data     []byte
+	reliable bool
 }
 
 type Client struct {
@@ -56,20 +58,35 @@ func (c *Client) UpdateIdentity(session account.Session) {
 	c.mu.Unlock()
 }
 
-func (c *Client) Send(kind, roomID string, payload any) error {
+func encodeEnvelope(kind, roomID string, payload any) ([]byte, error) {
 	var envelopeRoom any
 	if roomID != "" {
 		envelopeRoom = roomID
 	}
-	encoded, err := json.Marshal(Envelope{Type: kind, RoomID: envelopeRoom, Payload: payload})
+	return json.Marshal(Envelope{Type: kind, RoomID: envelopeRoom, Payload: payload})
+}
+func (c *Client) Send(kind, roomID string, payload any) error {
+	encoded, err := encodeEnvelope(kind, roomID, payload)
 	if err != nil {
 		return err
 	}
+	// Initialization and resync baselines must survive compact state coalescing.
+	state, _ := payload.(map[string]any)
+	_, fullState := state["queue"]
+	return c.enqueue(Message{Type: kind, RoomID: roomID, Data: encoded, reliable: kind == "player.state" && fullState})
+}
+func (c *Client) enqueue(message Message) error {
 	c.mu.Lock()
-	if _, ok := coalescible[kind]; ok {
+	select {
+	case <-c.closed:
+		c.mu.Unlock()
+		return errors.New("websocket client is closed")
+	default:
+	}
+	if _, ok := coalescible[message.Type]; ok && !message.reliable {
 		for index := range c.queue {
-			if c.queue[index].Type == kind {
-				c.queue[index] = Message{kind, roomID, encoded}
+			if c.queue[index].Type == message.Type && !c.queue[index].reliable {
+				c.queue[index] = message
 				c.mu.Unlock()
 				c.signal()
 				return nil
@@ -81,7 +98,7 @@ func (c *Client) Send(kind, roomID string, payload any) error {
 		c.Close(websocket.StatusPolicyViolation, "WebSocket client queue is full")
 		return errors.New("websocket client queue is full")
 	}
-	c.queue = append(c.queue, Message{kind, roomID, encoded})
+	c.queue = append(c.queue, message)
 	c.mu.Unlock()
 	c.signal()
 	return nil
@@ -97,7 +114,7 @@ func (c *Client) Direct(envelope Envelope) error {
 		c.Close(websocket.StatusPolicyViolation, "WebSocket client queue is full")
 		return errors.New("websocket client queue is full")
 	}
-	c.queue = append(c.queue, Message{envelope.Type, envelope.RoomID, encoded})
+	c.queue = append(c.queue, Message{Type: envelope.Type, RoomID: envelope.RoomID, Data: encoded, reliable: true})
 	c.mu.Unlock()
 	c.signal()
 	return nil
@@ -147,9 +164,21 @@ func (c *Client) Close(status websocket.StatusCode, reason string) {
 	c.closeOnce.Do(func() {
 		close(c.closed)
 		if c.conn != nil {
-			_ = c.conn.Close(status, reason)
+			// A close handshake may wait on the peer. Never block the room actor
+			// or delay invalidation of the remaining clients on that wait.
+			go func() { _ = c.conn.Close(status, reason) }()
 		}
 	})
+}
+
+// Closed reports revocation immediately, before the transport handshake ends.
+func (c *Client) Closed() bool {
+	select {
+	case <-c.closed:
+		return true
+	default:
+		return false
+	}
 }
 
 type Hub struct {
@@ -158,6 +187,7 @@ type Hub struct {
 	rooms             map[string]map[string]*Client
 	presenceRevisions map[string]uint64
 	capacity          int
+	closed            bool
 }
 
 func NewHub(capacity int) *Hub {
@@ -176,6 +206,11 @@ func (h *Hub) RegisterSession(conn *websocket.Conn, roomID string, session accou
 func (h *Hub) register(conn *websocket.Conn, roomID string, session account.Session, sessionFingerprint string) *Client {
 	client := newClient(conn, roomID, session, h.capacity, sessionFingerprint)
 	h.mu.Lock()
+	if h.closed {
+		h.mu.Unlock()
+		client.Close(websocket.StatusGoingAway, "server shutdown")
+		return client
+	}
 	h.clients[client.ID] = client
 	if h.rooms[roomID] == nil {
 		h.rooms[roomID] = map[string]*Client{}
@@ -224,6 +259,34 @@ func (h *Hub) CloseRoom(roomID string) {
 	h.mu.Unlock()
 	for _, client := range clients {
 		client.Close(websocket.StatusPolicyViolation, "Room deleted")
+	}
+}
+
+// CloseRoomWhere removes affected connections and publishes one presence revision.
+func (h *Hub) CloseRoomWhere(roomID, reason string, drop func(account.Session) bool) {
+	h.mu.Lock()
+	var closing []*Client
+	for id, client := range h.rooms[roomID] {
+		if drop(client.SessionSnapshot()) {
+			closing = append(closing, client)
+			delete(h.rooms[roomID], id)
+			delete(h.clients, id)
+		}
+	}
+	if len(h.rooms[roomID]) == 0 {
+		delete(h.rooms, roomID)
+	}
+	var snapshot PresenceSnapshot
+	if len(closing) > 0 {
+		h.presenceRevisions[roomID]++
+		snapshot = h.presenceLocked(roomID)
+	}
+	h.mu.Unlock()
+	for _, client := range closing {
+		client.Close(websocket.StatusCode(4403), reason)
+	}
+	if len(closing) > 0 {
+		h.BroadcastRoom(roomID, "users.online", snapshot)
 	}
 }
 
@@ -301,6 +364,12 @@ func (h *Hub) UpdateUserSession(session account.Session) {
 	}
 }
 func (h *Hub) BroadcastRoom(roomID, kind string, payload any) {
+	encoded, err := encodeEnvelope(kind, roomID, payload)
+	if err != nil {
+		slog.Error("encode broadcast", "type", kind, "error", err)
+		return
+	}
+	message := Message{Type: kind, RoomID: roomID, Data: encoded}
 	h.mu.RLock()
 	clients := make([]*Client, 0, len(h.rooms[roomID]))
 	for _, client := range h.rooms[roomID] {
@@ -308,10 +377,16 @@ func (h *Hub) BroadcastRoom(roomID, kind string, payload any) {
 	}
 	h.mu.RUnlock()
 	for _, client := range clients {
-		_ = client.Send(kind, roomID, payload)
+		_ = client.enqueue(message)
 	}
 }
 func (h *Hub) BroadcastAll(kind string, payload any) {
+	encoded, err := encodeEnvelope(kind, "", payload)
+	if err != nil {
+		slog.Error("encode broadcast", "type", kind, "error", err)
+		return
+	}
+	message := Message{Type: kind, RoomID: "", Data: encoded}
 	h.mu.RLock()
 	clients := make([]*Client, 0, len(h.clients))
 	for _, client := range h.clients {
@@ -319,7 +394,7 @@ func (h *Hub) BroadcastAll(kind string, payload any) {
 	}
 	h.mu.RUnlock()
 	for _, client := range clients {
-		_ = client.Send(kind, "", payload)
+		_ = client.enqueue(message)
 	}
 }
 
@@ -354,12 +429,13 @@ func (h *Hub) presenceLocked(roomID string) PresenceSnapshot {
 }
 func (h *Hub) Count() int { h.mu.RLock(); defer h.mu.RUnlock(); return len(h.clients) }
 func (h *Hub) Close() {
-	h.mu.RLock()
+	h.mu.Lock()
+	h.closed = true
 	clients := make([]*Client, 0, len(h.clients))
 	for _, client := range h.clients {
 		clients = append(clients, client)
 	}
-	h.mu.RUnlock()
+	h.mu.Unlock()
 	for _, client := range clients {
 		client.Close(websocket.StatusGoingAway, "server shutdown")
 	}

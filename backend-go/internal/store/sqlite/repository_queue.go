@@ -62,10 +62,8 @@ func (repository *QueueRepository) ReplaceQueue(ctx context.Context, roomID stri
 		if err := RequireActiveRoom(ctx, tx, roomID); err != nil {
 			return err
 		}
-		for _, item := range items {
-			if err := requireLocalTrackNotDeleted(ctx, tx, item.Music.Platform, item.Music.ID); err != nil {
-				return err
-			}
+		if err := requireQueueTracksNotDeleted(ctx, tx, items); err != nil {
+			return err
 		}
 		if _, err := tx.ExecContext(ctx, "delete from room_queue where room_id = ?", roomID); err != nil {
 			return err
@@ -97,10 +95,8 @@ func synchronizeQueueTx(ctx context.Context, tx *sql.Tx, now func() time.Time, r
 	if err := RequireActiveRoom(ctx, tx, roomID); err != nil {
 		return err
 	}
-	for _, item := range items {
-		if err := requireLocalTrackNotDeleted(ctx, tx, item.Music.Platform, item.Music.ID); err != nil {
-			return err
-		}
+	if err := requireQueueTracksNotDeleted(ctx, tx, items); err != nil {
+		return err
 	}
 	existing, err := loadPersistedQueueRows(ctx, tx, roomID)
 	if err != nil {

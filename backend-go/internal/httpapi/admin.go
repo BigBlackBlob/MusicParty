@@ -2,9 +2,7 @@ package httpapi
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
-	"encoding/base64"
 	"errors"
 	"net/http"
 	"strings"
@@ -152,6 +150,10 @@ func (api *AdminAPI) saveSource(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	ctx := context.WithoutCancel(r.Context())
+	secret, err := api.siteSecret(ctx)
+	if err != nil {
+		return err
+	}
 	repository := storesqlite.NewSubsonicSourceRepository(api.store)
 	existing, err := repository.FindByID(ctx, request.ID)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -160,10 +162,6 @@ func (api *AdminAPI) saveSource(w http.ResponseWriter, r *http.Request) error {
 	password := request.Password
 	if password == "" && existing != nil {
 		password = existing.Password
-	}
-	secret, err := api.siteSecret(ctx)
-	if err != nil {
-		return err
 	}
 	password, err = securitycompat.EncryptSubsonicCredential(password, secret)
 	if err != nil {
@@ -266,14 +264,14 @@ func (api *AdminAPI) testSource(w http.ResponseWriter, r *http.Request) error {
 	if !api.admin(r) {
 		return accessDenied(w)
 	}
+	secret, err := api.siteSecret(r.Context())
+	if err != nil {
+		return err
+	}
 	repository := storesqlite.NewSubsonicSourceRepository(api.store)
 	source, err := repository.FindByID(r.Context(), request.ID)
 	if err != nil {
 		return badRequest("Source not found")
-	}
-	secret, err := api.siteSecret(r.Context())
-	if err != nil {
-		return err
 	}
 	password, err := securitycompat.DecryptSubsonicCredential(source.Password, secret)
 	if err != nil {
@@ -338,23 +336,7 @@ func (api *AdminAPI) updateNavidrome(w http.ResponseWriter, r *http.Request, gra
 	return nil
 }
 func (api *AdminAPI) siteSecret(ctx context.Context) (string, error) {
-	repository := storesqlite.NewSiteSettingRepository(api.store)
-	value, err := repository.FindValue(ctx, "security.site-secret.v1")
-	if err == nil {
-		if value == nil || *value == "" {
-			return "", errors.New("existing site secret is empty; repair the setting before saving credentials")
-		}
-		return *value, nil
-	}
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return "", err
-	}
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
-	}
-	secret := base64.StdEncoding.EncodeToString(bytes)
-	return repository.InitializeSecret(ctx, "security.site-secret.v1", secret, time.Now().UnixMilli())
+	return api.store.CredentialKey(ctx)
 }
 func accessDenied(w http.ResponseWriter) error {
 	writeErrorJSON(w, 403, map[string]string{"message": "ACCESS DENIED"})

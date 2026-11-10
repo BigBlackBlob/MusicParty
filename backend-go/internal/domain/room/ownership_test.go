@@ -42,6 +42,34 @@ type ownershipFixture struct {
 	roomID  string
 }
 
+func TestAccessChangesNotifyOnlyAfterCommit(t *testing.T) {
+	f := seedOwnership(t)
+	ctx := context.Background()
+	var changes []AccessChange
+	f.service.SetAccessChangedHook(func(change AccessChange) {
+		metadata, err := f.service.Access(ctx, change.RoomID)
+		require.NoError(t, err)
+		if change.RevokedPublicID == "" {
+			require.True(t, metadata.Private)
+			require.Greater(t, metadata.PasswordVersion, 0)
+		}
+		changes = append(changes, change)
+	})
+	private := true
+	_, err := f.service.UpdateDetails(ctx, f.roomID, f.owner.SessionToken, UpdateInput{Name: "Private room", Private: &private, Password: "new-password"})
+	require.NoError(t, err)
+	require.Equal(t, []AccessChange{{RoomID: f.roomID, Owner: f.owner.PublicID}}, changes)
+	_, err = f.service.Update(ctx, f.roomID, f.owner.SessionToken, "Renamed")
+	require.NoError(t, err)
+	require.Len(t, changes, 1, "renaming does not revoke room admission")
+	_, err = f.service.RemoveMember(ctx, f.roomID, f.member.PublicID, f.member.SessionToken)
+	require.Error(t, err)
+	require.Len(t, changes, 1, "failed writes cannot invalidate connections")
+	_, err = f.service.RemoveMember(ctx, f.roomID, f.member.PublicID, f.admin.SessionToken)
+	require.NoError(t, err)
+	require.Equal(t, AccessChange{RoomID: f.roomID, RevokedPublicID: f.member.PublicID}, changes[1])
+}
+
 func (f ownershipFixture) roomOwner(t *testing.T) string {
 	t.Helper()
 	var owner string

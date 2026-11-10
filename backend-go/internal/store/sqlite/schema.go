@@ -10,8 +10,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 type SchemaSnapshot struct {
@@ -102,9 +104,17 @@ func ValidateSchemaCompatibility(required, actual SchemaSnapshot) []SchemaDiffer
 		actualTables[table.Name] = table
 	}
 	requiredExplicitIndexes := map[string]struct{}{}
+	requiredIndexSQL := map[string]string{}
+	actualIndexSQL := map[string]string{}
+	for _, object := range actual.Objects {
+		if object.Type == "index" {
+			actualIndexSQL[object.Name] = object.SQL
+		}
+	}
 	for _, object := range required.Objects {
 		if object.Type == "index" {
 			requiredExplicitIndexes[object.Name] = struct{}{}
+			requiredIndexSQL[object.Name] = object.SQL
 		}
 		if object.Type == "view" || object.Type == "trigger" {
 			if !hasSchemaObject(actual.Objects, object.Type, object.Name) {
@@ -147,6 +157,18 @@ func ValidateSchemaCompatibility(required, actual SchemaSnapshot) []SchemaDiffer
 		}
 		for _, requiredIndex := range requiredTable.Indexes {
 			if _, explicit := requiredExplicitIndexes[requiredIndex.Name]; !explicit {
+				if requiredIndex.Unique && requiredIndex.Origin != "pk" {
+					found := false
+					for _, candidate := range actualTable.Indexes {
+						if candidate.Unique && !candidate.Partial && equalIndexKeyColumns(requiredIndex.Columns, candidate.Columns) {
+							found = true
+							break
+						}
+					}
+					if !found {
+						differences = append(differences, SchemaDifference{Path: "table." + requiredTable.Name + ".unique." + requiredIndex.Name, Issue: "missing required unique constraint"})
+					}
+				}
 				continue
 			}
 			actualIndex, ok := actualIndexes[requiredIndex.Name]
@@ -157,6 +179,9 @@ func ValidateSchemaCompatibility(required, actual SchemaSnapshot) []SchemaDiffer
 			}
 			if requiredIndex.Unique != actualIndex.Unique || requiredIndex.Partial != actualIndex.Partial {
 				differences = append(differences, SchemaDifference{Path: path, Issue: "unique or partial-index flags differ"})
+			}
+			if requiredIndex.Partial && indexPredicate(requiredIndexSQL[requiredIndex.Name]) != indexPredicate(actualIndexSQL[requiredIndex.Name]) {
+				differences = append(differences, SchemaDifference{Path: path, Issue: "partial-index predicate differs"})
 			}
 			if !equalIndexKeyColumns(requiredIndex.Columns, actualIndex.Columns) {
 				differences = append(differences, SchemaDifference{Path: path, Issue: "indexed columns, collation, or direction differ"})
@@ -392,4 +417,47 @@ func inspectTable(ctx context.Context, database *sql.DB, name string) (SchemaTab
 
 func quoteIdentifier(value string) string {
 	return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
+}
+
+var whereToken = regexp.MustCompile(`(?i)\bwhere\b`)
+
+// Preserve quoted values while ignoring formatting and keyword case.
+func indexPredicate(sql string) string {
+	where := whereToken.FindStringIndex(sql)
+	if where == nil {
+		return ""
+	}
+	var out strings.Builder
+	var quote rune
+	var previous rune
+	space := false
+	isWord := func(char rune) bool {
+		return unicode.IsLetter(char) || unicode.IsDigit(char) || char == '_' || char == '$'
+	}
+	for _, char := range strings.TrimSuffix(strings.TrimSpace(sql[where[1]:]), ";") {
+		if quote != 0 {
+			out.WriteRune(char)
+			if char == quote {
+				quote = 0
+			}
+			previous = char
+			continue
+		}
+		if unicode.IsSpace(char) {
+			space = true
+			continue
+		}
+		if space && isWord(previous) && isWord(char) {
+			out.WriteByte(' ')
+		}
+		space = false
+		if char == '\'' || char == '"' || char == '`' {
+			quote = char
+			out.WriteRune(char)
+		} else if !unicode.IsSpace(char) {
+			out.WriteRune(unicode.ToLower(char))
+		}
+		previous = char
+	}
+	return out.String()
 }

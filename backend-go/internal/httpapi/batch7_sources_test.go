@@ -50,11 +50,13 @@ func TestBatch7FirstSecretInitializationUsesOneKey(t *testing.T) {
 	}
 	close(start)
 	wg.Wait()
-	stored, err := storesqlite.NewSiteSettingRepository(store).FindValue(context.Background(), "security.site-secret.v1")
+	stored, err := api.siteSecret(context.Background())
 	require.NoError(t, err)
+	_, err = storesqlite.NewSiteSettingRepository(store).FindValue(context.Background(), "security.site-secret.v1")
+	require.ErrorIs(t, err, sql.ErrNoRows, "the key must stay outside the database")
 	for range 32 {
 		require.NoError(t, <-errors)
-		require.Equal(t, *stored, <-results)
+		require.Equal(t, stored, <-results)
 	}
 }
 

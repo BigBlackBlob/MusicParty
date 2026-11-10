@@ -162,15 +162,15 @@ func TestControlResultsCarryWatermarksAndPreconditions(t *testing.T) {
 	_, err = runtime.Seek(context.Background(), 1000, session.PublicID, false, &staleEpoch)
 	require.ErrorIs(t, err, ErrPreconditionFailed)
 
-	_, err = runtime.Seek(context.Background(), 1000, "other", false, nil)
-	require.ErrorIs(t, err, ErrSeekForbidden)
+	otherResult, err := runtime.Seek(context.Background(), 1000, "other", false, nil)
+	require.NoError(t, err)
 
-	currentEpoch := result.Committed.PlayEpoch
+	currentEpoch := otherResult.Committed.PlayEpoch
 	result, err = runtime.Seek(context.Background(), 1000, session.PublicID, false, &currentEpoch)
 	require.NoError(t, err)
 	require.True(t, result.Applied)
 	require.NotNil(t, result.Committed)
-	require.EqualValues(t, 2, result.Committed.PlayEpoch)
+	require.EqualValues(t, 3, result.Committed.PlayEpoch)
 
 	result, err = runtime.Like(context.Background(), session.PublicID, nil)
 	require.NoError(t, err)
@@ -195,12 +195,96 @@ func TestControlResultsCarryWatermarksAndPreconditions(t *testing.T) {
 	require.True(t, result.Applied)
 	require.NotNil(t, result.Committed)
 	// advance with an empty queue clears playback without bumping the epoch
-	require.EqualValues(t, 2, result.Committed.PlayEpoch)
+	require.EqualValues(t, 3, result.Committed.PlayEpoch)
 	emptyWatermark := *result.Committed
 	result, err = runtime.Like(context.Background(), session.PublicID, nil)
 	require.NoError(t, err)
 	require.False(t, result.Applied)
 	require.Equal(t, &emptyWatermark, result.Committed)
+}
+
+func TestDJAuthorizationTracksCurrentSongInsideActor(t *testing.T) {
+	r := controlTestRuntime(t)
+	ctx := context.Background()
+	for _, actor := range []string{"first", "second", "second"} {
+		_, err := r.Enqueue(ctx, account.Session{PublicID: actor, Guest: true}, storesqlite.Music{ID: actor, Duration: 60000, Platform: "local"}, "")
+		require.NoError(t, err)
+	}
+	_, err := r.NextAs(ctx, "second", false)
+	require.ErrorIs(t, err, ErrForbidden)
+	_, err = r.NextAs(ctx, "first", false)
+	require.NoError(t, err)
+	_, err = r.NextAs(ctx, "first", false)
+	require.ErrorIs(t, err, ErrForbidden, "the previous DJ loses skip permission when the song changes")
+	_, err = r.NextAs(ctx, "admin", true)
+	require.NoError(t, err)
+}
+
+func TestAdministratorBypassesPlaybackLocks(t *testing.T) {
+	for _, kind := range []string{"pause", "shuffle", "next", "previous"} {
+		t.Run(kind, func(t *testing.T) {
+			r := controlTestRuntime(t)
+			ctx := context.Background()
+			for _, id := range []string{"first", "second", "third"} {
+				_, err := r.Enqueue(ctx, account.Session{PublicID: "dj"}, storesqlite.Music{ID: id, Duration: 60000, Platform: "local"}, "")
+				require.NoError(t, err)
+			}
+			_, err := r.NextAs(ctx, "dj", false)
+			require.NoError(t, err)
+			_, err = r.Execute(ctx, func(runtime *RoomRuntime, _ context.Context) (any, error) {
+				runtime.state.PauseLocked = true
+				runtime.state.ShuffleLocked = true
+				runtime.state.SkipLocked = true
+				return nil, nil
+			})
+			require.NoError(t, err)
+			apply := func(admin bool, mutation ControlMutation) (ControlResult, error) {
+				switch kind {
+				case "pause":
+					return r.TogglePauseAs(ctx, admin, mutation)
+				case "shuffle":
+					return r.ToggleShuffleAs(ctx, admin, mutation)
+				case "next":
+					return r.NextAs(ctx, "dj", admin, mutation)
+				default:
+					return r.PreviousAs(ctx, admin, nil, mutation)
+				}
+			}
+			_, err = apply(false, ControlMutation{ScopeID: r.controlScope, ActorID: "dj", MutationID: "locked"})
+			require.ErrorIs(t, err, ErrControlLocked)
+			mutation := ControlMutation{ScopeID: r.controlScope, ActorID: "admin", MutationID: "override"}
+			result, err := apply(true, mutation)
+			require.NoError(t, err)
+			require.True(t, result.Applied)
+			replayed, err := apply(true, mutation)
+			require.NoError(t, err)
+			require.True(t, replayed.Replayed)
+			require.Equal(t, result.Committed, replayed.Committed)
+		})
+	}
+}
+
+func TestAcceptedRoomCommandSurvivesClientCancellation(t *testing.T) {
+	r := controlTestRuntime(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	started := make(chan struct{})
+	release := make(chan struct{})
+	opResult := make(chan error, 1)
+	callerDone := make(chan struct{})
+	go func() {
+		defer close(callerDone)
+		_, _ = r.Execute(ctx, func(runtime *RoomRuntime, opCtx context.Context) (any, error) {
+			close(started)
+			<-release
+			opResult <- opCtx.Err()
+			return nil, nil
+		})
+	}()
+	<-started
+	cancel()
+	<-callerDone
+	close(release)
+	require.NoError(t, <-opResult)
 }
 
 func TestPreviousWalksHistoryCursorAndResetsOnAdvance(t *testing.T) {

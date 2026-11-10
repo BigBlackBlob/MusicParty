@@ -120,8 +120,10 @@ export class RealtimeClient {
       this.stopHeartbeat()
       this.connected = false
       callbacks.onDisconnect?.(event)
-      if (event.code === 1008) {
-        const roomRejected = /forbidden|room/i.test(event.reason || '')
+      if (event.code === 1008 || event.code === 4403) {
+        const roomRejected = event.code === 4403 || /forbidden|room/i.test(event.reason || '')
+        this.intentionalClose = true
+        this.clearReconnectTimer()
         this.setState(roomRejected ? 'room-access-rejected' : 'session-rejected')
         if (roomRejected) {
           if (callbacks.onRoomAccessRejected) callbacks.onRoomAccessRejected(event)

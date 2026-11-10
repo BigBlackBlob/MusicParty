@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -17,6 +18,7 @@ var (
 
 type StoreConfig struct {
 	Path               string
+	CredentialKeyPath  string
 	BusyTimeout        time.Duration
 	ReadConnections    int
 	WriteQueueCapacity int
@@ -28,18 +30,28 @@ type Store struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
-	writes chan writeRequest
+	writes chan *writeRequest
 	done   chan struct{}
 
-	stateMu sync.RWMutex
-	closed  bool
+	credentialMu      sync.Mutex
+	credentialKey     string
+	credentialKeyPath string
+	stateMu           sync.RWMutex
+	closed            bool
 }
 
 type writeRequest struct {
 	ctx    context.Context
 	write  func(context.Context, *sql.Tx) error
 	result chan error
+	state  atomic.Int32
 }
+
+const (
+	writePending int32 = iota
+	writeStarted
+	writeAbandoned
+)
 
 func OpenStore(ctx context.Context, config StoreConfig) (*Store, error) {
 	if config.ReadConnections < 1 {
@@ -64,12 +76,16 @@ func OpenStore(ctx context.Context, config StoreConfig) (*Store, error) {
 
 	storeCtx, cancel := context.WithCancel(context.Background())
 	store := &Store{
-		writer: writer,
-		reader: reader,
-		ctx:    storeCtx,
-		cancel: cancel,
-		writes: make(chan writeRequest, config.WriteQueueCapacity),
-		done:   make(chan struct{}),
+		writer:            writer,
+		credentialKeyPath: config.CredentialKeyPath,
+		reader:            reader,
+		ctx:               storeCtx,
+		cancel:            cancel,
+		writes:            make(chan *writeRequest, config.WriteQueueCapacity),
+		done:              make(chan struct{}),
+	}
+	if store.credentialKeyPath == "" {
+		store.credentialKeyPath = config.Path + ".key"
 	}
 	go store.writeLoop()
 	return store, nil
@@ -89,7 +105,7 @@ func (s *Store) Write(ctx context.Context, write func(context.Context, *sql.Tx) 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	req := writeRequest{ctx: ctx, write: write, result: make(chan error, 1)}
+	req := &writeRequest{ctx: ctx, write: write, result: make(chan error, 1)}
 
 	s.stateMu.RLock()
 	if s.closed {
@@ -108,7 +124,10 @@ func (s *Store) Write(ctx context.Context, write func(context.Context, *sql.Tx) 
 	case err := <-req.result:
 		return err
 	case <-ctx.Done():
-		return ctx.Err()
+		if req.state.CompareAndSwap(writePending, writeAbandoned) {
+			return ctx.Err()
+		}
+		return <-req.result
 	case <-s.done:
 		select {
 		case err := <-req.result:
@@ -147,6 +166,9 @@ func (s *Store) writeLoop() {
 			s.rejectPendingWrites()
 			return
 		case req := <-s.writes:
+			if !req.state.CompareAndSwap(writePending, writeStarted) {
+				continue
+			}
 			if s.ctx.Err() != nil {
 				req.result <- ErrClosed
 				s.rejectPendingWrites()
@@ -157,7 +179,7 @@ func (s *Store) writeLoop() {
 	}
 }
 
-func (s *Store) executeWrite(req writeRequest) (err error) {
+func (s *Store) executeWrite(req *writeRequest) (err error) {
 	ctx, cancel := context.WithCancel(req.ctx)
 	stopStoreCancel := context.AfterFunc(s.ctx, cancel)
 	defer func() {

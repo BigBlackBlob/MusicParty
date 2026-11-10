@@ -45,6 +45,11 @@ func EncryptSubsonicCredential(plain, siteSecret string) (string, error) {
 	if strings.TrimSpace(plain) == "" || strings.HasPrefix(plain, encryptedCredentialPrefix) {
 		return plain, nil
 	}
+	return EncryptCredential(plain, siteSecret)
+}
+
+// EncryptCredential always seals plaintext, including values resembling ciphertext.
+func EncryptCredential(plain, siteSecret string) (string, error) {
 	if strings.TrimSpace(siteSecret) == "" {
 		return "", errors.New("site secret is unavailable")
 	}

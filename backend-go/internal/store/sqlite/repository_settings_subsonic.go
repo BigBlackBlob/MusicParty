@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	securitycompat "github.com/BigBlackBlob/MusicParty/backend-go/internal/security"
 )
 
 type SiteSettingRepository struct{ store *Store }
@@ -14,6 +15,14 @@ func NewSiteSettingRepository(store *Store) *SiteSettingRepository {
 }
 
 func (repository *SiteSettingRepository) Find(ctx context.Context, key string) (*SiteSetting, error) {
+	var secret string
+	if isPlatformCredential(key) {
+		var err error
+		secret, err = repository.store.CredentialKey(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
 	var setting SiteSetting
 	var value sql.NullString
 	err := repository.store.reader.QueryRowContext(ctx, `
@@ -23,6 +32,13 @@ func (repository *SiteSettingRepository) Find(ctx context.Context, key string) (
 		return nil, fmt.Errorf("find site setting: %w", err)
 	}
 	if value.Valid {
+		if isPlatformCredential(key) {
+			plain, err := securitycompat.DecryptSubsonicCredential(value.String, secret)
+			if err != nil {
+				return nil, fmt.Errorf("decrypt platform credential: %w", err)
+			}
+			value.String = plain
+		}
 		setting.Value = &value.String
 	}
 	return &setting, nil
@@ -37,6 +53,17 @@ func (repository *SiteSettingRepository) FindValue(ctx context.Context, key stri
 }
 
 func (repository *SiteSettingRepository) Upsert(ctx context.Context, setting SiteSetting) error {
+	if isPlatformCredential(setting.Key) && setting.Value != nil {
+		key, err := repository.store.CredentialKey(ctx)
+		if err != nil {
+			return err
+		}
+		sealed, err := securitycompat.EncryptCredential(*setting.Value, key)
+		if err != nil {
+			return err
+		}
+		setting.Value, setting.Secret = &sealed, true
+	}
 	return repository.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, `
 			insert into site_setting(setting_key, setting_value, secret, updated_at) values (?, ?, ?, ?)

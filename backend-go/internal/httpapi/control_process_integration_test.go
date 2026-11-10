@@ -342,7 +342,9 @@ func TestControlIsolatedProcessTwoClients(t *testing.T) {
 	t.Run("seek_permission_payload_and_epoch", func(t *testing.T) {
 		before := a.snapshot()
 		epoch := before["playEpoch"]
-		require.Equal(t, "SEEK_FORBIDDEN", b.control("seek", "forbidden", map[string]any{"positionMs": 0, "expectedPlayEpoch": epoch})["code"])
+		seek := b.control("seek", "guest-seek", map[string]any{"positionMs": 0, "expectedPlayEpoch": epoch})
+		require.Equal(t, "applied", seek["outcome"])
+		epoch = a.snapshot()["playEpoch"]
 		for index, payload := range []map[string]any{{}, {"positionMs": nil}, {"positionMs": "0"}, {"positionMs": 1.5}} {
 			require.Equal(t, "PAYLOAD_INVALID", a.control("seek", fmt.Sprintf("invalid-%d", index), payload)["code"])
 		}
@@ -406,7 +408,7 @@ func TestControlIsolatedProcessTwoClients(t *testing.T) {
 	t.Run("three_locks_and_legacy_denial_event", func(t *testing.T) {
 		locked := connectControlPeer(t, baseURL, "locked", "locked", firstHTTP)
 		defer locked.trace(0)
-		for kind, code := range map[string]string{"toggle-pause": "PAUSE_LOCKED", "next": "SKIP_LOCKED", "toggle-shuffle": "SHUFFLE_LOCKED"} {
+		for kind, code := range map[string]string{"toggle-pause": "PAUSE_LOCKED", "next": "FORBIDDEN", "toggle-shuffle": "SHUFFLE_LOCKED"} {
 			start := locked.count()
 			require.Equal(t, code, locked.control(kind, kind, map[string]any{})["code"])
 			event := locked.await(start, "player.events", "")
@@ -443,7 +445,7 @@ func TestControlIsolatedProcessTwoClients(t *testing.T) {
 		}
 		var first map[string]any
 		var firstCompleted time.Time
-		for index := 0; index < 256; index++ {
+		for index := 0; index < 64; index++ {
 			ack := peer.control("like", fmt.Sprintf("fill-%d", index), payload(fmt.Sprintf("slot-%d", index)))
 			require.Equal(t, "noop", ack["outcome"])
 			if index == 0 {
@@ -456,7 +458,7 @@ func TestControlIsolatedProcessTwoClients(t *testing.T) {
 		replay := peer.control("like", "first-survives", payload("slot-0"))
 		require.Equal(t, true, replay["replayed"])
 		require.Equal(t, first["committed"], replay["committed"])
-		t.Log("capacity: 256 noops cached, next mutation refused, first result still replayable")
+		t.Log("capacity: 64 noops cached per actor, next mutation refused, first result still replayable")
 		// Use the real advertised TTL, not a shortened clock or a test constant.
 		// Replaying below must not extend the original expiry deadline.
 		t.Log("expiry: waiting for the advertised 60 second window")

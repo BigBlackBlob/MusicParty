@@ -8,6 +8,7 @@ import (
 
 const ControlMutationTTL = 60 * time.Second
 const controlMutationCapacity = 256
+const mutationActorCapacity = 64
 
 var (
 	ErrMutationConflict = errors.New("control mutation fingerprint conflicts")
@@ -30,7 +31,6 @@ type controlRecord struct {
 	result      ControlResult
 	err         error
 	expires     time.Time
-	unknown     bool
 }
 
 func controlResultValue(value any) ControlResult {
@@ -38,12 +38,12 @@ func controlResultValue(value any) ControlResult {
 	return result
 }
 
-// Scope and room are implicit in this runtime-owned map. Unknown outcomes stay
-// reserved until runtime destruction; they must never become executable again.
-func (r *RoomRuntime) executeControl(ctx context.Context, kind string, positionMS int64, epoch *int64, mutations []ControlMutation, apply func(*RoomRuntime) (any, error)) (any, error) {
-	return r.Execute(ctx, func(runtime *RoomRuntime) (any, error) {
+// Scope and room are implicit in this runtime-owned map. Only completed
+// outcomes are cached; failed persistence can be retried with the same ID.
+func (r *RoomRuntime) executeControl(ctx context.Context, kind string, positionMS int64, epoch *int64, mutations []ControlMutation, apply func(*RoomRuntime, context.Context) (any, error)) (any, error) {
+	return r.Execute(ctx, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
 		if len(mutations) == 0 {
-			return apply(runtime)
+			return apply(runtime, ctx)
 		}
 		m := mutations[0]
 		result := ControlResult{MutationID: m.MutationID}
@@ -58,12 +58,7 @@ func (r *RoomRuntime) executeControl(ctx context.Context, kind string, positionM
 			fingerprint.hasEpoch = true
 			fingerprint.epoch = *epoch
 		}
-		now := time.Now()
-		for key, record := range runtime.controlMutations {
-			if !record.unknown && !now.Before(record.expires) {
-				delete(runtime.controlMutations, key)
-			}
-		}
+		runtime.purgeControlMutations(time.Now())
 		key := controlKey{actor: m.ActorID, mutation: m.MutationID}
 		if record, exists := runtime.controlMutations[key]; exists {
 			if record.fingerprint != fingerprint {
@@ -77,22 +72,41 @@ func (r *RoomRuntime) executeControl(ctx context.Context, kind string, positionM
 			}
 			return result, record.err
 		}
-		if len(runtime.controlMutations) >= controlMutationCapacity {
+		if len(runtime.controlMutations) >= controlMutationCapacity || runtime.controlCounts[m.ActorID] >= mutationActorCapacity {
 			return result, ErrMutationCapacity
 		}
-		value, err := apply(runtime)
+		value, err := apply(runtime, ctx)
 		result = controlResultValue(value)
 		result.MutationID = m.MutationID
 		record := controlRecord{fingerprint: fingerprint, result: result, err: err, expires: time.Now().Add(ControlMutationTTL)}
-		if err != nil && !errors.Is(err, ErrControlLocked) && !errors.Is(err, ErrControlDenied) && !errors.Is(err, ErrSeekForbidden) && !errors.Is(err, ErrPreconditionFailed) && !errors.Is(err, ErrNoHistory) {
-			record.unknown = true
-			record.err = ErrMutationUnknown
+		if err != nil && !errors.Is(err, ErrForbidden) && !errors.Is(err, ErrControlLocked) && !errors.Is(err, ErrControlDenied) && !errors.Is(err, ErrSeekForbidden) && !errors.Is(err, ErrPreconditionFailed) && !errors.Is(err, ErrNoHistory) {
+			return result, err
 		}
 		if result.Committed != nil {
 			watermark := *result.Committed
 			record.result.Committed = &watermark
 		}
 		runtime.controlMutations[key] = record
+		runtime.controlOrder = append(runtime.controlOrder, key)
+		runtime.controlCounts[m.ActorID]++
 		return result, err
 	})
+}
+
+func (r *RoomRuntime) purgeControlMutations(now time.Time) {
+	n := 0
+	for ; n < len(r.controlOrder); n++ {
+		key := r.controlOrder[n]
+		record := r.controlMutations[key]
+		if now.Before(record.expires) {
+			break
+		}
+		delete(r.controlMutations, key)
+		r.controlCounts[key.actor]--
+		if r.controlCounts[key.actor] == 0 {
+			delete(r.controlCounts, key.actor)
+		}
+		r.controlOrder[n] = controlKey{}
+	}
+	r.controlOrder = r.controlOrder[n:]
 }

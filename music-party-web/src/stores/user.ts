@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import type { Session } from '../contracts/generated/models'
+import { queryClient } from '../app/providers'
 import { authApi } from '../api/auth'
 import { STORAGE_KEYS } from '../constants/keys'
 import { isPlainObject, safeJsonStorage } from '../utils/safeJsonStorage.js'
@@ -73,7 +74,14 @@ export const useUserStore = defineStore('user', () => {
     callback?.()
   }
 
+  function clearIdentityQueries(): void {
+    // Clear synchronously. Cancellation prevents old responses from filling the cache.
+    void queryClient.cancelQueries()
+    queryClient.clear()
+  }
+
   function initAccount(session: Session): void {
+    if (account.value?.publicId !== session.publicId || account.value?.role !== session.role) clearIdentityQueries()
     account.value = {
       publicId: session.publicId,
       username: session.username || '',
@@ -106,8 +114,7 @@ export const useUserStore = defineStore('user', () => {
       initAccount(session)
       return session
     } catch (error) {
-      status.value = 'anonymous'
-      account.value = null
+      resetAuthentication()
       throw error
     }
   }
@@ -119,6 +126,7 @@ export const useUserStore = defineStore('user', () => {
   }
 
   async function logout(): Promise<void> {
+    clearIdentityQueries()
     try {
       await authApi.logoutAccount()
     } finally {
@@ -141,11 +149,13 @@ export const useUserStore = defineStore('user', () => {
   function saveName(): void { finishPendingNameAction() }
 
   function resetAuthentication(): void {
+    clearIdentityQueries()
     status.value = 'anonymous'
     account.value = null
   }
 
   function clearAccountIdentity(): void {
+    clearIdentityQueries()
     status.value = 'anonymous'
     account.value = null
     showNameModal.value = false

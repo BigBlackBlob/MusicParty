@@ -223,6 +223,7 @@ func run() error {
 		})
 		playlistAPI.SetRealtime(realtimeManager)
 		webSocketAPI = httpapi.NewWebSocketAPI(cfg, databaseStore, accountService, roomService, socketHub, realtimeManager, platformAPI)
+		defer webSocketAPI.Close()
 	}
 	var handler http.Handler
 	var desktopAPI *httpapi.DesktopAPI
@@ -239,7 +240,11 @@ func run() error {
 	} else {
 		handler = httpapi.NewHandler(cfg, logger, health, metrics, platformAPI, staticAPI)
 	}
-	return serve(applicationContext, cfg, handler, health, logger)
+	return serve(applicationContext, cfg, handler, health, logger, func() {
+		if webSocketAPI != nil {
+			webSocketAPI.Close()
+		}
+	})
 }
 
 func openDatabase(ctx context.Context, cfg config.Config) (*storesqlite.Store, error) {
@@ -250,6 +255,7 @@ func openDatabase(ctx context.Context, cfg config.Config) (*storesqlite.Store, e
 	defer cancel()
 	store, err := storesqlite.OpenStore(databaseContext, storesqlite.StoreConfig{
 		Path:               cfg.Database.Path,
+		CredentialKeyPath:  os.Getenv("SITE_SECRET_FILE"),
 		BusyTimeout:        cfg.Database.BusyTimeout,
 		ReadConnections:    cfg.Performance.DBReadThreads,
 		WriteQueueCapacity: cfg.Performance.DBWriteQueueCapacity,
@@ -262,6 +268,10 @@ func openDatabase(ctx context.Context, cfg config.Config) (*storesqlite.Store, e
 			_ = store.Close()
 		}
 		return nil, fmt.Errorf("initialize SQLite storage: %w", err)
+	}
+	if _, err := store.CredentialKey(ctx); err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("initialize credential encryption: %w", err)
 	}
 	if err := ensureSystemRoom(ctx, store); err != nil {
 		_ = store.Close()
@@ -301,12 +311,15 @@ func newProxyClient() *http.Client {
 	}}
 }
 
-func serve(ctx context.Context, cfg config.Config, handler http.Handler, health *observability.Health, logger *slog.Logger) error {
+func serve(ctx context.Context, cfg config.Config, handler http.Handler, health *observability.Health, logger *slog.Logger, shutdownHooks ...func()) error {
 	server := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Server.Port),
 		Handler:           handler,
 		ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout,
 		IdleTimeout:       cfg.Server.IdleTimeout,
+	}
+	for _, hook := range shutdownHooks {
+		server.RegisterOnShutdown(hook)
 	}
 	listener, err := net.Listen("tcp", server.Addr)
 	if err != nil {
@@ -346,6 +359,10 @@ func ensureSystemRoom(ctx context.Context, store *storesqlite.Store) error {
 }
 
 func loadSubsonicServices(ctx context.Context, store *storesqlite.Store, client *platform.Client) ([]platform.Service, map[string]string, error) {
+	siteSecret, err := store.CredentialKey(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
 	repository := storesqlite.NewSubsonicSourceRepository(store)
 	sources, err := repository.FindAll(ctx)
 	if err != nil {
@@ -354,13 +371,6 @@ func loadSubsonicServices(ctx context.Context, store *storesqlite.Store, client 
 	bindings, err := repository.FindAllRoomBindings(ctx)
 	if err != nil {
 		return nil, nil, err
-	}
-	settings := storesqlite.NewSiteSettingRepository(store)
-	siteSecret := ""
-	if value, findErr := settings.FindValue(ctx, "security.site-secret.v1"); findErr == nil && value != nil {
-		siteSecret = *value
-	} else if findErr != nil && !errors.Is(findErr, sql.ErrNoRows) {
-		return nil, nil, findErr
 	}
 	return httpapi.SubsonicServices(client, sources, bindings, siteSecret)
 }

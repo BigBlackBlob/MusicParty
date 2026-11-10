@@ -9,6 +9,36 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type countedPayload struct{ calls *int }
+
+func (p countedPayload) MarshalJSON() ([]byte, error) {
+	*p.calls++
+	return []byte(`{"state":1}`), nil
+}
+
+func TestBroadcastEncodesOnceAndRevocationPreservesOtherClients(t *testing.T) {
+	hub := NewHub(16)
+	first := hub.Register(nil, "room", account.Session{PublicID: "first"})
+	second := hub.Register(nil, "room", account.Session{PublicID: "second"})
+	other := hub.Register(nil, "other", account.Session{PublicID: "first"})
+	calls := 0
+	hub.BroadcastRoom("room", "player.state", countedPayload{&calls})
+	require.Equal(t, 1, calls)
+	require.Len(t, first.queue, 1)
+	require.Equal(t, first.queue[0].Data, second.queue[0].Data)
+	hub.CloseRoomWhere("room", "access revoked", func(s account.Session) bool { return s.PublicID == "first" })
+	require.Equal(t, 2, hub.Count())
+	select {
+	case <-first.closed:
+	default:
+		t.Fatal("revoked client remains open")
+	}
+	require.Empty(t, other.queue)
+	require.Len(t, hub.Presence("room").Users, 1)
+	hub.BroadcastAll("rooms.list", countedPayload{&calls})
+	require.Equal(t, 2, calls)
+}
+
 func TestClientQueuePreservesReliableFIFOAndCoalescesLatestState(t *testing.T) {
 	client := newClient(nil, "lounge", account.Session{PublicID: "user"}, 4, "")
 	require.NoError(t, client.Send("chat.message", "lounge", map[string]any{"value": 1}))
@@ -30,6 +60,23 @@ func TestClientQueuePreservesReliableFIFOAndCoalescesLatestState(t *testing.T) {
 	third, ok := client.pop()
 	require.True(t, ok)
 	require.Equal(t, "queue.mutation.ack", third.Type)
+}
+
+func TestFullPlayerBaselineSurvivesCompactBroadcastCoalescing(t *testing.T) {
+	hub := NewHub(8)
+	client := hub.Register(nil, "room", account.Session{})
+	require.NoError(t, client.Send("player.state", "room", map[string]any{"queue": []any{}, "stateVersion": 1}))
+	hub.BroadcastRoom("room", "queue.patch", map[string]any{"operation": "clear", "queueVersion": 2})
+	hub.BroadcastRoom("room", "player.state", map[string]any{"stateVersion": 2})
+	hub.BroadcastRoom("room", "player.state", map[string]any{"stateVersion": 3})
+	require.Len(t, client.queue, 3)
+	var baseline, compact Envelope
+	require.NoError(t, json.Unmarshal(client.queue[0].Data, &baseline))
+	require.Contains(t, baseline.Payload, "queue")
+	require.Equal(t, "queue.patch", client.queue[1].Type)
+	require.NoError(t, json.Unmarshal(client.queue[2].Data, &compact))
+	require.NotContains(t, compact.Payload, "queue")
+	require.Equal(t, float64(3), compact.Payload.(map[string]any)["stateVersion"])
 }
 
 func TestReliableMessagesAreNotEvictedByStateAndFullQueueClosesClient(t *testing.T) {

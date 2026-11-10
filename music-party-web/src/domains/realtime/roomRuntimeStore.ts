@@ -55,10 +55,7 @@ export const useRoomRuntimeStore = defineStore('room-runtime', () => {
 
   function replaceQueue(nextQueue: QueueItem[], queueVersion: number, snapshot = false): QueueUpdateResult {
     if (!Number.isFinite(queueVersion) || queueVersion <= 0) return 'invalid'
-    // A player.state snapshot is authoritative even when the preceding patch
-    // advanced to the same version. This occurs when the first enqueue begins
-    // playback: its append patch contains the new item while the state snapshot
-    // correctly removes that item from the pending queue.
+    // A full initialization or resync snapshot may repair the same version.
     if (queueVersion < lastQueueVersion.value || (queueVersion === lastQueueVersion.value && !snapshot)) return 'stale'
     if (!snapshot && lastQueueVersion.value > 0 && queueVersion !== lastQueueVersion.value + 1) {
       return 'version-gap'
@@ -82,8 +79,10 @@ export const useRoomRuntimeStore = defineStore('room-runtime', () => {
 
     let nextQueue: QueueItem[] | null = null
     if (patch.operation === 'append') {
-      const existingIds = new Set(queue.value.map(item => item.queueId))
-      nextQueue = [...queue.value, ...(patch.items ?? []).filter(item => !existingIds.has(item.queueId))]
+      const removedIds = new Set(patch.queueIds ?? [])
+      const remaining = queue.value.filter(item => !removedIds.has(item.queueId))
+      const existingIds = new Set(remaining.map(item => item.queueId))
+      nextQueue = [...remaining, ...(patch.items ?? []).filter(item => !existingIds.has(item.queueId))]
     } else if (patch.operation === 'remove') {
       const removedIds = new Set(patch.queueIds ?? [])
       nextQueue = queue.value.filter(item => !removedIds.has(item.queueId))

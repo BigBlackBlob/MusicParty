@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MusicParty 后端与实时前端补强验收</title>
+<style>body{background:#000;color:#fff;font:16px/1.6 system-ui,sans-serif;margin:0 auto;padding:24px;max-width:1100px}h1{font-size:24px}h2{font-size:19px;margin-top:28px}table{width:100%;border-collapse:collapse}td,th{padding:10px;text-align:left;border-bottom:1px solid #444;vertical-align:top}code{overflow-wrap:anywhere}p{max-width:85ch}@media(max-width:650px){body{padding:14px}table{font-size:13px}td,th{padding:7px}}</style>
+<h1>9 项问题：实现与验收记录</h1><p>2026-11-10。本地代码修改，测试使用临时数据库与服务。没有部署或操作生产数据。</p>
+<h2>实施顺序与结果</h2><table><thead><tr><th>问题</th><th>实现</th><th>验收依据</th></tr></thead><tbody>
+<tr><td>1. YouTube 子进程无上限</td><td>同时最多 2 次解析；相同视频合并；结果缓存 60 秒；单次超时 30 秒；ID 校验；每来源每分钟最多 30 次，IPv6 按 /64 聚合。</td><td>容量满时拒绝新视频；同视频加入已有请求；调用方取消不终止已共享的解析；HTTP 限流发生在上游调用之前。</td></tr>
+<tr><td>2. 上传先解析后鉴权</td><td>读取 multipart 前鉴权，最多同时接收 2 个上传，保留单文件字节限制与临时文件清理。</td><td>匿名、无权游客及并发超限请求的请求体读取次数为 0。</td></tr>
+<tr><td>3. 封面像素炸弹</td><td>压缩体最多 3 MiB，解码前检查尺寸，边长不超过 4096、总像素不超过 4194304，最多并发处理 2 张。</td><td>正常 PNG 可解码；不足 1 KB、声明 50000×50000 的 PNG 在像素分配前拒绝；槽位满时不请求上游。</td></tr>
+<tr><td>4. 凭据与数据库内密钥</td><td>密钥迁到独立文件；旧 Subsonic 密文重加密，平台 Cookie 加密；迁移同事务提交并移除旧密钥；secure_delete 与 WAL 截断。</td><td>重启保持解密；数据库文件不含测试明文、旧密钥及新密钥；错误密钥或丢失密钥报错；故障注入后可回滚并重试。</td></tr>
+<tr><td>5. 前端未处理 4403</td><td>明确转入准入拒绝状态，停止自动与 online 事件重连；显式新连接可重新开始准入。</td><td>模拟 4403 后触发 online 并推进计时器，不建立新连接。</td></tr>
+<tr><td>6. 在线列表 revision 重启失效</td><td>每次连接建立时重置当前房间 presence，再请求新快照。</td><td>先接收 revision 500，自动重连后接受 revision 1。</td></tr>
+<tr><td>7. 跨身份查询缓存</td><td>账号或角色变化、登录失效、退出时取消查询并清空缓存；同步移除数据。</td><td>账号 B 不读取 A 缓存；退出后旧请求收到 abort，延迟响应不能回填缓存。</td></tr>
+<tr><td>8. 队列 N+1</td><td>本地曲目 ID 去重，每批最多 500 个，在写事务内检查 tombstone。</td><td>真实 SQLite 驱动计数：1000 个不同 ID、每个重复两次，共 2 次检查查询；第二批中的已删除曲目仍能拒绝写入。</td></tr>
+<tr><td>9. schema 漏检</td><td>按索引键列与排序规则验证隐式 UNIQUE；检查部分索引条件，忽略格式与关键字大小写。</td><td>缺失 UNIQUE、修改 WHERE 条件都被拒绝；格式变化及旧升级 schema 仍兼容。</td></tr>
+</tbody></table>
+<h2>检查结果</h2><p>Go 全量测试通过。媒体、SQLite、HTTP API 竞态检测通过；go vet、14 个协议生成文件校验、git diff --check 通过。前端 46 个测试文件、185 项测试及 TypeScript 类型检查通过。</p><p>Windows 媒体测试原先通过打开正在变化的临时文件统计大小，产生共享句柄冲突。已改为读取目录项元数据，媒体竞态检测重跑通过。</p>
+<h2>密钥文件与恢复</h2><p>可通过 <code>SITE_SECRET_FILE</code> 指定持久化密钥文件。默认路径为数据库路径加 <code>.key</code>。首次初始化自动创建随机 32 字节密钥，文件内容为 Base64；Unix 新文件权限为 0600，读取时拒绝向组或其他用户开放的权限。Windows 依赖密钥所在目录的访问控制，应仅允许运行服务的账号读取。</p><p>迁移后数据库与密钥文件必须配套保留。将密钥与数据库导出、可下载备份分别保存；数据库单独泄露时不能解密凭据，主机与密钥同时泄露仍可解密。丢失密钥后服务拒绝替换密钥，需要恢复原文件；密钥文件存在但迁移失败时，保留文件并修复原因后重试。</p><p>迁移会清理当前数据库内旧凭据，无法清理之前生成的历史备份。测试没有修改任何现有部署或日常预览配置。以上并发与资源阈值为当前实现的固定值。</p>
+<h2>范围</h2><p>本次处理已确认的 9 项问题。前轮另列为待验证的代理 SSRF、ffmpeg 内容协议访问及符号链接边界，未纳入本次修复完成声明。</p>
+</html>

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"fmt"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -19,6 +20,7 @@ type loginLimiter struct {
 	window, block   time.Duration
 	items           map[string]loginAttempt
 	now             func() time.Time
+	overflow        loginAttempt
 }
 
 func newLoginLimiter(cfg config.Config) *loginLimiter {
@@ -46,21 +48,27 @@ func (l *loginLimiter) blockedLocked(ip string, now time.Time) (string, bool) {
 		}
 	}
 	if len(l.items) >= l.maxTracked {
-		var earliest time.Time
 		for key, item := range l.items {
 			until := l.expires(item)
 			if !now.Before(until) {
 				delete(l.items, key)
 				continue
 			}
-			if earliest.IsZero() || until.Before(earliest) {
-				earliest = until
-			}
 		}
-		// Preserve active reservations. Untracked sources wait for capacity instead
-		// of becoming unlimited or evicting another source's active block.
+		// Preserve tracked source budgets and use a shared budget at capacity.
 		if len(l.items) >= l.maxTracked {
-			return retryAfter(earliest, now), true
+			// Bound untracked sources together without denying every new source.
+			if l.overflow.first.IsZero() || !now.Before(l.expires(l.overflow)) {
+				l.overflow = loginAttempt{first: now}
+			}
+			if now.Before(l.overflow.blockedUntil) {
+				return retryAfter(l.overflow.blockedUntil, now), true
+			}
+			l.overflow.attempts++
+			if l.overflow.attempts >= l.max {
+				l.overflow.blockedUntil = now.Add(l.block)
+			}
+			return "", false
 		}
 	}
 	return "", false
@@ -85,11 +93,31 @@ func (l *loginLimiter) admit(ip string) (string, bool) {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	ip = limiterKey(ip)
 	now := l.now()
 	if retry, blocked := l.blockedLocked(ip, now); blocked {
 		return retry, true
 	}
-	l.recordAttemptLocked(ip, now)
+	if _, exists := l.items[ip]; exists || len(l.items) < l.maxTracked {
+		l.recordAttemptLocked(ip, now)
+	}
 	return "", false
 }
-func (l *loginLimiter) success(ip string) { l.mu.Lock(); delete(l.items, ip); l.mu.Unlock() }
+func (l *loginLimiter) success(ip string) {
+	l.mu.Lock()
+	delete(l.items, limiterKey(ip))
+	l.mu.Unlock()
+}
+
+// IPv6 privacy addresses in the same subnet share an authentication budget.
+func limiterKey(ip string) string {
+	addr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return ip
+	}
+	addr = addr.Unmap()
+	if addr.Is4() {
+		return addr.String()
+	}
+	return netip.PrefixFrom(addr, 64).Masked().String()
+}

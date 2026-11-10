@@ -16,6 +16,16 @@ describe('decodeServerEnvelope', () => {
     expect(envelope?.type).toBe('player.state')
   })
 
+  it('accepts compact playback updates but rejects an invalid explicit queue', () => {
+    const payload = {
+      stateVersion: 4, queueVersion: 7, queueEpoch: 'room', playEpoch: 2, serverTimestamp: 100, historyCursor: 0,
+      isLoading: false, isPauseLocked: false, isPaused: false,
+      isShuffle: false, isShuffleLocked: false, isSkipLocked: false,
+    }
+    expect(decodeServerEnvelope(JSON.stringify({ type: 'player.state', payload }))?.type).toBe('player.state')
+    expect(decodeServerEnvelope(JSON.stringify({ type: 'player.state', payload: { ...payload, queue: null } }))).toBeNull()
+  })
+
   it('accepts Go player states with no track or a null history enqueuer', () => {
     const base = {
       stateVersion: 4, queueVersion: 7, playEpoch: 2, serverTimestamp: 100, historyCursor: 0,

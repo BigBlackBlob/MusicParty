@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -24,12 +25,13 @@ import (
 )
 
 type PlatformAPI struct {
-	cfg      config.Config
-	mu       sync.RWMutex
-	services map[string]platform.Service
-	access   map[string]func(context.Context, string) bool
-	cacheMu  sync.Mutex
-	cache    map[string]cachedPlayable
+	cfg        config.Config
+	mu         sync.RWMutex
+	services   map[string]platform.Service
+	access     map[string]func(context.Context, string) bool
+	cacheMu    sync.Mutex
+	cache      map[string]cachedPlayable
+	coverSlots chan struct{}
 }
 
 type cachedPlayable struct {
@@ -58,7 +60,7 @@ func NewPlatformAPI(cfg config.Config, services ...platform.Service) *PlatformAP
 			m[service.Name()] = service
 		}
 	}
-	return &PlatformAPI{cfg: cfg, services: m, access: map[string]func(context.Context, string) bool{}, cache: map[string]cachedPlayable{}}
+	return &PlatformAPI{cfg: cfg, services: m, access: map[string]func(context.Context, string) bool{}, cache: map[string]cachedPlayable{}, coverSlots: make(chan struct{}, 2)}
 }
 
 // PlatformAccess builds the same allowlist policy for startup configuration and live updates.
@@ -439,6 +441,12 @@ func (api *PlatformAPI) coverColor(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return err
 	}
+	select {
+	case api.coverSlots <- struct{}{}:
+		defer func() { <-api.coverSlots }()
+	default:
+		return &APIError{Status: http.StatusServiceUnavailable, Message: "Cover processing capacity reached"}
+	}
 	target, err := source.CoverURL(r.Context(), id)
 	if err != nil || target == "" {
 		return BadGateway("Cover source unavailable")
@@ -459,7 +467,11 @@ func (api *PlatformAPI) coverColor(w http.ResponseWriter, r *http.Request) error
 	if !strings.HasPrefix(strings.ToLower(response.Header.Get("Content-Type")), "image/") {
 		return BadGateway("Cover response is not an image")
 	}
-	decoded, _, err := image.Decode(io.LimitReader(response.Body, 3<<20))
+	encoded, err := io.ReadAll(io.LimitReader(response.Body, (3<<20)+1))
+	if err != nil || len(encoded) > 3<<20 {
+		return BadGateway("Cover image exceeds byte limit")
+	}
+	decoded, err := decodeBoundedCover(encoded)
 	if err != nil {
 		return BadGateway("Cover image could not be decoded")
 	}
@@ -558,4 +570,18 @@ func defaultValue(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+// DecodeConfig checks allocation size before the image decoder allocates pixels.
+func decodeBoundedCover(encoded []byte) (image.Image, error) {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(encoded))
+	if err != nil {
+		return nil, err
+	}
+	const maxPixels = 4 * 1024 * 1024
+	if cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width > 4096 || cfg.Height > 4096 || cfg.Width > maxPixels/cfg.Height {
+		return nil, errors.New("cover image dimensions exceed limit")
+	}
+	decoded, _, err := image.Decode(bytes.NewReader(encoded))
+	return decoded, err
 }

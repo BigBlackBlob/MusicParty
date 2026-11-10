@@ -384,3 +384,32 @@ func splitArtists(artists string) []string {
 	}
 	return result
 }
+
+// Batch tombstone checks within the same writer transaction as queue persistence.
+func requireQueueTracksNotDeleted(ctx context.Context, tx *sql.Tx, items []QueueItem) error {
+	seen := make(map[string]struct{})
+	ids := []any{}
+	for _, item := range items {
+		if item.Music.Platform != "local" {
+			continue
+		}
+		if _, exists := seen[item.Music.ID]; exists {
+			continue
+		}
+		seen[item.Music.ID] = struct{}{}
+		ids = append(ids, item.Music.ID)
+	}
+	for len(ids) > 0 {
+		n := min(len(ids), 500)
+		var deleted bool
+		query := "select exists(select 1 from local_track where status='DELETED' and id in (" + strings.TrimSuffix(strings.Repeat("?,", n), ",") + "))"
+		if err := tx.QueryRowContext(ctx, query, ids[:n]...).Scan(&deleted); err != nil {
+			return err
+		}
+		if deleted {
+			return ErrLocalTrackGone
+		}
+		ids = ids[n:]
+	}
+	return nil
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log/slog"
 	"math/rand/v2"
 	"net/url"
 	"slices"
@@ -21,6 +22,7 @@ var (
 	ErrStaleQueue         = errors.New("stale queue mutation")
 	ErrControlLocked      = errors.New("playback control is locked")
 	ErrControlDenied      = errors.New("playback control is denied")
+	ErrForbidden          = errors.New("room operation is forbidden")
 	ErrSeekForbidden      = errors.New("playback seek is forbidden")
 	ErrPreconditionFailed = errors.New("playback precondition failed")
 	ErrNoHistory          = errors.New("no playback history available")
@@ -54,6 +56,7 @@ type Manager struct {
 	broadcaster Broadcaster
 	mu          sync.Mutex
 	runtimes    map[string]*RoomRuntime
+	loading     map[string]*roomLoad
 	closed      bool
 	limits      QueueLimits
 	chat        *chatPolicy
@@ -64,15 +67,21 @@ func NewManager(store *storesqlite.Store, queueSize int, timeout, idle time.Dura
 	if len(limits) > 0 {
 		queueLimits = limits[0]
 	}
-	return &Manager{chat: newChatPolicy(ChatLimits{MinInterval: time.Second, MaxHistorySize: 1000, MaxMessageLength: 200}), limits: queueLimits, store: store, queueSize: max(1, queueSize), timeout: timeout, idle: idle, broadcaster: broadcaster, runtimes: map[string]*RoomRuntime{}}
+	return &Manager{chat: newChatPolicy(ChatLimits{MinInterval: time.Second, MaxHistorySize: 1000, MaxMessageLength: 200}), limits: queueLimits, store: store, queueSize: max(1, queueSize), timeout: timeout, idle: idle, broadcaster: broadcaster, runtimes: map[string]*RoomRuntime{}, loading: map[string]*roomLoad{}}
+}
+
+type roomLoad struct {
+	done   chan struct{}
+	err    error
+	cancel context.CancelFunc
 }
 
 func (m *Manager) Room(ctx context.Context, roomID string) (*RoomRuntime, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.closed {
-		return nil, context.Canceled
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
+	// Cached runtimes must obey the same admission check as a new load. Keep
+	// this read outside the manager lock so other rooms remain independent.
 	var active bool
 	if err := m.store.Reader().QueryRowContext(ctx, "select exists(select 1 from room where id=? and deleted_at is null)", roomID).Scan(&active); err != nil {
 		return nil, err
@@ -80,26 +89,86 @@ func (m *Manager) Room(ctx context.Context, roomID string) (*RoomRuntime, error)
 	if !active {
 		return nil, storesqlite.ErrRoomGone
 	}
-	if runtime := m.runtimes[roomID]; runtime != nil {
-		return runtime, nil
-	}
-	runtime, err := newRoomRuntime(ctx, m.store, roomID, m.queueSize, m.timeout, m.idle, m.broadcaster, func() {
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		m.mu.Lock()
-		delete(m.runtimes, roomID)
+		if m.closed {
+			m.mu.Unlock()
+			return nil, context.Canceled
+		}
+		if rt := m.runtimes[roomID]; rt != nil && rt.ctx.Err() == nil {
+			m.mu.Unlock()
+			return rt, nil
+		}
+		if load := m.loading[roomID]; load != nil {
+			m.mu.Unlock()
+			select {
+			case <-load.done:
+				if load.err != nil {
+					return nil, load.err
+				}
+				continue
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		loadCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), m.timeout)
+		load := &roomLoad{done: make(chan struct{}), cancel: cancel}
+		m.loading[roomID] = load
 		m.mu.Unlock()
-	}, m.limits, m.chat)
-	if err != nil {
-		return nil, err
+		var active bool
+		err := m.store.Reader().QueryRowContext(loadCtx, "select exists(select 1 from room where id=? and deleted_at is null)", roomID).Scan(&active)
+		if err == nil && !active {
+			err = storesqlite.ErrRoomGone
+		}
+		var rt *RoomRuntime
+		if err == nil {
+			rt, err = newRoomRuntime(loadCtx, m.store, roomID, m.queueSize, m.timeout, m.idle, m.broadcaster, m.release, m.limits, m.chat)
+		}
+		m.mu.Lock()
+		if err == nil && (m.closed || loadCtx.Err() != nil) {
+			err = context.Canceled
+		}
+		if err == nil {
+			m.runtimes[roomID] = rt
+		}
+		if err != nil && rt != nil {
+			m.mu.Unlock()
+			rt.Close()
+			m.mu.Lock()
+			rt = nil
+		}
+		load.err = err
+		delete(m.loading, roomID)
+		close(load.done)
+		m.mu.Unlock()
+		cancel()
+		return rt, err
 	}
-	m.runtimes[roomID] = runtime
-	return runtime, nil
+}
+
+func (m *Manager) release(rt *RoomRuntime) {
+	m.mu.Lock()
+	if m.runtimes[rt.roomID] == rt {
+		delete(m.runtimes, rt.roomID)
+	}
+	m.mu.Unlock()
 }
 
 // CloseRoom stops an existing runtime without creating a replacement for a deleted room.
 func (m *Manager) CloseRoom(roomID string) {
 	m.mu.Lock()
 	runtime := m.runtimes[roomID]
+	load := m.loading[roomID]
+	if load != nil {
+		load.cancel()
+	}
 	m.mu.Unlock()
+	if load != nil {
+		<-load.done
+	}
 	if runtime != nil {
 		runtime.Close()
 	}
@@ -108,11 +177,19 @@ func (m *Manager) CloseRoom(roomID string) {
 func (m *Manager) Close() {
 	m.mu.Lock()
 	m.closed = true
+	loads := make([]*roomLoad, 0, len(m.loading))
+	for _, load := range m.loading {
+		load.cancel()
+		loads = append(loads, load)
+	}
 	runtimes := make([]*RoomRuntime, 0, len(m.runtimes))
 	for _, runtime := range m.runtimes {
 		runtimes = append(runtimes, runtime)
 	}
 	m.mu.Unlock()
+	for _, load := range loads {
+		<-load.done
+	}
 	for _, runtime := range runtimes {
 		runtime.Close()
 	}
@@ -136,7 +213,7 @@ func (m *Manager) ReloadQueue(ctx context.Context, roomID, removedTrackID string
 
 type command struct {
 	ctx    context.Context
-	apply  func(*RoomRuntime) (any, error)
+	apply  func(*RoomRuntime, context.Context) (any, error)
 	result chan commandResult
 }
 type commandResult struct {
@@ -163,19 +240,25 @@ type RoomRuntime struct {
 	timeout          time.Duration
 	broadcaster      Broadcaster
 	mutations        map[string]queueMutationRecord
+	mutationOrder    []string
+	mutationCounts   map[string]int
 	limits           QueueLimits
 	chat             *chatPolicy
 	controlScope     string
 	controlMutations map[controlKey]controlRecord
+	controlOrder     []controlKey
+	controlCounts    map[string]int
 	idle             time.Duration
 	lastActivity     time.Time
 	clients          int
 	advancePending   bool
-	onClose          func()
+	advanceFailures  int
+	advanceRetryAt   time.Time
+	onClose          func(*RoomRuntime)
 	closeOnce        sync.Once
 }
 
-func newRoomRuntime(ctx context.Context, store *storesqlite.Store, roomID string, capacity int, timeout, idle time.Duration, broadcaster Broadcaster, onClose func(), limits QueueLimits, chat *chatPolicy) (*RoomRuntime, error) {
+func newRoomRuntime(ctx context.Context, store *storesqlite.Store, roomID string, capacity int, timeout, idle time.Duration, broadcaster Broadcaster, onClose func(*RoomRuntime), limits QueueLimits, chat *chatPolicy) (*RoomRuntime, error) {
 	queueRepo := storesqlite.NewQueueRepository(store, time.Now)
 	queue, err := queueRepo.LoadQueue(ctx, roomID)
 	if err != nil {
@@ -191,17 +274,18 @@ func newRoomRuntime(ctx context.Context, store *storesqlite.Store, roomID string
 		state = &storesqlite.PlaybackState{RoomID: roomID, LikedUserIDs: map[string]struct{}{}, LikeMarkers: []int64{}, LastPersistedAt: now}
 	}
 	runtimeCtx, cancel := context.WithCancel(context.Background())
-	r := &RoomRuntime{roomID: roomID, queueRepo: queueRepo, stateRepo: stateRepo, realtimeRepo: storesqlite.NewRealtimeRepository(store, time.Now), chatRepo: storesqlite.NewChatRepository(store), playlistRepo: storesqlite.NewUserPlaylistRepository(store, time.Now, nil), queue: queue, state: *state, commands: make(chan command, capacity), ctx: runtimeCtx, cancel: cancel, done: make(chan struct{}), timeout: timeout, broadcaster: broadcaster, queueVersion: 1, limits: limits, chat: chat, mutations: map[string]queueMutationRecord{}, idle: idle, lastActivity: time.Now(), onClose: onClose}
+	r := &RoomRuntime{roomID: roomID, queueRepo: queueRepo, stateRepo: stateRepo, realtimeRepo: storesqlite.NewRealtimeRepository(store, time.Now), chatRepo: storesqlite.NewChatRepository(store), playlistRepo: storesqlite.NewUserPlaylistRepository(store, time.Now, nil), queue: queue, state: *state, commands: make(chan command, capacity), ctx: runtimeCtx, cancel: cancel, done: make(chan struct{}), timeout: timeout, broadcaster: broadcaster, queueVersion: 1, limits: limits, chat: chat, mutations: map[string]queueMutationRecord{}, mutationCounts: map[string]int{}, idle: idle, lastActivity: time.Now(), onClose: onClose}
 	if history, historyErr := queueRepo.LoadHistory(ctx, roomID, limits.HistorySize); historyErr == nil {
 		r.history = history
 	}
 	r.controlScope = uuid.NewString()
 	r.controlMutations = make(map[controlKey]controlRecord)
+	r.controlCounts = make(map[string]int)
 	go r.loop()
 	return r, nil
 }
 
-func (r *RoomRuntime) Execute(ctx context.Context, apply func(*RoomRuntime) (any, error)) (any, error) {
+func (r *RoomRuntime) Execute(ctx context.Context, apply func(*RoomRuntime, context.Context) (any, error)) (any, error) {
 	request := command{ctx: ctx, apply: apply, result: make(chan commandResult, 1)}
 	timer := time.NewTimer(r.timeout)
 	defer timer.Stop()
@@ -225,7 +309,7 @@ func (r *RoomRuntime) Execute(ctx context.Context, apply func(*RoomRuntime) (any
 }
 
 func (r *RoomRuntime) Snapshot(ctx context.Context) (map[string]any, error) {
-	value, err := r.Execute(ctx, func(runtime *RoomRuntime) (any, error) { return runtime.snapshot(), nil })
+	value, err := r.Execute(ctx, func(runtime *RoomRuntime, ctx context.Context) (any, error) { return runtime.snapshot(), nil })
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +317,7 @@ func (r *RoomRuntime) Snapshot(ctx context.Context) (map[string]any, error) {
 }
 
 func (r *RoomRuntime) Attach(ctx context.Context) error {
-	_, err := r.Execute(ctx, func(runtime *RoomRuntime) (any, error) {
+	_, err := r.Execute(ctx, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
 		runtime.clients++
 		return nil, nil
 	})
@@ -241,7 +325,7 @@ func (r *RoomRuntime) Attach(ctx context.Context) error {
 }
 
 func (r *RoomRuntime) Detach(ctx context.Context) error {
-	_, err := r.Execute(ctx, func(runtime *RoomRuntime) (any, error) {
+	_, err := r.Execute(ctx, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
 		if runtime.clients > 0 {
 			runtime.clients--
 		}
@@ -251,11 +335,12 @@ func (r *RoomRuntime) Detach(ctx context.Context) error {
 }
 
 func (r *RoomRuntime) Enqueue(ctx context.Context, session account.Session, music storesqlite.Music, mutationID string) (storesqlite.QueueItem, error) {
-	value, err := r.executeQueue(ctx, mutationID, []any{"enqueue", session.PublicID, music.Platform, music.ID}, func(runtime *RoomRuntime) (any, error) {
+	value, err := r.executeQueue(ctx, mutationID, []any{"enqueue", session.PublicID, music.Platform, music.ID}, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
 		item := storesqlite.QueueItem{QueueID: uuid.NewString(), Music: music, EnqueuedBy: storesqlite.UserSummary{PublicID: session.PublicID, Name: session.DisplayName, Guest: session.Guest}, Status: "PENDING"}
 		next := append(slices.Clone(runtime.queue), item)
 		nextState := clonePlaybackState(runtime.state)
-		started := startFirst(&nextState, &next)
+		startedID := startFirst(&nextState, &next)
+		started := startedID != ""
 		if err := runtime.checkQueueCapacity(session.PublicID, next); err != nil {
 			return nil, err
 		}
@@ -269,7 +354,11 @@ func (r *RoomRuntime) Enqueue(ctx context.Context, session account.Session, musi
 		runtime.queue = next
 		runtime.state = nextState
 		runtime.queueVersion++
-		runtime.broadcast("queue.patch", map[string]any{"operation": "append", "queueEpoch": runtime.controlScope, "queueVersion": runtime.queueVersion, "items": []storesqlite.QueueItem{item}})
+		pending := []storesqlite.QueueItem{item}
+		if item.QueueID == startedID {
+			pending = []storesqlite.QueueItem{}
+		}
+		runtime.broadcast("queue.patch", map[string]any{"operation": "append", "queueEpoch": runtime.controlScope, "queueVersion": runtime.queueVersion, "items": pending, "queueIds": consumedQueueIDs(startedID)})
 		runtime.broadcastState()
 		return item, nil
 	})
@@ -287,7 +376,7 @@ func (r *RoomRuntime) EnqueueMany(ctx context.Context, session account.Session, 
 	if len(collection) > 0 {
 		fingerprint = []any{"enqueue-collection", session.PublicID, collection}
 	}
-	value, err := r.executeQueue(ctx, mutationID, fingerprint, func(runtime *RoomRuntime) (any, error) {
+	value, err := r.executeQueue(ctx, mutationID, fingerprint, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
 		if len(musics) == 0 {
 			return nil, errors.New("playlist is empty")
 		}
@@ -297,7 +386,8 @@ func (r *RoomRuntime) EnqueueMany(ctx context.Context, session account.Session, 
 		}
 		next := append(slices.Clone(runtime.queue), items...)
 		nextState := clonePlaybackState(runtime.state)
-		started := startFirst(&nextState, &next)
+		startedID := startFirst(&nextState, &next)
+		started := startedID != ""
 		if err := runtime.checkQueueCapacity(session.PublicID, next); err != nil {
 			return nil, err
 		}
@@ -311,7 +401,8 @@ func (r *RoomRuntime) EnqueueMany(ctx context.Context, session account.Session, 
 		runtime.queue = next
 		runtime.state = nextState
 		runtime.queueVersion++
-		runtime.broadcast("queue.patch", map[string]any{"operation": "append", "queueEpoch": runtime.controlScope, "queueVersion": runtime.queueVersion, "items": items})
+		pending := slices.DeleteFunc(slices.Clone(items), func(item storesqlite.QueueItem) bool { return item.QueueID == startedID })
+		runtime.broadcast("queue.patch", map[string]any{"operation": "append", "queueEpoch": runtime.controlScope, "queueVersion": runtime.queueVersion, "items": pending, "queueIds": consumedQueueIDs(startedID)})
 		runtime.broadcastState()
 		return items, nil
 	})
@@ -322,7 +413,7 @@ func (r *RoomRuntime) EnqueueMany(ctx context.Context, session account.Session, 
 }
 
 func (r *RoomRuntime) Remove(ctx context.Context, ids []string, mutationID string) error {
-	_, err := r.executeQueue(ctx, mutationID, []any{"remove", ids}, func(runtime *RoomRuntime) (any, error) {
+	_, err := r.executeQueue(ctx, mutationID, []any{"remove", ids}, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
 		remove := map[string]struct{}{}
 		for _, id := range ids {
 			remove[id] = struct{}{}
@@ -344,7 +435,7 @@ func (r *RoomRuntime) Remove(ctx context.Context, ids []string, mutationID strin
 }
 
 func (r *RoomRuntime) Top(ctx context.Context, ids []string, mutationID string) error {
-	_, err := r.executeQueue(ctx, mutationID, []any{"top", ids}, func(runtime *RoomRuntime) (any, error) {
+	_, err := r.executeQueue(ctx, mutationID, []any{"top", ids}, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
 		selected := []storesqlite.QueueItem{}
 		rest := []storesqlite.QueueItem{}
 		wanted := map[string]struct{}{}
@@ -382,7 +473,7 @@ func (r *RoomRuntime) Top(ctx context.Context, ids []string, mutationID string) 
 }
 
 func (r *RoomRuntime) Reorder(ctx context.Context, oldIndex, newIndex int, mutationID string) error {
-	_, err := r.executeQueue(ctx, mutationID, []any{"reorder", oldIndex, newIndex}, func(runtime *RoomRuntime) (any, error) {
+	_, err := r.executeQueue(ctx, mutationID, []any{"reorder", oldIndex, newIndex}, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
 		if oldIndex < 0 || oldIndex >= len(runtime.queue) || newIndex < 0 || newIndex >= len(runtime.queue) {
 			return nil, ErrStaleQueue
 		}
@@ -403,7 +494,7 @@ func (r *RoomRuntime) Reorder(ctx context.Context, oldIndex, newIndex int, mutat
 }
 
 func (r *RoomRuntime) ReorderByID(ctx context.Context, queueID, targetQueueID, placement, mutationID string) error {
-	_, err := r.executeQueue(ctx, mutationID, []any{"reorder-id", queueID, targetQueueID, placement}, func(runtime *RoomRuntime) (any, error) {
+	_, err := r.executeQueue(ctx, mutationID, []any{"reorder-id", queueID, targetQueueID, placement}, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
 		if queueID == "" || targetQueueID == "" || queueID == targetQueueID {
 			return nil, ErrStaleQueue
 		}
@@ -447,8 +538,13 @@ func (r *RoomRuntime) ReorderByID(ctx context.Context, queueID, targetQueueID, p
 }
 
 func (r *RoomRuntime) TogglePause(ctx context.Context, mutation ...ControlMutation) (ControlResult, error) {
-	value, err := r.executeControl(ctx, "control.toggle-pause", 0, nil, mutation, func(runtime *RoomRuntime) (any, error) {
-		if runtime.state.PauseLocked && !runtime.state.Paused {
+	return r.TogglePauseAs(ctx, false, mutation...)
+}
+
+// TogglePauseAs accepts administrator authority from the authenticated session.
+func (r *RoomRuntime) TogglePauseAs(ctx context.Context, admin bool, mutation ...ControlMutation) (ControlResult, error) {
+	value, err := r.executeControl(ctx, "control.toggle-pause", 0, nil, mutation, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
+		if !admin && runtime.state.PauseLocked && !runtime.state.Paused {
 			return nil, ErrControlLocked
 		}
 		if runtime.state.CurrentMusic == nil {
@@ -480,23 +576,25 @@ func (r *RoomRuntime) TogglePause(ctx context.Context, mutation ...ControlMutati
 }
 
 func (r *RoomRuntime) ToggleShuffle(ctx context.Context, mutation ...ControlMutation) (ControlResult, error) {
+	return r.ToggleShuffleAs(ctx, false, mutation...)
+}
+
+// ToggleShuffleAs allows administrators to bypass the room shuffle lock.
+func (r *RoomRuntime) ToggleShuffleAs(ctx context.Context, admin bool, mutation ...ControlMutation) (ControlResult, error) {
 	return r.mutateStateChecked(ctx, "control.toggle-shuffle", 0, nil, mutation, func(s storesqlite.PlaybackState) error {
-		if s.ShuffleLocked {
+		if !admin && s.ShuffleLocked {
 			return ErrControlLocked
 		}
 		return nil
 	}, func(s *storesqlite.PlaybackState) { s.Shuffle = !s.Shuffle })
 }
-func (r *RoomRuntime) Seek(ctx context.Context, requested int64, publicID string, admin bool, expectedEpoch *int64, mutation ...ControlMutation) (ControlResult, error) {
+func (r *RoomRuntime) Seek(ctx context.Context, requested int64, _ string, _ bool, expectedEpoch *int64, mutation ...ControlMutation) (ControlResult, error) {
 	return r.mutateStateChecked(ctx, "control.seek", requested, expectedEpoch, mutation, func(s storesqlite.PlaybackState) error {
 		if expectedEpoch != nil && *expectedEpoch != s.PlayEpoch {
 			return ErrPreconditionFailed
 		}
 		if s.CurrentMusic == nil {
 			return ErrControlDenied
-		}
-		if !admin && (s.CurrentEnqueuerID == nil || *s.CurrentEnqueuerID != publicID) {
-			return ErrSeekForbidden
 		}
 		return nil
 	}, func(s *storesqlite.PlaybackState) {
@@ -511,7 +609,7 @@ func (r *RoomRuntime) Seek(ctx context.Context, requested int64, publicID string
 	})
 }
 func (r *RoomRuntime) Like(ctx context.Context, publicID string, expectedEpoch *int64, mutation ...ControlMutation) (ControlResult, error) {
-	value, err := r.executeControl(ctx, "control.like", 0, expectedEpoch, mutation, func(runtime *RoomRuntime) (any, error) {
+	value, err := r.executeControl(ctx, "control.like", 0, expectedEpoch, mutation, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
 		if expectedEpoch != nil && *expectedEpoch != runtime.state.PlayEpoch {
 			return nil, ErrPreconditionFailed
 		}
@@ -522,18 +620,19 @@ func (r *RoomRuntime) Like(ctx context.Context, publicID string, expectedEpoch *
 			return ControlResult{Committed: runtime.watermark()}, nil
 		}
 		music := playedMusic(runtime.state.CurrentMusic)
-		if err := runtime.syncLikedSongs(ctx, publicID, music, true); err != nil {
+		next := clonePlaybackState(runtime.state)
+		if next.LikedUserIDs == nil {
+			next.LikedUserIDs = map[string]struct{}{}
+		}
+		next.LikedUserIDs[publicID] = struct{}{}
+		next.LikeMarkers = append(next.LikeMarkers, position(next, time.Now().UnixMilli()))
+		next.StateVersion++
+		next.LastPersistedAt = time.Now().UnixMilli()
+		if err := runtime.realtimeRepo.CommitRoomLike(ctx, next, publicID, music, true); err != nil {
 			return nil, err
 		}
-		if err := runtime.mutateStateDirect(ctx, func(s *storesqlite.PlaybackState) {
-			if s.LikedUserIDs == nil {
-				s.LikedUserIDs = map[string]struct{}{}
-			}
-			s.LikedUserIDs[publicID] = struct{}{}
-			s.LikeMarkers = append(s.LikeMarkers, position(*s, time.Now().UnixMilli()))
-		}); err != nil {
-			return nil, err
-		}
+		runtime.state = next
+		runtime.broadcastState()
 		return ControlResult{Applied: true, Committed: runtime.watermark()}, nil
 	})
 	if err != nil {
@@ -546,7 +645,7 @@ func (r *RoomRuntime) Like(ctx context.Context, publicID string, expectedEpoch *
 // that never liked the track gets the same noop as a repeated like: canceling
 // twice is as safe as liking twice.
 func (r *RoomRuntime) Unlike(ctx context.Context, publicID string, expectedEpoch *int64, mutation ...ControlMutation) (ControlResult, error) {
-	value, err := r.executeControl(ctx, "control.unlike", 0, expectedEpoch, mutation, func(runtime *RoomRuntime) (any, error) {
+	value, err := r.executeControl(ctx, "control.unlike", 0, expectedEpoch, mutation, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
 		if expectedEpoch != nil && *expectedEpoch != runtime.state.PlayEpoch {
 			return nil, ErrPreconditionFailed
 		}
@@ -557,19 +656,20 @@ func (r *RoomRuntime) Unlike(ctx context.Context, publicID string, expectedEpoch
 			return ControlResult{Committed: runtime.watermark()}, nil
 		}
 		music := playedMusic(runtime.state.CurrentMusic)
-		if err := runtime.syncLikedSongs(ctx, publicID, music, false); err != nil {
+		next := clonePlaybackState(runtime.state)
+		delete(next.LikedUserIDs, publicID)
+		// LikeMarkers carries one entry per outstanding like without saying who
+		// made which one, so the newest marker leaves with the newest like.
+		if len(next.LikeMarkers) > 0 {
+			next.LikeMarkers = next.LikeMarkers[:len(next.LikeMarkers)-1]
+		}
+		next.StateVersion++
+		next.LastPersistedAt = time.Now().UnixMilli()
+		if err := runtime.realtimeRepo.CommitRoomLike(ctx, next, publicID, music, false); err != nil {
 			return nil, err
 		}
-		if err := runtime.mutateStateDirect(ctx, func(s *storesqlite.PlaybackState) {
-			delete(s.LikedUserIDs, publicID)
-			// LikeMarkers carries one entry per outstanding like without saying who
-			// made which one, so the newest marker leaves with the newest like.
-			if len(s.LikeMarkers) > 0 {
-				s.LikeMarkers = s.LikeMarkers[:len(s.LikeMarkers)-1]
-			}
-		}); err != nil {
-			return nil, err
-		}
+		runtime.state = next
+		runtime.broadcastState()
 		return ControlResult{Applied: true, Committed: runtime.watermark()}, nil
 	})
 	if err != nil {
@@ -581,36 +681,12 @@ func (r *RoomRuntime) Unlike(ctx context.Context, publicID string, expectedEpoch
 const (
 	// A member's own liked list is one row of the existing `user_playlist` system
 	// playlist table, the same one /api/me/liked-songs maintains for the web.
-	LikedSongsSystemKey = "liked-songs"
-	LikedSongsName      = "喜欢的歌曲"
+	LikedSongsSystemKey = storesqlite.LikedSongsSystemKey
+	LikedSongsName      = storesqlite.LikedSongsName
 )
 
 func playedMusic(music *storesqlite.PlayableMusic) storesqlite.Music {
 	return storesqlite.Music{ID: music.ID, Name: music.Name, Artists: slices.Clone(music.Artists), Duration: music.Duration, Platform: music.Platform, CoverURL: music.CoverURL}
-}
-
-// syncLikedSongs mirrors a room like onto the member's own liked list, which is
-// the same `liked-songs` system playlist the web pages maintain through
-// /api/me/liked-songs. It runs before the room state commits, so a write that
-// fails leaves the shared heart and the personal list agreeing on "not liked".
-func (r *RoomRuntime) syncLikedSongs(ctx context.Context, publicID string, music storesqlite.Music, liked bool) error {
-	if !liked {
-		playlist, err := r.playlistRepo.FindSystemPlaylist(ctx, publicID, LikedSongsSystemKey)
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		_, err = r.playlistRepo.DeleteTrackByMusicKey(ctx, publicID, playlist.ID, music.Platform+":"+music.ID)
-		return err
-	}
-	playlist, err := r.EnsureLikedSongs(ctx, publicID)
-	if err != nil {
-		return err
-	}
-	_, err = r.playlistRepo.AddTrackIfAbsent(ctx, publicID, playlist.ID, &music)
-	return err
 }
 
 // EnsureLikedSongs returns the member's own liked list, creating it on first use.
@@ -626,8 +702,18 @@ func (r *RoomRuntime) EnsureLikedSongs(ctx context.Context, publicID string) (st
 }
 
 func (r *RoomRuntime) Next(ctx context.Context, mutation ...ControlMutation) (ControlResult, error) {
-	value, err := r.executeControl(ctx, "control.next", 0, nil, mutation, func(runtime *RoomRuntime) (any, error) {
-		if runtime.state.SkipLocked {
+	return r.NextAs(ctx, "", true, mutation...)
+}
+
+// NextAs lets an administrator skip any track while a DJ can skip only the
+// track they enqueued. Authorization runs inside the room actor against its
+// current committed playback state.
+func (r *RoomRuntime) NextAs(ctx context.Context, publicID string, admin bool, mutation ...ControlMutation) (ControlResult, error) {
+	value, err := r.executeControl(ctx, "control.next", 0, nil, mutation, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
+		if !admin && (runtime.state.CurrentEnqueuerID == nil || *runtime.state.CurrentEnqueuerID != publicID) {
+			return nil, ErrForbidden
+		}
+		if !admin && runtime.state.SkipLocked {
 			return nil, ErrControlLocked
 		}
 		if err := runtime.advance(ctx); err != nil {
@@ -646,11 +732,16 @@ func (r *RoomRuntime) Next(ctx context.Context, mutation ...ControlMutation) (Co
 // end), which starts taking from the queue again; the walked-past entries
 // remain reachable as history. Shuffle only affects advance's queue pick.
 func (r *RoomRuntime) Previous(ctx context.Context, expectedEpoch *int64, mutation ...ControlMutation) (ControlResult, error) {
-	value, err := r.executeControl(ctx, "control.previous", 0, expectedEpoch, mutation, func(runtime *RoomRuntime) (any, error) {
+	return r.PreviousAs(ctx, false, expectedEpoch, mutation...)
+}
+
+// PreviousAs allows administrators to bypass skip locks; epoch checks still apply.
+func (r *RoomRuntime) PreviousAs(ctx context.Context, admin bool, expectedEpoch *int64, mutation ...ControlMutation) (ControlResult, error) {
+	value, err := r.executeControl(ctx, "control.previous", 0, expectedEpoch, mutation, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
 		if expectedEpoch != nil && *expectedEpoch != runtime.state.PlayEpoch {
 			return nil, ErrPreconditionFailed
 		}
-		if runtime.state.SkipLocked {
+		if !admin && runtime.state.SkipLocked {
 			return nil, ErrControlLocked
 		}
 		if runtime.state.CurrentMusic == nil {
@@ -689,7 +780,7 @@ func (r *RoomRuntime) historyCursor() int {
 }
 
 func (r *RoomRuntime) Clear(ctx context.Context, mutationID string) error {
-	_, err := r.executeQueue(ctx, mutationID, []any{"clear"}, func(runtime *RoomRuntime) (any, error) {
+	_, err := r.executeQueue(ctx, mutationID, []any{"clear"}, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
 		if len(runtime.queue) == 0 {
 			return nil, ErrStaleQueue
 		}
@@ -709,7 +800,7 @@ func (r *RoomRuntime) Clear(ctx context.Context, mutationID string) error {
 // ReloadQueue replaces the runtime queue with the persisted one. The queue version only moves
 // forward: clients treat a version of zero or less as invalid, so it is never rewritten.
 func (r *RoomRuntime) ReloadQueue(ctx context.Context, removedTrackID string) error {
-	_, err := r.Execute(ctx, func(runtime *RoomRuntime) (any, error) {
+	_, err := r.Execute(ctx, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
 		next, err := runtime.queueRepo.LoadQueue(ctx, runtime.roomID)
 		if err != nil {
 			return nil, err
@@ -733,6 +824,7 @@ func (r *RoomRuntime) ReloadQueue(ctx context.Context, removedTrackID string) er
 		}
 		runtime.queue = next
 		runtime.queueVersion++
+		runtime.broadcast("queue.patch", map[string]any{"operation": "snapshot", "queueEpoch": runtime.controlScope, "queueVersion": runtime.queueVersion, "queue": next})
 		runtime.broadcastState()
 		return nil, nil
 	})
@@ -791,6 +883,7 @@ func (r *RoomRuntime) advance(ctx context.Context) error {
 	nextQueue := slices.Clone(r.queue)
 	nextState := clonePlaybackState(r.state)
 	var history *storesqlite.HistoryEntry
+	removed := []string{}
 	if r.state.CurrentMusic != nil {
 		music := storesqlite.Music{ID: r.state.CurrentMusic.ID, Name: r.state.CurrentMusic.Name, Artists: r.state.CurrentMusic.Artists, Duration: r.state.CurrentMusic.Duration, Platform: r.state.CurrentMusic.Platform, CoverURL: r.state.CurrentMusic.CoverURL}
 		history = &storesqlite.HistoryEntry{ID: uuid.NewString(), RoomID: r.roomID, Music: music, EnqueuerPublicID: r.state.CurrentEnqueuerID, PlayedAt: time.Now().UnixMilli()}
@@ -802,6 +895,7 @@ func (r *RoomRuntime) advance(ctx context.Context) error {
 		nextState.Paused = true
 	} else {
 		item := takeNext(&nextState, &nextQueue)
+		removed = append(removed, item.QueueID)
 		nextState.CurrentMusic = playableMusic(item.Music)
 		nextState.CurrentEnqueuerID = &item.EnqueuedBy.PublicID
 		nextState.CurrentEnqueuerName = &item.EnqueuedBy.Name
@@ -834,7 +928,7 @@ func (r *RoomRuntime) advance(ctx context.Context) error {
 	}
 	r.historySkipped = 0
 	r.queueVersion++
-	r.broadcast("queue.patch", map[string]any{"operation": "snapshot", "queueEpoch": r.controlScope, "queueVersion": r.queueVersion, "queue": nextQueue})
+	r.broadcast("queue.patch", map[string]any{"operation": "remove", "queueEpoch": r.controlScope, "queueVersion": r.queueVersion, "queueIds": removed})
 	r.broadcastState()
 	return nil
 }
@@ -935,7 +1029,7 @@ func (r *RoomRuntime) PlaybackHistory(ctx context.Context, offset, limit int) (P
 }
 
 func (r *RoomRuntime) mutateStateChecked(ctx context.Context, kind string, positionMS int64, expectedEpoch *int64, mutation []ControlMutation, check func(storesqlite.PlaybackState) error, mutate func(*storesqlite.PlaybackState)) (ControlResult, error) {
-	value, err := r.executeControl(ctx, kind, positionMS, expectedEpoch, mutation, func(runtime *RoomRuntime) (any, error) {
+	value, err := r.executeControl(ctx, kind, positionMS, expectedEpoch, mutation, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
 		if check != nil {
 			if checkErr := check(runtime.state); checkErr != nil {
 				return nil, checkErr
@@ -970,9 +1064,17 @@ func (r *RoomRuntime) watermark() *CommittedWatermark {
 	return &CommittedWatermark{StateVersion: r.state.StateVersion, PlayEpoch: r.state.PlayEpoch, QueueVersion: r.queueVersion}
 }
 
-func startFirst(state *storesqlite.PlaybackState, queue *[]storesqlite.QueueItem) bool {
+func consumedQueueIDs(id string) []string {
+	if id == "" {
+		return []string{}
+	}
+	return []string{id}
+}
+
+// startFirst returns the queue ID consumed when starting an idle player.
+func startFirst(state *storesqlite.PlaybackState, queue *[]storesqlite.QueueItem) string {
 	if state.CurrentMusic != nil || len(*queue) == 0 {
-		return false
+		return ""
 	}
 	item := takeNext(state, queue)
 	now := time.Now().UnixMilli()
@@ -988,7 +1090,7 @@ func startFirst(state *storesqlite.PlaybackState, queue *[]storesqlite.QueueItem
 	state.LikeMarkers = []int64{}
 	state.StateVersion++
 	state.LastPersistedAt = now
-	return true
+	return item.QueueID
 }
 
 // takeNext consumes explicit priority before shuffle while preserving the
@@ -1064,7 +1166,9 @@ func (r *RoomRuntime) snapshot() map[string]any {
 	return map[string]any{"nowPlaying": nowPlaying, "queue": r.queue, "isShuffle": r.state.Shuffle, "isPaused": r.state.Paused, "isPauseLocked": r.state.PauseLocked, "isSkipLocked": r.state.SkipLocked, "isShuffleLocked": r.state.ShuffleLocked, "isLoading": r.state.Loading, "serverTimestamp": time.Now().UnixMilli(), "stateVersion": r.state.StateVersion, "playEpoch": r.state.PlayEpoch, "queueVersion": r.queueVersion, "queueEpoch": r.controlScope, "historyCursor": r.historyCursor(), "idempotencyScopeId": r.controlScope, "idempotencyTtlMs": ControlMutationTTL.Milliseconds()}
 }
 func (r *RoomRuntime) broadcastState() {
-	r.broadcast("player.state", r.snapshot())
+	state := r.snapshot()
+	delete(state, "queue")
+	r.broadcast("player.state", state)
 }
 func (r *RoomRuntime) broadcast(kind string, payload any) {
 	if r.broadcaster != nil {
@@ -1073,7 +1177,7 @@ func (r *RoomRuntime) broadcast(kind string, payload any) {
 }
 func (r *RoomRuntime) loop() {
 	defer close(r.done)
-	defer r.onClose()
+	defer r.onClose(r)
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
@@ -1091,7 +1195,11 @@ func (r *RoomRuntime) loop() {
 				command.result <- commandResult{err: command.ctx.Err()}
 				continue
 			}
-			value, err := command.apply(r)
+			opCtx, cancel := context.WithTimeout(context.WithoutCancel(command.ctx), r.timeout)
+			stop := context.AfterFunc(r.ctx, cancel)
+			value, err := command.apply(r, opCtx)
+			stop()
+			cancel()
 			r.lastActivity = time.Now()
 			command.result <- commandResult{value: value, err: err}
 			if errors.Is(err, storesqlite.ErrRoomGone) {
@@ -1107,9 +1215,20 @@ func (r *RoomRuntime) onTick(now time.Time) {
 	}
 	current := position(r.state, now.UnixMilli())
 	r.broadcast("player.progress", map[string]any{"currentPosition": current, "serverTimestamp": now.UnixMilli(), "stateVersion": r.state.StateVersion, "playEpoch": r.state.PlayEpoch})
-	if r.state.CurrentMusic.Duration > 0 && current >= r.state.CurrentMusic.Duration && !r.advancePending {
+	if r.state.CurrentMusic.Duration > 0 && current >= r.state.CurrentMusic.Duration && !r.advancePending && !now.Before(r.advanceRetryAt) {
 		r.advancePending = true
-		_ = r.advance(r.ctx)
+		ctx, cancel := context.WithTimeout(r.ctx, r.timeout)
+		err := r.advance(ctx)
+		cancel()
+		if err == nil {
+			r.advanceFailures = 0
+			r.advanceRetryAt = time.Time{}
+		} else {
+			r.advancePending = false
+			r.advanceFailures++
+			r.advanceRetryAt = now.Add(min(30*time.Second, time.Second<<min(r.advanceFailures, 5)))
+			slog.Warn("auto advance failed", "room", r.roomID, "attempt", r.advanceFailures, "error", err)
+		}
 	}
 }
 

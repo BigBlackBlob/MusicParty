@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
+import { queryClient } from '../app/providers';
 import { authApi } from '../api/auth';
 import { STORAGE_KEYS } from '../constants/keys';
 import { useUserStore } from './user';
@@ -165,5 +166,35 @@ describe('room capabilities follow the server room gates', () => {
     const legacyAdmin = signIn('ADMIN', 'u_admin2');
     expect(legacyAdmin.isAdmin).toBe(true);
     expect(legacyAdmin.capabilitiesForRoom('u_someone').canManageCurrentRoom).toBe(true);
+  });
+});
+
+
+describe('identity query isolation', () => {
+  beforeEach(() => { setActivePinia(createPinia()); queryClient.clear(); });
+
+  it('clears protected cached data when another account signs in', () => {
+    const user = useUserStore();
+    user.initUser('a', 'A', true);
+    queryClient.setQueryData(['search', 'private-source'], ['private-song']);
+    user.initUser('b', 'B', true);
+    expect(queryClient.getQueryData(['search', 'private-source'])).toBeUndefined();
+  });
+
+  it('cancels old queries and prevents late responses repopulating a logged-out cache', async () => {
+    const user = useUserStore();
+    user.initUser('a', 'A', true);
+    let finish;
+    let requestSignal;
+    const pending = queryClient.fetchQuery({
+      queryKey: ['search', 'private-source'],
+      queryFn: ({ signal }) => { requestSignal = signal; return new Promise(resolve => { finish = resolve; }); }
+    }).catch(() => undefined);
+    user.clearAccountIdentity();
+    expect(requestSignal.aborted).toBe(true);
+    finish(['private-song']);
+    await pending;
+    await Promise.resolve();
+    expect(queryClient.getQueryData(['search', 'private-source'])).toBeUndefined();
   });
 });

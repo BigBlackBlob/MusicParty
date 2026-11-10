@@ -16,17 +16,19 @@ import (
 )
 
 type MediaAPI struct {
-	cfg        config.Config
-	accounts   *account.Service
-	repository *storesqlite.LocalTrackRepository
-	library    *media.LocalLibrary
-	platforms  *PlatformAPI
-	proxy      media.Proxy
-	cache      *media.Cache
+	cfg             config.Config
+	accounts        *account.Service
+	repository      *storesqlite.LocalTrackRepository
+	library         *media.LocalLibrary
+	platforms       *PlatformAPI
+	proxy           media.Proxy
+	cache           *media.Cache
+	uploads         chan struct{}
+	resolverLimiter *loginLimiter
 }
 
 func NewMediaAPI(cfg config.Config, accounts *account.Service, store *storesqlite.Store, library *media.LocalLibrary, platforms *PlatformAPI, proxyClient *http.Client, cache *media.Cache) *MediaAPI {
-	return &MediaAPI{cfg: cfg, accounts: accounts, repository: storesqlite.NewLocalTrackRepository(store), library: library, platforms: platforms, proxy: media.Proxy{Client: proxyClient}, cache: cache}
+	return &MediaAPI{cfg: cfg, accounts: accounts, repository: storesqlite.NewLocalTrackRepository(store), library: library, platforms: platforms, proxy: media.Proxy{Client: proxyClient}, cache: cache, uploads: make(chan struct{}, 2), resolverLimiter: &loginLimiter{enabled: true, max: 30, maxTracked: 10000, window: time.Minute, block: time.Minute, items: map[string]loginAttempt{}, now: time.Now}}
 }
 
 func (api *MediaAPI) Routes(r chi.Router) {
@@ -95,16 +97,25 @@ func (api *MediaAPI) listLocal(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (api *MediaAPI) uploadLocal(w http.ResponseWriter, r *http.Request) error {
+	session, ok := api.canManage(r)
+	if !ok {
+		return accessDenied(w)
+	}
+	select {
+	case api.uploads <- struct{}{}:
+		defer func() { <-api.uploads }()
+	default:
+		return &APIError{Status: http.StatusServiceUnavailable, Message: "Upload capacity reached"}
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, api.cfg.LocalLibrary.MaxUploadBytes+1<<20)
 	if err := r.ParseMultipartForm(1 << 20); err != nil {
+		if r.MultipartForm != nil {
+			_ = r.MultipartForm.RemoveAll()
+		}
 		return badRequest("Upload exceeds configured limit")
 	}
 	if r.MultipartForm != nil {
 		defer r.MultipartForm.RemoveAll()
-	}
-	session, ok := api.canManage(r)
-	if !ok {
-		return accessDenied(w)
 	}
 	file, header, err := r.FormFile("file")
 	if err != nil {
@@ -319,6 +330,12 @@ func (api *MediaAPI) proxyPlatform(w http.ResponseWriter, r *http.Request, name,
 	if err != nil {
 		return err
 	}
+	if name == "youtube" {
+		if retry, blocked := api.resolverLimiter.admit(ClientIP(r)); blocked {
+			w.Header().Set("Retry-After", retry)
+			return &APIError{Status: http.StatusTooManyRequests, Message: "Media resolution rate limit reached"}
+		}
+	}
 	cacheKey := platformCacheKey(source, name, id)
 	if !cover && api.cache != nil {
 		if path, release, ok := api.cache.Acquire(cacheKey); ok {
@@ -331,6 +348,10 @@ func (api *MediaAPI) proxyPlatform(w http.ResponseWriter, r *http.Request, name,
 		target, err = source.CoverURL(r.Context(), id)
 	} else {
 		target, err = source.StreamURL(r.Context(), id)
+	}
+	if errors.Is(err, media.ErrResolverBusy) {
+		w.Header().Set("Retry-After", "1")
+		return &APIError{Status: http.StatusServiceUnavailable, Message: "Media resolver busy"}
 	}
 	if err != nil || target == "" {
 		w.WriteHeader(http.StatusNotFound)

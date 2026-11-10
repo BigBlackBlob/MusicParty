@@ -54,4 +54,60 @@ describe('runtime generation recovery', () => {
       vi.useRealTimers()
     }
   })
+
+  it('preserves the queue when applying compact playback updates', () => {
+    const sync = useRoomStateSynchronizer()
+    const runtime = useRoomRuntimeStore()
+    sync.syncState(state('room', 1))
+    const queue = runtime.queue
+    sync.syncState({ ...state('room', 1), queue: undefined, stateVersion: 1, isPaused: false })
+    expect(runtime.queue).toBe(queue)
+    expect(runtime.isPaused).toBe(false)
+    expect(realtimeClient.send).not.toHaveBeenCalled()
+  })
+
+  it('requires a full baseline before accepting compact updates for a generation', () => {
+    const sync = useRoomStateSynchronizer()
+    const runtime = useRoomRuntimeStore()
+    sync.syncState({ ...state('room', 1), queue: undefined })
+    expect(runtime.queueEpoch).toBe('')
+    expect(realtimeClient.send).toHaveBeenCalledWith('player.resync', {})
+    sync.syncState(state('room', 1))
+    vi.clearAllMocks()
+    sync.syncState({ ...state('rebuilt', 1), queue: undefined })
+    expect(runtime.queueEpoch).toBe('room')
+    expect(realtimeClient.send).toHaveBeenCalledWith('player.resync', {})
+  })
+
+  it('retains an initial snapshot coalesced with a compact update', () => {
+    vi.useFakeTimers()
+    try {
+      const sync = useRoomStateSynchronizer()
+      const runtime = useRoomRuntimeStore()
+      sync.scheduleSyncState(state('room', 1))
+      sync.scheduleSyncState({ ...state('room', 1), queue: undefined, stateVersion: 1, isPaused: false })
+      vi.runAllTimers()
+      expect(runtime.queue.map(item => item.queueId)).toEqual(['room'])
+      expect(runtime.isPaused).toBe(false)
+      expect(realtimeClient.send).not.toHaveBeenCalled()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('checks queue gaps after pending patch frames and requests resync only for missing patches', () => {
+    vi.useFakeTimers()
+    try {
+      const sync = useRoomStateSynchronizer()
+      const runtime = useRoomRuntimeStore()
+      sync.syncState(state('room', 1))
+      sync.scheduleSyncState({ ...state('room', 2), queue: undefined, stateVersion: 1 })
+      sync.scheduleQueuePatch({ operation: 'clear', queueEpoch: 'room', queueVersion: 2 })
+      vi.runAllTimers()
+      expect(runtime.queue).toEqual([])
+      expect(runtime.lastQueueVersion).toBe(2)
+      expect(realtimeClient.send).not.toHaveBeenCalled()
+      sync.syncState({ ...state('room', 3), queue: undefined, stateVersion: 2 })
+      vi.runAllTimers()
+      expect(realtimeClient.send).toHaveBeenCalledWith('player.resync', {})
+    } finally { vi.useRealTimers() }
+  })
 })

@@ -1,3 +1,5 @@
+import { createPinia, setActivePinia } from 'pinia'
+import { useRoomPresenceStore } from '../domains/realtime/roomPresenceStore'
 import { describe, expect, it, vi } from 'vitest'
 import { createSocketCallbacks, createSocketHandlers } from './socketHandler'
 
@@ -29,4 +31,18 @@ describe('socket connection callbacks', () => {
 
     expect(requestPresence).toHaveBeenCalledOnce()
   })
+})
+
+
+it('accepts restarted server presence revisions after an automatic reconnect', () => {
+  setActivePinia(createPinia())
+  const presence = useRoomPresenceStore()
+  presence.reset('lounge')
+  presence.apply({ roomId: 'lounge', revision: 500, users: [] }, 'lounge')
+  const callbacks = createSocketCallbacks({ resetPresence: () => presence.reset('lounge') })
+  callbacks.onConnect?.(new Event('open'))
+  expect(presence.apply({ roomId: 'lounge', revision: 1, users: [
+    { publicId: 'new', name: 'New', isGuest: true },
+  ] }, 'lounge')).toBe(true)
+  expect(presence.users[0]?.publicId).toBe('new')
 })

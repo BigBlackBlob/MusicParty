@@ -222,3 +222,56 @@ func contractSchemaDirectory(t *testing.T) string {
 	}
 	return filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", "..", "..", "..", "contracts", "db"))
 }
+
+func TestSchemaRejectsMissingUniqueAndChangedPartialPredicate(t *testing.T) {
+	required, err := ReadSchemaSnapshot(filepath.Join(contractSchemaDirectory(t), "schema.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	clone := func() SchemaSnapshot {
+		raw, _ := json.Marshal(required)
+		var actual SchemaSnapshot
+		_ = json.Unmarshal(raw, &actual)
+		return actual
+	}
+	t.Run("implicit unique", func(t *testing.T) {
+		actual := clone()
+		for i := range actual.Tables {
+			if actual.Tables[i].Name != "user_playlist" {
+				continue
+			}
+			kept := []SchemaIndex{}
+			for _, index := range actual.Tables[i].Indexes {
+				if index.Origin != "u" {
+					kept = append(kept, index)
+				}
+			}
+			actual.Tables[i].Indexes = kept
+		}
+		if len(ValidateSchemaCompatibility(required, actual)) == 0 {
+			t.Fatal("missing UNIQUE must fail compatibility validation")
+		}
+	})
+	t.Run("partial predicate", func(t *testing.T) {
+		actual := clone()
+		for i := range actual.Objects {
+			if actual.Objects[i].Name == "idx_local_track_original_hash_active" {
+				actual.Objects[i].SQL = strings.ReplaceAll(actual.Objects[i].SQL, "<>", "=")
+			}
+		}
+		if len(ValidateSchemaCompatibility(required, actual)) == 0 {
+			t.Fatal("changed predicate must fail compatibility validation")
+		}
+	})
+	t.Run("formatting", func(t *testing.T) {
+		actual := clone()
+		for i := range actual.Objects {
+			if actual.Objects[i].Name == "idx_local_track_original_hash_active" {
+				actual.Objects[i].SQL = strings.ReplaceAll(actual.Objects[i].SQL, "where", "WHERE\n")
+			}
+		}
+		if differences := ValidateSchemaCompatibility(required, actual); len(differences) != 0 {
+			t.Fatalf("formatting must remain compatible: %+v", differences)
+		}
+	})
+}

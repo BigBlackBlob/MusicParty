@@ -83,11 +83,22 @@ type Invite struct {
 	CreatedAt int64  `json:"-"`
 }
 type Service struct {
-	store         *storesqlite.Store
-	accounts      *account.Service
-	now           func() time.Time
-	onRoomDeleted func(string)
+	store           *storesqlite.Store
+	accounts        *account.Service
+	now             func() time.Time
+	onRoomDeleted   func(string)
+	onAccessChanged func(AccessChange)
 }
+
+// AccessChange is emitted only after the access mutation commits.
+type AccessChange struct {
+	RoomID          string
+	Owner           string
+	RevokedPublicID string
+}
+
+// SetAccessChangedHook configures connection invalidation before serving requests.
+func (s *Service) SetAccessChangedHook(hook func(AccessChange)) { s.onAccessChanged = hook }
 
 func New(store *storesqlite.Store, accounts *account.Service) *Service {
 	return &Service{store: store, accounts: accounts, now: time.Now}
@@ -244,6 +255,8 @@ func (s *Service) UpdateDetails(ctx context.Context, roomID, token string, input
 		}
 		newHash = string(hash)
 	}
+	accessChanged := false
+	var owner string
 	now := s.now().UnixMilli()
 	if err := s.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		allowed, err := canEditRoomTx(ctx, tx, roomID, session)
@@ -255,9 +268,10 @@ func (s *Service) UpdateDetails(ctx context.Context, roomID, token string, input
 		}
 		var existingName, visibility, passwordHash string
 		var passwordVersion int
-		if err := tx.QueryRowContext(ctx, "select name,visibility,coalesce(password_hash,''),password_version from room where id=? and deleted_at is null", roomID).Scan(&existingName, &visibility, &passwordHash, &passwordVersion); err != nil {
+		if err := tx.QueryRowContext(ctx, "select name,visibility,coalesce(password_hash,''),password_version,owner_public_id from room where id=? and deleted_at is null", roomID).Scan(&existingName, &visibility, &passwordHash, &passwordVersion, &owner); err != nil {
 			return err
 		}
+		previousVersion := passwordVersion
 		if name != existingName {
 			if err := ensureRoomNameAvailable(ctx, tx, name, roomID); err != nil {
 				return err
@@ -283,10 +297,14 @@ func (s *Service) UpdateDetails(ctx context.Context, roomID, token string, input
 			}
 			visibility, passwordHash = "PUBLIC", ""
 		}
+		accessChanged = passwordVersion != previousVersion
 		_, err = tx.ExecContext(ctx, "update room set name=?,visibility=?,password_hash=?,password_version=?,last_active_at=? where id=? and deleted_at is null", name, visibility, nullable(passwordHash), passwordVersion, now, roomID)
 		return err
 	}); err != nil {
 		return Info{}, err
+	}
+	if accessChanged && s.onAccessChanged != nil {
+		s.onAccessChanged(AccessChange{RoomID: roomID, Owner: owner})
 	}
 	return s.get(ctx, roomID, session.PublicID)
 }
@@ -501,13 +519,13 @@ func (s *Service) SetOwner(ctx context.Context, roomID, publicID, token string, 
 // pointer, so a promotion or a handover takes effect immediately without a second write path.
 func (s *Service) grantOwner(ctx context.Context, roomID, publicID string) (bool, error) {
 	changed := false
+	var previous string
 	err := s.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		var existing string
 		if err := tx.QueryRowContext(ctx, "select role from room_membership where room_id=? and public_id=?", roomID, publicID).Scan(&existing); err != nil {
 			// A plain sql.ErrNoRows maps to 404 at the HTTP layer; anything else stays an error.
 			return err
 		}
-		var previous string
 		if err := tx.QueryRowContext(ctx, "select owner_public_id from room where id=? and deleted_at is null", roomID).Scan(&previous); err != nil {
 			return err
 		}
@@ -528,6 +546,9 @@ func (s *Service) grantOwner(ctx context.Context, roomID, publicID string) (bool
 		changed = true
 		return nil
 	})
+	if err == nil && changed && previous != "" && previous != publicID && s.onAccessChanged != nil {
+		s.onAccessChanged(AccessChange{RoomID: roomID, RevokedPublicID: previous})
+	}
 	return changed, err
 }
 
@@ -583,6 +604,9 @@ func (s *Service) changeMembership(ctx context.Context, roomID, publicID, role s
 		changed = true
 		return s.syncOwnerPointer(ctx, tx, roomID, publicID)
 	})
+	if err == nil && changed && s.onAccessChanged != nil {
+		s.onAccessChanged(AccessChange{RoomID: roomID, RevokedPublicID: publicID})
+	}
 	return changed, err
 }
 func (s *Service) get(ctx context.Context, roomID, _ string) (Info, error) {

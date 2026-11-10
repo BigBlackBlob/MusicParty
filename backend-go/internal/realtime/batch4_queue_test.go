@@ -63,7 +63,7 @@ func TestBatch4CapacityIsAtomicAndRetriesReplay(t *testing.T) {
 		_, err = r.Next(ctx)
 		require.NoError(t, err, fmt.Sprint(i))
 	}
-	historySize, err := r.Execute(ctx, func(runtime *RoomRuntime) (any, error) { return len(runtime.history), nil })
+	historySize, err := r.Execute(ctx, func(runtime *RoomRuntime, ctx context.Context) (any, error) { return len(runtime.history), nil })
 	require.NoError(t, err)
 	require.Equal(t, 1, historySize)
 	history, err := r.queueRepo.LoadHistory(ctx, "lounge", 10)
@@ -125,7 +125,7 @@ func TestBatch4PrioritySurvivesRebuildAndOrdinaryReorder(t *testing.T) {
 	for i, wanted := range []string{"c", "a", "b"} {
 		if i == 1 {
 			// Natural completion uses the same priority selection as manual next.
-			_, err = r.Execute(ctx, func(runtime *RoomRuntime) (any, error) {
+			_, err = r.Execute(ctx, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
 				runtime.state.CurrentMusic.Duration = 1
 				runtime.onTick(time.Now().Add(time.Second))
 				return nil, nil

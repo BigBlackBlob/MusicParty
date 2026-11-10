@@ -35,6 +35,33 @@ func TestStoreWriteCommitsBeforeReturn(t *testing.T) {
 	}
 }
 
+func TestStoreWriteWaitsForStartedWriteAfterCallerCancellation(t *testing.T) {
+	store := openTestStore(t, StoreConfig{Path: filepath.Join(t.TempDir(), "cancel-active.db")})
+	defer store.Close()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- store.Write(ctx, func(context.Context, *sql.Tx) error {
+			close(started)
+			<-release
+			return nil
+		})
+	}()
+	<-started
+	cancel()
+	select {
+	case err := <-done:
+		t.Fatalf("started write returned before its outcome was known: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(release)
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled active write error = %v, want context.Canceled after rollback", err)
+	}
+}
+
 func TestStoreWriteRollsBackFailure(t *testing.T) {
 	store := openTestStore(t, StoreConfig{Path: filepath.Join(t.TempDir(), "rollback.db")})
 	defer store.Close()

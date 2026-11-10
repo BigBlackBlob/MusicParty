@@ -33,6 +33,14 @@ describe('roomRuntimeStore queue reducer', () => {
     expect(runtime.queue).toEqual([])
   })
 
+  it('removes an existing song started by an enqueue while appending new pending songs', () => {
+    const runtime = useRoomRuntimeStore()
+    runtime.replaceQueue([queueItem('started'), queueItem('waiting')], 1)
+    expect(runtime.applyQueuePatch({ operation: 'append', queueVersion: 2,
+      queueIds: ['started'], items: [queueItem('added')] })).toBe('applied')
+    expect(runtime.queue.map(item => item.queueId)).toEqual(['waiting', 'added'])
+  })
+
   it('applies authoritative snapshots across a version gap', () => {
     const runtime = useRoomRuntimeStore()
     runtime.replaceQueue([queueItem('a')], 1)

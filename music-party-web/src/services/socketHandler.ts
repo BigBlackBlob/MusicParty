@@ -76,6 +76,7 @@ interface SocketCallbackStores {
   roomStore?: RoomHandlers
   setConnected?: (connected: boolean) => void
   resetSyncGate?: () => void
+  resetPresence?: () => void
   requestPing?: (reason: string, immediate: boolean) => void
   requestResync?: (reason: string, immediate: boolean) => void
   requestPresence?: () => void
@@ -181,11 +182,12 @@ export function createSocketHandlers(stores: SocketHandlerStores = {}): Realtime
 }
 
 export function createSocketCallbacks(stores: SocketCallbackStores = {}): RealtimeCallbacks {
-  const { userStore, roomStore, setConnected, resetSyncGate, requestPing, requestResync, requestPresence, requestChatHistory, requestPublicChatHistory, bindAccount, startHeartbeat, stopHeartbeat } = stores
+  const { userStore, roomStore, setConnected, resetSyncGate, resetPresence, requestPing, requestResync, requestPresence, requestChatHistory, requestPublicChatHistory, bindAccount, startHeartbeat, stopHeartbeat } = stores
   return {
     onConnect: () => {
       setConnected?.(true)
       resetSyncGate?.()
+      resetPresence?.()
       requestResync?.('connect', true)
       requestPresence?.()
       startHeartbeat?.()

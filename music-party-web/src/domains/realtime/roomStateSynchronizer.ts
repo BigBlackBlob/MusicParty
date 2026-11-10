@@ -49,6 +49,10 @@ export const useRoomStateSynchronizer = defineStore('room-state-synchronizer', (
       return
     }
     if (state.queueVersion <= 0) { commands.requestResync('queue-version-invalid', true); return }
+    if (state.queue === undefined && (!hasInitialSnapshot.value || (state.queueEpoch && state.queueEpoch !== runtime.queueEpoch))) {
+      commands.requestResync('player-state-without-baseline', true)
+      return
+    }
     if (state.queueEpoch && state.queueEpoch !== runtime.queueEpoch) {
       if (!runtime.acceptQueueEpoch(state.queueEpoch)) return
       commands.resetQueueGeneration()
@@ -69,7 +73,18 @@ export const useRoomStateSynchronizer = defineStore('room-state-synchronizer', (
     }
 
     nowPlaying.value = state.nowPlaying ?? null
-    commands.setQueue(state.queue, state.queueVersion, { snapshot: true, epoch: state.queueEpoch ?? runtime.queueEpoch })
+    if (state.queue !== undefined) {
+      commands.setQueue(state.queue, state.queueVersion, { snapshot: true, epoch: state.queueEpoch ?? runtime.queueEpoch })
+    } else if (state.queueVersion > runtime.lastQueueVersion) {
+      // Patches and playback states have separate frame batches. Check after
+      // pending patch application before treating this as a missing update.
+      const queueEpoch = runtime.queueEpoch
+      scheduleFrame(() => {
+        if (runtime.queueEpoch === queueEpoch && runtime.lastQueueVersion < state.queueVersion) {
+          commands.requestResync('player-state-queue-gap', true)
+        }
+      })
+    }
     isPaused.value = state.isPaused
     isShuffle.value = state.isShuffle
     isPauseLocked.value = state.isPauseLocked
@@ -101,6 +116,9 @@ export const useRoomStateSynchronizer = defineStore('room-state-synchronizer', (
   }
 
   function scheduleSyncState(state: PlayerState): void {
+    if (queuedState?.queue !== undefined && state.queue === undefined && queuedState.queueEpoch === state.queueEpoch) {
+      syncState(queuedState)
+    }
     queuedState = state
     if (stateFrame !== null) return
     stateFrame = scheduleFrame(() => {

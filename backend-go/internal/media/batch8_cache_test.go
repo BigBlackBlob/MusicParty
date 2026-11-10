@@ -29,14 +29,11 @@ func batch8DiskBytes(t *testing.T, root string) int64 {
 	var total int64
 	for _, entry := range entries {
 		if strings.HasSuffix(entry.Name(), ".media") || strings.HasSuffix(entry.Name(), ".part") {
-			file, err := os.Open(filepath.Join(root, entry.Name()))
+			info, err := entry.Info()
 			if os.IsNotExist(err) {
 				continue // A worker can remove a partial while the test observes disk use.
 			}
 			require.NoError(t, err)
-			info, err := file.Stat()
-			require.NoError(t, err)
-			require.NoError(t, file.Close())
 			total += info.Size()
 		}
 	}

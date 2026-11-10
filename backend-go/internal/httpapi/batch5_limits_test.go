@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestBatch5LimiterDoesNotAdmitUntrackedIPsAtCapacity(t *testing.T) {
+func TestBatch5LimiterBoundsUntrackedIPsAtCapacity(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.Auth.MaxTrackedIPs = 1
 	cfg.Auth.MaxAttempts = 1
@@ -67,12 +67,14 @@ func TestBatch5GuestAdmissionExpiresAndBoundsTrackedSources(t *testing.T) {
 	blocked := create("192.0.2.1")
 	require.Equal(t, 429, blocked.Code)
 	require.NotEmpty(t, blocked.Header().Get("Retry-After"))
-	require.Equal(t, 429, create("192.0.2.2").Code)
+	require.Equal(t, 200, create("192.0.2.2").Code)
+	require.Equal(t, 200, create("192.0.2.3").Code)
+	require.Equal(t, 429, create("192.0.2.4").Code)
 	now = now.Add(cfg.Auth.BlockDuration + cfg.Auth.Window)
 	require.Equal(t, 200, create("192.0.2.2").Code)
 	var count int
 	require.NoError(t, store.Reader().QueryRowContext(context.Background(), "select count(*) from user_profile").Scan(&count))
-	require.Equal(t, 3, count)
+	require.Equal(t, 5, count)
 	require.Len(t, api.guestLimiter.items, 1)
 }
 
@@ -84,4 +86,19 @@ func TestBatch5ProxyChainDropsOnlyTrustedHops(t *testing.T) {
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	require.Equal(t, "203.0.113.9", response.Body.String())
+}
+
+func TestIPv6LoginAttemptsShareSubnetBudget(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.Auth.MaxAttempts = 2
+	limiter := newLoginLimiter(cfg)
+	_, blocked := limiter.admit("2001:db8:1:2::1")
+	require.False(t, blocked)
+	_, blocked = limiter.admit("2001:db8:1:2::2")
+	require.False(t, blocked)
+	_, blocked = limiter.admit("2001:db8:1:2::3")
+	require.True(t, blocked)
+	_, blocked = limiter.admit("2001:db8:1:3::1")
+	require.False(t, blocked)
+	require.Len(t, limiter.items, 2)
 }

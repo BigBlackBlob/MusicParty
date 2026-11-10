@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/config"
@@ -20,6 +21,9 @@ import (
 )
 
 type WebSocketAPI struct {
+	lifecycleMu   sync.Mutex
+	handlers      sync.WaitGroup
+	closing       bool
 	cfg           config.Config
 	store         *storesqlite.Store
 	accounts      *account.Service
@@ -32,6 +36,16 @@ type WebSocketAPI struct {
 }
 
 func NewWebSocketAPI(cfg config.Config, store *storesqlite.Store, accounts *account.Service, rooms *roomdomain.Service, hub *wsruntime.Hub, runtimes *realtime.Manager, platforms *PlatformAPI) *WebSocketAPI {
+	if rooms != nil && hub != nil {
+		rooms.SetAccessChangedHook(func(change roomdomain.AccessChange) {
+			hub.CloseRoomWhere(change.RoomID, "Room access changed", func(session account.Session) bool {
+				if change.RevokedPublicID != "" {
+					return session.PublicID == change.RevokedPublicID
+				}
+				return !session.Admin() && session.PublicID != change.Owner
+			})
+		})
+	}
 	return &WebSocketAPI{cfg: cfg, store: store, accounts: accounts, rooms: rooms, hub: hub, runtimes: runtimes, platforms: platforms, userPlaylists: storesqlite.NewUserPlaylistRepository(store, time.Now, nil), roomPlaylists: storesqlite.NewRoomPlaylistRepository(store, time.Now, nil)}
 }
 func (api *WebSocketAPI) Routes(r chi.Router) {
@@ -46,7 +60,25 @@ type inboundEnvelope struct {
 	Payload   json.RawMessage `json:"payload"`
 }
 
+// Close stops new websocket handlers, closes connections, and waits before store shutdown.
+func (api *WebSocketAPI) Close() {
+	api.lifecycleMu.Lock()
+	api.closing = true
+	api.lifecycleMu.Unlock()
+	api.hub.Close()
+	api.handlers.Wait()
+}
+
 func (api *WebSocketAPI) handle(w http.ResponseWriter, r *http.Request) {
+	api.lifecycleMu.Lock()
+	if api.closing {
+		api.lifecycleMu.Unlock()
+		http.Error(w, "Server shutting down", http.StatusServiceUnavailable)
+		return
+	}
+	api.handlers.Add(1)
+	api.lifecycleMu.Unlock()
+	defer api.handlers.Done()
 	connection, err := wsruntime.Accept(w, r, api.cfg.Application.AllowedOrigins)
 	if err != nil {
 		return
@@ -74,6 +106,10 @@ func (api *WebSocketAPI) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	client := api.hub.RegisterSession(connection, roomID, session, token)
 	defer api.hub.Unregister(client)
+	if !api.canEnterRoom(r, roomID, session) {
+		client.Close(websocket.StatusCode(4403), "Room access changed")
+		return
+	}
 	if _, err := api.accounts.Resolve(r.Context(), token); err != nil {
 		client.Close(websocket.StatusPolicyViolation, "Session revoked")
 		return
@@ -141,6 +177,9 @@ func decodePayload[T any](raw json.RawMessage) (T, error) {
 }
 
 func (api *WebSocketAPI) dispatch(ctx context.Context, client *wsruntime.Client, runtime *realtime.RoomRuntime, envelope inboundEnvelope) {
+	if client.Closed() {
+		return
+	}
 	kind := canonical(envelope.Type)
 	session := client.SessionSnapshot()
 	currentSession, err := api.accounts.Resolve(ctx, session.SessionToken)
@@ -154,6 +193,7 @@ func (api *WebSocketAPI) dispatch(ctx context.Context, client *wsruntime.Client,
 		api.event(client, "CONTROL_DENIED", "administrator required")
 		return
 	}
+
 	if isQueueCommand(kind) {
 		if err := validateQueuePayload(kind, envelope.Payload); err != nil {
 			var request struct {
@@ -215,13 +255,13 @@ func (api *WebSocketAPI) dispatch(ctx context.Context, client *wsruntime.Client,
 		var result realtime.ControlResult
 		switch kind {
 		case "control.next":
-			result, err = runtime.Next(ctx, mutation...)
+			result, err = runtime.NextAs(ctx, session.PublicID, session.Admin(), mutation...)
 		case "control.previous":
-			result, err = runtime.Previous(ctx, request.ExpectedPlayEpoch, mutation...)
+			result, err = runtime.PreviousAs(ctx, session.Admin(), request.ExpectedPlayEpoch, mutation...)
 		case "control.toggle-pause":
-			result, err = runtime.TogglePause(ctx, mutation...)
+			result, err = runtime.TogglePauseAs(ctx, session.Admin(), mutation...)
 		case "control.toggle-shuffle":
-			result, err = runtime.ToggleShuffle(ctx, mutation...)
+			result, err = runtime.ToggleShuffleAs(ctx, session.Admin(), mutation...)
 		case "control.seek":
 			result, err = runtime.Seek(ctx, *request.PositionMS, session.PublicID, session.Admin(), request.ExpectedPlayEpoch, mutation...)
 		case "control.like":
@@ -387,7 +427,6 @@ func (api *WebSocketAPI) scheduleResync(ctx context.Context, client *wsruntime.C
 		if err != nil {
 			return
 		}
-		_ = client.Send("player.state", client.RoomID, snapshot)
 		if rooms, listErr := api.rooms.List(ctx, session.SessionToken); listErr == nil {
 			for index := range rooms {
 				rooms[index].OnlineCount = len(api.hub.Online(rooms[index].RoomID))
@@ -597,6 +636,8 @@ func controlRejectionCode(kind string, err error) (string, bool) {
 		}
 	case errors.Is(err, realtime.ErrControlDenied):
 		return "NO_CURRENT_TRACK", true
+	case errors.Is(err, realtime.ErrForbidden):
+		return "FORBIDDEN", true
 	case errors.Is(err, realtime.ErrNoHistory):
 		return "NO_HISTORY", true
 	case errors.Is(err, realtime.ErrSeekForbidden):
