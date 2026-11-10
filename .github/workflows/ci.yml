@@ -27,6 +27,11 @@ on:
         required: false
         default: false
         type: boolean
+      update_visual_baselines:
+        description: Regenerate Windows visual baselines on the runner and upload them as an artifact
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -227,6 +232,7 @@ jobs:
           NAVIDROME_ENABLED: 'false'
           SQUIDIFY_ENABLED: 'false'
           E2E_BASE_URL: http://127.0.0.1:18081
+          UPDATE_VISUAL_BASELINES: ${{ inputs.update_visual_baselines && 'true' || 'false' }}
         run: |
           $env:DB_PATH = Join-Path $env:RUNNER_TEMP 'musicparty-e2e.db'
           $env:LOCAL_LIBRARY_PATH = Join-Path $env:RUNNER_TEMP 'musicparty-e2e-local'
@@ -246,7 +252,9 @@ jobs:
             }
             if (-not $ready) { throw 'Isolated Go server did not become ready' }
             $env:PLAYWRIGHT_HTML_OUTPUT_DIR = 'playwright-report/headless'
-            pnpm test:e2e --output=test-results/headless
+            $updateArgs = @()
+            if ($env:UPDATE_VISUAL_BASELINES -eq 'true') { $updateArgs = @('--update-snapshots') }
+            pnpm test:e2e --output=test-results/headless @updateArgs
             if ($LASTEXITCODE -ne 0) { throw 'Windows browser flows or visual baselines failed' }
             $env:PLAYWRIGHT_HTML_OUTPUT_DIR = 'playwright-report/headed'
             pnpm test:e2e --headed --grep 'desktop playback clock' --output=test-results/headed
@@ -266,6 +274,13 @@ jobs:
             ${{ runner.temp }}/musicparty-e2e.log
             ${{ runner.temp }}/musicparty-e2e.err.log
           if-no-files-found: ignore
+      - name: Upload regenerated visual baselines
+        if: always() && inputs.update_visual_baselines
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-baselines
+          path: music-party-web/e2e/visual.spec.ts-snapshots/*-win32.png
+          if-no-files-found: error
 
   container:
     needs: [changes, contracts, go, go-race, frontend, browser-e2e]
