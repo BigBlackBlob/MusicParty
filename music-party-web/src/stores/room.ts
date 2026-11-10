@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
-import { computed, ref } from 'vue'
+import { isCancelledError } from '@tanstack/vue-query'
+import { computed, ref, watch } from 'vue'
 import type { RoomSummary, RoomUpdateInput } from '../contracts/generated/models'
 import { roomApi } from '../api/rooms'
 import { STORAGE_KEYS } from '../constants/keys'
@@ -7,6 +8,7 @@ import { realtimeClient } from '../transport/realtimeClient'
 import { isAPIError } from '../transport/errors'
 import { queryClient } from '../app/providers'
 import { queryKeys } from '../domains/queryKeys'
+import { useUserStore } from './user'
 
 const DEFAULT_ROOM_ID = 'lounge'
 
@@ -46,6 +48,12 @@ export const useRoomStore = defineStore('room', () => {
   const isLoading = ref(false)
   const createError = ref('')
 
+  const user = useUserStore()
+  // Identity changes clear the query cache; reload access flags for the new session.
+  watch(() => [user.status, user.publicId, user.role], () => {
+    if (user.isSignedIn) void fetchRooms().catch(error => console.warn('Failed to reload rooms after sign-in', error))
+  })
+
   const currentRoom = computed(() => rooms.value.find((room) => room.roomId === currentRoomId.value) || rooms.value[0] || loungeFallback)
 
   async function fetchRooms(signal?: AbortSignal): Promise<RoomSummary[]> {
@@ -58,6 +66,9 @@ export const useRoomStore = defineStore('room', () => {
       })
       ensureCurrentRoom(data)
       return data
+    } catch (error) {
+      if (isCancelledError(error)) return rooms.value
+      throw error
     } finally {
       isLoading.value = false
     }

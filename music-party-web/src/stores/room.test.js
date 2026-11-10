@@ -3,12 +3,38 @@ import { createPinia, setActivePinia } from 'pinia';
 import { useRoomStore } from './room';
 import { queryClient } from '../app/providers';
 import { roomApi } from '../api/rooms';
+import { useUserStore } from './user';
 
 vi.mock('../api/rooms', () => ({ roomApi: { list: vi.fn(), verify: vi.fn(), update: vi.fn(), remove: vi.fn() } }));
 vi.mock('../transport/realtimeClient', () => ({ realtimeClient: { send: vi.fn() } }));
 
 describe('room access state', () => {
   beforeEach(() => { localStorage.clear(); queryClient.clear(); setActivePinia(createPinia()); vi.clearAllMocks(); });
+
+  it('reloads the room list after login clears the previous identity cache', async () => {
+    const roomStore = useRoomStore();
+    const rooms = [{ roomId: 'private', name: 'Private', privateRoom: true, accessGranted: false }];
+    roomApi.list.mockResolvedValue(rooms);
+    await roomStore.fetchRooms();
+    roomApi.list.mockClear();
+
+    useUserStore().initUser('guest-a', 'Guest A', true);
+
+    await vi.waitFor(() => expect(roomApi.list).toHaveBeenCalledTimes(1));
+    expect(roomStore.rooms).toEqual(rooms);
+  });
+
+  it('handles cancellation of the initial room load while restoring a session', async () => {
+    const roomStore = useRoomStore();
+    const rooms = [{ roomId: 'restored', name: 'Restored', privateRoom: false }];
+    roomApi.list.mockImplementationOnce(() => new Promise(() => {})).mockResolvedValue(rooms);
+    const initialLoad = roomStore.fetchRooms();
+    // Attach the rejection assertion before switching identity cancels this request.
+    const settled = expect(initialLoad).resolves.toBeDefined();
+    useUserStore().initUser('admin-a', 'Admin A', false, 'PLATFORM_ADMIN', true);
+    await settled;
+    await vi.waitFor(() => expect(roomStore.rooms).toEqual(rooms));
+  });
 
   it('uses server-provided access state without storing credentials', () => {
     const roomStore = useRoomStore();
