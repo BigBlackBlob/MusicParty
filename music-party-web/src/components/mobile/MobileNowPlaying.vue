@@ -67,7 +67,6 @@
       </section>
 
       <!-- Track Info & Like -->
-      <div v-if="!(music || player.isLoading || player.isBuffering)" class="flex-1 min-h-4"></div>
       <div v-if="music || player.isLoading || player.isBuffering || player.isErrorState" class="mobile-now-playing-track flex items-center justify-between mb-8 flex-shrink-0 z-10 px-1">
         <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
           <h1 class="font-title text-title text-text-primary line-clamp-2 break-words leading-snug tracking-tight">{{ trackTitle }}</h1>
