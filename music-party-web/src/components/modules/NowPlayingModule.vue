@@ -12,7 +12,7 @@
         <CoverImage
           :src="currentCover"
           :alt="trackTitle"
-          class="absolute inset-0 h-full w-full object-cover"
+          class="h-full w-full"
           loading="eager"
         />
         <div class="absolute inset-0 bg-gradient-to-b from-[var(--album-gradient-top)] via-transparent to-[var(--album-gradient-bottom)]" />

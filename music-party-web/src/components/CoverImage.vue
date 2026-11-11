@@ -1,5 +1,5 @@
 <template>
-  <div class="relative flex items-center justify-center overflow-hidden bg-[var(--surface-3)]">
+  <div class="flex items-center justify-center overflow-hidden bg-[var(--surface-3)]">
     <img
         v-if="!hasError && normalizedSrc"
         :src="normalizedSrc"
