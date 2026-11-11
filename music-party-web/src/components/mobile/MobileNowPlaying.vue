@@ -67,7 +67,7 @@
       </section>
 
       <!-- Track Info & Like -->
-      <div v-if="!hasLyrics && music" class="flex-1 min-h-4"></div>
+      <div v-if="!(music || player.isLoading || player.isBuffering)" class="flex-1 min-h-4"></div>
       <div v-if="music || player.isLoading || player.isBuffering || player.isErrorState" class="mobile-now-playing-track flex items-center justify-between mb-8 flex-shrink-0 z-10 px-1">
         <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
           <h1 class="font-title text-title text-text-primary line-clamp-2 break-words leading-snug tracking-tight">{{ trackTitle }}</h1>
@@ -177,7 +177,7 @@
       </div>
 
       <!-- Integrated Scrolling Lyrics Section -->
-      <div v-if="hasLyrics" class="flex-1 min-h-[300px] relative -mx-md px-md mb-8">
+      <div v-if="music || player.isLoading || player.isBuffering || player.isErrorState" class="flex-1 min-h-[300px] relative -mx-md px-md mb-8">
         <!-- Top Gradient Fade for Lyrics -->
         <div class="absolute top-0 left-0 w-full h-12 bg-gradient-to-b from-bg-base via-bg-base/80 to-transparent z-10 pointer-events-none"></div>
         
@@ -196,6 +196,7 @@
             :is-playing="!player.isPaused"
             :is-dark-mode="ui.isDarkMode"
             :bg-color="'transparent'"
+            :lyrics-loaded="!!music"
             mobile
             @toggle-translation="ui.toggleLyricTranslation"
             @toggle-romanization="ui.toggleLyricRomanization"
@@ -219,7 +220,6 @@ import { computed, ref, onUnmounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useNowPlayingViewModel } from '../../composables/useNowPlayingViewModel';
 import { useRoomStore } from '../../stores/room';
-import { parseLyrics } from '../../utils/parser';
 import AppleLyricsPanel from '../AppleLyricsPanel.vue';
 import CoverImage from '../CoverImage.vue';
 import ProgressScrubber from '../ui/ProgressScrubber.vue';
@@ -265,9 +265,6 @@ onUnmounted(() => {
   document.removeEventListener('pointerdown', handleDocumentPointerDown, true);
 });
 
-const lyricLines = computed(() => parseLyrics(player.lyricDetail.lyric || player.lyricText));
-
-const hasLyrics = computed(() => lyricLines.value.length >= 5);
 
 const formatTime = (ms) => {
   if (!ms || isNaN(ms)) return '0:00';
