@@ -1,7 +1,7 @@
 import { storeToRefs } from 'pinia'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { Music, QueueItem } from '../../contracts/generated/models'
+import type { Music, NowPlaying, QueueItem } from '../../contracts/generated/models'
 import type { ClientEnvelope, ControlAckServerEnvelope, QueuePatchServerEnvelope } from '../../contracts/generated/websocket'
 import { useToast } from '../../composables/useToast'
 import { applyQueueReorder } from '../../utils/queueReorder'
@@ -310,7 +310,7 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
   // Called by the state synchronizer before applying an incoming nowPlaying snapshot.
   // If a like/unlike for the current track is still pending, the server snapshot may
   // not yet reflect it — preserve the optimistic likedUserIds so the heart doesn't flicker.
-  function mergeOptimisticLikes(incoming: Parameters<typeof runtime.nowPlaying.valueOf>[0]): typeof incoming {
+  function mergeOptimisticLikes(incoming: NowPlaying | null): NowPlaying | null {
     if (!incoming) return incoming
     for (const [mutationId, pending] of pendingLikes.entries()) {
       if (pending.music.id !== incoming.music.id || pending.music.platform !== incoming.music.platform) continue
