@@ -87,9 +87,10 @@
   --surface-glass-panel: rgba(20, 20, 20, 0.85);
   --surface-glass-control: rgba(255, 255, 255, 0.1);
   --ambient-overlay: linear-gradient(to bottom, rgba(0,0,0,0.6), transparent);
-  --ambient-lyrics-overlay: rgba(18, 18, 18, 0.96);
-  --ambient-filter: blur(48px) saturate(1.05) brightness(0.82);
-  --ambient-opacity: 0.16;
+  --ambient-lyrics-overlay: rgba(10, 8, 20, 0.70);
+  --ambient-filter: blur(60px) saturate(1.4) brightness(0.65);
+  --ambient-opacity: 0.42;
+  --ambient-stage-fade: rgba(10, 8, 20, 0.88);
 
   --text-primary: #FFFFFF;
   --text-secondary: #B8B8B8;
@@ -167,7 +168,10 @@
   --surface-glass-panel: rgba(255, 255, 255, 0.85);
   --surface-glass-control: rgba(0, 0, 0, 0.05);
   --ambient-overlay: linear-gradient(to bottom, rgba(255,255,255,0.6), transparent);
-  --ambient-lyrics-overlay: rgba(250, 249, 246, 0.98);
+  --ambient-lyrics-overlay: rgba(230, 226, 248, 0.82);
+  --ambient-filter: blur(60px) saturate(1.4) brightness(0.75);
+  --ambient-opacity: 0.38;
+  --ambient-stage-fade: rgba(220, 215, 245, 0.90);
   --surface-scrim: rgba(255, 255, 255, 0.58);
   --overlay-backdrop: rgba(20, 18, 15, 0.34);
   --text-primary: #1a1a1a;
