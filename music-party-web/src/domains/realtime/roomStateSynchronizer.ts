@@ -72,7 +72,7 @@ export const useRoomStateSynchronizer = defineStore('room-state-synchronizer', (
       forceNextSyncSeek.value = true
     }
 
-    nowPlaying.value = state.nowPlaying ?? null
+    nowPlaying.value = commands.mergeOptimisticLikes(state.nowPlaying ?? null)
     if (state.queue !== undefined) {
       commands.setQueue(state.queue, state.queueVersion, { snapshot: true, epoch: state.queueEpoch ?? runtime.queueEpoch })
     } else if (state.queueVersion > runtime.lastQueueVersion) {

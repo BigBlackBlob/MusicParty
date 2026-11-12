@@ -26,7 +26,7 @@
       <!-- Artwork Section -->
       <div
         v-if="music || player.isLoading || player.isBuffering || player.isErrorState"
-        class="mobile-now-playing-art w-full aspect-square max-h-[42dvh] mb-6 rounded-2xl overflow-hidden flex-shrink-0 relative z-10 group mx-auto"
+        class="mobile-now-playing-art w-full aspect-square max-h-[42dvh] max-w-[42dvh] mb-6 rounded-2xl overflow-hidden flex-shrink-0 relative z-10 group mx-auto"
         :class="music ? 'shadow-[0_30px_60px_rgba(0,0,0,0.6)]' : 'mobile-empty-art'"
       >
         <div v-if="!music && !player.isLoading && !player.isBuffering" class="mobile-empty-art__content" aria-hidden="true">
@@ -57,7 +57,10 @@
               :aria-label="isLiked ? t('player.unlike') : t('player.like')"
               :title="isLiked ? t('player.unlike') : t('player.like')"
             >
-              <span class="material-symbols-outlined text-[26px]" :style="isLiked ? 'font-variation-settings: \'FILL\' 1;' : ''">favorite</span>
+              <svg xmlns="http://www.w3.org/2000/svg" height="26" width="26" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true">
+                <path v-if="isLiked" d="m480-120-58-52q-101-91-167-157T150-447.5Q111-500 95.5-544T80-634q0-94 63-157t157-63q52 0 99 22t81 62q34-40 81-62t99-22q94 0 157 63t63 157q0 46-15.5 90T810-447.5Q771-395 705-329T538-172l-58 52Z"/>
+                <path v-else d="m480-120-58-52q-101-91-167-157T150-447.5Q111-500 95.5-544T80-634q0-94 63-157t157-63q52 0 99 22t81 62q34-40 81-62t99-22q94 0 157 63t63 157q0 46-15.5 90T810-447.5Q771-395 705-329T538-172l-58 52Zm0-108q96-86 158-147.5t98-107q36-45.5 50-81t14-70.5q0-60-40-100t-100-40q-47 0-87 26.5T518-680h-76q-15-41-55-67.5T300-774q-60 0-100 40t-40 100q0 35 14 70.5t50 81q36 45.5 98 107T480-228Zm0-273Z"/>
+              </svg>
             </button>
           </div>
           <h1 class="mobile-now-playing-empty__title">{{ trackTitle }}</h1>
@@ -65,6 +68,9 @@
         </div>
         <span class="material-symbols-outlined mobile-now-playing-empty__icon" aria-hidden="true">graphic_eq</span>
       </section>
+
+      <!-- Dynamic spacer: pushes the bottom section down on taller screens -->
+      <div class="flex-1 min-h-[15px] flex-shrink-0" aria-hidden="true" />
 
       <!-- Track Info & Like -->
       <div v-if="music || player.isLoading || player.isBuffering || player.isErrorState" class="mobile-now-playing-track flex items-center justify-between mb-8 flex-shrink-0 z-10 px-1">
@@ -77,7 +83,10 @@
           :disabled="!music"
           class="ml-4 w-[44px] h-[44px] flex items-center justify-center rounded-full text-primary hover:bg-accent-subtle transition-all active:scale-90 flex-shrink-0"
         >
-          <span class="material-symbols-outlined text-[28px]" :style="isLiked ? 'font-variation-settings: \'FILL\' 1;' : ''">favorite</span>
+          <svg xmlns="http://www.w3.org/2000/svg" height="28" width="28" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true">
+              <path v-if="isLiked" d="m480-120-58-52q-101-91-167-157T150-447.5Q111-500 95.5-544T80-634q0-94 63-157t157-63q52 0 99 22t81 62q34-40 81-62t99-22q94 0 157 63t63 157q0 46-15.5 90T810-447.5Q771-395 705-329T538-172l-58 52Z"/>
+              <path v-else d="m480-120-58-52q-101-91-167-157T150-447.5Q111-500 95.5-544T80-634q0-94 63-157t157-63q52 0 99 22t81 62q34-40 81-62t99-22q94 0 157 63t63 157q0 46-15.5 90T810-447.5Q771-395 705-329T538-172l-58 52Zm0-108q96-86 158-147.5t98-107q36-45.5 50-81t14-70.5q0-60-40-100t-100-40q-47 0-87 26.5T518-680h-76q-15-41-55-67.5T300-774q-60 0-100 40t-40 100q0 35 14 70.5t50 81q36 45.5 98 107T480-228Zm0-273Z"/>
+            </svg>
         </button>
       </div>
 
@@ -103,7 +112,7 @@
       </div>
 
       <!-- Playback Controls -->
-      <div class="mobile-now-playing-controls flex items-center mb-8 flex-shrink-0 z-10 w-full max-w-[420px] mx-auto px-1">
+      <div class="mobile-now-playing-controls flex items-center flex-shrink-0 z-10 w-full max-w-[420px] mx-auto px-1">
         <!-- 1. Volume -->
         <div class="flex-1 flex justify-center items-center">
           <div class="relative" ref="volumePanelContainerRef">
@@ -165,7 +174,7 @@
 
         <!-- 4. Next -->
         <div class="flex-1 flex justify-center items-center">
-          <button 
+          <button
             @click="player.playNext"
             :disabled="player.isSkipLocked || !player.canOperate"
             class="w-[44px] h-[44px] flex items-center justify-center text-primary hover:text-white transition-colors active:scale-90"
@@ -173,38 +182,42 @@
             <span class="material-symbols-outlined text-[36px]" style="font-variation-settings: 'FILL' 1;">skip_next</span>
           </button>
         </div>
-      </div>
 
-      <!-- Integrated Scrolling Lyrics Section -->
-      <div v-if="music || player.isLoading || player.isBuffering || player.isErrorState" class="flex-1 min-h-[300px] relative -mx-md px-md mb-8">
-        <!-- Top Gradient Fade for Lyrics -->
-        <div class="absolute top-0 left-0 w-full h-12 bg-gradient-to-b from-bg-base via-bg-base/80 to-transparent z-10 pointer-events-none"></div>
-        
-        <div class="flex flex-col gap-6 pt-6 pb-12">
-          <AppleLyricsPanel
-            class="h-full"
-            :lyrics="player.lyricDetail.lyric || player.lyricText"
-            :translated-lyrics="player.lyricDetail.translatedLyric"
-            :romanized-lyrics="player.lyricDetail.romanizedLyric"
-            :word-lyric="player.lyricDetail.wordLyric"
-            :word-translated-lyric="player.lyricDetail.wordTranslatedLyric"
-            :word-romanized-lyric="player.lyricDetail.wordRomanizedLyric"
-            :show-translation="ui.showLyricTranslation"
-            :show-romanization="ui.showLyricRomanization"
-            :current-time-ms="player.playbackPositionMs"
-            :is-playing="!player.isPaused"
-            :is-dark-mode="ui.isDarkMode"
-            :bg-color="'transparent'"
-            :lyrics-loaded="!!music"
-            mobile
-            @toggle-translation="ui.toggleLyricTranslation"
-            @toggle-romanization="ui.toggleLyricRomanization"
-          />
+        <!-- 5. Lyrics -->
+        <div class="flex-1 flex justify-center items-center">
+          <button
+            @click="lyricsOpen = true"
+            :disabled="!music"
+            class="w-[44px] h-[44px] flex items-center justify-center transition-colors active:scale-90"
+            :class="music ? 'text-text-secondary hover:text-primary' : 'text-text-secondary/40'"
+            :aria-label="t('lyrics.title', 'Lyrics')"
+            :title="t('lyrics.title', 'Lyrics')"
+          >
+            <span class="material-symbols-outlined text-[24px]">lyrics</span>
+          </button>
         </div>
-
-        <!-- Bottom Gradient Fade for Lyrics -->
-        <div class="absolute bottom-0 left-0 w-full h-24 bg-gradient-to-t from-bg-base via-bg-base/90 to-transparent z-10 pointer-events-none"></div>
       </div>
+
+      <!-- Ambient Lyrics Overlay -->
+      <MobileAmbientLyrics
+        :open="lyricsOpen"
+        :cover-url="music?.coverUrl || ''"
+        :track-title="trackTitle"
+        :artist-line="artistLine"
+        :lyrics="player.lyricDetail.lyric || player.lyricText"
+        :translated-lyrics="player.lyricDetail.translatedLyric"
+        :romanized-lyrics="player.lyricDetail.romanizedLyric"
+        :word-lyric="player.lyricDetail.wordLyric"
+        :word-translated-lyric="player.lyricDetail.wordTranslatedLyric"
+        :word-romanized-lyric="player.lyricDetail.wordRomanizedLyric"
+        :show-translation="ui.showLyricTranslation"
+        :show-romanization="ui.showLyricRomanization"
+        :current-time-ms="player.playbackPositionMs"
+        :lyrics-loaded="!!music"
+        @close="lyricsOpen = false"
+        @toggle-translation="ui.toggleLyricTranslation"
+        @toggle-romanization="ui.toggleLyricRomanization"
+      />
 
       <div v-if="player.isErrorState" class="mb-8 p-4 bg-error/10 border-l-4 border-error rounded-r-lg">
         <p class="text-sm font-bold text-error">{{ t('player.playbackError') }}</p>
@@ -219,7 +232,7 @@ import { computed, ref, onUnmounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useNowPlayingViewModel } from '../../composables/useNowPlayingViewModel';
 import { useRoomStore } from '../../stores/room';
-import AppleLyricsPanel from '../AppleLyricsPanel.vue';
+import MobileAmbientLyrics from './MobileAmbientLyrics.vue';
 import CoverImage from '../CoverImage.vue';
 import ProgressScrubber from '../ui/ProgressScrubber.vue';
 
@@ -239,6 +252,7 @@ const {
 
 const volumePanelOpen = ref(false);
 const volumePanelContainerRef = ref(null);
+const lyricsOpen = ref(false);
 const playModeLabel = computed(() => player.isShuffle ? t('player.shuffle') : t('player.listPlayback'));
 
 const toggleVolumePanel = () => {

@@ -33,7 +33,7 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
   let lastAuthPromptAt = 0
   let deferredQueueUpdate: DeferredQueueUpdate | null = null
   let likeToggleInProgress = false
-  const pendingLikes = new Map<string, { music: Music; result: 'liked' | 'unliked'; actorId: string; previousLiked: boolean; previousPersonalLiked: boolean }>()
+  const pendingLikes = new Map<string, { music: Music; result: 'liked' | 'unliked'; actorId: string; previousLiked: boolean; previousPersonalLiked: boolean; acked: boolean }>()
   const retryableCommands = new Map<string, { envelope: ClientEnvelope; scopeId: string; actorId: string; socketGeneration: number; expiresAt: number; kind: 'pause' | 'like' | 'unlike' | 'reorder' }>()
 
   function notifyFailure(message: string, type: 'warning' | 'error' = 'warning'): void {
@@ -84,7 +84,9 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
     deferredQueueUpdate = null
     mutationBus.reset()
     for (const pending of pendingLikes.values()) {
-      rollbackLike(pending.music, pending.actorId, pending.previousLiked, pending.previousPersonalLiked)
+      // Only roll back un-acked likes — acked ones are waiting for the server
+      // snapshot to confirm, and mergeOptimisticLikes will clean them up.
+      if (!pending.acked) rollbackLike(pending.music, pending.actorId, pending.previousLiked, pending.previousPersonalLiked)
     }
     pendingLikes.clear()
     retryableCommands.clear()
@@ -288,7 +290,7 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
         notifyFailure('红心操作未发送，请稍后重试', 'error')
         return
       }
-      pendingLikes.set(mutationId, { music, result, actorId, previousLiked, previousPersonalLiked })
+      pendingLikes.set(mutationId, { music, result, actorId, previousLiked, previousPersonalLiked, acked: false })
     } finally {
       likeToggleInProgress = false
     }
@@ -305,16 +307,46 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
     }
   }
 
+  // Called by the state synchronizer before applying an incoming nowPlaying snapshot.
+  // If a like/unlike for the current track is still pending, the server snapshot may
+  // not yet reflect it — preserve the optimistic likedUserIds so the heart doesn't flicker.
+  function mergeOptimisticLikes(incoming: Parameters<typeof runtime.nowPlaying.valueOf>[0]): typeof incoming {
+    if (!incoming) return incoming
+    for (const [mutationId, pending] of pendingLikes.entries()) {
+      if (pending.music.id !== incoming.music.id || pending.music.platform !== incoming.music.platform) continue
+      const actorId = pending.actorId
+      const serverAlreadyApplied = pending.result === 'liked'
+        ? incoming.likedUserIds.includes(actorId)
+        : !incoming.likedUserIds.includes(actorId)
+      if (serverAlreadyApplied) {
+        // Server snapshot now reflects our like — safe to discard the pending entry.
+        pendingLikes.delete(mutationId)
+        continue
+      }
+      // Server hasn't caught up yet — keep the optimistic state applied.
+      const merged = pending.result === 'liked'
+        ? [...new Set([...incoming.likedUserIds, actorId])]
+        : incoming.likedUserIds.filter((id: string) => id !== actorId)
+      return { ...incoming, likedUserIds: merged }
+    }
+    return incoming
+  }
+
   function settleLike(ack: ControlAckServerEnvelope['payload']): void {
     if (!ack.mutationId) return
     const pending = pendingLikes.get(ack.mutationId)
     if (!pending) return
-    pendingLikes.delete(ack.mutationId)
+    // On accepted: keep entry in pendingLikes so mergeOptimisticLikes continues
+    // applying the optimistic state until the server snapshot confirms the change.
+    // mergeOptimisticLikes will remove it once serverAlreadyApplied becomes true.
     retryableCommands.delete(ack.mutationId)
     mutationBus.settleMutation(ack.mutationId)
     if (ack.outcome === 'rejected') {
+      pendingLikes.delete(ack.mutationId)
       rollbackLike(pending.music, pending.actorId, pending.previousLiked, pending.previousPersonalLiked)
       notifyFailure(ack.code || '红心操作未生效，请重试', 'error')
+    } else {
+      pending.acked = true
     }
   }
 
@@ -401,7 +433,7 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
     requireAuth, canOperate,
     resetQueueGeneration, retryPendingCommands, setQueue, applyQueuePatch, settleQueueReorder, settleQueueMutation, settleEnqueue,
     settleControl,
-    requestResync, playNext, playPrevious, togglePause, toggleShuffle, seek, toggleLike, settleLike,
+    requestResync, playNext, playPrevious, togglePause, toggleShuffle, seek, toggleLike, settleLike, mergeOptimisticLikes,
     enqueue, enqueuePlaylist, enqueueAlbum, enqueueRoomPlaylist, topSong, removeSong, topSongs, removeSongs, reorderQueue,
     reset,
   }

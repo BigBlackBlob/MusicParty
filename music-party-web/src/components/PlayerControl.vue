@@ -28,7 +28,19 @@
 
     <div class="w-1/3 flex items-center justify-end gap-4">
        <!-- Volume / Extra -->
-       <button @click="commands.toggleLike(player.nowPlaying?.music)" class="text-[#8A8A8A] hover:text-[#D3C2F3] text-sm font-bold transition-colors">{{ t('player.like') }}</button>
+       <button
+         @click="toggleLike"
+         :disabled="!player.nowPlaying?.music"
+         :aria-label="isLiked ? t('player.unlike') : t('player.like')"
+         :title="isLiked ? t('player.unlike') : t('player.like')"
+         class="flex h-9 w-9 items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-control-hover)] disabled:opacity-40"
+         :class="isLiked ? 'text-primary' : 'text-[#8A8A8A] hover:text-[#D3C2F3]'"
+       >
+         <svg xmlns="http://www.w3.org/2000/svg" height="20" width="20" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true">
+           <path v-if="isLiked" d="m480-120-58-52q-101-91-167-157T150-447.5Q111-500 95.5-544T80-634q0-94 63-157t157-63q52 0 99 22t81 62q34-40 81-62t99-22q94 0 157 63t63 157q0 46-15.5 90T810-447.5Q771-395 705-329T538-172l-58 52Z"/>
+           <path v-else d="m480-120-58-52q-101-91-167-157T150-447.5Q111-500 95.5-544T80-634q0-94 63-157t157-63q52 0 99 22t81 62q34-40 81-62t99-22q94 0 157 63t63 157q0 46-15.5 90T810-447.5Q771-395 705-329T538-172l-58 52Zm0-108q96-86 158-147.5t98-107q36-45.5 50-81t14-70.5q0-60-40-100t-100-40q-47 0-87 26.5T518-680h-76q-15-41-55-67.5T300-774q-60 0-100 40t-40 100q0 35 14 70.5t50 81q36 45.5 98 107T480-228Zm0-273Z"/>
+         </svg>
+       </button>
     </div>
   </div>
 </template>
@@ -45,7 +57,7 @@ const { t } = useI18n();
 const player = useRoomRuntimeStore();
 const commands = useRoomCommandStore();
 const audio = useAudioPlaybackStore();
-const { canSeek } = useNowPlayingViewModel();
+const { canSeek, isLiked, toggleLike } = useNowPlayingViewModel();
 const playModeLabel = computed(() => player.isShuffle ? t('player.shuffle') : t('player.listPlayback'));
 const currentCover = computed(() => player.nowPlaying?.music.coverUrl || '');
 const bufferedPercent = computed(() => {
