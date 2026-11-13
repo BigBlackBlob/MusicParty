@@ -86,9 +86,13 @@ type observingContext struct {
 }
 
 func (c observingContext) Done() <-chan struct{} { close(c.observed); return c.Context.Done() }
-func TestStreamCancelledLeaderPublishesToWaiter(t *testing.T) {
+func TestStreamCancelledLeaderDoesNotCancelWaiter(t *testing.T) {
 	started, release := make(chan struct{}), make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { close(started); <-release }))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-release
+		_, _ = w.Write([]byte(`{"data":[{"id":42,"url":"https://cdn.test/full","code":200,"expi":1200}]}`))
+	}))
 	defer server.Close()
 	defer func() {
 		select {
@@ -104,17 +108,30 @@ func TestStreamCancelledLeaderPublishesToWaiter(t *testing.T) {
 	go func() { _, err := s.StreamURL(ctx, "42"); leader <- err }()
 	<-started
 	observed := make(chan struct{})
-	waiter := make(chan error, 1)
-	go func() { _, err := s.StreamURL(observingContext{context.Background(), observed}, "42"); waiter <- err }()
+	type result struct {
+		url string
+		err error
+	}
+	waiter := make(chan result, 1)
+	go func() {
+		u, err := s.StreamURL(observingContext{context.Background(), observed}, "42")
+		waiter <- result{u, err}
+	}()
 	<-observed
 	cancel()
-	for _, done := range []chan error{leader, waiter} {
-		select {
-		case err := <-done:
-			require.ErrorIs(t, err, context.Canceled)
-		case <-time.After(3 * time.Second):
-			t.Fatal("caller remained blocked")
-		}
+	select {
+	case err := <-leader:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(3 * time.Second):
+		t.Fatal("cancelled leader remained blocked")
+	}
+	close(release)
+	select {
+	case got := <-waiter:
+		require.NoError(t, got.err)
+		require.Equal(t, "https://cdn.test/full", got.url)
+	case <-time.After(3 * time.Second):
+		t.Fatal("waiter remained blocked after the leader was cancelled")
 	}
 }
 func TestStreamWaiterHonorsOwnCancellation(t *testing.T) {

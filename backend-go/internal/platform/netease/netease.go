@@ -48,12 +48,49 @@ func (s *Service) UpdateCredential(value string) {
 	s.mu.Unlock()
 	s.cacheMu.Lock()
 	s.streams = make(map[string]streamCacheEntry)
+	s.flights = make(map[string]*streamFlight)
 	s.cacheMu.Unlock()
 }
 func (s *Service) credential() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.cookie
+}
+
+func (s *Service) completeFlight(flight *streamFlight, musicID string, ctx context.Context) {
+	resolveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), streamResolveTimeout)
+	defer cancel()
+	url, ttl, err := s.resolveStream(resolveCtx, musicID)
+	generation := s.credentialGeneration()
+	s.cacheMu.Lock()
+	if err == nil && url != "" && flight.generation == generation {
+		if len(s.streams) >= 256 {
+			var oldestID string
+			var oldest time.Time
+			for id, entry := range s.streams {
+				if oldestID == "" || entry.expiresAt.Before(oldest) {
+					oldestID, oldest = id, entry.expiresAt
+				}
+			}
+			delete(s.streams, oldestID)
+		}
+		s.streams[musicID] = streamCacheEntry{url: url, expiresAt: s.now().Add(ttl)}
+	}
+	flight.url, flight.err = url, err
+	if s.flights[musicID] == flight {
+		delete(s.flights, musicID)
+	}
+	close(flight.done)
+	s.cacheMu.Unlock()
+}
+
+func (s *Service) awaitFlight(ctx context.Context, flight *streamFlight) (string, error) {
+	select {
+	case <-flight.done:
+		return flight.url, flight.err
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
 }
 
 func (s *Service) credentialGeneration() uint64 {
@@ -68,7 +105,7 @@ func (s *Service) get(ctx context.Context, path string, query url.Values, target
 		return &platform.CredentialNotConfiguredError{Platform: s.Name()}
 	}
 	query.Set("cookie", credential)
-	return s.client.JSON(ctx, s.baseURL+path+"?"+query.Encode(), nil, target)
+	return s.client.JSON(context.WithoutCancel(ctx), s.baseURL+path+"?"+query.Encode(), nil, target)
 }
 
 func (s *Service) Search(ctx context.Context, keyword string, offset, limit int) ([]platform.Music, error) {
@@ -241,26 +278,14 @@ func (s *Service) StreamURL(ctx context.Context, musicID string) (string, error)
 	s.flights[musicID] = flight
 	s.cacheMu.Unlock()
 
-	flight.url, flight.ttl, flight.err = s.resolveStream(ctx, musicID)
-	s.cacheMu.Lock()
-	if flight.err == nil && flight.url != "" && flight.generation == s.generation {
-		if len(s.streams) >= 256 {
-			var oldestID string
-			var oldest time.Time
-			for id, entry := range s.streams {
-				if oldestID == "" || entry.expiresAt.Before(oldest) {
-					oldestID, oldest = id, entry.expiresAt
-				}
-			}
-			delete(s.streams, oldestID)
-		}
-		s.streams[musicID] = streamCacheEntry{url: flight.url, expiresAt: s.now().Add(flight.ttl)}
-	}
-	delete(s.flights, musicID)
-	close(flight.done)
-	s.cacheMu.Unlock()
-	return flight.url, flight.err
+	// The lookup runs detached from this caller. A browser aborts a range
+	// request on every seek, and that cancellation must neither fail the
+	// requests sharing this flight nor stop the lookup they are waiting on.
+	go s.completeFlight(flight, musicID, ctx)
+	return s.awaitFlight(ctx, flight)
 }
+
+const streamResolveTimeout = 20 * time.Second
 
 type streamCacheEntry struct {
 	url       string
