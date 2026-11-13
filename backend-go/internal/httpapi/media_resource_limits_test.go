@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/domain/account"
+	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform"
 	"github.com/stretchr/testify/require"
 )
 
@@ -108,4 +109,39 @@ func TestYouTubeRateBudgetAndCoverSlotsRejectBeforeUpstream(t *testing.T) {
 	require.ErrorAs(t, err, &apiErr)
 	require.Equal(t, http.StatusServiceUnavailable, apiErr.Status)
 	require.Zero(t, cover.calls)
+}
+
+type streamErrorFixture struct {
+	fixturePlatform
+	name        string
+	err         error
+	invalidated []string
+}
+
+func (f *streamErrorFixture) Name() string                                      { return f.name }
+func (f *streamErrorFixture) StreamURL(context.Context, string) (string, error) { return "", f.err }
+func (f *streamErrorFixture) CoverURL(context.Context, string) (string, error)  { return "", nil }
+func (f *streamErrorFixture) InvalidateStream(id string)                        { f.invalidated = append(f.invalidated, id) }
+
+func TestPlatformStreamResolutionErrorMapsToJSON(t *testing.T) {
+	for _, test := range []struct{ kind, code string }{
+		{platform.StreamTrialOnly, "stream-trial-only"},
+		{platform.StreamUnavailable, "stream-unavailable"},
+	} {
+		t.Run(test.code, func(t *testing.T) {
+			cfg := testConfig(t)
+			source := &streamErrorFixture{name: "netease", err: &platform.StreamResolutionError{Kind: test.kind, Reason: 1}}
+			api := NewMediaAPI(cfg, account.New(httpStore(t)), nil, nil, NewPlatformAPI(cfg, source), http.DefaultClient, nil)
+			response := httptest.NewRecorder()
+			err := api.proxyPlatform(response, httptest.NewRequest(http.MethodGet, "/api/netease/stream/42", nil), "netease", "42", false)
+			require.Error(t, err)
+			var apiErr *APIError
+			require.ErrorAs(t, err, &apiErr)
+			require.Equal(t, http.StatusUnprocessableEntity, apiErr.Status)
+			require.Equal(t, test.code, apiErr.Code)
+			WriteMappedError(response, err)
+			require.Equal(t, http.StatusUnprocessableEntity, response.Code)
+			require.Contains(t, response.Body.String(), `"code":"`+test.code+`"`)
+		})
+	}
 }

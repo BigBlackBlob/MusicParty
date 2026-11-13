@@ -3,6 +3,7 @@ package httpapi
 import (
 	"database/sql"
 	"errors"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/config"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/domain/account"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/media"
+	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform"
 	storesqlite "github.com/BigBlackBlob/MusicParty/backend-go/internal/store/sqlite"
 	"github.com/go-chi/chi/v5"
 )
@@ -349,6 +351,15 @@ func (api *MediaAPI) proxyPlatform(w http.ResponseWriter, r *http.Request, name,
 	} else {
 		target, err = source.StreamURL(r.Context(), id)
 	}
+	var streamErr *platform.StreamResolutionError
+	if errors.As(err, &streamErr) {
+		code, message := "stream-unavailable", "The requested track is unavailable for streaming"
+		if streamErr.Kind == platform.StreamTrialOnly {
+			code, message = "stream-trial-only", "Only a preview is available for this track"
+		}
+		slog.Warn("platform stream resolution rejected", "platform", name, "id", id, "reason", streamErr.Reason, "code", code)
+		return &APIError{Status: http.StatusUnprocessableEntity, Code: code, Message: message}
+	}
 	if errors.Is(err, media.ErrResolverBusy) {
 		w.Header().Set("Retry-After", "1")
 		return &APIError{Status: http.StatusServiceUnavailable, Message: "Media resolver busy"}
@@ -372,7 +383,13 @@ func (api *MediaAPI) proxyPlatform(w http.ResponseWriter, r *http.Request, name,
 	if cover {
 		w.Header().Set("Cache-Control", "private, max-age=86400")
 	}
-	if err := api.proxy.Serve(w, r, target, headers); err != nil {
+	status, proxyErr := api.proxy.ServeWithStatus(w, r, target, headers)
+	if !cover && (status == http.StatusForbidden || status == http.StatusNotFound || status == http.StatusGone) {
+		if invalidator, ok := source.(platform.StreamInvalidator); ok {
+			invalidator.InvalidateStream(id)
+		}
+	}
+	if proxyErr != nil {
 		return BadGateway("Media proxy failed")
 	}
 	return nil
