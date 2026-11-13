@@ -114,12 +114,13 @@ func TestYouTubeRateBudgetAndCoverSlotsRejectBeforeUpstream(t *testing.T) {
 type streamErrorFixture struct {
 	fixturePlatform
 	name        string
+	url         string
 	err         error
 	invalidated []string
 }
 
 func (f *streamErrorFixture) Name() string                                      { return f.name }
-func (f *streamErrorFixture) StreamURL(context.Context, string) (string, error) { return "", f.err }
+func (f *streamErrorFixture) StreamURL(context.Context, string) (string, error) { return f.url, f.err }
 func (f *streamErrorFixture) CoverURL(context.Context, string) (string, error)  { return "", nil }
 func (f *streamErrorFixture) InvalidateStream(id string)                        { f.invalidated = append(f.invalidated, id) }
 
@@ -142,6 +143,25 @@ func TestPlatformStreamResolutionErrorMapsToJSON(t *testing.T) {
 			WriteMappedError(response, err)
 			require.Equal(t, http.StatusUnprocessableEntity, response.Code)
 			require.Contains(t, response.Body.String(), `"code":"`+test.code+`"`)
+		})
+	}
+}
+func TestProxyPlatformInvalidatesUpstreamRejection(t *testing.T) {
+	for _, status := range []int{403, 404, 410} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(status) }))
+			defer server.Close()
+			cfg := testConfig(t)
+			source := &streamErrorFixture{name: "netease", url: server.URL}
+			api := NewMediaAPI(cfg, account.New(httpStore(t)), nil, nil, NewPlatformAPI(cfg, source), server.Client(), nil)
+			response := httptest.NewRecorder()
+			require.NoError(t, api.proxyPlatform(response, httptest.NewRequest("GET", "/api/netease/stream/42", nil), "netease", "42", false))
+			require.Equal(t, []string{"42"}, source.invalidated)
+			expected := 502
+			if status == 404 {
+				expected = status
+			}
+			require.Equal(t, expected, response.Code)
 		})
 	}
 }

@@ -160,10 +160,10 @@ func TestStreamResolution(t *testing.T) {
 		wantKind   string
 		wantLevels []string
 	}{
-		{name: "full", quality: "exhigh", responses: map[string]string{"exhigh": `{"data":[{"url":"https://cdn.test/full","code":200,"expi":1200,"br":320000,"type":"mp3","size":10,"freeTrialInfo":null,"freeTrialPrivilege":{"cannotListenReason":0}}]}`}, wantURL: "https://cdn.test/full", wantLevels: []string{"exhigh"}},
-		{name: "trial", quality: "exhigh", responses: map[string]string{"exhigh": `{"data":[{"url":"https://cdn.test/preview","code":200,"expi":1200,"freeTrialInfo":{"start":0,"end":30},"freeTrialPrivilege":{"cannotListenReason":1}}]}`}, wantKind: platform.StreamTrialOnly, wantLevels: []string{"exhigh"}},
-		{name: "step down", quality: "exhigh", responses: map[string]string{"exhigh": `{"data":[{"url":null,"code":404}]}`, "higher": `{"data":[{"url":"https://cdn.test/lower","code":200,"expi":1200}]}`}, wantURL: "https://cdn.test/lower", wantLevels: []string{"exhigh", "higher"}},
-		{name: "invalid quality", quality: "invalid", responses: map[string]string{"exhigh": `{"data":[{"url":"https://cdn.test/default","code":200,"expi":1200}]}`}, wantURL: "https://cdn.test/default", wantLevels: []string{"exhigh"}},
+		{name: "full", quality: "exhigh", responses: map[string]string{"exhigh": `{"data":[{"id":42,"url":"https://cdn.test/full","code":200,"expi":1200,"br":320000,"type":"mp3","size":10,"freeTrialInfo":null,"freeTrialPrivilege":{"cannotListenReason":0}}]}`}, wantURL: "https://cdn.test/full", wantLevels: []string{"exhigh"}},
+		{name: "trial", quality: "exhigh", responses: map[string]string{"exhigh": `{"data":[{"id":42,"url":"https://cdn.test/preview","code":200,"expi":1200,"freeTrialInfo":{"start":0,"end":30},"freeTrialPrivilege":{"cannotListenReason":1}}]}`}, wantKind: platform.StreamTrialOnly, wantLevels: []string{"exhigh"}},
+		{name: "step down", quality: "exhigh", responses: map[string]string{"exhigh": `{"data":[]}`, "higher": `{"data":[{"id":42,"url":"https://cdn.test/lower","code":200,"expi":1200}]}`}, wantURL: "https://cdn.test/lower", wantLevels: []string{"exhigh", "higher"}},
+		{name: "invalid quality", quality: "invalid", responses: map[string]string{"exhigh": `{"data":[{"id":42,"url":"https://cdn.test/default","code":200,"expi":1200}]}`}, wantURL: "https://cdn.test/default", wantLevels: []string{"exhigh"}},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
@@ -197,7 +197,7 @@ func TestStreamCacheExpiryInvalidationAndCredentialUpdate(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		require.NotEmpty(t, r.URL.Query().Get("timestamp"))
-		_, _ = w.Write([]byte(`{"data":[{"url":"https://cdn.test/stream","code":200,"expi":180}]}`))
+		_, _ = w.Write([]byte(`{"data":[{"id":42,"url":"https://cdn.test/stream","code":200,"expi":180}]}`))
 	}))
 	defer server.Close()
 	service := New(&platform.Client{HTTP: server.Client(), Retries: 0, MaxBody: 2048}, server.URL, "first")
@@ -231,7 +231,7 @@ func TestConcurrentStreamRequestsShareUpstreamCall(t *testing.T) {
 			close(started)
 		}
 		<-proceed
-		_, _ = w.Write([]byte(`{"data":[{"url":"https://cdn.test/shared","code":200,"expi":1200}]}`))
+		_, _ = w.Write([]byte(`{"data":[{"id":42,"url":"https://cdn.test/shared","code":200,"expi":1200}]}`))
 	}))
 	defer server.Close()
 	service := New(&platform.Client{HTTP: server.Client(), Retries: 0, MaxBody: 2048}, server.URL, "cookie")

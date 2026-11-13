@@ -44,16 +44,22 @@ func (*Service) Available() bool { return true }
 func (s *Service) UpdateCredential(value string) {
 	s.mu.Lock()
 	s.cookie = value
+	s.generation++
 	s.mu.Unlock()
 	s.cacheMu.Lock()
 	s.streams = make(map[string]streamCacheEntry)
-	s.generation++
 	s.cacheMu.Unlock()
 }
 func (s *Service) credential() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.cookie
+}
+
+func (s *Service) credentialGeneration() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.generation
 }
 
 func (s *Service) get(ctx context.Context, path string, query url.Values, target any) error {
@@ -231,7 +237,7 @@ func (s *Service) StreamURL(ctx context.Context, musicID string) (string, error)
 			return "", ctx.Err()
 		}
 	}
-	flight := &streamFlight{done: make(chan struct{}), generation: s.generation}
+	flight := &streamFlight{done: make(chan struct{}), generation: s.credentialGeneration()}
 	s.flights[musicID] = flight
 	s.cacheMu.Unlock()
 
@@ -269,22 +275,24 @@ type streamFlight struct {
 }
 
 type streamResponse struct {
-	Data []struct {
-		ID                 jsonID          `json:"id"`
-		URL                *string         `json:"url"`
-		BR                 int             `json:"br"`
-		Size               int64           `json:"size"`
-		MD5                string          `json:"md5"`
-		Code               int             `json:"code"`
-		Expi               int             `json:"expi"`
-		Type               string          `json:"type"`
-		Level              string          `json:"level"`
-		Fee                int             `json:"fee"`
-		FreeTrialInfo      json.RawMessage `json:"freeTrialInfo"`
-		FreeTrialPrivilege struct {
-			CannotListenReason int `json:"cannotListenReason"`
-		} `json:"freeTrialPrivilege"`
-	} `json:"data"`
+	Data []streamResponseEntry `json:"data"`
+}
+
+type streamResponseEntry struct {
+	ID                 jsonID          `json:"id"`
+	URL                *string         `json:"url"`
+	BR                 int             `json:"br"`
+	Size               int64           `json:"size"`
+	MD5                string          `json:"md5"`
+	Code               int             `json:"code"`
+	Expi               int             `json:"expi"`
+	Type               string          `json:"type"`
+	Level              string          `json:"level"`
+	Fee                int             `json:"fee"`
+	FreeTrialInfo      json.RawMessage `json:"freeTrialInfo"`
+	FreeTrialPrivilege struct {
+		CannotListenReason int `json:"cannotListenReason"`
+	} `json:"freeTrialPrivilege"`
 }
 
 func (s *Service) resolveStream(ctx context.Context, musicID string) (string, time.Duration, error) {
@@ -298,12 +306,21 @@ func (s *Service) resolveStream(ctx context.Context, musicID string) (string, ti
 		if len(response.Data) == 0 {
 			continue
 		}
-		entry := response.Data[0]
+		var entry *streamResponseEntry
+		for index := range response.Data {
+			if response.Data[index].ID.String() == musicID {
+				entry = &response.Data[index]
+				break
+			}
+		}
+		if entry == nil {
+			continue
+		}
 		if len(entry.FreeTrialInfo) > 0 && string(entry.FreeTrialInfo) != "null" && string(entry.FreeTrialInfo) != "{}" {
 			return "", 0, &platform.StreamResolutionError{Kind: platform.StreamTrialOnly, Reason: entry.FreeTrialPrivilege.CannotListenReason}
 		}
 		if entry.Code != 0 && entry.Code != http.StatusOK {
-			continue
+			return "", 0, &platform.StreamResolutionError{Kind: platform.StreamUnavailable}
 		}
 		if entry.URL != nil && *entry.URL != "" {
 			ttl := 10 * time.Minute
@@ -318,6 +335,7 @@ func (s *Service) resolveStream(ctx context.Context, musicID string) (string, ti
 			}
 			return *entry.URL, ttl, nil
 		}
+		return "", 0, &platform.StreamResolutionError{Kind: platform.StreamUnavailable}
 	}
 	return "", 0, &platform.StreamResolutionError{Kind: platform.StreamUnavailable}
 }
