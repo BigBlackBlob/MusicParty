@@ -558,8 +558,9 @@ func (api *WebSocketAPI) enqueue(ctx context.Context, client *wsruntime.Client, 
 	}
 	playable, err := api.platforms.ResolvePlayable(ctx, request.Platform, request.MusicID, session.SessionToken)
 	if err != nil {
+		// Only the requester tried this track; the rest of the room never saw it.
 		reason, message := playbackFailure(err)
-		_ = runtime.PlaybackFailed(ctx, "", request.MusicID, request.MusicID, request.Platform, reason, message)
+		_ = client.Send("player.failed", client.RoomID, map[string]string{"queueId": "", "musicId": request.MusicID, "name": request.MusicID, "platform": request.Platform, "reason": reason, "message": message})
 		api.nackReason(client, "enqueue.nack", request.MutationID, "PLATFORM_FAILED")
 		return
 	}
