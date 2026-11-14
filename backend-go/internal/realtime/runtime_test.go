@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/domain/account"
+	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform"
 	storesqlite "github.com/BigBlackBlob/MusicParty/backend-go/internal/store/sqlite"
 	"github.com/stretchr/testify/require"
 )
@@ -694,6 +695,16 @@ func TestLikesBelongToThePlayingTrackAndMirrorThePersonalLikedList(t *testing.T)
 	require.Equal(t, []string{"b"}, likedTrackIDs(t, likedList, ctx, "user"))
 }
 
+func verificationBusy(t *testing.T, runtime *RoomRuntime, epoch int64) bool {
+	t.Helper()
+	value, err := runtime.Execute(context.Background(), func(runtime *RoomRuntime, _ context.Context) (any, error) {
+		_, active := runtime.verificationEpochs[epoch]
+		return active, nil
+	})
+	require.NoError(t, err)
+	return value.(bool)
+}
+
 func nowPlaying(t *testing.T, runtime *RoomRuntime) map[string]any {
 	t.Helper()
 	snapshot, err := runtime.Snapshot(context.Background())
@@ -745,33 +756,97 @@ func TestSeekWithoutMutationLogsActor(t *testing.T) {
 	}, time.Second, 10*time.Millisecond)
 }
 
-func TestPlaybackErrorOwnerValidationAndSingleAdvance(t *testing.T) {
-	for _, ready := range []bool{true, false} {
-		t.Run(fmt.Sprint(ready), func(t *testing.T) {
-			store := realtimeStore(t)
-			broadcaster := &recordingBroadcaster{}
-			manager := NewManager(store, 10, time.Second, time.Hour, broadcaster)
-			t.Cleanup(manager.Close)
-			runtime, err := manager.Room(context.Background(), "lounge")
-			require.NoError(t, err)
-			for _, id := range []string{"first", "second", "third"} {
-				_, err = runtime.Enqueue(context.Background(), account.Session{PublicID: "user"}, storesqlite.Music{ID: id, Duration: 60000, Platform: "local"}, id)
-				require.NoError(t, err)
-			}
-			n := nowPlaying(t, runtime)
-			report := PlaybackReport{PlayEpoch: n["playEpoch"].(int64), QueueID: n["queueId"].(string), Code: "stream-trial-only"}
-			if !ready {
-				require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.started", report, nil, "owner"))
-				require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.error", report, nil, "other"))
-				require.Equal(t, 0, broadcaster.count("player.failed"))
-			}
-			require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.error", report, nil, "owner"))
-			require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.error", report, nil, "owner"))
-			require.Equal(t, 1, broadcaster.count("player.failed"))
-			event, ok := broadcaster.last("player.failed")
-			require.True(t, ok)
-			require.Equal(t, "preview_only", event.payload.(map[string]string)["reason"])
-			require.Equal(t, "second", nowPlaying(t, runtime)["music"].(*storesqlite.PlayableMusic).ID)
-		})
+func TestRetriesExhaustedRequiresClockOwner(t *testing.T) {
+	store := realtimeStore(t)
+	broadcaster := &recordingBroadcaster{}
+	manager := NewManager(store, 10, time.Second, time.Hour, broadcaster)
+	t.Cleanup(manager.Close)
+	runtime, err := manager.Room(context.Background(), "lounge")
+	require.NoError(t, err)
+	session := account.Session{PublicID: "user"}
+	for _, id := range []string{"first", "second"} {
+		_, err = runtime.Enqueue(context.Background(), session, storesqlite.Music{ID: id, Duration: 60_000, Platform: "local"}, id)
+		require.NoError(t, err)
 	}
+	now := nowPlaying(t, runtime)
+	report := PlaybackReport{PlayEpoch: now["playEpoch"].(int64), QueueID: now["queueId"].(string), Code: "retries-exhausted"}
+	require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.error", report, nil, "slow-client"))
+	require.Equal(t, "first", nowPlaying(t, runtime)["music"].(*storesqlite.PlayableMusic).ID)
+	require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.started", report, nil, "owner"))
+	require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.error", report, nil, "owner"))
+	require.Equal(t, "second", nowPlaying(t, runtime)["music"].(*storesqlite.PlayableMusic).ID)
+}
+
+func TestPlaybackErrorRequiresServerConfirmation(t *testing.T) {
+	t.Run("unconfirmed", func(t *testing.T) {
+		store := realtimeStore(t)
+		manager := NewManager(store, 10, time.Second, time.Hour, &recordingBroadcaster{})
+		manager.SetStreamVerifier(func(context.Context, storesqlite.Music) error { return nil })
+		t.Cleanup(manager.Close)
+		runtime, err := manager.Room(context.Background(), "lounge")
+		require.NoError(t, err)
+		for _, id := range []string{"first", "second"} {
+			_, err = runtime.Enqueue(context.Background(), account.Session{PublicID: "user"}, storesqlite.Music{ID: id, Platform: "netease", Duration: 60_000}, id)
+			require.NoError(t, err)
+		}
+		now := nowPlaying(t, runtime)
+		report := PlaybackReport{PlayEpoch: now["playEpoch"].(int64), QueueID: now["queueId"].(string), Code: "stream-trial-only"}
+		require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.error", report, nil, "any-ready-client"))
+		require.Eventually(t, func() bool { return !verificationBusy(t, runtime, report.PlayEpoch) }, time.Second, time.Millisecond*10)
+		require.Equal(t, "first", nowPlaying(t, runtime)["music"].(*storesqlite.PlayableMusic).ID)
+	})
+
+	t.Run("stale after manual next", func(t *testing.T) {
+		store := realtimeStore(t)
+		broadcaster := &recordingBroadcaster{}
+		started, release := make(chan struct{}), make(chan struct{})
+		manager := NewManager(store, 10, time.Second, time.Hour, broadcaster)
+		manager.SetStreamVerifier(func(context.Context, storesqlite.Music) error {
+			close(started)
+			<-release
+			return &platform.StreamResolutionError{Kind: platform.StreamTrialOnly}
+		})
+		t.Cleanup(manager.Close)
+		runtime, err := manager.Room(context.Background(), "lounge")
+		require.NoError(t, err)
+		for _, id := range []string{"first", "second", "third"} {
+			_, err = runtime.Enqueue(context.Background(), account.Session{PublicID: "user"}, storesqlite.Music{ID: id, Platform: "netease", Duration: 60_000}, id)
+			require.NoError(t, err)
+		}
+		now := nowPlaying(t, runtime)
+		report := PlaybackReport{PlayEpoch: now["playEpoch"].(int64), QueueID: now["queueId"].(string), Code: "stream-trial-only"}
+		require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.error", report, nil, "any-ready-client"))
+		<-started
+		_, err = runtime.Next(context.Background())
+		require.NoError(t, err, "resolver work must not block the room actor")
+		close(release)
+		require.Eventually(t, func() bool { return !verificationBusy(t, runtime, report.PlayEpoch) }, time.Second, time.Millisecond*10)
+		require.Equal(t, "second", nowPlaying(t, runtime)["music"].(*storesqlite.PlayableMusic).ID)
+		require.Equal(t, 0, broadcaster.count("player.failed"))
+	})
+
+	t.Run("confirmed and deduplicated", func(t *testing.T) {
+		store := realtimeStore(t)
+		broadcaster := &recordingBroadcaster{}
+		manager := NewManager(store, 10, time.Second, time.Hour, broadcaster)
+		manager.SetStreamVerifier(func(context.Context, storesqlite.Music) error {
+			return &platform.StreamResolutionError{Kind: platform.StreamTrialOnly}
+		})
+		t.Cleanup(manager.Close)
+		runtime, err := manager.Room(context.Background(), "lounge")
+		require.NoError(t, err)
+		for _, id := range []string{"first", "second", "third"} {
+			_, err = runtime.Enqueue(context.Background(), account.Session{PublicID: "user"}, storesqlite.Music{ID: id, Platform: "netease", Duration: 60_000}, id)
+			require.NoError(t, err)
+		}
+		now := nowPlaying(t, runtime)
+		report := PlaybackReport{PlayEpoch: now["playEpoch"].(int64), QueueID: now["queueId"].(string), Code: "stream-trial-only"}
+		require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.error", report, nil, "any-ready-client"))
+		require.Eventually(t, func() bool { return broadcaster.count("player.failed") == 1 }, time.Second, time.Millisecond*10)
+		require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.error", report, nil, "any-ready-client"))
+		require.Equal(t, "second", nowPlaying(t, runtime)["music"].(*storesqlite.PlayableMusic).ID)
+		event, ok := broadcaster.last("player.failed")
+		require.True(t, ok)
+		require.Equal(t, "preview_only", event.payload.(map[string]string)["reason"])
+	})
 }

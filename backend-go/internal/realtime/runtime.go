@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/domain/account"
+	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform"
 	storesqlite "github.com/BigBlackBlob/MusicParty/backend-go/internal/store/sqlite"
 	"github.com/google/uuid"
 )
@@ -56,18 +57,19 @@ type ControlResult struct {
 }
 
 type Manager struct {
-	store       *storesqlite.Store
-	queueSize   int
-	timeout     time.Duration
-	idle        time.Duration
-	broadcaster Broadcaster
-	mu          sync.Mutex
-	runtimes    map[string]*RoomRuntime
-	loading     map[string]*roomLoad
-	closed      bool
-	limits      QueueLimits
-	chat        *chatPolicy
-	preResolve  func(context.Context, storesqlite.Music)
+	store        *storesqlite.Store
+	queueSize    int
+	timeout      time.Duration
+	idle         time.Duration
+	broadcaster  Broadcaster
+	mu           sync.Mutex
+	runtimes     map[string]*RoomRuntime
+	loading      map[string]*roomLoad
+	closed       bool
+	limits       QueueLimits
+	chat         *chatPolicy
+	preResolve   func(context.Context, storesqlite.Music)
+	verifyStream func(context.Context, storesqlite.Music) error
 }
 
 // SetPreResolver installs best-effort media preparation for the next queued track.
@@ -75,6 +77,13 @@ type Manager struct {
 func (m *Manager) SetPreResolver(resolve func(context.Context, storesqlite.Music)) {
 	m.mu.Lock()
 	m.preResolve = resolve
+	m.mu.Unlock()
+}
+
+// SetStreamVerifier installs the platform resolver used to verify client failure claims.
+func (m *Manager) SetStreamVerifier(verify func(context.Context, storesqlite.Music) error) {
+	m.mu.Lock()
+	m.verifyStream = verify
 	m.mu.Unlock()
 }
 
@@ -144,6 +153,7 @@ func (m *Manager) Room(ctx context.Context, roomID string) (*RoomRuntime, error)
 			rt, err = newRoomRuntime(loadCtx, m.store, roomID, m.queueSize, m.timeout, m.idle, m.broadcaster, m.release, m.limits, m.chat)
 			if rt != nil {
 				rt.preResolve = m.preResolve
+				rt.verifyStream = m.verifyStream
 			}
 		}
 		m.mu.Lock()
@@ -285,6 +295,8 @@ type RoomRuntime struct {
 	eventLogGen         uint64
 	preResolve          func(context.Context, storesqlite.Music)
 	preResolveBusy      bool
+	verifyStream        func(context.Context, storesqlite.Music) error
+	verificationEpochs  map[int64]struct{}
 	onClose             func(*RoomRuntime)
 	closeOnce           sync.Once
 }
@@ -1520,12 +1532,16 @@ func (r *RoomRuntime) ReportPlayback(ctx context.Context, kind string, report Pl
 				runtime.logEvent(kind, report.QueueID, "ignored", "not_owner_or_state", actor)
 				return nil, nil
 			}
+			if report.Code == "retries-exhausted" && runtime.sessionState == "ready" && runtime.clockOwner == "" {
+				runtime.logEvent(kind, report.QueueID, "ignored", "no_owner", actor)
+				return nil, nil
+			}
+			if report.Code == "stream-trial-only" || report.Code == "stream-unavailable" {
+				runtime.verifyPlaybackError(report.PlayEpoch, report.QueueID, actor)
+				return nil, nil
+			}
 			reason, message := "unknown", "Playback failed after retrying"
 			switch report.Code {
-			case "stream-trial-only":
-				reason, message = "preview_only", "Only a preview is available for this track"
-			case "stream-unavailable":
-				reason, message = "unavailable", "This track is unavailable for streaming"
 			case "retries-exhausted":
 			default:
 				return nil, nil
@@ -1669,6 +1685,50 @@ func (r *RoomRuntime) prepareNextTrack() {
 			})
 		}()
 		r.preResolve(r.ctx, item.Music)
+	}()
+}
+
+// verifyPlaybackError resolves media off-actor, then sends the result back through the actor.
+func (r *RoomRuntime) verifyPlaybackError(epoch int64, queueID string, actor *string) {
+	if r.verifyStream == nil || r.state.CurrentMusic == nil {
+		r.logEventAt("playback.error", queueID, epoch, "ignored", "unconfirmed", actor)
+		return
+	}
+	if _, exists := r.verificationEpochs[epoch]; exists {
+		return
+	}
+	if r.verificationEpochs == nil {
+		r.verificationEpochs = make(map[int64]struct{})
+	}
+	music := storesqlite.Music{ID: r.state.CurrentMusic.ID, Name: r.state.CurrentMusic.Name, Artists: slices.Clone(r.state.CurrentMusic.Artists), Duration: r.state.CurrentMusic.Duration, Platform: r.state.CurrentMusic.Platform, CoverURL: r.state.CurrentMusic.CoverURL}
+	r.verificationEpochs[epoch] = struct{}{}
+	go func() {
+		err := r.verifyStream(r.ctx, music)
+		_, _ = r.Execute(context.Background(), func(runtime *RoomRuntime, ctx context.Context) (any, error) {
+			delete(runtime.verificationEpochs, epoch)
+			if runtime.state.PlayEpoch != epoch || runtime.currentQueueID != queueID || runtime.state.CurrentMusic == nil || runtime.failedEpoch == epoch {
+				runtime.logEventAt("playback.error", queueID, epoch, "ignored", "stale_verification", actor)
+				return nil, nil
+			}
+			var streamErr *platform.StreamResolutionError
+			if !errors.As(err, &streamErr) || (streamErr.Kind != platform.StreamTrialOnly && streamErr.Kind != platform.StreamUnavailable) {
+				runtime.logEventAt("playback.error", queueID, epoch, "ignored", "unconfirmed", actor)
+				return nil, nil
+			}
+			reason, message := "unavailable", "This track is unavailable for streaming"
+			if streamErr.Kind == platform.StreamTrialOnly {
+				reason, message = "preview_only", "Only a preview is available for this track"
+			}
+			music := runtime.state.CurrentMusic
+			payload := map[string]string{"queueId": queueID, "musicId": music.ID, "name": music.Name, "platform": music.Platform, "reason": reason, "message": message}
+			if err := runtime.advance(ctx); err != nil {
+				return nil, err
+			}
+			runtime.failedEpoch = epoch
+			runtime.broadcast("player.failed", payload)
+			runtime.logEventAt("playback.error", queueID, epoch, "applied", reason, actor)
+			return nil, nil
+		})
 	}()
 }
 

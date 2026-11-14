@@ -201,6 +201,10 @@ func run() error {
 		realtimeManager.SetPreResolver(func(ctx context.Context, music storesqlite.Music) {
 			platformAPI.PreResolveMedia(ctx, platform.Music{ID: music.ID, Name: music.Name, Artists: music.Artists, Duration: music.Duration, Platform: music.Platform, CoverURL: music.CoverURL}, mediaCache)
 		})
+		realtimeManager.SetStreamVerifier(func(ctx context.Context, music storesqlite.Music) error {
+			_, err := platformAPI.ResolvePlayable(ctx, music.Platform, music.ID, "")
+			return err
+		})
 		realtimeManager.SetChatLimits(realtime.ChatLimits{MinInterval: cfg.Chat.MinInterval, MaxHistorySize: cfg.Chat.MaxHistorySize, MaxMessageLength: cfg.Chat.MaxMessageLength})
 		defer realtimeManager.Close()
 		defer socketHub.Close()
