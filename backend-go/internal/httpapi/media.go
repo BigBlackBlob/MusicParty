@@ -4,10 +4,8 @@ import (
 	"database/sql"
 	"errors"
 	"log/slog"
-	"mime"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -344,11 +342,9 @@ func (api *MediaAPI) proxyPlatform(w http.ResponseWriter, r *http.Request, name,
 	if !cover && api.cache != nil {
 		if path, release, ok := api.cache.Acquire(cacheKey); ok {
 			defer release()
-			ct := mime.TypeByExtension(filepath.Ext(path))
-			if ct == "" {
-				ct = "application/octet-stream"
-			}
-			return media.ServeFile(w, r, path, ct, "private, max-age=86400")
+			// Pass "" so ServeFile sniffs the content type from the file bytes
+			// (cache files use .media extension which has no registered MIME type).
+			return media.ServeFile(w, r, path, "", "private, max-age=86400")
 		}
 	}
 	var target string
