@@ -340,11 +340,26 @@ func (api *MediaAPI) proxyPlatform(w http.ResponseWriter, r *http.Request, name,
 	}
 	cacheKey := platformCacheKey(source, name, id)
 	if !cover && api.cache != nil {
+		// 1. Completed file: serve directly.
 		if path, release, ok := api.cache.Acquire(cacheKey); ok {
 			defer release()
-			// Pass "" so ServeFile sniffs the content type from the file bytes
-			// (cache files use .media extension which has no registered MIME type).
 			return media.ServeFile(w, r, path, "", "private, max-age=86400")
+		}
+		// 2. An active download can serve its prefix or reuse its resolved URL.
+		if url, headers, inflight := api.cache.InflightURL(cacheKey); inflight {
+			if served, serveErr := api.cache.ServePartial(w, r, cacheKey, ""); served {
+				return serveErr
+			}
+			status, proxyErr := api.proxy.ServeWithStatus(w, r, url, headers)
+			if status == http.StatusForbidden || status == http.StatusNotFound || status == http.StatusGone {
+				if invalidator, ok := source.(platform.StreamInvalidator); ok {
+					invalidator.InvalidateStream(id)
+				}
+			}
+			if proxyErr != nil {
+				return BadGateway("Media proxy failed")
+			}
+			return nil
 		}
 	}
 	var target string

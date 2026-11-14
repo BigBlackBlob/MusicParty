@@ -22,6 +22,11 @@ type cacheEntry struct {
 	accessOrder uint64
 }
 
+type inflightEntry struct {
+	url     string
+	headers http.Header
+}
+
 // CacheOptions apply only to background downloads, never the playback proxy.
 type CacheOptions struct {
 	PlatformLimits                 map[string]int
@@ -67,7 +72,7 @@ type Cache struct {
 	mu                       sync.Mutex
 	entries                  map[string]cacheEntry
 	usedBytes, reservedBytes int64
-	inflight                 map[string]struct{}
+	inflight                 map[string]inflightEntry
 	readers                  map[string]int
 	limits                   map[string]chan struct{}
 	accessSeq                uint64
@@ -110,7 +115,7 @@ func NewCache(root string, maxBytes int64, client *http.Client, workers, capacit
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &Cache{ctx: ctx, cancel: cancel, root: root, maxBytes: maxBytes, client: client, retries: retries, retryBase: retryBase, options: opts,
-		jobs: make(chan downloadJob, max(1, capacity)), entries: map[string]cacheEntry{}, inflight: map[string]struct{}{}, readers: map[string]int{}, limits: map[string]chan struct{}{}}
+		jobs: make(chan downloadJob, max(1, capacity)), entries: map[string]cacheEntry{}, inflight: map[string]inflightEntry{}, readers: map[string]int{}, limits: map[string]chan struct{}{}}
 	if err := c.scan(); err != nil {
 		cancel()
 		return nil, err
@@ -196,7 +201,11 @@ func (c *Cache) Submit(key, url string, headers http.Header) error {
 	if _, ok := c.inflight[key]; ok {
 		return nil
 	}
-	c.inflight[key] = struct{}{}
+	if headers == nil {
+		headers = make(http.Header)
+	}
+	headers = headers.Clone()
+	c.inflight[key] = inflightEntry{url: url, headers: headers}
 	select {
 	case <-c.ctx.Done():
 		delete(c.inflight, key)
