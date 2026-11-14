@@ -36,10 +36,10 @@ func TestThousandItemQueueBroadcastsCompactPlaybackAndIncrementalNext(t *testing
 	for _, event := range broadcaster.events {
 		payload := event.payload.(map[string]any)
 		if event.kind == "player.state" {
-			queue, ok := payload["queue"].([]clientQueueItem)
-			require.True(t, ok)
-			require.GreaterOrEqual(t, len(queue), 999)
-			require.NotEmpty(t, queue[0].Music.URL)
+			require.NotContains(t, payload, "queue")
+			encoded, err := json.Marshal(payload)
+			require.NoError(t, err)
+			require.Less(t, len(encoded), 2000, "playback updates must not scale with the pending queue")
 		}
 		if event.kind == "queue.patch" {
 			patches = append(patches, payload)

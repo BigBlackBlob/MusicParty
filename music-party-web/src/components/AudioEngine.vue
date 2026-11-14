@@ -79,8 +79,7 @@ const {
 } = useAudio(audioRef, player, computed(() => ui.volume));
 
 const audioSrc = computed(() => withPlaybackToken(player.nowPlaying?.music));
-// Queue metadata has no playable URL. Derive the same media endpoints used by
-// the server, without resolving accounts or changing token handling.
+// Queue snapshots and patches carry the server media URL for standby preload.
 const queuedAudioSrc = computed(() => withPlaybackToken(player.queue?.[0]?.music));
 // A removal patch can precede its player.state by a frame. Keep the buffered
 // source until that state arrives, so consuming the queue cannot erase it.

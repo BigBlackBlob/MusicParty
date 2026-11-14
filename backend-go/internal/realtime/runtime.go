@@ -1357,7 +1357,9 @@ func (r *RoomRuntime) snapshot() map[string]any {
 	return map[string]any{"nowPlaying": nowPlaying, "queue": clientQueue(r.queue), "isShuffle": r.state.Shuffle, "isPaused": r.state.Paused, "isPauseLocked": r.state.PauseLocked, "isSkipLocked": r.state.SkipLocked, "isShuffleLocked": r.state.ShuffleLocked, "isLoading": r.state.Loading, "serverTimestamp": time.Now().UnixMilli(), "stateVersion": r.state.StateVersion, "playEpoch": r.state.PlayEpoch, "queueVersion": r.queueVersion, "queueEpoch": r.controlScope, "historyCursor": r.historyCursor(), "idempotencyScopeId": r.controlScope, "idempotencyTtlMs": ControlMutationTTL.Milliseconds()}
 }
 func (r *RoomRuntime) broadcastState() {
-	r.broadcast("player.state", r.snapshot())
+	state := r.snapshot()
+	delete(state, "queue")
+	r.broadcast("player.state", state)
 }
 func (r *RoomRuntime) broadcast(kind string, payload any) {
 	if kind == "queue.patch" {
