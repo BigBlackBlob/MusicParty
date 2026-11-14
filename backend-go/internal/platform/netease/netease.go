@@ -294,7 +294,6 @@ type streamCacheEntry struct {
 type streamFlight struct {
 	done       chan struct{}
 	url        string
-	ttl        time.Duration
 	err        error
 	generation uint64
 }
