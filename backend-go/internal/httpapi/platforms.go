@@ -20,6 +20,7 @@ import (
 
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/config"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/domain/account"
+	"github.com/BigBlackBlob/MusicParty/backend-go/internal/media"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform"
 	"github.com/go-chi/chi/v5"
 )
@@ -136,6 +137,32 @@ func (api *PlatformAPI) MediaSourceFor(ctx context.Context, name, token string) 
 		return nil, BadGateway("Platform does not expose media")
 	}
 	return source, nil
+}
+
+// PreResolveMedia submits a best-effort cache job for a queued track. It shares
+// the same resolver, cache key, and upstream headers as the serving path.
+func (api *PlatformAPI) PreResolveMedia(ctx context.Context, music platform.Music, cache *media.Cache) {
+	if cache == nil || music.Platform == "local" || music.ID == "" {
+		return
+	}
+	source, err := api.MediaSourceFor(ctx, music.Platform, "")
+	if err != nil {
+		return
+	}
+	target, err := source.StreamURL(ctx, music.ID)
+	if err != nil || target == "" {
+		return
+	}
+	headers := http.Header{"Accept": {"application/octet-stream"}}
+	if music.Platform == "netease" {
+		headers.Set("Referer", "https://music.163.com/")
+		headers.Set("User-Agent", "Mozilla/5.0")
+	}
+	if music.Platform == "bilibili" {
+		headers.Set("Referer", "https://www.bilibili.com/video/"+music.ID)
+		headers.Set("User-Agent", "Mozilla/5.0")
+	}
+	_ = cache.Submit(platformCacheKey(source, music.Platform, music.ID), target, headers)
 }
 func (api *PlatformAPI) SupportsCredentialUpdate(name string) bool {
 	api.mu.RLock()

@@ -56,6 +56,15 @@ func realtimeStore(t *testing.T) *storesqlite.Store {
 	return store
 }
 
+func realtimeReport(runtime *RoomRuntime, kind string, epoch, positionMS, durationMS int64) error {
+	snapshot, err := runtime.Snapshot(context.Background())
+	if err != nil {
+		return err
+	}
+	nowPlaying := snapshot["nowPlaying"].(map[string]any)
+	return runtime.ReportPlayback(context.Background(), kind, PlaybackReport{PlayEpoch: epoch, QueueID: nowPlaying["queueId"].(string), PositionMS: positionMS, ClientTime: time.Now().UnixMilli(), DurationMS: durationMS}, nil)
+}
+
 func TestRoomRuntimeSerializesConcurrentMutationsAndDeduplicates(t *testing.T) {
 	store := realtimeStore(t)
 	broadcaster := &recordingBroadcaster{}
@@ -102,24 +111,99 @@ func TestRoomRuntimeProgressAutoAdvanceAndIdleEviction(t *testing.T) {
 	require.NoError(t, err)
 	_, err = runtime.Enqueue(context.Background(), session, storesqlite.Music{ID: "next", Name: "Next", Duration: 60_000, Platform: "local"}, "two")
 	require.NoError(t, err)
-
-	require.Eventually(t, func() bool {
-		snapshot, snapshotErr := runtime.Snapshot(context.Background())
-		if snapshotErr != nil {
-			return false
-		}
-		nowPlaying, ok := snapshot["nowPlaying"].(map[string]any)
-		if !ok {
-			return false
-		}
-		music, ok := nowPlaying["music"].(*storesqlite.PlayableMusic)
-		return ok && music.ID == "next"
-	}, 3*time.Second, 50*time.Millisecond)
-	require.GreaterOrEqual(t, broadcaster.count("player.progress"), 1)
+	time.Sleep(1200 * time.Millisecond)
+	snapshot, err := runtime.Snapshot(context.Background())
+	require.NoError(t, err)
+	music, ok := snapshot["nowPlaying"].(map[string]any)["music"].(*storesqlite.PlayableMusic)
+	require.True(t, ok)
+	require.Equal(t, "short", music.ID)
+	require.Equal(t, 0, broadcaster.count("player.progress"))
 
 	time.Sleep(3 * time.Second)
 	_, err = runtime.Snapshot(context.Background())
 	require.Error(t, err)
+}
+
+func TestPlaybackStartedStalledAndSkipEndRace(t *testing.T) {
+	store := realtimeStore(t)
+	manager := NewManager(store, 10, time.Second, time.Hour, &recordingBroadcaster{})
+	t.Cleanup(manager.Close)
+	runtime, err := manager.Room(context.Background(), "lounge")
+	require.NoError(t, err)
+	session := account.Session{PublicID: "user", DisplayName: "User"}
+	_, err = runtime.Enqueue(context.Background(), session, storesqlite.Music{ID: "first", Duration: 60_000, Platform: "local"}, "one")
+	require.NoError(t, err)
+	_, err = runtime.Enqueue(context.Background(), session, storesqlite.Music{ID: "second", Duration: 60_000, Platform: "local"}, "two")
+	require.NoError(t, err)
+	snapshot, err := runtime.Snapshot(context.Background())
+	require.NoError(t, err)
+	now := snapshot["nowPlaying"].(map[string]any)
+	epoch, queueID := now["playEpoch"].(int64), now["queueId"].(string)
+	require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.started", PlaybackReport{PlayEpoch: epoch, QueueID: queueID, PositionMS: 1200, ClientTime: time.Now().UnixMilli(), DurationMS: 50_000}, nil))
+	snapshot, err = runtime.Snapshot(context.Background())
+	require.NoError(t, err)
+	now = snapshot["nowPlaying"].(map[string]any)
+	require.Equal(t, int64(50_000), now["music"].(*storesqlite.PlayableMusic).Duration)
+	require.Equal(t, "playing", now["sessionState"])
+	require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.stalled", PlaybackReport{PlayEpoch: epoch, QueueID: queueID, PositionMS: 3400}, nil))
+	snapshot, err = runtime.Snapshot(context.Background())
+	require.NoError(t, err)
+	now = snapshot["nowPlaying"].(map[string]any)
+	require.Equal(t, int64(3400), now["currentPosition"])
+	require.Equal(t, "stalled", now["sessionState"])
+	_, err = runtime.NextFor(context.Background(), "user", true, &epoch, queueID)
+	require.NoError(t, err)
+	require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.ended", PlaybackReport{PlayEpoch: epoch, QueueID: queueID}, nil))
+	snapshot, err = runtime.Snapshot(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "second", snapshot["nowPlaying"].(map[string]any)["music"].(*storesqlite.PlayableMusic).ID)
+}
+
+func TestPlaybackReportsLogAppliedAndRejectedEvents(t *testing.T) {
+	store := realtimeStore(t)
+	manager := NewManager(store, 10, time.Second, time.Hour, &recordingBroadcaster{})
+	t.Cleanup(manager.Close)
+	runtime, err := manager.Room(context.Background(), "lounge")
+	require.NoError(t, err)
+	_, err = runtime.Enqueue(context.Background(), account.Session{PublicID: "user"}, storesqlite.Music{ID: "song", Duration: 60_000, Platform: "local"}, "one")
+	require.NoError(t, err)
+	snapshot, err := runtime.Snapshot(context.Background())
+	require.NoError(t, err)
+	now := snapshot["nowPlaying"].(map[string]any)
+	report := PlaybackReport{PlayEpoch: now["playEpoch"].(int64), QueueID: now["queueId"].(string), ClientTime: time.Now().UnixMilli(), DurationMS: 60_000}
+	require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.started", report, nil))
+	require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.ended", report, nil))
+	require.Eventually(t, func() bool {
+		var applied, rejected int
+		if store.Reader().QueryRow(`select count(*) from playback_event_log where result='applied'`).Scan(&applied) != nil {
+			return false
+		}
+		if store.Reader().QueryRow(`select count(*) from playback_event_log where result='rejected'`).Scan(&rejected) != nil {
+			return false
+		}
+		return applied > 0 && rejected > 0
+	}, time.Second*3, time.Millisecond*20)
+}
+
+func TestPlaybackFallbackCountsOnlyPlayingTime(t *testing.T) {
+	store := realtimeStore(t)
+	manager := NewManager(store, 10, time.Second, time.Hour, &recordingBroadcaster{})
+	t.Cleanup(manager.Close)
+	runtime, err := manager.Room(context.Background(), "lounge")
+	require.NoError(t, err)
+	_, err = runtime.Enqueue(context.Background(), account.Session{PublicID: "user"}, storesqlite.Music{ID: "song", Duration: 1000, Platform: "local"}, "one")
+	require.NoError(t, err)
+	_, err = runtime.Execute(context.Background(), func(rt *RoomRuntime, _ context.Context) (any, error) {
+		rt.sessionState = "playing"
+		rt.state.TimestampAnchor = time.Now().Add(-6 * time.Second).UnixMilli()
+		rt.onTick(time.Now())
+		return nil, nil
+	})
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		snapshot, e := runtime.Snapshot(context.Background())
+		return e == nil && snapshot["nowPlaying"] == nil
+	}, time.Second*2, time.Millisecond*20)
 }
 
 func TestPauseFreezesCurrentPosition(t *testing.T) {

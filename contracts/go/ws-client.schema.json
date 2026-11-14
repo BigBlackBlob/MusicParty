@@ -184,6 +184,9 @@
             ]
           },
           "properties": {
+            "clientTime": {
+              "type": "number"
+            },
             "idempotencyScopeId": {
               "maxLength": 128,
               "minLength": 1,
@@ -193,9 +196,27 @@
               "maxLength": 128,
               "minLength": 1,
               "type": "string"
+            },
+            "playEpoch": {
+              "type": "number"
+            },
+            "positionMs": {
+              "type": "integer"
+            },
+            "queueId": {
+              "type": "string"
+            },
+            "stateVersion": {
+              "type": "number"
             }
           },
-          "required": [],
+          "required": [
+            "clientTime",
+            "playEpoch",
+            "positionMs",
+            "queueId",
+            "stateVersion"
+          ],
           "type": "object"
         },
         "requestId": {
@@ -234,8 +255,8 @@
             ]
           },
           "properties": {
-            "expectedPlayEpoch": {
-              "type": "integer"
+            "clientTime": {
+              "type": "number"
             },
             "idempotencyScopeId": {
               "maxLength": 128,
@@ -246,9 +267,27 @@
               "maxLength": 128,
               "minLength": 1,
               "type": "string"
+            },
+            "playEpoch": {
+              "type": "number"
+            },
+            "positionMs": {
+              "type": "integer"
+            },
+            "queueId": {
+              "type": "string"
+            },
+            "stateVersion": {
+              "type": "number"
             }
           },
-          "required": [],
+          "required": [
+            "clientTime",
+            "playEpoch",
+            "positionMs",
+            "queueId",
+            "stateVersion"
+          ],
           "type": "object"
         },
         "requestId": {
@@ -287,8 +326,8 @@
             ]
           },
           "properties": {
-            "expectedPlayEpoch": {
-              "type": "integer"
+            "clientTime": {
+              "type": "number"
             },
             "idempotencyScopeId": {
               "maxLength": 128,
@@ -300,12 +339,25 @@
               "minLength": 1,
               "type": "string"
             },
+            "playEpoch": {
+              "type": "number"
+            },
             "positionMs": {
               "type": "integer"
+            },
+            "queueId": {
+              "type": "string"
+            },
+            "stateVersion": {
+              "type": "number"
             }
           },
           "required": [
-            "positionMs"
+            "clientTime",
+            "playEpoch",
+            "positionMs",
+            "queueId",
+            "stateVersion"
           ],
           "type": "object"
         },
@@ -345,6 +397,9 @@
             ]
           },
           "properties": {
+            "clientTime": {
+              "type": "number"
+            },
             "idempotencyScopeId": {
               "maxLength": 128,
               "minLength": 1,
@@ -354,9 +409,27 @@
               "maxLength": 128,
               "minLength": 1,
               "type": "string"
+            },
+            "playEpoch": {
+              "type": "number"
+            },
+            "positionMs": {
+              "type": "integer"
+            },
+            "queueId": {
+              "type": "string"
+            },
+            "stateVersion": {
+              "type": "number"
             }
           },
-          "required": [],
+          "required": [
+            "clientTime",
+            "playEpoch",
+            "positionMs",
+            "queueId",
+            "stateVersion"
+          ],
           "type": "object"
         },
         "requestId": {
@@ -733,6 +806,145 @@
         },
         "type": {
           "const": "player.resync"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "clientTime": {
+              "type": "number"
+            },
+            "durationMs": {
+              "type": "number"
+            },
+            "playEpoch": {
+              "type": "number"
+            },
+            "positionMs": {
+              "type": "number"
+            },
+            "queueId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "clientTime",
+            "durationMs",
+            "playEpoch",
+            "positionMs",
+            "queueId"
+          ],
+          "type": "object"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "playback.started"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "playEpoch": {
+              "type": "number"
+            },
+            "positionMs": {
+              "type": "number"
+            },
+            "queueId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "playEpoch",
+            "positionMs",
+            "queueId"
+          ],
+          "type": "object"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "playback.stalled"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "playEpoch": {
+              "type": "number"
+            },
+            "queueId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "playEpoch",
+            "queueId"
+          ],
+          "type": "object"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "playback.ended"
         }
       },
       "required": [

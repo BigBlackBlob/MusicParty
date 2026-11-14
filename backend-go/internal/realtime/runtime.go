@@ -28,6 +28,11 @@ var (
 	ErrNoHistory          = errors.New("no playback history available")
 )
 
+const (
+	endedToleranceMS = int64(3000)
+	fallbackGraceMS  = int64(5000)
+)
+
 type Broadcaster interface {
 	BroadcastRoom(string, string, any)
 	BroadcastAll(string, any)
@@ -60,6 +65,15 @@ type Manager struct {
 	closed      bool
 	limits      QueueLimits
 	chat        *chatPolicy
+	preResolve  func(context.Context, storesqlite.Music)
+}
+
+// SetPreResolver installs best-effort media preparation for the next queued track.
+// It must be configured before rooms are loaded.
+func (m *Manager) SetPreResolver(resolve func(context.Context, storesqlite.Music)) {
+	m.mu.Lock()
+	m.preResolve = resolve
+	m.mu.Unlock()
 }
 
 func NewManager(store *storesqlite.Store, queueSize int, timeout, idle time.Duration, broadcaster Broadcaster, limits ...QueueLimits) *Manager {
@@ -126,6 +140,9 @@ func (m *Manager) Room(ctx context.Context, roomID string) (*RoomRuntime, error)
 		var rt *RoomRuntime
 		if err == nil {
 			rt, err = newRoomRuntime(loadCtx, m.store, roomID, m.queueSize, m.timeout, m.idle, m.broadcaster, m.release, m.limits, m.chat)
+			if rt != nil {
+				rt.preResolve = m.preResolve
+			}
 		}
 		m.mu.Lock()
 		if err == nil && (m.closed || loadCtx.Err() != nil) {
@@ -254,8 +271,23 @@ type RoomRuntime struct {
 	advancePending   bool
 	advanceFailures  int
 	advanceRetryAt   time.Time
+	currentQueueID   string
+	sessionState     string
+	eventWake        chan struct{}
+	eventLogMu       sync.Mutex
+	eventLogQueue    []playbackEvent
+	preResolve       func(context.Context, storesqlite.Music)
+	preResolveBusy   bool
 	onClose          func(*RoomRuntime)
 	closeOnce        sync.Once
+}
+
+type playbackEvent struct {
+	roomID                        string
+	at                            int64
+	kind, queueID, result, reason string
+	epoch                         int64
+	actor                         *string
 }
 
 func newRoomRuntime(ctx context.Context, store *storesqlite.Store, roomID string, capacity int, timeout, idle time.Duration, broadcaster Broadcaster, onClose func(*RoomRuntime), limits QueueLimits, chat *chatPolicy) (*RoomRuntime, error) {
@@ -274,11 +306,16 @@ func newRoomRuntime(ctx context.Context, store *storesqlite.Store, roomID string
 		state = &storesqlite.PlaybackState{RoomID: roomID, LikedUserIDs: map[string]struct{}{}, LikeMarkers: []int64{}, LastPersistedAt: now}
 	}
 	runtimeCtx, cancel := context.WithCancel(context.Background())
-	r := &RoomRuntime{roomID: roomID, queueRepo: queueRepo, stateRepo: stateRepo, realtimeRepo: storesqlite.NewRealtimeRepository(store, time.Now), chatRepo: storesqlite.NewChatRepository(store), playlistRepo: storesqlite.NewUserPlaylistRepository(store, time.Now, nil), queue: queue, state: *state, commands: make(chan command, capacity), ctx: runtimeCtx, cancel: cancel, done: make(chan struct{}), timeout: timeout, broadcaster: broadcaster, queueVersion: 1, limits: limits, chat: chat, mutations: map[string]queueMutationRecord{}, mutationCounts: map[string]int{}, idle: idle, lastActivity: time.Now(), onClose: onClose}
+	r := &RoomRuntime{roomID: roomID, queueRepo: queueRepo, stateRepo: stateRepo, realtimeRepo: storesqlite.NewRealtimeRepository(store, time.Now), chatRepo: storesqlite.NewChatRepository(store), playlistRepo: storesqlite.NewUserPlaylistRepository(store, time.Now, nil), queue: queue, state: *state, commands: make(chan command, capacity), ctx: runtimeCtx, cancel: cancel, done: make(chan struct{}), timeout: timeout, broadcaster: broadcaster, queueVersion: 1, limits: limits, chat: chat, mutations: map[string]queueMutationRecord{}, mutationCounts: map[string]int{}, idle: idle, lastActivity: time.Now(), onClose: onClose, sessionState: "ready", eventWake: make(chan struct{}, 1)}
+	go r.writeEventLog(store)
 	if history, historyErr := queueRepo.LoadHistory(ctx, roomID, limits.HistorySize); historyErr == nil {
 		r.history = history
 	}
 	r.controlScope = uuid.NewString()
+	if r.state.CurrentMusic != nil {
+		r.currentQueueID = uuid.NewString()
+		r.sessionState = "ready"
+	}
 	r.controlMutations = make(map[controlKey]controlRecord)
 	r.controlCounts = make(map[string]int)
 	go r.loop()
@@ -351,6 +388,10 @@ func (r *RoomRuntime) Enqueue(ctx context.Context, session account.Session, musi
 		} else if err := runtime.queueRepo.SynchronizeQueue(ctx, runtime.roomID, next); err != nil {
 			return nil, err
 		}
+		if started {
+			runtime.currentQueueID = startedID
+			runtime.sessionState = "ready"
+		}
 		runtime.queue = next
 		runtime.state = nextState
 		runtime.queueVersion++
@@ -397,6 +438,10 @@ func (r *RoomRuntime) EnqueueMany(ctx context.Context, session account.Session, 
 			}
 		} else if err := runtime.queueRepo.SynchronizeQueue(ctx, runtime.roomID, next); err != nil {
 			return nil, err
+		}
+		if started {
+			runtime.currentQueueID = startedID
+			runtime.sessionState = "ready"
 		}
 		runtime.queue = next
 		runtime.state = nextState
@@ -709,7 +754,14 @@ func (r *RoomRuntime) Next(ctx context.Context, mutation ...ControlMutation) (Co
 // track they enqueued. Authorization runs inside the room actor against its
 // current committed playback state.
 func (r *RoomRuntime) NextAs(ctx context.Context, publicID string, admin bool, mutation ...ControlMutation) (ControlResult, error) {
-	value, err := r.executeControl(ctx, "control.next", 0, nil, mutation, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
+	return r.NextFor(ctx, publicID, admin, nil, "", mutation...)
+}
+
+func (r *RoomRuntime) NextFor(ctx context.Context, publicID string, admin bool, epoch *int64, queueID string, mutation ...ControlMutation) (ControlResult, error) {
+	value, err := r.executeControl(ctx, "control.next", 0, epoch, mutation, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
+		if epoch != nil && (*epoch != runtime.state.PlayEpoch || queueID != runtime.currentQueueID) {
+			return ControlResult{Committed: runtime.watermark()}, nil
+		}
 		if !admin && (runtime.state.CurrentEnqueuerID == nil || *runtime.state.CurrentEnqueuerID != publicID) {
 			return nil, ErrForbidden
 		}
@@ -737,8 +789,12 @@ func (r *RoomRuntime) Previous(ctx context.Context, expectedEpoch *int64, mutati
 
 // PreviousAs allows administrators to bypass skip locks; epoch checks still apply.
 func (r *RoomRuntime) PreviousAs(ctx context.Context, admin bool, expectedEpoch *int64, mutation ...ControlMutation) (ControlResult, error) {
+	return r.PreviousFor(ctx, admin, expectedEpoch, "", mutation...)
+}
+
+func (r *RoomRuntime) PreviousFor(ctx context.Context, admin bool, expectedEpoch *int64, queueID string, mutation ...ControlMutation) (ControlResult, error) {
 	value, err := r.executeControl(ctx, "control.previous", 0, expectedEpoch, mutation, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
-		if expectedEpoch != nil && *expectedEpoch != runtime.state.PlayEpoch {
+		if expectedEpoch != nil && (*expectedEpoch != runtime.state.PlayEpoch || (queueID != "" && queueID != runtime.currentQueueID)) {
 			return nil, ErrPreconditionFailed
 		}
 		if !admin && runtime.state.SkipLocked {
@@ -773,6 +829,58 @@ func (r *RoomRuntime) PreviousAs(ctx context.Context, admin bool, expectedEpoch 
 		return controlResultValue(value), err
 	}
 	return value.(ControlResult), nil
+}
+
+func (r *RoomRuntime) TogglePauseFor(ctx context.Context, admin bool, context PlaybackContext, mutation ...ControlMutation) (ControlResult, error) {
+	return r.mutateStateChecked(ctx, "control.toggle-pause", context.PositionMS, &context.PlayEpoch, mutation, func(s storesqlite.PlaybackState) error {
+		if context.PlayEpoch != r.state.PlayEpoch {
+			return ErrPreconditionFailed
+		}
+		if context.QueueID != r.currentQueueID {
+			return ErrPreconditionFailed
+		}
+		if !admin && s.PauseLocked && !s.Paused {
+			return ErrControlLocked
+		}
+		if s.CurrentMusic == nil {
+			return ErrControlDenied
+		}
+		return nil
+	}, func(s *storesqlite.PlaybackState) {
+		now := time.Now().UnixMilli()
+		if !s.Paused {
+			s.PositionAnchor = r.currentPosition(now)
+		}
+		s.Paused = !s.Paused
+		s.TimestampAnchor = now
+		s.PositionUpdatedAt = now
+	})
+}
+
+func (r *RoomRuntime) SeekFor(ctx context.Context, requested int64, admin bool, context PlaybackContext, mutation ...ControlMutation) (ControlResult, error) {
+	return r.mutateStateChecked(ctx, "control.seek", requested, &context.PlayEpoch, mutation, func(s storesqlite.PlaybackState) error {
+		if context.PlayEpoch != r.state.PlayEpoch {
+			return ErrPreconditionFailed
+		}
+		if context.QueueID != r.currentQueueID {
+			return ErrPreconditionFailed
+		}
+		if s.CurrentMusic == nil {
+			return ErrControlDenied
+		}
+		return nil
+	}, func(s *storesqlite.PlaybackState) {
+		positionMS := max(0, requested)
+		if s.CurrentMusic != nil && s.CurrentMusic.Duration > 0 {
+			positionMS = min(positionMS, s.CurrentMusic.Duration)
+		}
+		s.PositionAnchor = positionMS
+		s.TimestampAnchor = time.Now().UnixMilli()
+		s.PositionUpdatedAt = s.TimestampAnchor
+		if !admin {
+			s.PlayEpoch++
+		}
+	})
 }
 
 func (r *RoomRuntime) historyCursor() int {
@@ -843,6 +951,7 @@ func (r *RoomRuntime) isCurrentTrack(trackID string) bool {
 func (r *RoomRuntime) dropCurrentTrack(ctx context.Context, queue []storesqlite.QueueItem) error {
 	nextQueue := slices.Clone(queue)
 	nextState := clonePlaybackState(r.state)
+	nextQueueID := ""
 	nextState.CurrentMusic = nil
 	nextState.CurrentEnqueuerID = nil
 	nextState.CurrentEnqueuerName = nil
@@ -853,6 +962,7 @@ func (r *RoomRuntime) dropCurrentTrack(ctx context.Context, queue []storesqlite.
 	nextState.Shuffle = false
 	if len(nextQueue) > 0 {
 		item := takeNext(&nextState, &nextQueue)
+		nextQueueID = item.QueueID
 		nextState.CurrentMusic = playableMusic(item.Music)
 		nextState.CurrentEnqueuerID = &item.EnqueuedBy.PublicID
 		nextState.CurrentEnqueuerName = &item.EnqueuedBy.Name
@@ -873,6 +983,13 @@ func (r *RoomRuntime) dropCurrentTrack(ctx context.Context, queue []storesqlite.
 	}
 	r.queue = nextQueue
 	r.state = nextState
+	if nextQueueID != "" && nextState.CurrentMusic != nil {
+		r.currentQueueID = nextQueueID
+		r.sessionState = "ready"
+	} else {
+		r.currentQueueID = ""
+		r.sessionState = "ended"
+	}
 	r.queueVersion++
 	r.broadcast("queue.patch", map[string]any{"operation": "snapshot", "queueEpoch": r.controlScope, "queueVersion": r.queueVersion, "queue": nextQueue})
 	r.broadcastState()
@@ -882,6 +999,7 @@ func (r *RoomRuntime) dropCurrentTrack(ctx context.Context, queue []storesqlite.
 func (r *RoomRuntime) advance(ctx context.Context) error {
 	nextQueue := slices.Clone(r.queue)
 	nextState := clonePlaybackState(r.state)
+	nextQueueID, nextSessionState := "", "ended"
 	var history *storesqlite.HistoryEntry
 	removed := []string{}
 	if r.state.CurrentMusic != nil {
@@ -895,6 +1013,7 @@ func (r *RoomRuntime) advance(ctx context.Context) error {
 		nextState.Paused = true
 	} else {
 		item := takeNext(&nextState, &nextQueue)
+		nextQueueID, nextSessionState = item.QueueID, "ready"
 		removed = append(removed, item.QueueID)
 		nextState.CurrentMusic = playableMusic(item.Music)
 		nextState.CurrentEnqueuerID = &item.EnqueuedBy.PublicID
@@ -919,6 +1038,7 @@ func (r *RoomRuntime) advance(ctx context.Context) error {
 	}
 	r.queue = nextQueue
 	r.state = nextState
+	r.currentQueueID, r.sessionState = nextQueueID, nextSessionState
 	r.advancePending = false
 	if history != nil {
 		r.history = append([]storesqlite.HistoryEntry{*history}, r.history...)
@@ -930,6 +1050,7 @@ func (r *RoomRuntime) advance(ctx context.Context) error {
 	r.queueVersion++
 	r.broadcast("queue.patch", map[string]any{"operation": "remove", "queueEpoch": r.controlScope, "queueVersion": r.queueVersion, "queueIds": removed})
 	r.broadcastState()
+	r.logEvent("playback.advanced", r.currentQueueID, "applied", "", nil)
 	return nil
 }
 
@@ -1038,6 +1159,11 @@ func (r *RoomRuntime) mutateStateChecked(ctx context.Context, kind string, posit
 		if err := runtime.mutateStateDirect(ctx, mutate); err != nil {
 			return nil, err
 		}
+		var actor *string
+		if len(mutation) > 0 && mutation[0].ActorID != "" {
+			actor = &mutation[0].ActorID
+		}
+		runtime.logEvent(kind, runtime.currentQueueID, "applied", "", actor)
 		return ControlResult{Applied: true, Committed: runtime.watermark()}, nil
 	})
 	if err != nil {
@@ -1158,16 +1284,22 @@ func position(state storesqlite.PlaybackState, now int64) int64 {
 	}
 	return max(0, state.PositionAnchor+now-state.TimestampAnchor)
 }
+func (r *RoomRuntime) currentPosition(now int64) int64 {
+	if r.sessionState == "ready" || r.sessionState == "stalled" || r.sessionState == "resolving" {
+		return max(0, r.state.PositionAnchor)
+	}
+	return position(r.state, now)
+}
 func (r *RoomRuntime) snapshot() map[string]any {
 	var nowPlaying any
 	if r.state.CurrentMusic != nil {
-		sessionState := "playing"
+		sessionState := r.sessionState
 		if r.state.Paused {
-			sessionState = "paused"
+			sessionState = "ready"
 		}
 		nowPlaying = map[string]any{
 			"music":             r.state.CurrentMusic,
-			"currentPosition":   position(r.state, time.Now().UnixMilli()),
+			"currentPosition":   r.currentPosition(time.Now().UnixMilli()),
 			"enqueuedById":      r.state.CurrentEnqueuerID,
 			"enqueuedByName":    r.state.CurrentEnqueuerName,
 			"likedUserIds":      setValues(r.state.LikedUserIDs),
@@ -1175,6 +1307,7 @@ func (r *RoomRuntime) snapshot() map[string]any {
 			"playEpoch":         r.state.PlayEpoch,
 			"positionUpdatedAt": r.state.PositionUpdatedAt,
 			"sessionState":      sessionState,
+			"queueId":           r.currentQueueID,
 			"media":             map[string]any{"durationMs": r.state.CurrentMusic.Duration, "seekable": true},
 		}
 	}
@@ -1239,14 +1372,167 @@ func (r *RoomRuntime) loop() {
 }
 
 func (r *RoomRuntime) onTick(now time.Time) {
-	if r.state.CurrentMusic == nil || r.state.Paused {
+	if r.state.CurrentMusic == nil || r.state.Paused || r.sessionState != "playing" {
 		return
 	}
-	current := position(r.state, now.UnixMilli())
-	r.broadcast("player.progress", map[string]any{"currentPosition": current, "serverTimestamp": now.UnixMilli(), "stateVersion": r.state.StateVersion, "playEpoch": r.state.PlayEpoch})
-	if r.state.CurrentMusic.Duration > 0 && current >= r.state.CurrentMusic.Duration && !r.advancePending && !now.Before(r.advanceRetryAt) {
+	current := r.currentPosition(now.UnixMilli())
+	if r.state.CurrentMusic.Duration > 0 && current >= r.state.CurrentMusic.Duration+fallbackGraceMS && !r.advancePending && !now.Before(r.advanceRetryAt) {
 		r.advancePending = true
 	}
+}
+
+func (r *RoomRuntime) writeEventLog(store *storesqlite.Store) {
+	for {
+		select {
+		case <-r.ctx.Done():
+			r.eventLogMu.Lock()
+			pending := len(r.eventLogQueue)
+			r.eventLogMu.Unlock()
+			if pending == 0 {
+				return
+			}
+		case <-r.eventWake:
+		}
+		for {
+			r.eventLogMu.Lock()
+			if len(r.eventLogQueue) == 0 {
+				r.eventLogMu.Unlock()
+				break
+			}
+			event := r.eventLogQueue[0]
+			r.eventLogQueue = r.eventLogQueue[1:]
+			r.eventLogMu.Unlock()
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			_ = store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+				_, err := tx.ExecContext(ctx, `insert into playback_event_log(room_id, server_time_ms, event_type, play_epoch, queue_id, actor_public_id, result, reason) values(?,?,?,?,?,?,?,?)`, event.roomID, event.at, event.kind, event.epoch, event.queueID, event.actor, event.result, event.reason)
+				if err != nil {
+					return err
+				}
+				_, err = tx.ExecContext(ctx, `delete from playback_event_log where server_time_ms < ?`, time.Now().Add(-14*24*time.Hour).UnixMilli())
+				return err
+			})
+			cancel()
+		}
+	}
+}
+
+func (r *RoomRuntime) logEvent(kind, queueID, result, reason string, actor *string) {
+	r.logEventAt(kind, queueID, r.state.PlayEpoch, result, reason, actor)
+}
+
+func (r *RoomRuntime) logEventAt(kind, queueID string, epoch int64, result, reason string, actor *string) {
+	event := playbackEvent{roomID: r.roomID, at: time.Now().UnixMilli(), kind: kind, epoch: epoch, queueID: queueID, actor: actor, result: result, reason: reason}
+	r.eventLogMu.Lock()
+	r.eventLogQueue = append(r.eventLogQueue, event)
+	r.eventLogMu.Unlock()
+	select {
+	case r.eventWake <- struct{}{}:
+	default:
+	}
+}
+
+type PlaybackReport struct {
+	PlayEpoch  int64  `json:"playEpoch"`
+	QueueID    string `json:"queueId"`
+	PositionMS int64  `json:"positionMs"`
+	ClientTime int64  `json:"clientTime"`
+	DurationMS int64  `json:"durationMs"`
+}
+
+type PlaybackContext struct {
+	PlayEpoch    int64
+	QueueID      string
+	StateVersion int64
+	PositionMS   int64
+	ClientTime   int64
+}
+
+func (r *RoomRuntime) ReportPlayback(ctx context.Context, kind string, report PlaybackReport, actor *string) error {
+	_, err := r.Execute(ctx, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
+		if report.PlayEpoch != runtime.state.PlayEpoch || report.QueueID == "" || report.QueueID != runtime.currentQueueID {
+			return nil, nil
+		}
+		now := time.Now().UnixMilli()
+		nextState := clonePlaybackState(runtime.state)
+		nextSessionState := runtime.sessionState
+		switch kind {
+		case "playback.started":
+			if runtime.sessionState != "ready" && runtime.sessionState != "stalled" {
+				runtime.logEvent(kind, report.QueueID, "ignored", "state", actor)
+				return nil, nil
+			}
+			position := max(0, report.PositionMS)
+			if runtime.sessionState == "ready" && report.DurationMS > 0 && report.DurationMS < 24*60*60*1000 {
+				nextState.CurrentMusic.Duration = report.DurationMS
+			}
+			nextState.PositionAnchor = position
+			nextState.TimestampAnchor = now - position
+			if report.ClientTime > 0 && report.ClientTime <= now {
+				nextState.TimestampAnchor = report.ClientTime - position
+			}
+			nextState.PositionUpdatedAt = now
+			nextState.Paused = false
+			nextSessionState = "playing"
+		case "playback.stalled":
+			if runtime.sessionState != "playing" {
+				return nil, nil
+			}
+			nextState.PositionAnchor = max(0, report.PositionMS)
+			nextState.TimestampAnchor = now
+			nextState.PositionUpdatedAt = now
+			nextSessionState = "stalled"
+		case "playback.ended":
+			if runtime.sessionState != "playing" {
+				runtime.logEvent(kind, report.QueueID, "ignored", "state", actor)
+				return nil, nil
+			}
+			currentPosition := runtime.currentPosition(now)
+			if runtime.state.CurrentMusic == nil || runtime.state.CurrentMusic.Duration <= 0 || currentPosition < runtime.state.CurrentMusic.Duration-endedToleranceMS || currentPosition > runtime.state.CurrentMusic.Duration+endedToleranceMS {
+				runtime.logEvent(kind, report.QueueID, "rejected", "too_early", actor)
+				return nil, nil
+			}
+			endedEpoch := runtime.state.PlayEpoch
+			if err := runtime.advance(ctx); err != nil {
+				return nil, err
+			}
+			runtime.logEventAt(kind, report.QueueID, endedEpoch, "applied", "", actor)
+			return nil, nil
+		default:
+			return nil, nil
+		}
+		nextState.StateVersion++
+		nextState.LastPersistedAt = now
+		if err := runtime.realtimeRepo.CommitRoomState(ctx, runtime.roomID, runtime.queue, nextState, nil); err != nil {
+			return nil, err
+		}
+		runtime.state = nextState
+		runtime.sessionState = nextSessionState
+		runtime.broadcastState()
+		runtime.logEvent(kind, report.QueueID, "applied", "", actor)
+		if kind == "playback.started" {
+			runtime.prepareNextTrack()
+		}
+		return nil, nil
+	})
+	return err
+}
+
+// prepareNextTrack resolves and cache-submits one queued item without blocking the room actor.
+func (r *RoomRuntime) prepareNextTrack() {
+	if r.preResolve == nil || r.preResolveBusy || len(r.queue) == 0 {
+		return
+	}
+	item := r.queue[0]
+	r.preResolveBusy = true
+	go func() {
+		defer func() {
+			_, _ = r.Execute(context.Background(), func(runtime *RoomRuntime, _ context.Context) (any, error) {
+				runtime.preResolveBusy = false
+				return nil, nil
+			})
+		}()
+		r.preResolve(r.ctx, item.Music)
+	}()
 }
 
 func (r *RoomRuntime) rejectPending() {

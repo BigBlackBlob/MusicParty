@@ -64,10 +64,10 @@ func clientMessageSpecs() []messageSpec {
 		{"client.hello", fields("apiVersion", "string", "clientVersion", "string")},
 		{"chat.history.fetch", fields("offset", "number?", "limit", "number?")},
 		{"chat.message", fields("content", "string")},
-		{"control.like", controlFields("expectedPlayEpoch", "number?")}, {"control.next", controlFields()},
-		{"control.previous", controlFields("expectedPlayEpoch", "number?")},
-		{"control.seek", controlFields("expectedPlayEpoch", "number?", "positionMs", "number")},
-		{"control.toggle-pause", controlFields()}, {"control.toggle-shuffle", controlFields()},
+		{"control.like", controlFields("expectedPlayEpoch", "number?")}, {"control.next", controlFields("playEpoch", "number", "queueId", "string", "stateVersion", "number", "positionMs", "number", "clientTime", "number")},
+		{"control.previous", controlFields("playEpoch", "number", "queueId", "string", "stateVersion", "number", "positionMs", "number", "clientTime", "number")},
+		{"control.seek", controlFields("playEpoch", "number", "queueId", "string", "stateVersion", "number", "positionMs", "number", "clientTime", "number")},
+		{"control.toggle-pause", controlFields("playEpoch", "number", "queueId", "string", "stateVersion", "number", "positionMs", "number", "clientTime", "number")}, {"control.toggle-shuffle", controlFields()},
 		{"control.unlike", controlFields("expectedPlayEpoch", "number?")},
 		{"enqueue", fields("platform", "string", "musicId", "string", "mutationId", "string")},
 		{"enqueue.album", fields("platform", "string", "albumId", "string", "mutationId", "string")},
@@ -75,6 +75,9 @@ func clientMessageSpecs() []messageSpec {
 		{"enqueue.room-playlist", fields("playlistId", "string", "mutationId", "string")},
 		{"history.list", fields("offset", "number?", "limit", "number?")},
 		{"player.resync", fields()},
+		{"playback.started", fields("playEpoch", "number", "queueId", "string", "positionMs", "number", "clientTime", "number", "durationMs", "number")},
+		{"playback.stalled", fields("playEpoch", "number", "queueId", "string", "positionMs", "number")},
+		{"playback.ended", fields("playEpoch", "number", "queueId", "string")},
 		{"playlist.add-items", fields("scope", "string", "playlistId", "string", "mutationId", "string", "items", "Music[]")},
 		{"playlist.create", fields("scope", "string", "name", "string", "mutationId", "string")},
 		{"playlist.delete", fields("scope", "string", "playlistId", "string", "mutationId", "string")},
@@ -246,7 +249,7 @@ export interface RoomInvite { id: string; secret?: string; label: string; expire
 export interface PlatformDescriptor { id: string; label: string; supportsAlbumSearch: boolean; subsonic: boolean }
 export interface Music { id: string; name: string; artists: string[]; duration: number; platform: string; coverUrl: string }
 export interface PlayableMusic extends Music { url: string; needsProxy: boolean }
-export interface NowPlaying { music: PlayableMusic; currentPosition: number; enqueuedById?: string | null; enqueuedByName?: string | null; likedUserIds: string[]; likeMarkers: number[]; playEpoch: number; positionUpdatedAt: number }
+export interface NowPlaying { music: PlayableMusic; currentPosition: number; enqueuedById?: string | null; enqueuedByName?: string | null; likedUserIds: string[]; likeMarkers: number[]; playEpoch: number; positionUpdatedAt: number; queueId: string; sessionState: 'resolving' | 'ready' | 'playing' | 'stalled' | 'ended' | 'failed' }
 export interface QueueItem { playbackPriority?: number; queueId: string; music: Music; enqueuedBy: UserSummary; status: string }
 export interface PlaylistSummary { id: string; ownerPublicId?: string; roomId?: string; name: string; systemKey: string | null; trackCount: number; createdAt: number; updatedAt: number }
 export interface PlaylistTrack { id: string; playlistId: string; music: Music; sortOrder: number; createdAt: number }

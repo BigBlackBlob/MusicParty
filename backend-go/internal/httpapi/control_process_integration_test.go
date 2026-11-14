@@ -242,6 +242,35 @@ func (p *controlPeer) await(start int, kind, requestID string) map[string]any {
 
 func (p *controlPeer) control(kind, requestID string, payload map[string]any) map[string]any {
 	p.t.Helper()
+	payloadCopy := make(map[string]any, len(payload))
+	for key, value := range payload {
+		payloadCopy[key] = value
+	}
+	payload = payloadCopy
+	if kind == "next" || kind == "previous" || kind == "seek" || kind == "toggle-pause" {
+		state := p.snapshot()
+		payload["playEpoch"] = state["playEpoch"]
+		payload["stateVersion"] = state["stateVersion"]
+		payload["queueId"] = ""
+		if kind != "seek" {
+			if _, provided := payload["positionMs"]; !provided {
+				payload["positionMs"] = 0
+			}
+		}
+		if now, ok := state["nowPlaying"].(map[string]any); ok {
+			payload["queueId"] = now["queueId"]
+			if kind != "seek" {
+				if _, provided := payload["positionMs"]; !provided {
+					payload["positionMs"] = now["currentPosition"]
+				}
+			}
+		}
+		payload["clientTime"] = time.Now().UnixMilli()
+		if epoch, ok := payload["expectedPlayEpoch"]; ok {
+			payload["playEpoch"] = epoch
+			delete(payload, "expectedPlayEpoch")
+		}
+	}
 	start := p.count()
 	p.send("control."+kind, requestID, payload)
 	return p.await(start, "control.ack", requestID)

@@ -223,6 +223,12 @@ func (api *WebSocketAPI) dispatch(ctx context.Context, client *wsruntime.Client,
 			return
 		}
 		_ = client.Send("sync.pong", "", map[string]any{"pingId": ping.PingID, "clientSendTime": *ping.ClientSendTime, "serverReceiveTime": time.Now().UnixMilli(), "serverSendTime": time.Now().UnixMilli()})
+	case "playback.started", "playback.stalled", "playback.ended":
+		var report realtime.PlaybackReport
+		if json.Unmarshal(envelope.Payload, &report) != nil || report.PlayEpoch <= 0 || report.QueueID == "" {
+			return
+		}
+		_ = runtime.ReportPlayback(ctx, kind, report, &session.PublicID)
 	case "user.me":
 		_ = client.Send("user.me", "", api.currentUser(session))
 	case "users.online":
@@ -241,6 +247,10 @@ func (api *WebSocketAPI) dispatch(ctx context.Context, client *wsruntime.Client,
 		request, err := decodePayload[struct {
 			PositionMS        *int64  `json:"positionMs"`
 			ExpectedPlayEpoch *int64  `json:"expectedPlayEpoch"`
+			PlayEpoch         *int64  `json:"playEpoch"`
+			QueueID           string  `json:"queueId"`
+			StateVersion      *int64  `json:"stateVersion"`
+			ClientTime        *int64  `json:"clientTime"`
 			MutationID        *string `json:"mutationId"`
 			ScopeID           *string `json:"idempotencyScopeId"`
 		}](envelope.Payload)
@@ -255,15 +265,15 @@ func (api *WebSocketAPI) dispatch(ctx context.Context, client *wsruntime.Client,
 		var result realtime.ControlResult
 		switch kind {
 		case "control.next":
-			result, err = runtime.NextAs(ctx, session.PublicID, session.Admin(), mutation...)
+			result, err = runtime.NextFor(ctx, session.PublicID, session.Admin(), request.PlayEpoch, request.QueueID, mutation...)
 		case "control.previous":
-			result, err = runtime.PreviousAs(ctx, session.Admin(), request.ExpectedPlayEpoch, mutation...)
+			result, err = runtime.PreviousFor(ctx, session.Admin(), request.PlayEpoch, request.QueueID, mutation...)
 		case "control.toggle-pause":
-			result, err = runtime.TogglePauseAs(ctx, session.Admin(), mutation...)
+			result, err = runtime.TogglePauseFor(ctx, session.Admin(), realtime.PlaybackContext{PlayEpoch: *request.PlayEpoch, QueueID: request.QueueID, StateVersion: *request.StateVersion, PositionMS: *request.PositionMS, ClientTime: *request.ClientTime}, mutation...)
 		case "control.toggle-shuffle":
 			result, err = runtime.ToggleShuffleAs(ctx, session.Admin(), mutation...)
 		case "control.seek":
-			result, err = runtime.Seek(ctx, *request.PositionMS, session.PublicID, session.Admin(), request.ExpectedPlayEpoch, mutation...)
+			result, err = runtime.SeekFor(ctx, *request.PositionMS, session.Admin(), realtime.PlaybackContext{PlayEpoch: *request.PlayEpoch, QueueID: request.QueueID, StateVersion: *request.StateVersion, PositionMS: *request.PositionMS, ClientTime: *request.ClientTime}, mutation...)
 		case "control.like":
 			result, err = runtime.Like(ctx, session.PublicID, request.ExpectedPlayEpoch, mutation...)
 		case "control.unlike":
@@ -600,8 +610,12 @@ func validControlPayload(kind string, payload json.RawMessage) bool {
 		}
 		switch name {
 		case "mutationId", "idempotencyScopeId":
+		case "playEpoch", "queueId", "stateVersion", "clientTime":
+			if kind != "control.next" && kind != "control.previous" && kind != "control.toggle-pause" && kind != "control.seek" {
+				return false
+			}
 		case "positionMs":
-			if kind != "control.seek" {
+			if kind != "control.seek" && kind != "control.next" && kind != "control.previous" && kind != "control.toggle-pause" {
 				return false
 			}
 		case "expectedPlayEpoch":
@@ -610,6 +624,13 @@ func validControlPayload(kind string, payload json.RawMessage) bool {
 			}
 		default:
 			return false
+		}
+	}
+	for _, required := range []string{"playEpoch", "queueId", "stateVersion", "positionMs", "clientTime"} {
+		if kind == "control.next" || kind == "control.previous" || kind == "control.toggle-pause" || kind == "control.seek" {
+			if _, ok := fields[required]; !ok {
+				return false
+			}
 		}
 	}
 	return true
