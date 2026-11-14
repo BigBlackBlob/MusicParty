@@ -2,15 +2,28 @@
   <div class="hidden">
     <!-- 主播放器 -->
     <audio
-        ref="audioRef"
-        :src="audioSrc"
+        :ref="setAudioElement(0)"
+        :src="activeElement === 0 ? audioSrc : nextAudioSrc"
         crossorigin="anonymous"
         @error="handleError"
         @waiting="onPlaybackStalled('waiting')"
         @stalled="onPlaybackStalled('stalled')"
         @suspend="onPlaybackStalled('suspend')"
         @playing="onPlaybackHealthy"
+        @ended="onPlaybackEnded"
         @canplay="onCanPlay"
+        referrerpolicy="no-referrer"
+    ></audio>
+    <audio
+        :ref="setAudioElement(1)"
+        :src="activeElement === 1 ? audioSrc : nextAudioSrc"
+        crossorigin="anonymous"
+        preload="auto"
+        @error="handleError"
+        @waiting="onPlaybackStalled('waiting')"
+        @stalled="onPlaybackStalled('stalled')"
+        @playing="onPlaybackHealthy"
+        @ended="onPlaybackEnded"
         referrerpolicy="no-referrer"
     ></audio>
 
@@ -40,7 +53,10 @@ import { withPlaybackToken } from '../utils/audioUrl';
 
 const player = useAudioPlayerAdapter();
 const ui = useUiStore();
-const audioRef = ref(null);
+const audioElements = [ref(null), ref(null)];
+const activeElement = ref(0);
+const audioRef = computed(() => audioElements[activeElement.value].value);
+const setAudioElement = (index) => (element) => { audioElements[index].value = element; };
 const silentAudioRef = ref(null);
 
 // 极简 1秒 静默 WAV
@@ -61,6 +77,14 @@ const {
 } = useAudio(audioRef, player, computed(() => ui.volume));
 
 const audioSrc = computed(() => withPlaybackToken(player.nowPlaying?.music));
+const nextAudioSrc = computed(() => withPlaybackToken(player.queue?.[0]?.music));
+const preloadedTrackId = computed(() => player.queue?.[0]?.music?.id || '');
+watch(() => player.nowPlaying?.music?.id, (id, oldId) => {
+  if (!id || !oldId || id !== preloadedTrackId.value) return;
+  const standby = 1 - activeElement.value;
+  audioElements[activeElement.value].value?.pause();
+  activeElement.value = standby;
+});
 
 // 同步状态到 playerStore
 watch(localProgress, (val) => {
@@ -92,12 +116,21 @@ const onCanPlay = () => {
 
 const onPlaybackHealthy = () => {
   markPlaybackHealthy();
+  const now = player.nowPlaying;
+  if (now?.queueId) player.reportPlayback('playback.started', { playEpoch: now.playEpoch, queueId: now.queueId, positionMs: Math.round((audioRef.value?.currentTime || 0) * 1000), clientTime: player.serverNow(), durationMs: Math.round((audioRef.value?.duration || 0) * 1000) });
+};
+
+const onPlaybackEnded = () => {
+  const now = player.nowPlaying;
+  if (now?.queueId) player.reportPlayback('playback.ended', { playEpoch: now.playEpoch, queueId: now.queueId });
 };
 
 const onPlaybackStalled = (reason) => {
   // 用 isActuallyStalled 过滤误判：suspend 在"下够了"时也会发，emptied 是切歌导致
   if (!isActuallyStalled(reason)) return;
   player.isBuffering = true;
+  const now = player.nowPlaying;
+  if (now?.queueId) player.reportPlayback('playback.stalled', { playEpoch: now.playEpoch, queueId: now.queueId, positionMs: Math.round((audioRef.value?.currentTime || 0) * 1000) });
   armStalledWatchdog(reason);
 };
 

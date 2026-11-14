@@ -16,7 +16,7 @@ export interface RoomInvite { id: string; secret?: string; label: string; expire
 export interface PlatformDescriptor { id: string; label: string; supportsAlbumSearch: boolean; subsonic: boolean }
 export interface Music { id: string; name: string; artists: string[]; duration: number; platform: string; coverUrl: string }
 export interface PlayableMusic extends Music { url: string; needsProxy: boolean }
-export interface NowPlaying { music: PlayableMusic; currentPosition: number; enqueuedById?: string | null; enqueuedByName?: string | null; likedUserIds: string[]; likeMarkers: number[]; playEpoch: number; positionUpdatedAt: number }
+export interface NowPlaying { music: PlayableMusic; currentPosition: number; enqueuedById?: string | null; enqueuedByName?: string | null; likedUserIds: string[]; likeMarkers: number[]; playEpoch: number; positionUpdatedAt: number; queueId: string; sessionState: 'resolving' | 'ready' | 'playing' | 'stalled' | 'ended' | 'failed' }
 export interface QueueItem { playbackPriority?: number; queueId: string; music: Music; enqueuedBy: UserSummary; status: string }
 export interface PlaylistSummary { id: string; ownerPublicId?: string; roomId?: string; name: string; systemKey: string | null; trackCount: number; createdAt: number; updatedAt: number }
 export interface PlaylistTrack { id: string; playlistId: string; music: Music; sortOrder: number; createdAt: number }

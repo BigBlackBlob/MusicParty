@@ -27,9 +27,10 @@ export const useRoomStateSynchronizer = defineStore('room-state-synchronizer', (
   let queuedPatches: QueuePatch[] = []
   let stateFrame: number | ReturnType<typeof setTimeout> | null = null
   let patchFrame: number | ReturnType<typeof setTimeout> | null = null
+  let bestRtt = Number.POSITIVE_INFINITY
 
   function getCurrentProgress(): number {
-    if (!nowPlaying.value) return 0
+    if (!nowPlaying.value || nowPlaying.value.sessionState !== 'playing') return remotePosition.value
     if (isPaused.value) return remotePosition.value
     return remotePosition.value + Date.now() + serverClockOffset.value - lastSyncTime.value
   }
@@ -93,11 +94,6 @@ export const useRoomStateSynchronizer = defineStore('room-state-synchronizer', (
     isLoading.value = state.isLoading
     historyCursor.value = Number.isFinite(state.historyCursor) ? Math.max(0, state.historyCursor) : 0
 
-    const receivedAt = Date.now()
-    if (!hasClockSample.value) {
-      serverClockOffset.value = state.serverTimestamp - receivedAt
-      hasClockSample.value = true
-    }
     remotePosition.value = state.nowPlaying?.currentPosition ?? 0
     lastSyncTime.value = state.serverTimestamp
     if (!state.nowPlaying) audio.setPlaybackPosition(0)
@@ -146,9 +142,12 @@ export const useRoomStateSynchronizer = defineStore('room-state-synchronizer', (
     if (rtt < 0 || rtt > 3000) return
     lastRttMs.value = rtt
     lastPongAt.value = receivedAt
-    const sampleOffset = pong.serverSendTime + rtt / 2 - receivedAt
+    const sampleOffset = (pong.serverReceiveTime + pong.serverSendTime - pong.clientSendTime - receivedAt) / 2
     if (hasClockSample.value && Math.abs(sampleOffset - serverClockOffset.value) > 10000) return
-    serverClockOffset.value = hasClockSample.value ? serverClockOffset.value * 0.85 + sampleOffset * 0.15 : sampleOffset
+    if (rtt <= bestRtt) {
+      bestRtt = rtt
+      serverClockOffset.value = sampleOffset
+    }
     hasClockSample.value = true
   }
 
@@ -158,6 +157,7 @@ export const useRoomStateSynchronizer = defineStore('room-state-synchronizer', (
     stateFrame = null
     patchFrame = null
     resetSyncGate()
+    bestRtt = Number.POSITIVE_INFINITY
   }
 
   return { getCurrentProgress, resetSyncGate, syncState, scheduleSyncState, scheduleQueuePatch, handleSyncPong, reset }

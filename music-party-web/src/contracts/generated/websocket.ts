@@ -5,10 +5,10 @@ export interface ClientHelloClientEnvelope { type: "client.hello"; requestId?: s
 export interface ChatHistoryFetchClientEnvelope { type: "chat.history.fetch"; requestId?: string | null; roomId?: string | null; payload: { limit?: number; offset?: number; } }
 export interface ChatMessageClientEnvelope { type: "chat.message"; requestId?: string | null; roomId?: string | null; payload: { content: string; } }
 export interface ControlLikeClientEnvelope { type: "control.like"; requestId?: string | null; roomId?: string | null; payload: { expectedPlayEpoch?: number; idempotencyScopeId?: string; mutationId?: string; } }
-export interface ControlNextClientEnvelope { type: "control.next"; requestId?: string | null; roomId?: string | null; payload: { idempotencyScopeId?: string; mutationId?: string; } }
-export interface ControlPreviousClientEnvelope { type: "control.previous"; requestId?: string | null; roomId?: string | null; payload: { expectedPlayEpoch?: number; idempotencyScopeId?: string; mutationId?: string; } }
-export interface ControlSeekClientEnvelope { type: "control.seek"; requestId?: string | null; roomId?: string | null; payload: { expectedPlayEpoch?: number; idempotencyScopeId?: string; mutationId?: string; positionMs: number; } }
-export interface ControlTogglePauseClientEnvelope { type: "control.toggle-pause"; requestId?: string | null; roomId?: string | null; payload: { idempotencyScopeId?: string; mutationId?: string; } }
+export interface ControlNextClientEnvelope { type: "control.next"; requestId?: string | null; roomId?: string | null; payload: { clientTime: number; idempotencyScopeId?: string; mutationId?: string; playEpoch: number; positionMs: number; queueId: string; stateVersion: number; } }
+export interface ControlPreviousClientEnvelope { type: "control.previous"; requestId?: string | null; roomId?: string | null; payload: { clientTime: number; idempotencyScopeId?: string; mutationId?: string; playEpoch: number; positionMs: number; queueId: string; stateVersion: number; } }
+export interface ControlSeekClientEnvelope { type: "control.seek"; requestId?: string | null; roomId?: string | null; payload: { clientTime: number; idempotencyScopeId?: string; mutationId?: string; playEpoch: number; positionMs: number; queueId: string; stateVersion: number; } }
+export interface ControlTogglePauseClientEnvelope { type: "control.toggle-pause"; requestId?: string | null; roomId?: string | null; payload: { clientTime: number; idempotencyScopeId?: string; mutationId?: string; playEpoch: number; positionMs: number; queueId: string; stateVersion: number; } }
 export interface ControlToggleShuffleClientEnvelope { type: "control.toggle-shuffle"; requestId?: string | null; roomId?: string | null; payload: { idempotencyScopeId?: string; mutationId?: string; } }
 export interface ControlUnlikeClientEnvelope { type: "control.unlike"; requestId?: string | null; roomId?: string | null; payload: { expectedPlayEpoch?: number; idempotencyScopeId?: string; mutationId?: string; } }
 export interface EnqueueClientEnvelope { type: "enqueue"; requestId?: string | null; roomId?: string | null; payload: { musicId: string; mutationId: string; platform: string; } }
@@ -17,6 +17,9 @@ export interface EnqueuePlaylistClientEnvelope { type: "enqueue.playlist"; reque
 export interface EnqueueRoomPlaylistClientEnvelope { type: "enqueue.room-playlist"; requestId?: string | null; roomId?: string | null; payload: { mutationId: string; playlistId: string; } }
 export interface HistoryListClientEnvelope { type: "history.list"; requestId?: string | null; roomId?: string | null; payload: { limit?: number; offset?: number; } }
 export interface PlayerResyncClientEnvelope { type: "player.resync"; requestId?: string | null; roomId?: string | null; payload: { } }
+export interface PlaybackStartedClientEnvelope { type: "playback.started"; requestId?: string | null; roomId?: string | null; payload: { clientTime: number; durationMs: number; playEpoch: number; positionMs: number; queueId: string; } }
+export interface PlaybackStalledClientEnvelope { type: "playback.stalled"; requestId?: string | null; roomId?: string | null; payload: { playEpoch: number; positionMs: number; queueId: string; } }
+export interface PlaybackEndedClientEnvelope { type: "playback.ended"; requestId?: string | null; roomId?: string | null; payload: { playEpoch: number; queueId: string; } }
 export interface PlaylistAddItemsClientEnvelope { type: "playlist.add-items"; requestId?: string | null; roomId?: string | null; payload: { items: Music[]; mutationId: string; playlistId: string; scope: string; } }
 export interface PlaylistCreateClientEnvelope { type: "playlist.create"; requestId?: string | null; roomId?: string | null; payload: { mutationId: string; name: string; scope: string; } }
 export interface PlaylistDeleteClientEnvelope { type: "playlist.delete"; requestId?: string | null; roomId?: string | null; payload: { mutationId: string; playlistId: string; scope: string; } }
@@ -58,6 +61,9 @@ export type ClientEnvelope =
   | EnqueueRoomPlaylistClientEnvelope
   | HistoryListClientEnvelope
   | PlayerResyncClientEnvelope
+  | PlaybackStartedClientEnvelope
+  | PlaybackStalledClientEnvelope
+  | PlaybackEndedClientEnvelope
   | PlaylistAddItemsClientEnvelope
   | PlaylistCreateClientEnvelope
   | PlaylistDeleteClientEnvelope
