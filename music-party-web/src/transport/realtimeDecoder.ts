@@ -3,7 +3,7 @@ import type { ChatMessage, Music, PlaybackHistoryItem, PlaylistSummary, Playlist
 
 const SERVER_TYPES = new Set<ServerEnvelope['type']>([
   'chat.history', 'chat.message', 'control.ack', 'enqueue.ack', 'enqueue.nack',
-  'history.page', 'player.events', 'player.state', 'playlist.ack', 'playlist.data',
+  'history.page', 'player.events', 'player.failed', 'player.state', 'playlist.ack', 'playlist.data',
   'playlist.nack', 'public-chat.history', 'public-chat.message', 'queue.mutation.ack',
   'queue.mutation.nack', 'queue.patch', 'queue.reorder.ack', 'queue.reorder.nack',
   'rooms.created', 'rooms.list', 'server.hello', 'sync.pong', 'user.me', 'users.online'
@@ -229,6 +229,10 @@ function validPayload(type: ServerEnvelope['type'], payload: unknown): boolean {
     return typeof payload.code === 'string'
       && ['info', 'success', 'warning', 'error'].includes(String(payload.severity))
       && typeof payload.message === 'string'
+  }
+  if (type === 'player.failed') {
+    return ['queueId', 'musicId', 'name', 'platform', 'message'].every(key => typeof payload[key] === 'string')
+      && ['preview_only', 'unavailable', 'resolve_failed', 'unknown'].includes(String(payload.reason))
   }
   if (type === 'queue.patch') {
     if (typeof payload.queueVersion !== 'number' || typeof payload.operation !== 'string') return false
