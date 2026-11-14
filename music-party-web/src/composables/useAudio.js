@@ -397,10 +397,16 @@ const clearStalledWatchdog = () => {
     }
 
     let reportedErrorEpoch = null;
+    const reportedErrorCodes = new Set();
     const reportPlaybackError = (code, track = playerStore.nowPlaying) => {
         const current = playerStore.nowPlaying;
-        if (!track?.queueId || track.playEpoch !== current?.playEpoch || track.queueId !== current?.queueId || reportedErrorEpoch === track.playEpoch) return;
-        reportedErrorEpoch = track.playEpoch;
+        if (!track?.queueId || track.playEpoch !== current?.playEpoch || track.queueId !== current?.queueId) return;
+        if (reportedErrorEpoch !== track.playEpoch) {
+            reportedErrorEpoch = track.playEpoch;
+            reportedErrorCodes.clear();
+        }
+        if (reportedErrorCodes.has(code)) return;
+        reportedErrorCodes.add(code);
         playerStore.reportPlayback?.('playback.error', { playEpoch: track.playEpoch, queueId: track.queueId, code });
     };
 

@@ -28,6 +28,22 @@ describe('terminal playback errors', () => {
     expect(reportPlayback).toHaveBeenCalledExactlyOnceWith('playback.error', { playEpoch: 7, queueId: 'queue-7', code: 'retries-exhausted' })
   })
 
+  it('reports retry exhaustion after a stream claim and deduplicates each code per epoch', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 422, json: async () => ({ code: 'stream-trial-only' }) }))
+    const { controls, reportPlayback } = engine()
+    controls.handleError()
+    await vi.waitFor(() => expect(reportPlayback).toHaveBeenCalledTimes(1))
+    controls.handleError()
+    controls.handleError()
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(3))
+    controls.handleError()
+    controls.handleError()
+    expect(reportPlayback.mock.calls).toEqual([
+      ['playback.error', { playEpoch: 7, queueId: 'queue-7', code: 'stream-trial-only' }],
+      ['playback.error', { playEpoch: 7, queueId: 'queue-7', code: 'retries-exhausted' }],
+    ])
+  })
+
   it.each(['stream-trial-only', 'stream-unavailable'])('reports a terminal 422 %s without waiting for retries', async code => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 422, json: async () => ({ code }) }))
     const { controls, reportPlayback } = engine()

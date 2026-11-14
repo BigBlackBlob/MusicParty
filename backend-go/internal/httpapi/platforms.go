@@ -192,6 +192,18 @@ func platformCacheKey(source any, name, id string) string {
 	return name + ":" + id
 }
 
+// VerifyStream checks media resolution without fetching audio. Room verification has
+// no user session, just like pre-resolution. Token-restricted sources remain
+// unconfirmed when their access policy rejects the empty session token.
+func (api *PlatformAPI) VerifyStream(ctx context.Context, platformName, musicID string) error {
+	source, err := api.MediaSourceFor(ctx, platformName, "")
+	if err != nil {
+		return err
+	}
+	_, err = source.StreamURL(ctx, musicID)
+	return err
+}
+
 func (api *PlatformAPI) ResolvePlayable(ctx context.Context, platformName, musicID, sessionToken string) (platform.PlayableMusic, error) {
 	service, err := api.authorizedPlatform(ctx, platformName, sessionToken)
 	if err != nil {
