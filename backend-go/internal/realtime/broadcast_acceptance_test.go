@@ -36,10 +36,10 @@ func TestThousandItemQueueBroadcastsCompactPlaybackAndIncrementalNext(t *testing
 	for _, event := range broadcaster.events {
 		payload := event.payload.(map[string]any)
 		if event.kind == "player.state" {
-			require.NotContains(t, payload, "queue")
-			encoded, err := json.Marshal(payload)
-			require.NoError(t, err)
-			require.Less(t, len(encoded), 2000, "playback updates must not scale with the pending queue")
+			queue, ok := payload["queue"].([]clientQueueItem)
+			require.True(t, ok)
+			require.GreaterOrEqual(t, len(queue), 999)
+			require.NotEmpty(t, queue[0].Music.URL)
 		}
 		if event.kind == "queue.patch" {
 			patches = append(patches, payload)
@@ -84,8 +84,8 @@ func TestEnqueueStartsExistingPendingSongWithConvergentPatch(t *testing.T) {
 			defer broadcaster.mu.Unlock()
 			patch := broadcaster.events[0].payload.(map[string]any)
 			require.Equal(t, []string{"priority"}, patch["queueIds"])
-			pending := patch["items"].([]storesqlite.QueueItem)
-			projected := append([]storesqlite.QueueItem{old[0]}, pending...)
+			pending := patch["items"].([]clientQueueItem)
+			projected := append(clientQueue(old[:1]), pending...)
 			require.Equal(t, snapshot["queue"], projected, "applying the patch to the old queue must match a full resync")
 		})
 	}

@@ -252,7 +252,7 @@ export interface PlatformDescriptor { id: string; label: string; supportsAlbumSe
 export interface Music { id: string; name: string; artists: string[]; duration: number; platform: string; coverUrl: string }
 export interface PlayableMusic extends Music { url: string; needsProxy: boolean }
 export interface NowPlaying { music: PlayableMusic; currentPosition: number; enqueuedById?: string | null; enqueuedByName?: string | null; likedUserIds: string[]; likeMarkers: number[]; playEpoch: number; positionUpdatedAt: number; queueId: string; sessionState: 'resolving' | 'ready' | 'playing' | 'stalled' | 'ended' | 'failed' }
-export interface QueueItem { playbackPriority?: number; queueId: string; music: Music; enqueuedBy: UserSummary; status: string }
+export interface QueueItem { playbackPriority?: number; queueId: string; music: PlayableMusic; enqueuedBy: UserSummary; status: string }
 export interface PlaylistSummary { id: string; ownerPublicId?: string; roomId?: string; name: string; systemKey: string | null; trackCount: number; createdAt: number; updatedAt: number }
 export interface PlaylistTrack { id: string; playlistId: string; music: Music; sortOrder: number; createdAt: number }
 export interface LocalTrack extends Music { path?: string; size?: number; modifiedAt?: number }

@@ -81,19 +81,7 @@ const {
 const audioSrc = computed(() => withPlaybackToken(player.nowPlaying?.music));
 // Queue metadata has no playable URL. Derive the same media endpoints used by
 // the server, without resolving accounts or changing token handling.
-const queuedAudioSrc = computed(() => {
-  const music = player.queue?.[0]?.music;
-  if (!music) return '';
-  if (music.url) return withPlaybackToken(music);
-  const id = encodeURIComponent(music.id);
-  if (music.platform === 'local') return `/api/local/media/${id}`;
-  if (['netease', 'bilibili', 'youtube', 'navidrome'].includes(music.platform)) return `/api/${music.platform}/stream/${id}`;
-  if (music.platform.startsWith('subsonic-')) {
-    const [source, room] = music.platform.slice('subsonic-'.length).split('@');
-    return `/api/subsonic/${room ? `${encodeURIComponent(room)}/` : ''}${encodeURIComponent(source)}/stream/${id}`;
-  }
-  return '';
-});
+const queuedAudioSrc = computed(() => withPlaybackToken(player.queue?.[0]?.music));
 // A removal patch can precede its player.state by a frame. Keep the buffered
 // source until that state arrives, so consuming the queue cannot erase it.
 const nextAudioSrc = ref('');

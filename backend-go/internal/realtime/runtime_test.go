@@ -567,7 +567,7 @@ func TestPreviousWalksHistoryCursorAndResetsOnAdvance(t *testing.T) {
 	require.NoError(t, runtime.Clear(context.Background(), "clear-1"))
 	snapshot, err = runtime.Snapshot(context.Background())
 	require.NoError(t, err)
-	require.Empty(t, snapshot["queue"].([]storesqlite.QueueItem))
+	require.Empty(t, snapshot["queue"].([]clientQueueItem))
 	require.ErrorIs(t, runtime.Clear(context.Background(), "clear-2"), ErrStaleQueue)
 }
 

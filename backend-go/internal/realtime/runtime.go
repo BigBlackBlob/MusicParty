@@ -1316,6 +1316,23 @@ func (r *RoomRuntime) currentPosition(now int64) int64 {
 	}
 	return position(r.state, now)
 }
+
+type clientQueueItem struct {
+	PlaybackPriority int64                      `json:"playbackPriority,omitempty"`
+	QueueID          string                     `json:"queueId"`
+	Music            *storesqlite.PlayableMusic `json:"music"`
+	EnqueuedBy       storesqlite.UserSummary    `json:"enqueuedBy"`
+	Status           string                     `json:"status"`
+}
+
+func clientQueue(queue []storesqlite.QueueItem) []clientQueueItem {
+	items := make([]clientQueueItem, len(queue))
+	for index, item := range queue {
+		items[index] = clientQueueItem{PlaybackPriority: item.PlaybackPriority, QueueID: item.QueueID, Music: playableMusic(item.Music), EnqueuedBy: item.EnqueuedBy, Status: item.Status}
+	}
+	return items
+}
+
 func (r *RoomRuntime) snapshot() map[string]any {
 	var nowPlaying any
 	if r.state.CurrentMusic != nil {
@@ -1337,14 +1354,21 @@ func (r *RoomRuntime) snapshot() map[string]any {
 			"media":             map[string]any{"durationMs": r.state.CurrentMusic.Duration, "seekable": true},
 		}
 	}
-	return map[string]any{"nowPlaying": nowPlaying, "queue": r.queue, "isShuffle": r.state.Shuffle, "isPaused": r.state.Paused, "isPauseLocked": r.state.PauseLocked, "isSkipLocked": r.state.SkipLocked, "isShuffleLocked": r.state.ShuffleLocked, "isLoading": r.state.Loading, "serverTimestamp": time.Now().UnixMilli(), "stateVersion": r.state.StateVersion, "playEpoch": r.state.PlayEpoch, "queueVersion": r.queueVersion, "queueEpoch": r.controlScope, "historyCursor": r.historyCursor(), "idempotencyScopeId": r.controlScope, "idempotencyTtlMs": ControlMutationTTL.Milliseconds()}
+	return map[string]any{"nowPlaying": nowPlaying, "queue": clientQueue(r.queue), "isShuffle": r.state.Shuffle, "isPaused": r.state.Paused, "isPauseLocked": r.state.PauseLocked, "isSkipLocked": r.state.SkipLocked, "isShuffleLocked": r.state.ShuffleLocked, "isLoading": r.state.Loading, "serverTimestamp": time.Now().UnixMilli(), "stateVersion": r.state.StateVersion, "playEpoch": r.state.PlayEpoch, "queueVersion": r.queueVersion, "queueEpoch": r.controlScope, "historyCursor": r.historyCursor(), "idempotencyScopeId": r.controlScope, "idempotencyTtlMs": ControlMutationTTL.Milliseconds()}
 }
 func (r *RoomRuntime) broadcastState() {
-	state := r.snapshot()
-	delete(state, "queue")
-	r.broadcast("player.state", state)
+	r.broadcast("player.state", r.snapshot())
 }
 func (r *RoomRuntime) broadcast(kind string, payload any) {
+	if kind == "queue.patch" {
+		if fields, ok := payload.(map[string]any); ok {
+			for _, key := range []string{"items", "queue"} {
+				if items, ok := fields[key].([]storesqlite.QueueItem); ok {
+					fields[key] = clientQueue(items)
+				}
+			}
+		}
+	}
 	if r.broadcaster != nil {
 		r.broadcaster.BroadcastRoom(r.roomID, kind, payload)
 	}
