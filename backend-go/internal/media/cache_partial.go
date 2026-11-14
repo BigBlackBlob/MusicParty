@@ -1,11 +1,13 @@
 package media
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 )
 
 // minPartialBytes is the smallest prefix worth streaming.
@@ -34,25 +36,34 @@ func (c *Cache) InflightURL(key string) (string, http.Header, bool) {
 // result means no response was written and the caller may use another source.
 func (c *Cache) ServePartial(w http.ResponseWriter, r *http.Request, key, contentType string) (served bool, err error) {
 	c.mu.Lock()
-	_, inflight := c.inflight[key]
+	entry := c.inflight[key]
+	if entry == nil || entry.total < 0 {
+		c.mu.Unlock()
+		return false, nil
+	}
+	total, written, generation := entry.total, entry.written, entry.attempt
+	if entry.failed || entry.done {
+		c.mu.Unlock()
+		return false, nil
+	}
 	c.mu.Unlock()
-	if !inflight {
+	start, _, _, rangeErr := parseRange(r.Header.Get("Range"), total)
+	if rangeErr == nil && start >= written {
+		return false, nil
+	}
+	if (rangeErr == nil && start == 0 || r.Header.Get("Range") == "") && written < minPartialBytes {
 		return false, nil
 	}
 	part := c.pathForKey(key) + ".part"
-	info, err := os.Stat(part)
-	if err != nil || !info.Mode().IsRegular() || info.Size() < minPartialBytes {
-		return false, nil
-	}
 	file, err := os.Open(part)
 	if err != nil {
 		return false, err
 	}
 	defer file.Close()
-	return servePartialFile(w, r, file, info.Size(), contentType)
+	return servePartialFile(c, entry, generation, w, r, file, total, contentType)
 }
 
-func servePartialFile(w http.ResponseWriter, r *http.Request, file *os.File, size int64, contentType string) (bool, error) {
+func servePartialFile(c *Cache, entry *inflightEntry, generation uint64, w http.ResponseWriter, r *http.Request, file *os.File, size int64, contentType string) (bool, error) {
 	info, err := file.Stat()
 	if err != nil {
 		return false, err
@@ -60,8 +71,6 @@ func servePartialFile(w http.ResponseWriter, r *http.Request, file *os.File, siz
 	if !info.Mode().IsRegular() {
 		return false, os.ErrNotExist
 	}
-	// The initial stat bounds reads even if the downloader grows the file later.
-	size = min(size, info.Size())
 	if contentType == "" {
 		var sniff [512]byte
 		n, _ := file.ReadAt(sniff[:], 0)
@@ -82,13 +91,54 @@ func servePartialFile(w http.ResponseWriter, r *http.Request, file *os.File, siz
 	if partial {
 		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, size))
 		w.WriteHeader(http.StatusPartialContent)
+	} else {
+		w.WriteHeader(http.StatusOK)
 	}
 	if r.Method == http.MethodHead {
 		return true, nil
 	}
-	if _, err := file.Seek(start, io.SeekStart); err != nil {
-		return false, err
+	position := start
+	buffer := make([]byte, 32*1024)
+	for position <= end {
+		if err := r.Context().Err(); err != nil {
+			return true, nil
+		}
+		c.mu.Lock()
+		currentAttempt, available, done, failed, changed := entry.attempt, entry.written, entry.done, entry.failed, entry.changed
+		c.mu.Unlock()
+		if currentAttempt != generation || failed {
+			return true, errors.New("in-flight media download failed before the requested range was complete")
+		}
+		if available > position {
+			want := min(int64(len(buffer)), min(available-position, end-position+1))
+			n, readErr := file.ReadAt(buffer[:want], position)
+			if n > 0 {
+				written, writeErr := w.Write(buffer[:n])
+				position += int64(written)
+				if writeErr != nil || written != n {
+					if writeErr != nil {
+						return true, writeErr
+					}
+					return true, io.ErrShortWrite
+				}
+			}
+			if readErr != nil && readErr != io.EOF {
+				return true, readErr
+			}
+			continue
+		}
+		if done || available >= size {
+			return true, io.ErrUnexpectedEOF
+		}
+		timer := time.NewTimer(50 * time.Millisecond)
+		select {
+		case <-r.Context().Done():
+			timer.Stop()
+			return true, nil
+		case <-changed:
+			timer.Stop()
+		case <-timer.C:
+		}
 	}
-	_, err = io.CopyN(w, &contextReader{ctxDone: r.Context().Done(), reader: file}, length)
-	return true, err
+	return true, nil
 }

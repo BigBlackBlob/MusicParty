@@ -348,6 +348,9 @@ func (api *MediaAPI) proxyPlatform(w http.ResponseWriter, r *http.Request, name,
 		// 2. An active download can serve its prefix or reuse its resolved URL.
 		if url, headers, inflight := api.cache.InflightURL(cacheKey); inflight {
 			if served, serveErr := api.cache.ServePartial(w, r, cacheKey, ""); served {
+				if serveErr != nil {
+					panic(http.ErrAbortHandler)
+				}
 				return serveErr
 			}
 			status, proxyErr := api.proxy.ServeWithStatus(w, r, url, headers)
