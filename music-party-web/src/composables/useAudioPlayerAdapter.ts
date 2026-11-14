@@ -18,6 +18,7 @@ export function useAudioPlayerAdapter() {
   return reactive({
     get nowPlaying() { return runtime.nowPlaying },
     get queue() { return runtime.queue },
+    get isQueueSettled() { return runtime.playbackQueueVersion === runtime.lastQueueVersion },
     get isPaused() { return runtime.isPaused },
     get isBuffering() { return audio.isBuffering },
     set isBuffering(value: boolean) { audio.isBuffering = value },

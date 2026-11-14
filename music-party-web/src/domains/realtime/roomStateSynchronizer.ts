@@ -86,6 +86,7 @@ export const useRoomStateSynchronizer = defineStore('room-state-synchronizer', (
         }
       })
     }
+    runtime.playbackQueueVersion = state.queueVersion
     isPaused.value = state.isPaused
     isShuffle.value = state.isShuffle
     isPauseLocked.value = state.isPauseLocked

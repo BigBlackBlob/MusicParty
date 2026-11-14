@@ -276,3 +276,25 @@ test('desktop playback clock advances in a hidden tab and lyrics catch up on ret
     await desktop.close()
   }
 })
+
+test('local standby survives queue consumption and becomes the active element', async ({ page }) => {
+  const roomName = `Standby Room ${Date.now()}`
+  const first = `Standby A ${Date.now()}`
+  const second = `Standby B ${Date.now()}`
+  await loginAsAdmin(page)
+  await createRoom(page, roomName)
+  await uploadFixture(page, first)
+  await uploadFixture(page, second)
+  await enqueueLocalTrack(page, first)
+  await enqueueLocalTrack(page, second)
+  await page.getByRole('dialog').getByRole('button', { name: /Close|关闭/ }).click()
+  const elements = page.locator('audio')
+  await expect.poll(() => elements.nth(1).evaluate(element => (element as HTMLAudioElement).readyState)).toBe(4)
+  await expect.poll(() => elements.nth(0).evaluate(element => (element as HTMLAudioElement).paused)).toBe(false)
+  // Use a real control with the preload already buffered. The consumed queue
+  // patch arrives before player.state and must not replace that source.
+  await page.locator('.player-console').getByRole('button', { name: /^(Next|下一首)$/ }).click()
+  await expect.poll(() => elements.nth(1).evaluate(element => (element as HTMLAudioElement).paused)).toBe(false)
+  await expect.poll(() => elements.nth(0).evaluate(element => (element as HTMLAudioElement).paused)).toBe(true)
+  await expect(page.locator('.track-title-marquee').getByText(second, { exact: true }).first()).toBeVisible()
+})

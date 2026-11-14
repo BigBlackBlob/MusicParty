@@ -12,6 +12,7 @@
         @playing="onAudioEvent(0, 'playing')"
         @ended="onAudioEvent(0, 'ended')"
         @canplay="onAudioEvent(0, 'canplay')"
+        preload="auto"
         referrerpolicy="no-referrer"
     ></audio>
     <audio
@@ -78,14 +79,37 @@ const {
 } = useAudio(audioRef, player, computed(() => ui.volume));
 
 const audioSrc = computed(() => withPlaybackToken(player.nowPlaying?.music));
-const nextAudioSrc = computed(() => withPlaybackToken(player.queue?.[0]?.music));
-const preloadedTrackId = computed(() => player.queue?.[0]?.music?.id || '');
+// Queue metadata has no playable URL. Derive the same media endpoints used by
+// the server, without resolving accounts or changing token handling.
+const queuedAudioSrc = computed(() => {
+  const music = player.queue?.[0]?.music;
+  if (!music) return '';
+  if (music.url) return withPlaybackToken(music);
+  const id = encodeURIComponent(music.id);
+  if (music.platform === 'local') return `/api/local/media/${id}`;
+  if (['netease', 'bilibili', 'youtube', 'navidrome'].includes(music.platform)) return `/api/${music.platform}/stream/${id}`;
+  if (music.platform.startsWith('subsonic-')) {
+    const [source, room] = music.platform.slice('subsonic-'.length).split('@');
+    return `/api/subsonic/${room ? `${encodeURIComponent(room)}/` : ''}${encodeURIComponent(source)}/stream/${id}`;
+  }
+  return '';
+});
+// A removal patch can precede its player.state by a frame. Keep the buffered
+// source until that state arrives, so consuming the queue cannot erase it.
+const nextAudioSrc = ref('');
+watch([queuedAudioSrc, () => player.isQueueSettled], ([source, settled]) => {
+  if (settled) nextAudioSrc.value = source;
+}, { flush: 'post', immediate: true });
 watch(() => player.nowPlaying?.music?.id, (id, oldId) => {
-  if (!id || !oldId || id !== preloadedTrackId.value) return;
+  if (!id || !oldId) return;
   const standby = 1 - activeElement.value;
+  if (audioElements[standby].value?.getAttribute('src') !== audioSrc.value) return;
   audioElements[activeElement.value].value?.pause();
   activeElement.value = standby;
-});
+  nextAudioSrc.value = '';
+  queueMicrotask(checkAutoPlay);
+}, { flush: 'sync' });
+
 
 // 同步状态到 playerStore
 watch(localProgress, (val) => {
