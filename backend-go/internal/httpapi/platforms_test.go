@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/config"
+	"github.com/BigBlackBlob/MusicParty/backend-go/internal/domain/account"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/observability"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform"
 	"github.com/stretchr/testify/require"
@@ -113,13 +114,19 @@ func (fixturePlatform) Lyric(context.Context, string) (platform.Lyric, error) {
 
 func TestPlatformRoutesMatchFrozenGoldenStatuses(t *testing.T) {
 	cfg := testConfig(t)
-	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewPlatformAPI(cfg, fixturePlatform{}))
+	store := httpStore(t)
+	accounts := account.New(store)
+	insertStage5User(t, store, "route-token", "listener", "MEMBER")
+	api := NewPlatformAPI(cfg, fixturePlatform{})
+	api.SetAccounts(accounts)
+	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
 	for _, test := range []struct {
 		path   string
 		status int
 		body   string
 	}{{"/api/config", 200, `"authorName"`}, {"/api/platforms", 200, `"local"`}, {"/api/search/local/contract?limit=20&offset=0", 200, "[]"}, {"/api/search/local/contract?limit=20&offset=-1", 400, "bad-request"}, {"/api/music/lyric/local/id", 200, "歌词"}, {"/api/theme/extract-cover-color?url=https://evil.test/x", 400, "Only proxied"}} {
 		request := httptest.NewRequest(http.MethodGet, test.path, nil)
+		request.AddCookie(&http.Cookie{Name: SessionCookieName, Value: "route-token"})
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)
 		require.Equal(t, test.status, response.Code, test.path)

@@ -103,6 +103,7 @@ func run() error {
 	var roomService *roomdomain.Service
 	if databaseStore != nil {
 		accountService = accountdomain.New(databaseStore)
+		platformAPI.SetAccounts(accountService)
 		if cfg.Application.BootstrapAdminUsername != "" || cfg.Application.BootstrapAdminPassword != "" {
 			if err := accountService.Bootstrap(applicationContext, cfg.Application.BootstrapAdminUsername, cfg.Application.BootstrapAdminPassword); err != nil {
 				return fmt.Errorf("bootstrap administrator: %w", err)
