@@ -4,8 +4,10 @@ import (
 	"database/sql"
 	"errors"
 	"log/slog"
+	"mime"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -342,7 +344,11 @@ func (api *MediaAPI) proxyPlatform(w http.ResponseWriter, r *http.Request, name,
 	if !cover && api.cache != nil {
 		if path, release, ok := api.cache.Acquire(cacheKey); ok {
 			defer release()
-			return media.ServeFile(w, r, path, "application/octet-stream", "private, max-age=86400")
+			ct := mime.TypeByExtension(filepath.Ext(path))
+			if ct == "" {
+				ct = "application/octet-stream"
+			}
+			return media.ServeFile(w, r, path, ct, "private, max-age=86400")
 		}
 	}
 	var target string
@@ -368,9 +374,6 @@ func (api *MediaAPI) proxyPlatform(w http.ResponseWriter, r *http.Request, name,
 		w.WriteHeader(http.StatusNotFound)
 		return nil
 	}
-	if !cover && api.cache != nil {
-		_ = api.cache.Submit(cacheKey, target)
-	}
 	headers := http.Header{"Accept": {"application/octet-stream"}}
 	if name == "netease" {
 		headers.Set("Referer", "https://music.163.com/")
@@ -379,6 +382,9 @@ func (api *MediaAPI) proxyPlatform(w http.ResponseWriter, r *http.Request, name,
 	if name == "bilibili" {
 		headers.Set("Referer", "https://www.bilibili.com/video/"+id)
 		headers.Set("User-Agent", "Mozilla/5.0")
+	}
+	if !cover && api.cache != nil {
+		_ = api.cache.Submit(cacheKey, target, headers)
 	}
 	if cover {
 		w.Header().Set("Cache-Control", "private, max-age=86400")

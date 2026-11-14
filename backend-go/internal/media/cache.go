@@ -49,6 +49,7 @@ func ParseByteSize(value string) (int64, error) {
 type downloadJob struct {
 	key, url string
 	deadline time.Time
+	headers  http.Header
 }
 
 // Cache accounts for committed files plus reservations covering all partial writes.
@@ -183,7 +184,7 @@ func (c *Cache) lookupLocked(id string) (string, bool) {
 	return path, exists
 }
 
-func (c *Cache) Submit(key, url string) error {
+func (c *Cache) Submit(key, url string, headers http.Header) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed {
@@ -200,7 +201,7 @@ func (c *Cache) Submit(key, url string) error {
 	case <-c.ctx.Done():
 		delete(c.inflight, key)
 		return context.Canceled
-	case c.jobs <- downloadJob{key: key, url: url, deadline: time.Now().Add(c.options.TaskTTL)}:
+	case c.jobs <- downloadJob{key: key, url: url, deadline: time.Now().Add(c.options.TaskTTL), headers: headers}:
 		return nil
 	default:
 		delete(c.inflight, key)
