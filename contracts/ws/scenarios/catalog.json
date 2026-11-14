@@ -123,6 +123,7 @@
     "enqueue.nack",
     "history.page",
     "player.events",
+    "player.failed",
     "player.state",
     "playlist.ack",
     "playlist.data",

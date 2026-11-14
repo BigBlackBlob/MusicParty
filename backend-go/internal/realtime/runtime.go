@@ -1621,6 +1621,17 @@ func (r *RoomRuntime) PlaybackConnectionClosed(ctx context.Context, connectionID
 	return err
 }
 
+// PlaybackFailed sends a sanitized failure notice for a track that cannot be resolved.
+func (r *RoomRuntime) PlaybackFailed(ctx context.Context, queueID, musicID, name, platformName, reason, message string) error {
+	_, err := r.Execute(ctx, func(runtime *RoomRuntime, _ context.Context) (any, error) {
+		payload := map[string]string{"queueId": queueID, "musicId": musicID, "name": name, "platform": platformName, "reason": reason, "message": message}
+		runtime.broadcast("player.failed", payload)
+		runtime.logEvent("player.failed", queueID, "applied", reason, nil)
+		return nil, nil
+	})
+	return err
+}
+
 // prepareNextTrack resolves and cache-submits one queued item without blocking the room actor.
 func (r *RoomRuntime) prepareNextTrack() {
 	if r.preResolve == nil || r.preResolveBusy || len(r.queue) == 0 {

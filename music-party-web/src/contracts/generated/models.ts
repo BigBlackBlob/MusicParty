@@ -25,4 +25,5 @@ export interface ChatMessage { id: string; userId: string; userName: string; con
 export interface PlaybackHistoryItem { id: string; music: Music; enqueuerPublicId: string | null; enqueuerName: string | null; playedAt: number }
 export type PlayerEventCode = 'CONTROL_DENIED' | 'RENAME_FAILED' | 'ROOM_PASSWORD_CHANGED' | 'ROOM_DELETED' | 'ROOM_PLAYLISTS_UPDATED' | 'RESET' | 'REMOVE' | 'ERROR_LOAD' | 'SYSTEM_MESSAGE' | 'SEEK_DENIED' | 'LIKE' | 'USER_JOIN' | 'USER_LEAVE' | 'PLAY_START'
 export interface PlayerEvent { code: PlayerEventCode; severity: 'info' | 'success' | 'warning' | 'error'; message: string; actor?: UserSummary; metadata?: Record<string, string | number | boolean> }
+export interface PlayerFailed { queueId: string; musicId: string; name: string; platform: string; reason: 'preview_only' | 'unavailable' | 'resolve_failed' | 'unknown'; message: string }
 export interface APIError { status: number; code: string; message: string; requestId?: string; fieldErrors?: Record<string, string> }

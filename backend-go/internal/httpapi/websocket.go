@@ -558,6 +558,8 @@ func (api *WebSocketAPI) enqueue(ctx context.Context, client *wsruntime.Client, 
 	}
 	playable, err := api.platforms.ResolvePlayable(ctx, request.Platform, request.MusicID, session.SessionToken)
 	if err != nil {
+		reason, message := playbackFailure(err)
+		_ = runtime.PlaybackFailed(ctx, "", request.MusicID, request.MusicID, request.Platform, reason, message)
 		api.nackReason(client, "enqueue.nack", request.MutationID, "PLATFORM_FAILED")
 		return
 	}
@@ -571,6 +573,19 @@ func (api *WebSocketAPI) enqueue(ctx context.Context, client *wsruntime.Client, 
 		return
 	}
 	_ = client.Send("enqueue.ack", client.RoomID, map[string]any{"accepted": true, "queueId": item.QueueID, "mutationId": request.MutationID})
+}
+
+func playbackFailure(err error) (string, string) {
+	var streamError *platform.StreamResolutionError
+	if errors.As(err, &streamError) {
+		if streamError.Kind == platform.StreamTrialOnly {
+			return "preview_only", "Only a preview is available for this track."
+		}
+		if streamError.Kind == platform.StreamUnavailable {
+			return "unavailable", "This track is unavailable for playback."
+		}
+	}
+	return "resolve_failed", "This track could not be prepared for playback."
 }
 func (api *WebSocketAPI) mutationResult(client *wsruntime.Client, mutationID string, err error, reorder bool) {
 	kind := "queue.mutation.ack"
