@@ -2,6 +2,7 @@ import type { ChatMessage, PlayerEvent, PresenceSnapshot, RoomSummary } from '..
 import type { ControlAckServerEnvelope } from '../contracts/generated/websocket'
 import type { RealtimeCallbacks, RealtimeHandlers } from '../transport/realtimeClient'
 import { useToast } from '../composables/useToast'
+import { useUiStore } from '../stores/ui'
 import { WS_DEST } from '../constants/api'
 import { realtimeClient } from '../transport/realtimeClient'
 
@@ -160,6 +161,18 @@ export function createSocketHandlers(stores: SocketHandlerStores = {}): Realtime
     'enqueue.nack': data => player?.settleEnqueue?.(data.mutationId, false, data.reason),
     'control.ack': data => { player?.settleControl?.(data); player?.settleLike?.(data) },
     'player.events': event => handleGameEvent(event, stores),
+    'player.failed': (failure, envelope) => {
+      const activeRoomId = roomStore?.transition?.status === 'connecting' ? roomStore.transition.roomId : roomStore?.currentRoomId
+      if (envelope.roomId && envelope.roomId !== activeRoomId) return
+      const zh = useUiStore().locale === 'zh'
+      const messages = {
+        preview_only: zh ? '该歌曲仅提供试听，已跳过' : 'Only a preview is available. Track skipped.',
+        unavailable: zh ? '该歌曲暂时无法播放，已跳过' : 'Track unavailable. Track skipped.',
+        resolve_failed: zh ? '无法获取歌曲资源，已跳过' : 'Could not resolve the track. Track skipped.',
+        unknown: zh ? '歌曲播放失败，已跳过' : 'Playback failed. Track skipped.',
+      }
+      useToast().show({ title: zh ? '播放错误' : 'Playback error', message: `${failure.name}: ${messages[failure.reason]}`, type: 'error', duration: 3000 })
+    },
     'chat.message': message => chatStore?.addMessage?.(message),
     'public-chat.message': message => chatStore?.addPublicMessage?.(message),
     'rooms.list': rooms => roomStore?.setRooms?.(rooms),
