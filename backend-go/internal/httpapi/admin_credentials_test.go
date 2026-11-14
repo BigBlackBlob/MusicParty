@@ -31,7 +31,7 @@ func TestPlatformCredentialUpdatePersistsAndUpdatesRuntime(t *testing.T) {
 	require.NoError(t, err)
 	cfg := testConfig(t)
 	service := &credentialFixture{}
-	platformAPI := NewPlatformAPI(cfg, service)
+	platformAPI := NewPlatformAPI(cfg, nil, service)
 	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewAdminAPI(store, accounts, platform.NewClient(0), platformAPI))
 
 	secret := "sensitive-cookie-value"
@@ -57,7 +57,7 @@ func TestPlatformCredentialUpdateRejectsInvalidRequests(t *testing.T) {
 	store := httpStore(t)
 	accounts := account.New(store)
 	cfg := testConfig(t)
-	platformAPI := NewPlatformAPI(cfg, &credentialFixture{})
+	platformAPI := NewPlatformAPI(cfg, nil, &credentialFixture{})
 	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewAdminAPI(store, accounts, platform.NewClient(0), platformAPI))
 
 	for _, body := range []string{

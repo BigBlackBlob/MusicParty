@@ -67,7 +67,7 @@ func loadReadinessConfig(t *testing.T, values map[string]string) config.Config {
 
 func newReadinessHandler(t *testing.T, cfg config.Config) (http.Handler, *DesktopAPI) {
 	t.Helper()
-	api := NewDesktopAPI(cfg, nil, nil, nil, NewPlatformAPI(cfg, fixturePlatform{}))
+	api := NewDesktopAPI(cfg, nil, nil, nil, NewPlatformAPI(cfg, nil, fixturePlatform{}))
 	return NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api), api
 }
 

@@ -28,7 +28,7 @@ func batch7Admin(t *testing.T) (*AdminAPI, *storesqlite.Store, http.Handler) {
 	insertStage5User(t, store, "admin-token", "admin", "ADMIN")
 	insertStage5Room(t, store, "lounge", "PUBLIC", 0)
 	cfg := testConfig(t)
-	api := NewAdminAPI(store, accounts, platform.NewClient(time.Second), NewPlatformAPI(cfg))
+	api := NewAdminAPI(store, accounts, platform.NewClient(time.Second), NewPlatformAPI(cfg, nil))
 	return api, store, NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
 }
 
@@ -138,7 +138,7 @@ func TestBatch7SharedUpdatesMatchStartupAndKeepRoomOverrides(t *testing.T) {
 	}
 	require.NotNil(t, startupOther)
 	fallback := subsonic.New(api.client, subsonic.Config{ID: "subsonic-shared@lounge", BaseURL: upstream.URL, Username: "u", Password: "environment", Enabled: true})
-	restarted := NewPlatformAPI(testConfig(t), fallback)
+	restarted := NewPlatformAPI(testConfig(t), nil, fallback)
 	for _, service := range startup {
 		restarted.Register(service)
 	}

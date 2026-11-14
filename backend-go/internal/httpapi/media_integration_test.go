@@ -34,7 +34,7 @@ func TestLocalMediaRequiresSessionAndSupportsRange(t *testing.T) {
 	relative := "media/track.ogg"
 	now := time.Now().UnixMilli()
 	require.NoError(t, storesqlite.NewLocalTrackRepository(store).Upsert(context.Background(), storesqlite.LocalTrack{ID: "track", Title: "Track", Artists: []string{"Artist"}, OGGPath: &relative, Status: "COMPLETED", CreatedAt: now, UpdatedAt: now}))
-	api := NewMediaAPI(cfg, accounts, store, library, NewPlatformAPI(cfg), http.DefaultClient, nil)
+	api := NewMediaAPI(cfg, accounts, store, library, NewPlatformAPI(cfg, nil), http.DefaultClient, nil)
 	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
 
 	unauthorized := httptest.NewRecorder()
@@ -69,7 +69,7 @@ func TestPlatformMediaCacheHitStillRequiresCurrentAccess(t *testing.T) {
 	store := httpStore(t)
 	accounts := account.New(store)
 	insertStage5User(t, store, "media-token", "listener", "MEMBER")
-	platforms := NewPlatformAPI(cfg, &restrictedFixture{})
+	platforms := NewPlatformAPI(cfg, nil, &restrictedFixture{})
 	platforms.SetAccess("navidrome", PlatformAccess(accounts, "listener"))
 	api := NewMediaAPI(cfg, accounts, store, nil, platforms, http.DefaultClient, cache)
 	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)

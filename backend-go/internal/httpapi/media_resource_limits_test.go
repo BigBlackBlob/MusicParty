@@ -26,7 +26,7 @@ func TestUploadAdmissionHappensBeforeBodyRead(t *testing.T) {
 	insertStage5User(t, store, "guest-token", "guest", "GUEST")
 	insertStage5User(t, store, "admin-token", "admin", "ADMIN")
 	cfg := testConfig(t)
-	api := NewMediaAPI(cfg, account.New(store), store, nil, NewPlatformAPI(cfg), http.DefaultClient, nil)
+	api := NewMediaAPI(cfg, account.New(store), store, nil, NewPlatformAPI(cfg, nil), http.DefaultClient, nil)
 	for _, token := range []string{"", "guest-token", "admin-token"} {
 		t.Run(token, func(t *testing.T) {
 			if token == "admin-token" {
@@ -86,7 +86,7 @@ func (f *resourceFixture) CoverURL(context.Context, string) (string, error) {
 func TestYouTubeRateBudgetAndCoverSlotsRejectBeforeUpstream(t *testing.T) {
 	cfg := testConfig(t)
 	source := &resourceFixture{name: "youtube"}
-	platforms := NewPlatformAPI(cfg, source)
+	platforms := NewPlatformAPI(cfg, nil, source)
 	store := httpStore(t)
 	api := NewMediaAPI(cfg, account.New(store), store, nil, platforms, http.DefaultClient, nil)
 	for range 30 {

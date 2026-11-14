@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/config"
+	"github.com/BigBlackBlob/MusicParty/backend-go/internal/domain/account"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/observability"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform"
 	"github.com/stretchr/testify/require"
@@ -113,13 +114,17 @@ func (fixturePlatform) Lyric(context.Context, string) (platform.Lyric, error) {
 
 func TestPlatformRoutesMatchFrozenGoldenStatuses(t *testing.T) {
 	cfg := testConfig(t)
-	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewPlatformAPI(cfg, fixturePlatform{}))
+	store := httpStore(t)
+	accounts := account.New(store)
+	insertStage5User(t, store, "route-token", "listener", "MEMBER")
+	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewPlatformAPI(cfg, accounts, fixturePlatform{}))
 	for _, test := range []struct {
 		path   string
 		status int
 		body   string
 	}{{"/api/config", 200, `"authorName"`}, {"/api/platforms", 200, `"local"`}, {"/api/search/local/contract?limit=20&offset=0", 200, "[]"}, {"/api/search/local/contract?limit=20&offset=-1", 400, "bad-request"}, {"/api/music/lyric/local/id", 200, "歌词"}, {"/api/theme/extract-cover-color?url=https://evil.test/x", 400, "Only proxied"}} {
 		request := httptest.NewRequest(http.MethodGet, test.path, nil)
+		request.AddCookie(&http.Cookie{Name: SessionCookieName, Value: "route-token"})
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)
 		require.Equal(t, test.status, response.Code, test.path)
@@ -130,7 +135,7 @@ func TestPlatformRoutesMatchFrozenGoldenStatuses(t *testing.T) {
 func TestPlatformRouteDecodesEncodedPlatformNames(t *testing.T) {
 	cfg := testConfig(t)
 	service := namedFixturePlatform{fixturePlatform: fixturePlatform{}, name: "subsonic-local-navi@lounge"}
-	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewPlatformAPI(cfg, service))
+	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewPlatformAPI(cfg, nil, service))
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/search/subsonic-local-navi%40lounge/song", nil))
 	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
@@ -139,7 +144,7 @@ func TestPlatformRouteDecodesEncodedPlatformNames(t *testing.T) {
 func TestPlatformSearchDecodesEncodedKeywordWithEncodedPlatform(t *testing.T) {
 	cfg := testConfig(t)
 	service := &searchCapturePlatform{name: "subsonic-local-navi@lounge"}
-	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewPlatformAPI(cfg, service))
+	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewPlatformAPI(cfg, nil, service))
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/search/subsonic-local-navi%40lounge/%E5%B9%BB%E6%83%B3", nil))
 	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
@@ -148,7 +153,7 @@ func TestPlatformSearchDecodesEncodedKeywordWithEncodedPlatform(t *testing.T) {
 
 func TestPlatformUpstreamFailureIsBadGateway(t *testing.T) {
 	cfg := testConfig(t)
-	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewPlatformAPI(cfg, fixturePlatform{err: errors.New("upstream")}))
+	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewPlatformAPI(cfg, nil, fixturePlatform{err: errors.New("upstream")}))
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/search/local/x", nil))
 	require.Equal(t, http.StatusBadGateway, response.Code)
@@ -168,7 +173,7 @@ func TestNeteaseErrorsAreClassified(t *testing.T) {
 		{name: "upstream failure", err: &platform.UpstreamError{Status: http.StatusBadGateway}, want: "网易云 API 服务异常"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewPlatformAPI(cfg, neteaseFixture{err: test.err}))
+			handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewPlatformAPI(cfg, nil, neteaseFixture{err: test.err}))
 			for _, path := range []string{"/api/search/netease/x", "/api/playlist/songs/netease/id"} {
 				response := httptest.NewRecorder()
 				handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
@@ -180,7 +185,7 @@ func TestNeteaseErrorsAreClassified(t *testing.T) {
 }
 func TestRestrictedPlatformRequiresToken(t *testing.T) {
 	cfg := testConfig(t)
-	api := NewPlatformAPI(cfg, fixturePlatform{})
+	api := NewPlatformAPI(cfg, nil, fixturePlatform{})
 	api.SetAccess("local", func(context.Context, string) bool { return false })
 	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
 	response := httptest.NewRecorder()
@@ -190,7 +195,7 @@ func TestRestrictedPlatformRequiresToken(t *testing.T) {
 
 func TestRestrictedPlatformsUseSessionCookie(t *testing.T) {
 	cfg := testConfig(t)
-	api := NewPlatformAPI(cfg, fixturePlatform{})
+	api := NewPlatformAPI(cfg, nil, fixturePlatform{})
 	api.SetAccess("local", func(_ context.Context, token string) bool { return token == "session-token" })
 	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
 
@@ -219,7 +224,7 @@ func TestRestrictedPlatformsUseSessionCookie(t *testing.T) {
 }
 
 func TestPlatformAccessPolicyCanChangeConcurrentlyWithChecks(t *testing.T) {
-	api := NewPlatformAPI(config.Config{})
+	api := NewPlatformAPI(config.Config{}, nil)
 	check := func(context.Context, string) bool { return true }
 	var wg sync.WaitGroup
 	for range 8 {

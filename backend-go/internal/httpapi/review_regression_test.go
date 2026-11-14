@@ -39,7 +39,7 @@ func TestSubsonicSourceUpdateSeparatesDiskCacheAcrossRestart(t *testing.T) {
 	allowed := "listener"
 	source.AllowedUsers = &allowed
 	bindings := []storesqlite.RoomSubsonicSource{{SourceID: "shared", RoomID: "lounge", Enabled: true}}
-	platforms := NewPlatformAPI(cfg)
+	platforms := NewPlatformAPI(cfg, nil)
 	platforms.replaceSubsonicSource(client, accounts, source, bindings, "password")
 	root := t.TempDir()
 	cache, err := media.NewCache(root, 4096, upstream.Client(), 1, 4, 0, 0)
@@ -68,7 +68,7 @@ func TestSubsonicSourceUpdateSeparatesDiskCacheAcrossRestart(t *testing.T) {
 	defer cache.Close()
 	api.cache = cache
 	source.Username = "new-account"
-	platforms = NewPlatformAPI(cfg)
+	platforms = NewPlatformAPI(cfg, nil)
 	platforms.replaceSubsonicSource(client, accounts, source, bindings, "password")
 	api.platforms = platforms
 	require.Equal(t, "new-account", request())
@@ -93,7 +93,7 @@ func TestWebSocketPlaylistImportPagesBeyondProviderLimit(t *testing.T) {
 			insertStage5Room(t, store, "lounge", "PUBLIC", 0)
 			cfg := testConfig(t)
 			cfg.Player.MaxPlaylistImportSize = 1000
-			platforms := NewPlatformAPI(cfg, netease.New(platform.NewClient(time.Second), upstream.URL, "cookie"))
+			platforms := NewPlatformAPI(cfg, nil, netease.New(platform.NewClient(time.Second), upstream.URL, "cookie"))
 			hub := wsruntime.NewHub(256)
 			manager := realtime.NewManager(store, 100, time.Second, time.Hour, hub, realtime.QueueLimits{MaxSize: 2000, MaxUserSongs: 2000, HistorySize: 100})
 			defer hub.Close()
@@ -155,7 +155,7 @@ func TestSourceUpdateCannotBeOverwrittenByOldPlayableRequest(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	old := &sourceSnapshotFixture{namespace: "old", started: make(chan struct{}), release: make(chan struct{})}
-	api := NewPlatformAPI(testConfig(t), old)
+	api := NewPlatformAPI(testConfig(t), nil, old)
 	done := make(chan error, 1)
 	go func() { _, err := api.ResolvePlayable(ctx, "local", "song", ""); done <- err }()
 	select {

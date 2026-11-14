@@ -62,7 +62,7 @@ func TestControlProcessHelper(t *testing.T) {
 	manager := realtime.NewManager(store, 100, 5*time.Second, 100*time.Millisecond, hub)
 	defer manager.Close()
 	defer hub.Close()
-	platforms := NewPlatformAPI(cfg, fixturePlatform{})
+	platforms := NewPlatformAPI(cfg, nil, fixturePlatform{})
 	auth := NewAuthAPI(cfg, accounts)
 	auth.SetSessionCloser(hub)
 	api := NewWebSocketAPI(cfg, store, accounts, rooms, hub, manager, platforms)

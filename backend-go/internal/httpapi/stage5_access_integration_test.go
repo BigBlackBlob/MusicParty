@@ -30,7 +30,7 @@ func TestRoomPlaylistWriteAccessMatchesRoomVisibility(t *testing.T) {
 	insertStage5User(t, store, "member-token", "member", "MEMBER")
 	insertStage5Room(t, store, "public-room", "PUBLIC", 0)
 	insertStage5Room(t, store, "private-room", "PRIVATE", 3)
-	api := NewPlaylistAPI(cfg, store, accounts, rooms, NewPlatformAPI(cfg))
+	api := NewPlaylistAPI(cfg, store, accounts, rooms, NewPlatformAPI(cfg, nil))
 	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
 
 	request := func(path, proof string) int {
@@ -65,7 +65,7 @@ func TestPrivateRoomPlaylistReadsRequireRoomAccess(t *testing.T) {
 	cfg.Auth.RoomAccessTokenSecret = "contract-room-access-secret-32-bytes"
 	insertStage5User(t, store, "member-token", "member", "MEMBER")
 	insertStage5Room(t, store, "private-room", "PRIVATE", 3)
-	api := NewPlaylistAPI(cfg, store, accounts, rooms, NewPlatformAPI(cfg))
+	api := NewPlaylistAPI(cfg, store, accounts, rooms, NewPlatformAPI(cfg, nil))
 	playlist, err := api.roomPlaylists.CreatePlaylist(context.Background(), "private-room", "Private playlist")
 	require.NoError(t, err)
 	_, err = api.roomPlaylists.AddTrack(context.Background(), "private-room", playlist.ID, &storesqlite.Music{ID: "private-song", Name: "Private song", Artists: []string{"Artist"}, Platform: "local"})
@@ -105,7 +105,7 @@ func TestPersonalPlaylistEnqueueRequiresPrivateRoomAccess(t *testing.T) {
 	cfg.Auth.RoomAccessTokenSecret = "contract-room-access-secret-32-bytes"
 	insertStage5User(t, store, "member-token", "member", "MEMBER")
 	insertStage5Room(t, store, "private-room", "PRIVATE", 3)
-	api := NewPlaylistAPI(cfg, store, accounts, rooms, NewPlatformAPI(cfg))
+	api := NewPlaylistAPI(cfg, store, accounts, rooms, NewPlatformAPI(cfg, nil))
 	manager := realtime.NewManager(store, 10, time.Second, time.Hour, nil)
 	defer manager.Close()
 	api.SetRealtime(manager)

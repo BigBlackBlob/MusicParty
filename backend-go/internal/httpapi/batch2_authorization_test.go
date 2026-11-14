@@ -69,7 +69,7 @@ func TestPlatformAllowlistLiveUpdateMatchesReload(t *testing.T) {
 	guest, err := accounts.CreateGuestSession(context.Background(), "Guest")
 	require.NoError(t, err)
 	cfg := testConfig(t)
-	platforms := NewPlatformAPI(cfg, &restrictedFixture{})
+	platforms := NewPlatformAPI(cfg, nil, &restrictedFixture{})
 	admin := NewAdminAPI(store, accounts, platform.NewClient(0), platforms)
 	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), admin)
 	for _, allowed := range []string{"*", guest.PublicID, "MEMBER", "nobody"} {
@@ -109,7 +109,7 @@ func TestPlaylistImportsUsePlatformAuthorization(t *testing.T) {
 	insertStage5Room(t, store, "room", "PUBLIC", 0)
 	cfg := testConfig(t)
 	service := &restrictedFixture{}
-	platforms := NewPlatformAPI(cfg, service)
+	platforms := NewPlatformAPI(cfg, nil, service)
 	api := NewPlaylistAPI(cfg, store, accounts, roomdomain.New(store, accounts), platforms)
 	userPlaylist, err := api.users.CreatePlaylist(context.Background(), "member", "Personal")
 	require.NoError(t, err)
@@ -140,7 +140,7 @@ func TestPrivateRoomPlaylistAuthorizationMatchesWebSocket(t *testing.T) {
 	insertStage5Room(t, store, "private-room", "PRIVATE", 3)
 	insertStage5Room(t, store, "other-room", "PRIVATE", 3)
 	cfg := testConfig(t)
-	api := NewPlaylistAPI(cfg, store, accounts, roomdomain.New(store, accounts), NewPlatformAPI(cfg))
+	api := NewPlaylistAPI(cfg, store, accounts, roomdomain.New(store, accounts), NewPlatformAPI(cfg, nil))
 	ws := NewWebSocketAPI(cfg, store, accounts, nil, nil, nil, nil)
 	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
 	proof := func(room, id string, version int, expiry time.Time) string {
@@ -181,7 +181,7 @@ func TestPrivateRoomPlaylistAuthorizationMatchesWebSocket(t *testing.T) {
 }
 
 func TestPlatformPolicyCallbackRunsOutsideRegistryLock(t *testing.T) {
-	api := NewPlatformAPI(testConfig(t), fixturePlatform{})
+	api := NewPlatformAPI(testConfig(t), nil, fixturePlatform{})
 	api.SetAccess("local", func(context.Context, string) bool {
 		api.SetAccess("local", func(context.Context, string) bool { return false })
 		return true
@@ -197,7 +197,7 @@ func TestWebSocketRemoteCollectionsRespectPlatformRevocation(t *testing.T) {
 	insertStage5Room(t, store, "lounge", "PUBLIC", 0)
 	cfg := testConfig(t)
 	service := &restrictedFixture{}
-	platforms := NewPlatformAPI(cfg, service)
+	platforms := NewPlatformAPI(cfg, nil, service)
 	hub := wsruntime.NewHub(256)
 	manager := realtime.NewManager(store, 100, time.Second, time.Hour, hub)
 	api := NewWebSocketAPI(cfg, store, accounts, roomdomain.New(store, accounts), hub, manager, platforms)
@@ -237,7 +237,7 @@ func TestPlatformRequestsDuringPolicyUpdates(t *testing.T) {
 	accounts := account.New(store)
 	insertStage5User(t, store, "member-token", "member", "MEMBER")
 	cfg := testConfig(t)
-	platforms := NewPlatformAPI(cfg, &restrictedFixture{})
+	platforms := NewPlatformAPI(cfg, nil, &restrictedFixture{})
 	mediaAPI := NewMediaAPI(cfg, accounts, store, nil, platforms, http.DefaultClient, nil)
 	router := chi.NewRouter()
 	platforms.Routes(router)

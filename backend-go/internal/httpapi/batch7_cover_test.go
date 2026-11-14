@@ -36,7 +36,7 @@ func TestBatch7CoverColorUsesCurrentAuthorization(t *testing.T) {
 	insertStage5User(t, store, "listener-token", "listener", "MEMBER")
 	cfg := testConfig(t)
 	service := subsonic.New(platform.NewClient(time.Second), subsonic.Config{ID: "navidrome", BaseURL: upstream.URL, Username: "u", Password: "p", Enabled: true})
-	platforms := NewPlatformAPI(cfg, service)
+	platforms := NewPlatformAPI(cfg, accounts, service)
 	platforms.SetAccess("navidrome", PlatformAccess(accounts, "listener"))
 	mediaAPI := NewMediaAPI(cfg, accounts, store, nil, platforms, http.DefaultClient, nil)
 	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), platforms, mediaAPI)

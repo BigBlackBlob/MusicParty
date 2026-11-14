@@ -51,7 +51,7 @@ func TestRoomAccessChangesCloseExistingSockets(t *testing.T) {
 			}
 			hub := wsruntime.NewHub(128)
 			manager := realtime.NewManager(store, 32, time.Second, time.Hour, hub)
-			api := NewWebSocketAPI(cfg, store, accounts, rooms, hub, manager, NewPlatformAPI(cfg, fixturePlatform{}))
+			api := NewWebSocketAPI(cfg, store, accounts, rooms, hub, manager, NewPlatformAPI(cfg, nil, fixturePlatform{}))
 			roomAPI := NewRoomAPI(rooms, cfg)
 			roomAPI.SetAuthService(accounts)
 			handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api, roomAPI)
