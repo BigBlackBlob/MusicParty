@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/domain/account"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform"
@@ -76,11 +75,4 @@ func (api *PlatformAPI) replaceSubsonicSource(client *platform.Client, accounts 
 		api.access[name] = PlatformAccess(accounts, entry.allowed)
 	}
 	api.mu.Unlock()
-	api.cacheMu.Lock()
-	for key := range api.cache {
-		if strings.HasPrefix(key, prefix) {
-			delete(api.cache, key)
-		}
-	}
-	api.cacheMu.Unlock()
 }
