@@ -5,13 +5,13 @@
         :ref="setAudioElement(0)"
         :src="activeElement === 0 ? audioSrc : nextAudioSrc"
         crossorigin="anonymous"
-        @error="handleError"
-        @waiting="onPlaybackStalled('waiting')"
-        @stalled="onPlaybackStalled('stalled')"
-        @suspend="onPlaybackStalled('suspend')"
-        @playing="onPlaybackHealthy"
-        @ended="onPlaybackEnded"
-        @canplay="onCanPlay"
+        @error="onAudioEvent(0, 'error')"
+        @waiting="onAudioEvent(0, 'waiting')"
+        @stalled="onAudioEvent(0, 'stalled')"
+        @suspend="onAudioEvent(0, 'suspend')"
+        @playing="onAudioEvent(0, 'playing')"
+        @ended="onAudioEvent(0, 'ended')"
+        @canplay="onAudioEvent(0, 'canplay')"
         referrerpolicy="no-referrer"
     ></audio>
     <audio
@@ -19,11 +19,12 @@
         :src="activeElement === 1 ? audioSrc : nextAudioSrc"
         crossorigin="anonymous"
         preload="auto"
-        @error="handleError"
-        @waiting="onPlaybackStalled('waiting')"
-        @stalled="onPlaybackStalled('stalled')"
-        @playing="onPlaybackHealthy"
-        @ended="onPlaybackEnded"
+        @error="onAudioEvent(1, 'error')"
+        @waiting="onAudioEvent(1, 'waiting')"
+        @stalled="onAudioEvent(1, 'stalled')"
+        @playing="onAudioEvent(1, 'playing')"
+        @ended="onAudioEvent(1, 'ended')"
+        @canplay="onAudioEvent(1, 'canplay')"
         referrerpolicy="no-referrer"
     ></audio>
 
@@ -109,9 +110,15 @@ watch(() => player.isPaused, (paused) => {
   }
 });
 
-const onCanPlay = () => {
-  markPlaybackHealthy();
-  checkAutoPlay();
+// Both elements share one engine. A preload failure or stall on the standby
+// element must not pause, retry, or report the track that is actually playing.
+const onAudioEvent = (index, kind) => {
+  if (index !== activeElement.value) return;
+  if (kind === 'error') { handleError(); return; }
+  if (kind === 'canplay') { markPlaybackHealthy(); checkAutoPlay(); return; }
+  if (kind === 'playing') { onPlaybackHealthy(); return; }
+  if (kind === 'ended') { onPlaybackEnded(); return; }
+  onPlaybackStalled(kind);
 };
 
 const onPlaybackHealthy = () => {

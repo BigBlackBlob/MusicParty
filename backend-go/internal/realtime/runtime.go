@@ -276,6 +276,7 @@ type RoomRuntime struct {
 	eventWake        chan struct{}
 	eventLogMu       sync.Mutex
 	eventLogQueue    []playbackEvent
+	eventLogGen      uint64
 	preResolve       func(context.Context, storesqlite.Music)
 	preResolveBusy   bool
 	onClose          func(*RoomRuntime)
@@ -877,9 +878,9 @@ func (r *RoomRuntime) SeekFor(ctx context.Context, requested int64, admin bool, 
 		s.PositionAnchor = positionMS
 		s.TimestampAnchor = time.Now().UnixMilli()
 		s.PositionUpdatedAt = s.TimestampAnchor
-		if !admin {
-			s.PlayEpoch++
-		}
+		// Every seek bumps the epoch so every client re-seeks. Admin status only
+		// decides whether a locked control is allowed, not whether the jump is real.
+		s.PlayEpoch++
 	})
 }
 
@@ -1382,16 +1383,22 @@ func (r *RoomRuntime) onTick(now time.Time) {
 }
 
 func (r *RoomRuntime) writeEventLog(store *storesqlite.Store) {
+	var drained uint64
 	for {
+		r.eventLogMu.Lock()
+		gen, pending := r.eventLogGen, len(r.eventLogQueue)
+		r.eventLogMu.Unlock()
 		select {
 		case <-r.ctx.Done():
-			r.eventLogMu.Lock()
-			pending := len(r.eventLogQueue)
-			r.eventLogMu.Unlock()
-			if pending == 0 {
+			// Room is closing. Drain whatever was queued, then exit even if a
+			// write failed — otherwise this goroutine waits forever on a channel
+			// nobody signals after the room loop has stopped.
+			if pending == 0 || gen == drained {
 				return
 			}
+			drained = gen
 		case <-r.eventWake:
+			drained = 0
 		}
 		for {
 			r.eventLogMu.Lock()
@@ -1424,6 +1431,7 @@ func (r *RoomRuntime) logEventAt(kind, queueID string, epoch int64, result, reas
 	event := playbackEvent{roomID: r.roomID, at: time.Now().UnixMilli(), kind: kind, epoch: epoch, queueID: queueID, actor: actor, result: result, reason: reason}
 	r.eventLogMu.Lock()
 	r.eventLogQueue = append(r.eventLogQueue, event)
+	r.eventLogGen++
 	r.eventLogMu.Unlock()
 	select {
 	case r.eventWake <- struct{}{}:
@@ -1465,11 +1473,11 @@ func (r *RoomRuntime) ReportPlayback(ctx context.Context, kind string, report Pl
 			if runtime.sessionState == "ready" && report.DurationMS > 0 && report.DurationMS < 24*60*60*1000 {
 				nextState.CurrentMusic.Duration = report.DurationMS
 			}
+			// Anchor at "now" so the clock starts when playback actually starts.
+			// Backdating by positionMs or by a slow client clock makes progress
+			// jump forward before any client has produced sound.
 			nextState.PositionAnchor = position
-			nextState.TimestampAnchor = now - position
-			if report.ClientTime > 0 && report.ClientTime <= now {
-				nextState.TimestampAnchor = report.ClientTime - position
-			}
+			nextState.TimestampAnchor = now
 			nextState.PositionUpdatedAt = now
 			nextState.Paused = false
 			nextSessionState = "playing"
@@ -1487,7 +1495,11 @@ func (r *RoomRuntime) ReportPlayback(ctx context.Context, kind string, report Pl
 				return nil, nil
 			}
 			currentPosition := runtime.currentPosition(now)
-			if runtime.state.CurrentMusic == nil || runtime.state.CurrentMusic.Duration <= 0 || currentPosition < runtime.state.CurrentMusic.Duration-endedToleranceMS || currentPosition > runtime.state.CurrentMusic.Duration+endedToleranceMS {
+			// Reject only reports that arrive before the track could have ended.
+			// A late report (slow client, stalled network) is still a real end;
+			// the server fallback only fires at duration+fallbackGraceMS, so a
+			// report in between must count or the track waits out the grace.
+			if runtime.state.CurrentMusic == nil || runtime.state.CurrentMusic.Duration <= 0 || currentPosition < runtime.state.CurrentMusic.Duration-endedToleranceMS {
 				runtime.logEvent(kind, report.QueueID, "rejected", "too_early", actor)
 				return nil, nil
 			}
