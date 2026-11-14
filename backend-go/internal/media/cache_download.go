@@ -46,6 +46,12 @@ func (c *Cache) downloadAttempt(ctx context.Context, job downloadJob) (bool, tim
 	if err != nil {
 		return false, 0
 	}
+	// Apply platform-specific headers for Bilibili and NetEase CDN requests.
+	for name, values := range job.headers {
+		for _, value := range values {
+			request.Header.Add(name, value)
+		}
+	}
 	response, err := c.client.Do(request)
 	if err != nil {
 		return true, 0

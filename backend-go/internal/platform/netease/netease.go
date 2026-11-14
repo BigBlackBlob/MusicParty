@@ -2,36 +2,101 @@ package netease
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform"
 )
 
 type Service struct {
-	client  *platform.Client
-	baseURL string
-	mu      sync.RWMutex
-	cookie  string
+	client     *platform.Client
+	baseURL    string
+	mu         sync.RWMutex
+	cookie     string
+	quality    string
+	cacheMu    sync.Mutex
+	streams    map[string]streamCacheEntry
+	flights    map[string]*streamFlight
+	now        func() time.Time
+	generation uint64
 }
 
-func New(client *platform.Client, baseURL, cookie string) *Service {
-	return &Service{client: client, baseURL: strings.TrimRight(baseURL, "/"), cookie: cookie}
+func New(client *platform.Client, baseURL, cookie string, quality ...string) *Service {
+	selected := "exhigh"
+	if len(quality) > 0 {
+		selected = quality[0]
+	}
+	if !validQuality(selected) {
+		slog.Warn("invalid NetEase quality; using exhigh", "quality", selected)
+		selected = "exhigh"
+	}
+	return &Service{client: client, baseURL: strings.TrimRight(baseURL, "/"), cookie: cookie, quality: selected, streams: make(map[string]streamCacheEntry), flights: make(map[string]*streamFlight), now: time.Now}
 }
 func (*Service) Name() string    { return "netease" }
 func (*Service) Available() bool { return true }
 func (s *Service) UpdateCredential(value string) {
 	s.mu.Lock()
 	s.cookie = value
+	s.generation++
 	s.mu.Unlock()
+	s.cacheMu.Lock()
+	s.streams = make(map[string]streamCacheEntry)
+	s.flights = make(map[string]*streamFlight)
+	s.cacheMu.Unlock()
 }
 func (s *Service) credential() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.cookie
+}
+
+func (s *Service) completeFlight(flight *streamFlight, musicID string, ctx context.Context) {
+	resolveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), streamResolveTimeout)
+	defer cancel()
+	url, ttl, err := s.resolveStream(resolveCtx, musicID)
+	generation := s.credentialGeneration()
+	s.cacheMu.Lock()
+	if err == nil && url != "" && flight.generation == generation {
+		if len(s.streams) >= 256 {
+			var oldestID string
+			var oldest time.Time
+			for id, entry := range s.streams {
+				if oldestID == "" || entry.expiresAt.Before(oldest) {
+					oldestID, oldest = id, entry.expiresAt
+				}
+			}
+			delete(s.streams, oldestID)
+		}
+		s.streams[musicID] = streamCacheEntry{url: url, expiresAt: s.now().Add(ttl)}
+	}
+	flight.url, flight.err = url, err
+	if s.flights[musicID] == flight {
+		delete(s.flights, musicID)
+	}
+	close(flight.done)
+	s.cacheMu.Unlock()
+}
+
+func (s *Service) awaitFlight(ctx context.Context, flight *streamFlight) (string, error) {
+	select {
+	case <-flight.done:
+		return flight.url, flight.err
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
+func (s *Service) credentialGeneration() uint64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.generation
 }
 
 func (s *Service) get(ctx context.Context, path string, query url.Values, target any) error {
@@ -40,7 +105,7 @@ func (s *Service) get(ctx context.Context, path string, query url.Values, target
 		return &platform.CredentialNotConfiguredError{Platform: s.Name()}
 	}
 	query.Set("cookie", credential)
-	return s.client.JSON(ctx, s.baseURL+path+"?"+query.Encode(), nil, target)
+	return s.client.JSON(context.WithoutCancel(ctx), s.baseURL+path+"?"+query.Encode(), nil, target)
 }
 
 func (s *Service) Search(ctx context.Context, keyword string, offset, limit int) ([]platform.Music, error) {
@@ -193,16 +258,128 @@ func (s *Service) Lyric(ctx context.Context, musicID string) (platform.Lyric, er
 }
 
 func (s *Service) StreamURL(ctx context.Context, musicID string) (string, error) {
-	var response struct {
-		Data []struct {
-			URL string `json:"url"`
-		} `json:"data"`
+	now := s.now()
+	s.cacheMu.Lock()
+	if entry, ok := s.streams[musicID]; ok && now.Before(entry.expiresAt) {
+		s.cacheMu.Unlock()
+		return entry.url, nil
 	}
-	err := s.get(ctx, "/song/url/v1", url.Values{"id": {musicID}, "level": {"exhigh"}}, &response)
-	if err != nil || len(response.Data) == 0 {
-		return "", err
+	delete(s.streams, musicID)
+	if flight, ok := s.flights[musicID]; ok {
+		s.cacheMu.Unlock()
+		select {
+		case <-flight.done:
+			return flight.url, flight.err
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
 	}
-	return response.Data[0].URL, nil
+	flight := &streamFlight{done: make(chan struct{}), generation: s.credentialGeneration()}
+	s.flights[musicID] = flight
+	s.cacheMu.Unlock()
+
+	// The lookup runs detached from this caller. A browser aborts a range
+	// request on every seek, and that cancellation must neither fail the
+	// requests sharing this flight nor stop the lookup they are waiting on.
+	go s.completeFlight(flight, musicID, ctx)
+	return s.awaitFlight(ctx, flight)
+}
+
+const streamResolveTimeout = 20 * time.Second
+
+type streamCacheEntry struct {
+	url       string
+	expiresAt time.Time
+}
+type streamFlight struct {
+	done       chan struct{}
+	url        string
+	err        error
+	generation uint64
+}
+
+type streamResponse struct {
+	Data []streamResponseEntry `json:"data"`
+}
+
+type streamResponseEntry struct {
+	ID                 jsonID          `json:"id"`
+	URL                *string         `json:"url"`
+	BR                 int             `json:"br"`
+	Size               int64           `json:"size"`
+	MD5                string          `json:"md5"`
+	Code               int             `json:"code"`
+	Expi               int             `json:"expi"`
+	Type               string          `json:"type"`
+	Level              string          `json:"level"`
+	Fee                int             `json:"fee"`
+	FreeTrialInfo      json.RawMessage `json:"freeTrialInfo"`
+	FreeTrialPrivilege struct {
+		CannotListenReason int `json:"cannotListenReason"`
+	} `json:"freeTrialPrivilege"`
+}
+
+func (s *Service) resolveStream(ctx context.Context, musicID string) (string, time.Duration, error) {
+	start := qualityIndex(s.quality)
+	for index := start; index >= 0; index-- {
+		var response streamResponse
+		query := url.Values{"id": {musicID}, "level": {qualities[index]}, "timestamp": {strconv.FormatInt(s.now().UnixMilli(), 10)}}
+		if err := s.get(ctx, "/song/url/v1", query, &response); err != nil {
+			return "", 0, err
+		}
+		if len(response.Data) == 0 {
+			continue
+		}
+		var entry *streamResponseEntry
+		for index := range response.Data {
+			if response.Data[index].ID.String() == musicID {
+				entry = &response.Data[index]
+				break
+			}
+		}
+		if entry == nil {
+			continue
+		}
+		if len(entry.FreeTrialInfo) > 0 && string(entry.FreeTrialInfo) != "null" && string(entry.FreeTrialInfo) != "{}" {
+			return "", 0, &platform.StreamResolutionError{Kind: platform.StreamTrialOnly, Reason: entry.FreeTrialPrivilege.CannotListenReason}
+		}
+		if entry.Code != 0 && entry.Code != http.StatusOK {
+			return "", 0, &platform.StreamResolutionError{Kind: platform.StreamUnavailable}
+		}
+		if entry.URL != nil && *entry.URL != "" {
+			ttl := 10 * time.Minute
+			if entry.Expi > 0 {
+				ttl = time.Duration(entry.Expi)*time.Second - 2*time.Minute
+			}
+			if ttl < time.Second {
+				ttl = time.Second
+			}
+			if ttl > 30*time.Minute {
+				ttl = 30 * time.Minute
+			}
+			return *entry.URL, ttl, nil
+		}
+		return "", 0, &platform.StreamResolutionError{Kind: platform.StreamUnavailable}
+	}
+	return "", 0, &platform.StreamResolutionError{Kind: platform.StreamUnavailable}
+}
+
+var qualities = []string{"standard", "higher", "exhigh", "lossless", "hires"}
+
+func validQuality(value string) bool { return qualityIndex(value) >= 0 }
+func qualityIndex(value string) int {
+	for i, quality := range qualities {
+		if quality == value {
+			return i
+		}
+	}
+	return -1
+}
+
+func (s *Service) InvalidateStream(musicID string) {
+	s.cacheMu.Lock()
+	delete(s.streams, musicID)
+	s.cacheMu.Unlock()
 }
 
 func (*Service) CoverURL(context.Context, string) (string, error) { return "", nil }
