@@ -36,7 +36,7 @@ func TestEnsureCompatibleSchemaInitializesOnlyEmptyDatabase(t *testing.T) {
 		t.Fatalf("EnsureCompatibleSchema(empty): %v", err)
 	}
 	check, err := Check(ctx, store.Reader())
-	if err != nil || !check.OK() || check.ApplicationTables != 23 {
+	if err != nil || !check.OK() || check.ApplicationTables != 24 {
 		t.Fatalf("initialized database = %+v, %v", check, err)
 	}
 	if err := EnsureCompatibleSchema(ctx, store, true); err != nil {

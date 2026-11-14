@@ -28,6 +28,20 @@ func websocketTestServer(t *testing.T) (*httptest.Server, *wsruntime.Hub) {
 	return server, hub
 }
 
+func playbackControlContext(state map[string]any) map[string]any {
+	payload := map[string]any{"playEpoch": state["playEpoch"], "stateVersion": state["stateVersion"], "queueId": "", "positionMs": int64(0), "clientTime": time.Now().UnixMilli()}
+	if now, ok := state["nowPlaying"].(map[string]any); ok {
+		payload["queueId"] = now["queueId"]
+		payload["positionMs"] = now["currentPosition"]
+	}
+	return payload
+}
+
+func encodePayloadForTest(payload any) string {
+	encoded, _ := json.Marshal(payload)
+	return string(encoded)
+}
+
 func websocketTestServerWithStore(t *testing.T) (*httptest.Server, *wsruntime.Hub, *storesqlite.Store) {
 	t.Helper()
 	store := httpStore(t)
@@ -212,8 +226,11 @@ func TestWebSocketControlMutationReplay(t *testing.T) {
 	require.Equal(t, true, replayed["replayed"])
 	require.Equal(t, "same", replayed["mutationId"])
 	require.Equal(t, first["committed"], replayed["committed"])
-	require.Equal(t, "MUTATION_CONFLICT", send("control.next", "conflict", payload)["code"])
-	require.Equal(t, "IDEMPOTENCY_SCOPE_MISMATCH", send("control.next", "scope", `{"mutationId":"new","idempotencyScopeId":"old"}`)["code"])
+	nextPayload := playbackControlContext(state)
+	nextPayload["mutationId"], nextPayload["idempotencyScopeId"] = "same", scope
+	require.Equal(t, "MUTATION_CONFLICT", send("control.next", "conflict", encodePayloadForTest(nextPayload))["code"])
+	nextPayload["mutationId"], nextPayload["idempotencyScopeId"] = "new", "old"
+	require.Equal(t, "IDEMPOTENCY_SCOPE_MISMATCH", send("control.next", "scope", encodePayloadForTest(nextPayload))["code"])
 	for _, invalid := range []string{`{"mutationId":"x"}`, `{"idempotencyScopeId":"x"}`, `{"mutationId":null,"idempotencyScopeId":null}`, `{"mutationId":"","idempotencyScopeId":"x"}`} {
 		require.Equal(t, "PAYLOAD_INVALID", send("control.next", "invalid", invalid)["code"])
 	}
@@ -224,7 +241,10 @@ func TestWebSocketControlMutationReplay(t *testing.T) {
 	require.Equal(t, "noop", replayed["outcome"])
 	require.Equal(t, true, replayed["replayed"])
 	require.Equal(t, first["committed"], replayed["committed"])
-	payload = `{"positionMs":0,"mutationId":"denied","idempotencyScopeId":"` + scope + `"}`
+	seekPayload := playbackControlContext(state)
+	seekPayload["mutationId"], seekPayload["idempotencyScopeId"] = "denied", scope
+	seekPayload["positionMs"] = 0
+	payload = encodePayloadForTest(seekPayload)
 	first = send("control.seek", "denied", payload)
 	require.Equal(t, "NO_CURRENT_TRACK", first["code"])
 	replayed = send("control.seek", "denied-retry", payload)
@@ -247,11 +267,14 @@ func TestGuestCanSeekButCannotCutAnotherUsersTrack(t *testing.T) {
 	readUntilType(t, member, "enqueue.ack")
 	connection := dialWebSocket(t, server, guest.SessionToken, "lounge")
 	defer connection.CloseNow()
-	readUntilType(t, connection, "player.state")
-	require.NoError(t, connection.Write(ctx, websocket.MessageText, []byte(`{"type":"control.next","requestId":"guest-next","payload":{}}`)))
+	guestState := readUntilType(t, connection, "player.state").Payload.(map[string]any)
+	nextPayload := playbackControlContext(guestState)
+	require.NoError(t, connection.Write(ctx, websocket.MessageText, []byte(`{"type":"control.next","requestId":"guest-next","payload":`+encodePayloadForTest(nextPayload)+`}`)))
 	ack := readUntilType(t, connection, "control.ack")
 	require.Equal(t, "FORBIDDEN", ack.Payload.(map[string]any)["code"])
-	require.NoError(t, connection.Write(ctx, websocket.MessageText, []byte(`{"type":"control.seek","requestId":"guest-seek","payload":{"positionMs":1000}}`)))
+	seekPayload := playbackControlContext(guestState)
+	seekPayload["positionMs"] = 1000
+	require.NoError(t, connection.Write(ctx, websocket.MessageText, []byte(`{"type":"control.seek","requestId":"guest-seek","payload":`+encodePayloadForTest(seekPayload)+`}`)))
 	ack = readUntilType(t, connection, "control.ack")
 	require.Equal(t, "applied", ack.Payload.(map[string]any)["outcome"])
 
@@ -277,9 +300,13 @@ func TestGuestSharedRoomOperationsRemainOpen(t *testing.T) {
 	}
 	connection := dialWebSocket(t, server, guest.SessionToken, "lounge")
 	defer connection.CloseNow()
-	readUntilType(t, connection, "player.state")
+	guestState := readUntilType(t, connection, "player.state").Payload.(map[string]any)
 	for _, kind := range []string{"control.toggle-pause", "control.toggle-shuffle"} {
-		send(connection, kind, `{}`)
+		controlPayload := map[string]any{}
+		if kind == "control.toggle-pause" {
+			controlPayload = playbackControlContext(guestState)
+		}
+		send(connection, kind, encodePayloadForTest(controlPayload))
 		ack := readUntilType(t, connection, "control.ack")
 		require.Equal(t, "applied", ack.Payload.(map[string]any)["outcome"], kind)
 	}
@@ -290,9 +317,11 @@ func TestGuestSharedRoomOperationsRemainOpen(t *testing.T) {
 	readUntilType(t, connection, "queue.mutation.ack")
 	send(connection, "queue.reorder", `{"oldIndex":0,"newIndex":1,"mutationId":"guest-reorder"}`)
 	readUntilType(t, connection, "queue.reorder.ack")
-	send(member, "control.next", `{}`)
+	memberState := readUntilType(t, member, "player.state").Payload.(map[string]any)
+	send(member, "control.next", encodePayloadForTest(playbackControlContext(memberState)))
 	require.Equal(t, "applied", readUntilType(t, member, "control.ack").Payload.(map[string]any)["outcome"])
-	send(connection, "control.previous", `{}`)
+	guestState = readUntilType(t, connection, "player.state").Payload.(map[string]any)
+	send(connection, "control.previous", encodePayloadForTest(playbackControlContext(guestState)))
 	require.Equal(t, "applied", readUntilType(t, connection, "control.ack").Payload.(map[string]any)["outcome"])
 	queue, err = storesqlite.NewQueueRepository(store, time.Now).LoadQueue(ctx, "lounge")
 	require.NoError(t, err)
@@ -316,18 +345,26 @@ func TestAuthenticatedAdministratorBypassesPlaybackLocks(t *testing.T) {
 	}))
 	member := dialWebSocket(t, server, "member-token", "lounge")
 	defer member.CloseNow()
-	readUntilType(t, member, "player.state")
 	admin := dialWebSocket(t, server, "admin-token", "lounge")
 	defer admin.CloseNow()
 	readUntilType(t, admin, "player.state")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	memberState := readUntilType(t, member, "player.state").Payload.(map[string]any)
 	for kind, code := range map[string]string{"control.toggle-pause": "PAUSE_LOCKED", "control.toggle-shuffle": "SHUFFLE_LOCKED", "control.next": "SKIP_LOCKED"} {
-		require.NoError(t, member.Write(ctx, websocket.MessageText, []byte(`{"type":"`+kind+`","payload":{}}`)))
+		payload := map[string]any{}
+		if kind != "control.toggle-shuffle" {
+			payload = playbackControlContext(memberState)
+		}
+		require.NoError(t, member.Write(ctx, websocket.MessageText, []byte(`{"type":"`+kind+`","payload":`+encodePayloadForTest(payload)+`}`)))
 		require.Equal(t, code, readUntilType(t, member, "control.ack").Payload.(map[string]any)["code"])
 	}
 	for _, kind := range []string{"control.toggle-pause", "control.toggle-shuffle", "control.next"} {
-		require.NoError(t, admin.Write(ctx, websocket.MessageText, []byte(`{"type":"`+kind+`","payload":{}}`)))
+		payload := map[string]any{}
+		if kind != "control.toggle-shuffle" {
+			payload = playbackControlContext(memberState)
+		}
+		require.NoError(t, admin.Write(ctx, websocket.MessageText, []byte(`{"type":"`+kind+`","payload":`+encodePayloadForTest(payload)+`}`)))
 		require.Equal(t, "applied", readUntilType(t, admin, "control.ack").Payload.(map[string]any)["outcome"])
 	}
 }
@@ -341,7 +378,11 @@ func TestWebSocketControlAckCorrelationAndPreconditions(t *testing.T) {
 	require.NoError(t, connection.Write(ctx, websocket.MessageText, []byte(`{"type":"/enqueue","requestId":"r1","roomId":"lounge","payload":{"platform":"local","musicId":"track","mutationId":"m1"}}`)))
 	readUntilType(t, connection, "enqueue.ack")
 
-	require.NoError(t, connection.Write(ctx, websocket.MessageText, []byte(`{"type":"control.seek","requestId":"s1","payload":{"positionMs":1000}}`)))
+	require.NoError(t, connection.Write(ctx, websocket.MessageText, []byte(`{"type":"player.resync","payload":{}}`)))
+	state := readUntilType(t, connection, "player.state").Payload.(map[string]any)
+	seekPayload := playbackControlContext(state)
+	seekPayload["positionMs"] = 1000
+	require.NoError(t, connection.Write(ctx, websocket.MessageText, []byte(`{"type":"control.seek","requestId":"s1","payload":`+encodePayloadForTest(seekPayload)+`}`)))
 	ack := readUntilType(t, connection, "control.ack")
 	require.Equal(t, "s1", ack.RequestID)
 	require.Equal(t, "lounge", ack.RoomID)
@@ -352,7 +393,10 @@ func TestWebSocketControlAckCorrelationAndPreconditions(t *testing.T) {
 	require.GreaterOrEqual(t, committed["stateVersion"].(float64), float64(1))
 	require.GreaterOrEqual(t, committed["queueVersion"].(float64), float64(1))
 
-	require.NoError(t, connection.Write(ctx, websocket.MessageText, []byte(`{"type":"control.seek","requestId":"s2","payload":{"positionMs":1000,"expectedPlayEpoch":1}}`)))
+	seekPayload = playbackControlContext(state)
+	seekPayload["positionMs"] = 1000
+	seekPayload["playEpoch"] = 1
+	require.NoError(t, connection.Write(ctx, websocket.MessageText, []byte(`{"type":"control.seek","requestId":"s2","payload":`+encodePayloadForTest(seekPayload)+`}`)))
 	rejected := readUntilType(t, connection, "control.ack")
 	require.Equal(t, "s2", rejected.RequestID)
 	require.Equal(t, "lounge", rejected.RoomID)
@@ -414,7 +458,11 @@ func TestWebSocketSeekRequiresPositionAndAcceptsZero(t *testing.T) {
 	}
 
 	// The rejected inputs must not advance the epoch, and explicit zero is valid.
-	require.NoError(t, connection.Write(ctx, websocket.MessageText, []byte(`{"type":"control.seek","requestId":"zero","payload":{"positionMs":0,"expectedPlayEpoch":1}}`)))
+	require.NoError(t, connection.Write(ctx, websocket.MessageText, []byte(`{"type":"player.resync","payload":{}}`)))
+	state := readUntilType(t, connection, "player.state").Payload.(map[string]any)
+	seekPayload := playbackControlContext(state)
+	seekPayload["positionMs"] = 0
+	require.NoError(t, connection.Write(ctx, websocket.MessageText, []byte(`{"type":"control.seek","requestId":"zero","payload":`+encodePayloadForTest(seekPayload)+`}`)))
 	ack := readUntilType(t, connection, "control.ack")
 	require.Equal(t, "zero", ack.RequestID)
 	payload := ack.Payload.(map[string]any)

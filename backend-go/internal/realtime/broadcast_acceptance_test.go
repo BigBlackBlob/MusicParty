@@ -84,8 +84,8 @@ func TestEnqueueStartsExistingPendingSongWithConvergentPatch(t *testing.T) {
 			defer broadcaster.mu.Unlock()
 			patch := broadcaster.events[0].payload.(map[string]any)
 			require.Equal(t, []string{"priority"}, patch["queueIds"])
-			pending := patch["items"].([]storesqlite.QueueItem)
-			projected := append([]storesqlite.QueueItem{old[0]}, pending...)
+			pending := patch["items"].([]clientQueueItem)
+			projected := append(clientQueue(old[:1]), pending...)
 			require.Equal(t, snapshot["queue"], projected, "applying the patch to the old queue must match a full resync")
 		})
 	}

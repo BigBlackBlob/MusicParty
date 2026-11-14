@@ -34,7 +34,9 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
   let deferredQueueUpdate: DeferredQueueUpdate | null = null
   let likeToggleInProgress = false
   const pendingLikes = new Map<string, { music: Music; result: 'liked' | 'unliked'; actorId: string; previousLiked: boolean; previousPersonalLiked: boolean; acked: boolean }>()
-  const retryableCommands = new Map<string, { envelope: ClientEnvelope; scopeId: string; actorId: string; socketGeneration: number; expiresAt: number; kind: 'pause' | 'like' | 'unlike' | 'reorder' }>()
+  const pendingPause = new Map<string, boolean>()
+  const pendingControls = new Map<string, { kind: 'next' | 'previous' | 'seek'; previousPosition: number; previousLoading: boolean }>()
+  const retryableCommands = new Map<string, { envelope: ClientEnvelope; scopeId: string; actorId: string; socketGeneration: number; expiresAt: number; kind: 'pause' | 'next' | 'previous' | 'seek' | 'like' | 'unlike' | 'reorder' }>()
 
   function notifyFailure(message: string, type: 'warning' | 'error' = 'warning'): void {
     useToast().show({ title: '操作未生效', message, type, duration: 2200 })
@@ -89,12 +91,13 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
       if (!pending.acked) rollbackLike(pending.music, pending.actorId, pending.previousLiked, pending.previousPersonalLiked)
     }
     pendingLikes.clear()
+    pendingControls.clear()
     retryableCommands.clear()
   }
 
   function sendRetryableCommand(
     mutationId: string,
-    kind: 'pause' | 'like' | 'unlike' | 'reorder',
+    kind: 'pause' | 'next' | 'previous' | 'seek' | 'like' | 'unlike' | 'reorder',
     envelope: ClientEnvelope,
     timeoutMs: number,
     onTimeout: () => void,
@@ -134,12 +137,29 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
   function settleControl(ack: ControlAckServerEnvelope['payload']): void {
     if (!ack.mutationId) return
     const pending = retryableCommands.get(ack.mutationId)
-    if (!pending || pending.kind !== 'pause') return
+    if (!pending) return
     retryableCommands.delete(ack.mutationId)
     mutationBus.settleMutation(ack.mutationId)
-    if (ack.outcome === 'rejected') {
+    if (pending.kind === 'pause') {
+      const previousPaused = pendingPause.get(ack.mutationId)
+      pendingPause.delete(ack.mutationId)
+      if (ack.outcome !== 'applied') {
+        if (previousPaused !== undefined) runtime.isPaused = previousPaused
+        notifyFailure(ack.code || '播放控制未生效，请重试', 'error')
+        requestResync('pause-rejected', true)
+      }
+      return
+    }
+    const optimistic = pendingControls.get(ack.mutationId)
+    pendingControls.delete(ack.mutationId)
+    if (optimistic && ack.outcome !== 'applied') {
+      runtime.isLoading = optimistic.previousLoading
+      if (pending.kind === 'seek') {
+        runtime.remotePosition = optimistic.previousPosition
+        if (runtime.nowPlaying) runtime.nowPlaying.currentPosition = optimistic.previousPosition
+      }
       notifyFailure(ack.code || '播放控制未生效，请重试', 'error')
-      requestResync('pause-rejected', true)
+      requestResync(`${pending.kind}-rejected`, true)
     }
   }
 
@@ -209,14 +229,50 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
     if (!requireAuth()) return false
     if (!requireLive('播放服务尚未连接或同步，请稍后重试')) return false
     if (cooldown && !checkCooldown()) return false
-    if (realtimeClient.sendEnvelope({ type: destination, payload } as ClientEnvelope)) return true
+    if (destination === 'control.toggle-pause' || destination === 'control.toggle-shuffle') {
+      if (realtimeClient.sendEnvelope({ type: destination, payload } as ClientEnvelope)) return true
+    } else {
+      const kind = destination === 'control.next' ? 'next' : destination === 'control.previous' ? 'previous' : 'seek'
+      const mutationId = mutationBus.createMutationId(kind)
+      const previousPosition = runtime.nowPlaying?.currentPosition ?? 0
+      const previousLoading = runtime.isLoading
+      const envelope = {
+        type: destination,
+        payload: { ...payload, mutationId, idempotencyScopeId: runtime.idempotencyScopeId },
+      } as ClientEnvelope
+      const sent = sendRetryableCommand(mutationId, kind, envelope, 60_000, () => {
+        const optimistic = pendingControls.get(mutationId)
+        pendingControls.delete(mutationId)
+        if (optimistic) {
+          runtime.isLoading = optimistic.previousLoading
+          if (kind === 'seek') {
+            runtime.remotePosition = optimistic.previousPosition
+            if (runtime.nowPlaying) runtime.nowPlaying.currentPosition = optimistic.previousPosition
+          }
+        }
+        notifyFailure('播放控制确认超时，正在同步状态', 'error')
+        requestResync(`${kind}-timeout`, true)
+      })
+      if (!sent) return false
+      pendingControls.set(mutationId, { kind, previousPosition, previousLoading })
+      if (kind === 'seek') {
+        const positionMs = Number((payload as { positionMs?: number }).positionMs ?? 0)
+        runtime.remotePosition = positionMs
+        runtime.lastSyncTime = Date.now() + runtime.serverClockOffset
+        if (runtime.nowPlaying) runtime.nowPlaying.currentPosition = positionMs
+      } else {
+        runtime.isLoading = true
+      }
+      return true
+    }
     notifyFailure('指令没有发出，请等待连接恢复后再试', 'error')
     requestResync('control-send-failed', true)
     return false
   }
 
-  const playNext = (): boolean => sendControl('control.next', {})
-  const playPrevious = (): boolean => sendControl('control.previous', {})
+  const playbackContext = () => ({ playEpoch: runtime.nowPlaying?.playEpoch ?? runtime.lastPlayEpoch, queueId: runtime.nowPlaying?.queueId ?? '', stateVersion: runtime.lastStateVersion, positionMs: Math.round(runtime.nowPlaying?.currentPosition ?? 0), clientTime: Date.now() })
+  const playNext = (): boolean => sendControl('control.next', playbackContext())
+  const playPrevious = (): boolean => sendControl('control.previous', playbackContext())
   function togglePause(): boolean {
     if (mutationBus.hasMutationKind('pause')) return false
     if (!requireAuth()) return false
@@ -230,19 +286,24 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
     }
     if (!checkCooldown()) return false
     const mutationId = mutationBus.createMutationId('pause')
+    const previousPaused = runtime.isPaused
+    runtime.isPaused = !previousPaused
     const envelope: ClientEnvelope = {
       type: 'control.toggle-pause',
-      payload: { mutationId, idempotencyScopeId: runtime.idempotencyScopeId },
+      payload: { ...playbackContext(), mutationId, idempotencyScopeId: runtime.idempotencyScopeId },
     }
     if (sendRetryableCommand(mutationId, 'pause', envelope, 60_000, () => {
+      pendingPause.delete(mutationId)
+      runtime.isPaused = previousPaused
       notifyFailure('播放控制确认超时，正在同步状态', 'error')
       requestResync('pause-timeout', true)
-    })) return true
+    })) { pendingPause.set(mutationId, previousPaused); return true }
+    runtime.isPaused = previousPaused
     notifyFailure('播放控制没有发出，请等待连接恢复后再试', 'error')
     return false
   }
   const toggleShuffle = (): boolean => sendControl('control.toggle-shuffle', {})
-  const seek = (positionMs: number): boolean => sendControl('control.seek', { positionMs }, false)
+  const seek = (positionMs: number): boolean => sendControl('control.seek', { ...playbackContext(), positionMs }, false)
 
   async function toggleLike(music: Music | null | undefined): Promise<void> {
     if (!music || !requireAuth()) return
