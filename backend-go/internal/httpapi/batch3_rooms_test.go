@@ -59,7 +59,7 @@ func TestBatch3DeletingRoomDisconnectsWebSocket(t *testing.T) {
 		manager.CloseRoom(roomID)
 		hub.CloseRoom(roomID)
 	})
-	api := NewWebSocketAPI(cfg, store, accounts, rooms, hub, manager, NewPlatformAPI(cfg, nil))
+	api := NewWebSocketAPI(cfg, store, accounts, rooms, hub, manager, NewPlatformAPI(cfg))
 	server := httptest.NewServer(NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api))
 	defer server.Close()
 	connection := dialWebSocket(t, server, "owner-token", created.RoomID)

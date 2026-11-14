@@ -38,7 +38,7 @@ func websocketTestServerWithStore(t *testing.T) (*httptest.Server, *wsruntime.Hu
 	cfg := testConfig(t)
 	hub := wsruntime.NewHub(256)
 	manager := realtime.NewManager(store, 100, 5*time.Second, time.Hour, hub)
-	api := NewWebSocketAPI(cfg, store, accounts, rooms, hub, manager, NewPlatformAPI(cfg, nil, fixturePlatform{}))
+	api := NewWebSocketAPI(cfg, store, accounts, rooms, hub, manager, NewPlatformAPI(cfg, fixturePlatform{}))
 	server := httptest.NewServer(NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api))
 	t.Cleanup(func() {
 		server.Close()
@@ -122,7 +122,7 @@ func TestWebSocketProviderFailureIsNotReportedAsPersistenceFailure(t *testing.T)
 	cfg := testConfig(t)
 	hub := wsruntime.NewHub(256)
 	manager := realtime.NewManager(store, 100, 5*time.Second, time.Hour, hub)
-	api := NewWebSocketAPI(cfg, store, accounts, rooms, hub, manager, NewPlatformAPI(cfg, nil, fixturePlatform{err: errors.New("provider failed")}))
+	api := NewWebSocketAPI(cfg, store, accounts, rooms, hub, manager, NewPlatformAPI(cfg, fixturePlatform{err: errors.New("provider failed")}))
 	server := httptest.NewServer(NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api))
 	t.Cleanup(func() {
 		server.Close()
@@ -148,7 +148,7 @@ func TestWebSocketBilibiliTrackPersistsThroughFirstPlayback(t *testing.T) {
 	hub := wsruntime.NewHub(256)
 	manager := realtime.NewManager(store, 100, 5*time.Second, time.Hour, hub)
 	provider := namedFixturePlatform{fixturePlatform: fixturePlatform{playablePlatform: "bilibili"}, name: "bilibili"}
-	api := NewWebSocketAPI(cfg, store, accounts, rooms, hub, manager, NewPlatformAPI(cfg, nil, provider))
+	api := NewWebSocketAPI(cfg, store, accounts, rooms, hub, manager, NewPlatformAPI(cfg, provider))
 	server := httptest.NewServer(NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api))
 	t.Cleanup(func() {
 		server.Close()
@@ -522,7 +522,7 @@ func TestWebSocketAdminRoomCreationAndFailures(t *testing.T) {
 	cfg := testConfig(t)
 	hub := wsruntime.NewHub(256)
 	manager := realtime.NewManager(store, 100, 5*time.Second, time.Hour, hub)
-	api := NewWebSocketAPI(cfg, store, accounts, roomdomain.New(store, accounts), hub, manager, NewPlatformAPI(cfg, nil, fixturePlatform{}))
+	api := NewWebSocketAPI(cfg, store, accounts, roomdomain.New(store, accounts), hub, manager, NewPlatformAPI(cfg, fixturePlatform{}))
 	server := httptest.NewServer(NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api))
 	t.Cleanup(func() {
 		server.Close()

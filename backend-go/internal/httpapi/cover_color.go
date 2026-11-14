@@ -253,3 +253,17 @@ func dominantCoverColor(img image.Image) (coverPalette, error) {
 	accent := fmt.Sprintf("#%02x%02x%02x", r, g, b)
 	return coverPalette{accent, accent, fmt.Sprintf("rgba(%d, %d, %d, 0.16)", r, g, b), fmt.Sprintf("rgba(%d, %d, %d, 0.08)", r, g, b)}, nil
 }
+
+// requireCoverSession reads the account service per request, including after Routes.
+func (api *PlatformAPI) requireCoverSession(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		api.mu.RLock()
+		accounts := api.accounts
+		api.mu.RUnlock()
+		if accounts == nil {
+			writeErrorJSON(w, http.StatusUnauthorized, map[string]string{"message": "Authentication required"})
+			return
+		}
+		RequireSession(accounts)(next).ServeHTTP(w, r)
+	})
+}

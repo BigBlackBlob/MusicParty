@@ -88,11 +88,7 @@ func run() error {
 	if databaseStore != nil && cfg.LocalLibrary.Enabled {
 		services = append(services, localplatform.New(storesqlite.NewLocalTrackRepository(databaseStore)))
 	}
-	var accountService *accountdomain.Service
-	if databaseStore != nil {
-		accountService = accountdomain.New(databaseStore)
-	}
-	platformAPI := httpapi.NewPlatformAPI(cfg, accountService, services...)
+	platformAPI := httpapi.NewPlatformAPI(cfg, services...)
 	var authAPI *httpapi.AuthAPI
 	var roomAPI *httpapi.RoomAPI
 	var playlistAPI *httpapi.PlaylistAPI
@@ -103,8 +99,11 @@ func run() error {
 	var webSocketAPI *httpapi.WebSocketAPI
 	var realtimeManager *realtime.Manager
 	var socketHub *wsruntime.Hub
+	var accountService *accountdomain.Service
 	var roomService *roomdomain.Service
 	if databaseStore != nil {
+		accountService = accountdomain.New(databaseStore)
+		platformAPI.SetAccounts(accountService)
 		if cfg.Application.BootstrapAdminUsername != "" || cfg.Application.BootstrapAdminPassword != "" {
 			if err := accountService.Bootstrap(applicationContext, cfg.Application.BootstrapAdminUsername, cfg.Application.BootstrapAdminPassword); err != nil {
 				return fmt.Errorf("bootstrap administrator: %w", err)

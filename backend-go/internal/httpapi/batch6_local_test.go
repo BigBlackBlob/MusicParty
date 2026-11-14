@@ -18,7 +18,7 @@ func TestBatch6DisabledLocalRoutes(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.LocalLibrary.Enabled = false
 	store := httpStore(t)
-	api := NewMediaAPI(cfg, account.New(store), store, nil, NewPlatformAPI(cfg, nil), http.DefaultClient, nil)
+	api := NewMediaAPI(cfg, account.New(store), store, nil, NewPlatformAPI(cfg), http.DefaultClient, nil)
 	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
 	for _, route := range []struct{ method, path string }{
 		{"GET", "/api/local/tracks"}, {"POST", "/api/local/tracks/upload"},
@@ -46,7 +46,7 @@ func TestBatch6MetadataCannotResurrectDeletedTrack(t *testing.T) {
 	library, err := media.NewLocalLibrary(t.TempDir(), 1024, repository, transcoder)
 	require.NoError(t, err)
 	require.NoError(t, repository.Upsert(context.Background(), storesqlite.LocalTrack{ID: "deleted", Title: "old", Artists: []string{"a"}, Status: "DELETED", CreatedAt: 1, UpdatedAt: 1}))
-	api := NewMediaAPI(cfg, accounts, store, library, NewPlatformAPI(cfg, nil), http.DefaultClient, nil)
+	api := NewMediaAPI(cfg, accounts, store, library, NewPlatformAPI(cfg), http.DefaultClient, nil)
 	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
 	w := batch2Request(handler, "PATCH", "/api/local/tracks/deleted", `{"title":"edited"}`, "admin-token", "")
 	require.Equal(t, http.StatusNotFound, w.Code)

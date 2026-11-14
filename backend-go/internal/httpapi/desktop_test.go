@@ -23,7 +23,7 @@ func TestDesktopLyricsFormatsAndAuthentication(t *testing.T) {
 	store := httpStore(t)
 	insertStage5User(t, store, "lyrics-token", "member", "MEMBER")
 	cfg := testConfig(t)
-	api := NewDesktopAPI(cfg, account.New(store), nil, nil, NewPlatformAPI(cfg, nil, fixturePlatform{}))
+	api := NewDesktopAPI(cfg, account.New(store), nil, nil, NewPlatformAPI(cfg, fixturePlatform{}))
 	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
 	for _, namespace := range []string{"music", "media"} {
 		for _, authenticated := range []bool{false, true} {
@@ -69,7 +69,7 @@ func TestDesktopNeteaseWordLyricsRoutes(t *testing.T) {
 	store := httpStore(t)
 	insertStage5User(t, store, "word-lyrics-token", "member", "MEMBER")
 	cfg := testConfig(t)
-	api := NewDesktopAPI(cfg, account.New(store), nil, nil, NewPlatformAPI(cfg, nil, service))
+	api := NewDesktopAPI(cfg, account.New(store), nil, nil, NewPlatformAPI(cfg, service))
 	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
 	for _, tc := range []struct{ namespace, wantContentType string }{{"media", "application/json"}, {"music", "text/plain; charset=utf-8"}} {
 		request := httptest.NewRequest(http.MethodGet, "/api/desktop/v1/"+tc.namespace+"/netease/42/lyrics", nil)
@@ -119,7 +119,7 @@ func TestDesktopVersionGate(t *testing.T) {
 
 func TestDesktopDiscoveryAndInviteVersionBeforeCSRF(t *testing.T) {
 	cfg := testConfig(t)
-	api := NewDesktopAPI(cfg, nil, nil, nil, NewPlatformAPI(cfg, nil, fixturePlatform{}))
+	api := NewDesktopAPI(cfg, nil, nil, nil, NewPlatformAPI(cfg, fixturePlatform{}))
 	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
 	for _, path := range []string{"health", "capabilities"} {
 		response := httptest.NewRecorder()
@@ -151,7 +151,7 @@ func TestDesktopRoomCreation(t *testing.T) {
 	cfg := testConfig(t)
 	accounts := account.New(store)
 	broadcaster := &recordingBroadcaster{}
-	api := NewDesktopAPI(cfg, accounts, roomdomain.New(store, accounts), broadcaster, NewPlatformAPI(cfg, nil, fixturePlatform{}))
+	api := NewDesktopAPI(cfg, accounts, roomdomain.New(store, accounts), broadcaster, NewPlatformAPI(cfg, fixturePlatform{}))
 	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
 
 	post := func(token, csrf string, body string, withVersion bool) *httptest.ResponseRecorder {
@@ -223,7 +223,7 @@ func TestDesktopRoomCreationRequiresRegisteredAccount(t *testing.T) {
 	cfg := testConfig(t)
 	accounts := account.New(store)
 	rooms := roomdomain.New(store, accounts)
-	api := NewDesktopAPI(cfg, accounts, rooms, &recordingBroadcaster{}, NewPlatformAPI(cfg, nil, fixturePlatform{}))
+	api := NewDesktopAPI(cfg, accounts, rooms, &recordingBroadcaster{}, NewPlatformAPI(cfg, fixturePlatform{}))
 	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
 
 	post := func(token string, body string, withVersion bool) *httptest.ResponseRecorder {
@@ -286,7 +286,7 @@ func TestDesktopAlbumRoutes(t *testing.T) {
 	store := httpStore(t)
 	insertStage5User(t, store, "album-token", "album-member", "MEMBER")
 	cfg := testConfig(t)
-	api := NewDesktopAPI(cfg, account.New(store), nil, nil, NewPlatformAPI(cfg, nil, fixturePlatform{}))
+	api := NewDesktopAPI(cfg, account.New(store), nil, nil, NewPlatformAPI(cfg, fixturePlatform{}))
 	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
 	get := func(path string, withVersion bool, token string) *httptest.ResponseRecorder {
 		request := httptest.NewRequest(http.MethodGet, path, nil)
@@ -357,7 +357,7 @@ func TestDesktopAlbumRoutes(t *testing.T) {
 
 	// A configured netease provider is the one that answers album queries.
 	neteaseHandler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(),
-		NewDesktopAPI(cfg, account.New(store), nil, nil, NewPlatformAPI(cfg, nil, neteaseFixture{})))
+		NewDesktopAPI(cfg, account.New(store), nil, nil, NewPlatformAPI(cfg, neteaseFixture{})))
 	neteaseCapabilities := httptest.NewRecorder()
 	neteaseHandler.ServeHTTP(neteaseCapabilities, httptest.NewRequest(http.MethodGet, "/api/desktop/v1/capabilities", nil))
 	require.NoError(t, json.Unmarshal(neteaseCapabilities.Body.Bytes(), &advertised))

@@ -37,7 +37,7 @@ func (f *batch9Platform) PlaylistSongs(context.Context, string, int, int) ([]pla
 func TestBatch9PlatformInputRejectedBeforeProvider(t *testing.T) {
 	cfg := testConfig(t)
 	provider := &batch9Platform{}
-	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewPlatformAPI(cfg, nil, provider))
+	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewPlatformAPI(cfg, provider))
 	for _, path := range []string{"/api/search/local/song", "/api/playlist/songs/local/list"} {
 		for _, query := range []string{"offset=-1", "offset=10001", "offset=oops", "offset=9223372036854775808", "limit=-1", "limit=0", "limit=501", "limit=nope"} {
 			t.Run(path+query, func(t *testing.T) {
@@ -63,7 +63,7 @@ func TestBatch9RESTAndWSRejectInvalidMusicWithoutPartialWrites(t *testing.T) {
 	server, _, store := websocketTestServerWithStore(t)
 	accounts := account.New(store)
 	cfg := testConfig(t)
-	api := NewPlaylistAPI(cfg, store, accounts, roomdomain.New(store, accounts), NewPlatformAPI(cfg, nil))
+	api := NewPlaylistAPI(cfg, store, accounts, roomdomain.New(store, accounts), NewPlatformAPI(cfg))
 	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
 	users := storesqlite.NewUserPlaylistRepository(store, time.Now, nil)
 	rooms := storesqlite.NewRoomPlaylistRepository(store, time.Now, nil)

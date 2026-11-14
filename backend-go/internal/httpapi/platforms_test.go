@@ -117,7 +117,9 @@ func TestPlatformRoutesMatchFrozenGoldenStatuses(t *testing.T) {
 	store := httpStore(t)
 	accounts := account.New(store)
 	insertStage5User(t, store, "route-token", "listener", "MEMBER")
-	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewPlatformAPI(cfg, accounts, fixturePlatform{}))
+	api := NewPlatformAPI(cfg, fixturePlatform{})
+	api.SetAccounts(accounts)
+	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
 	for _, test := range []struct {
 		path   string
 		status int
@@ -135,7 +137,7 @@ func TestPlatformRoutesMatchFrozenGoldenStatuses(t *testing.T) {
 func TestPlatformRouteDecodesEncodedPlatformNames(t *testing.T) {
 	cfg := testConfig(t)
 	service := namedFixturePlatform{fixturePlatform: fixturePlatform{}, name: "subsonic-local-navi@lounge"}
-	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewPlatformAPI(cfg, nil, service))
+	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewPlatformAPI(cfg, service))
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/search/subsonic-local-navi%40lounge/song", nil))
 	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
@@ -144,7 +146,7 @@ func TestPlatformRouteDecodesEncodedPlatformNames(t *testing.T) {
 func TestPlatformSearchDecodesEncodedKeywordWithEncodedPlatform(t *testing.T) {
 	cfg := testConfig(t)
 	service := &searchCapturePlatform{name: "subsonic-local-navi@lounge"}
-	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewPlatformAPI(cfg, nil, service))
+	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewPlatformAPI(cfg, service))
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/search/subsonic-local-navi%40lounge/%E5%B9%BB%E6%83%B3", nil))
 	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
@@ -153,7 +155,7 @@ func TestPlatformSearchDecodesEncodedKeywordWithEncodedPlatform(t *testing.T) {
 
 func TestPlatformUpstreamFailureIsBadGateway(t *testing.T) {
 	cfg := testConfig(t)
-	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewPlatformAPI(cfg, nil, fixturePlatform{err: errors.New("upstream")}))
+	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewPlatformAPI(cfg, fixturePlatform{err: errors.New("upstream")}))
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/search/local/x", nil))
 	require.Equal(t, http.StatusBadGateway, response.Code)
@@ -173,7 +175,7 @@ func TestNeteaseErrorsAreClassified(t *testing.T) {
 		{name: "upstream failure", err: &platform.UpstreamError{Status: http.StatusBadGateway}, want: "网易云 API 服务异常"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewPlatformAPI(cfg, nil, neteaseFixture{err: test.err}))
+			handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewPlatformAPI(cfg, neteaseFixture{err: test.err}))
 			for _, path := range []string{"/api/search/netease/x", "/api/playlist/songs/netease/id"} {
 				response := httptest.NewRecorder()
 				handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
@@ -185,7 +187,7 @@ func TestNeteaseErrorsAreClassified(t *testing.T) {
 }
 func TestRestrictedPlatformRequiresToken(t *testing.T) {
 	cfg := testConfig(t)
-	api := NewPlatformAPI(cfg, nil, fixturePlatform{})
+	api := NewPlatformAPI(cfg, fixturePlatform{})
 	api.SetAccess("local", func(context.Context, string) bool { return false })
 	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
 	response := httptest.NewRecorder()
@@ -195,7 +197,7 @@ func TestRestrictedPlatformRequiresToken(t *testing.T) {
 
 func TestRestrictedPlatformsUseSessionCookie(t *testing.T) {
 	cfg := testConfig(t)
-	api := NewPlatformAPI(cfg, nil, fixturePlatform{})
+	api := NewPlatformAPI(cfg, fixturePlatform{})
 	api.SetAccess("local", func(_ context.Context, token string) bool { return token == "session-token" })
 	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
 
@@ -224,7 +226,7 @@ func TestRestrictedPlatformsUseSessionCookie(t *testing.T) {
 }
 
 func TestPlatformAccessPolicyCanChangeConcurrentlyWithChecks(t *testing.T) {
-	api := NewPlatformAPI(config.Config{}, nil)
+	api := NewPlatformAPI(config.Config{})
 	check := func(context.Context, string) bool { return true }
 	var wg sync.WaitGroup
 	for range 8 {

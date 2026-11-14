@@ -144,7 +144,8 @@ func TestUpstreamCoverCacheAndSession(t *testing.T) {
 	store := httpStore(t)
 	accounts := account.New(store)
 	insertStage5User(t, store, "cover-token", "listener", "MEMBER")
-	api := NewPlatformAPI(testConfig(t), accounts)
+	api := NewPlatformAPI(testConfig(t))
+	api.SetAccounts(accounts)
 	// Only this fixture redirects TLS connections to a local server. Production
 	// uses publicCoverControl, covered by the DNS test above.
 	api.coverClient = upstream.Client()
@@ -180,7 +181,8 @@ func TestLiveCoverColors(t *testing.T) {
 	store := httpStore(t)
 	accounts := account.New(store)
 	insertStage5User(t, store, "live-cover-token", "listener", "MEMBER")
-	api := NewPlatformAPI(testConfig(t), accounts)
+	api := NewPlatformAPI(testConfig(t))
+	api.SetAccounts(accounts)
 	router := chi.NewRouter()
 	api.Routes(router)
 	defer api.coverClient.CloseIdleConnections()
@@ -207,7 +209,7 @@ func TestCoverFailuresAreNotCachedOrRedirected(t *testing.T) {
 		http.Redirect(w, r, "/redirect-target", http.StatusFound)
 	}))
 	defer upstream.Close()
-	api := NewPlatformAPI(testConfig(t), nil)
+	api := NewPlatformAPI(testConfig(t))
 	api.coverClient = &http.Client{Timeout: 5 * time.Second, CheckRedirect: noCoverRedirect}
 	for range 2 {
 		_, err := api.upstreamColor(context.Background(), upstream.URL)
@@ -225,7 +227,7 @@ func TestCoverCacheEvictsAtCapacity(t *testing.T) {
 		_ = png.Encode(w, img)
 	}))
 	defer upstream.Close()
-	api := NewPlatformAPI(testConfig(t), nil)
+	api := NewPlatformAPI(testConfig(t))
 	api.coverClient = upstream.Client()
 	for i := range 256 {
 		api.colors[fmt.Sprint(i)] = cachedCoverColor{expiresAt: time.Now().Add(time.Minute + time.Duration(i)*time.Second)}
@@ -235,4 +237,28 @@ func TestCoverCacheEvictsAtCapacity(t *testing.T) {
 	require.Len(t, api.colors, 256)
 	require.NotContains(t, api.colors, "0")
 	require.Contains(t, api.colors, upstream.URL)
+}
+
+func TestCoverAuthenticationCanBeConfiguredAfterRoutes(t *testing.T) {
+	api := NewPlatformAPI(testConfig(t))
+	router := chi.NewRouter()
+	api.Routes(router)
+	path := "/api/theme/extract-cover-color?url=https://evil.test/x"
+	assertUnauthorized := func(token string) {
+		t.Helper()
+		w := batch2Request(router, "GET", path, "", token, "")
+		require.Equal(t, http.StatusUnauthorized, w.Code)
+		require.JSONEq(t, `{"message":"Authentication required"}`, w.Body.String())
+	}
+	assertUnauthorized("cover-token")
+	store := httpStore(t)
+	accounts := account.New(store)
+	insertStage5User(t, store, "cover-token", "listener", "MEMBER")
+	api.SetAccounts(accounts)
+	assertUnauthorized("")
+	assertUnauthorized("invalid-token")
+	w := batch2Request(router, "GET", path, "", "cover-token", "")
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	api.SetAccounts(nil)
+	assertUnauthorized("cover-token")
 }

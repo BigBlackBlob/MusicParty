@@ -33,7 +33,7 @@ func TestBatch5PasswordChangeClosesAllAccountConnections(t *testing.T) {
 	accounts.SetSessionsRevokedHook(hub.CloseSessionHashes)
 	manager := realtime.NewManager(store, 10, time.Second, time.Hour, hub)
 	defer manager.Close()
-	api := NewWebSocketAPI(cfg, store, accounts, roomdomain.New(store, accounts), hub, manager, NewPlatformAPI(cfg, nil))
+	api := NewWebSocketAPI(cfg, store, accounts, roomdomain.New(store, accounts), hub, manager, NewPlatformAPI(cfg))
 	server := httptest.NewServer(NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api))
 	defer server.Close()
 	readCtx, cancel := context.WithTimeout(ctx, 15*time.Second)

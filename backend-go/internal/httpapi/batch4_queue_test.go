@@ -48,7 +48,7 @@ func TestBatch4HTTPAndWebSocketShareCapacityAndRebuiltSnapshots(t *testing.T) {
 	manager := realtime.NewManager(store, 100, time.Second, time.Hour, hub, realtime.QueueLimits{MaxSize: 1, MaxUserSongs: 1, HistorySize: 2})
 	defer manager.Close()
 	defer hub.Close()
-	platforms := NewPlatformAPI(cfg, nil, fixturePlatform{})
+	platforms := NewPlatformAPI(cfg, fixturePlatform{})
 	playlists := NewPlaylistAPI(cfg, store, accounts, rooms, platforms)
 	playlists.SetRealtime(manager)
 	playlist, err := playlists.users.CreatePlaylist(ctx, "member", "Import")

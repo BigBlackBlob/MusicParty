@@ -25,18 +25,19 @@ import (
 )
 
 type PlatformAPI struct {
-	cfg          config.Config
+	cfg        config.Config
+	mu         sync.RWMutex
+	services   map[string]platform.Service
+	access     map[string]func(context.Context, string) bool
+	cacheMu    sync.Mutex
+	cache      map[string]cachedPlayable
+	coverSlots chan struct{}
+
 	accounts     *account.Service
 	coverClient  *http.Client
 	colorsMu     sync.Mutex
 	colors       map[string]cachedCoverColor
 	colorFlights singleflight.Group
-	mu           sync.RWMutex
-	services     map[string]platform.Service
-	access       map[string]func(context.Context, string) bool
-	cacheMu      sync.Mutex
-	cache        map[string]cachedPlayable
-	coverSlots   chan struct{}
 }
 
 type cachedPlayable struct {
@@ -58,20 +59,25 @@ func decodedURLParam(r *http.Request, name string) (string, error) {
 	return value, nil
 }
 
-func NewPlatformAPI(cfg config.Config, accounts *account.Service, services ...platform.Service) *PlatformAPI {
+func NewPlatformAPI(cfg config.Config, services ...platform.Service) (api *PlatformAPI) {
+	defer func() {
+		api.coverClient = newCoverClient()
+		api.colors = make(map[string]cachedCoverColor)
+	}()
 	m := make(map[string]platform.Service, len(services))
 	for _, service := range services {
 		if service != nil {
 			m[service.Name()] = service
 		}
 	}
-	return &PlatformAPI{
-		cfg: cfg, accounts: accounts, services: m,
-		access:      map[string]func(context.Context, string) bool{},
-		cache:       map[string]cachedPlayable{},
-		coverClient: newCoverClient(), colors: make(map[string]cachedCoverColor),
-		coverSlots: make(chan struct{}, 2),
-	}
+	return &PlatformAPI{cfg: cfg, services: m, access: map[string]func(context.Context, string) bool{}, cache: map[string]cachedPlayable{}, coverSlots: make(chan struct{}, 2)}
+}
+
+// SetAccounts configures session authentication for cover-color requests.
+func (api *PlatformAPI) SetAccounts(accounts *account.Service) {
+	api.mu.Lock()
+	defer api.mu.Unlock()
+	api.accounts = accounts
 }
 
 // PlatformAccess builds the same allowlist policy for startup configuration and live updates.
@@ -225,7 +231,7 @@ func (api *PlatformAPI) Routes(r chi.Router) {
 	r.Get("/api/user/search/{platform}/{keyword}", Adapt(api.searchUsers))
 	r.Get("/api/music/lyric/{platform}/{musicId}", Adapt(api.lyric))
 	r.Get("/api/music/lyric-detail/{platform}/{musicId}", Adapt(api.lyricDetail))
-	r.With(RequireSession(api.accounts)).Get("/api/theme/extract-cover-color", Adapt(api.coverColor))
+	r.With(api.requireCoverSession).Get("/api/theme/extract-cover-color", Adapt(api.coverColor))
 }
 func (api *PlatformAPI) config(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, map[string]string{"authorName": api.cfg.Application.AuthorName, "backWords": api.cfg.Application.BackWords})
