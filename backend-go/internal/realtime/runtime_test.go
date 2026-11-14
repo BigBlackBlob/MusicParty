@@ -206,6 +206,62 @@ func TestPlaybackFallbackCountsOnlyPlayingTime(t *testing.T) {
 	}, time.Second*2, time.Millisecond*20)
 }
 
+func TestPlaybackClockOwnerControlsStallsAndDisconnect(t *testing.T) {
+	store := realtimeStore(t)
+	manager := NewManager(store, 10, time.Second, time.Hour, &recordingBroadcaster{})
+	t.Cleanup(manager.Close)
+	runtime, err := manager.Room(context.Background(), "lounge")
+	require.NoError(t, err)
+	_, err = runtime.Enqueue(context.Background(), account.Session{PublicID: "user"}, storesqlite.Music{ID: "song", Duration: 60_000, Platform: "local"}, "one")
+	require.NoError(t, err)
+	snapshot, err := runtime.Snapshot(context.Background())
+	require.NoError(t, err)
+	now := snapshot["nowPlaying"].(map[string]any)
+	report := PlaybackReport{PlayEpoch: now["playEpoch"].(int64), QueueID: now["queueId"].(string), DurationMS: 60_000}
+	require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.started", report, nil, "owner"))
+	require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.stalled", report, nil, "other"))
+	snapshot, err = runtime.Snapshot(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "playing", snapshot["nowPlaying"].(map[string]any)["sessionState"])
+	require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.stalled", report, nil, "owner"))
+	require.NoError(t, runtime.PlaybackConnectionClosed(context.Background(), "owner"))
+	snapshot, err = runtime.Snapshot(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "playing", snapshot["nowPlaying"].(map[string]any)["sessionState"])
+}
+
+func TestReadyTimeoutStartsClockButPausePreventsIt(t *testing.T) {
+	for _, paused := range []bool{false, true} {
+		t.Run(fmt.Sprintf("paused=%t", paused), func(t *testing.T) {
+			store := realtimeStore(t)
+			manager := NewManager(store, 10, time.Second, time.Hour, &recordingBroadcaster{})
+			t.Cleanup(manager.Close)
+			runtime, err := manager.Room(context.Background(), "lounge")
+			require.NoError(t, err)
+			_, err = runtime.Enqueue(context.Background(), account.Session{PublicID: "user"}, storesqlite.Music{ID: "song", Duration: 60_000, Platform: "local"}, "one")
+			require.NoError(t, err)
+			_, err = runtime.Execute(context.Background(), func(rt *RoomRuntime, _ context.Context) (any, error) {
+				rt.state.Paused = paused
+				rt.sessionStateSince = time.Now().Add(-readyGraceMS - time.Second)
+				rt.onTick(time.Now())
+				return nil, nil
+			})
+			require.NoError(t, err)
+			if !paused {
+				require.Eventually(t, func() bool {
+					snapshot, e := runtime.Snapshot(context.Background())
+					return e == nil && snapshot["nowPlaying"].(map[string]any)["sessionState"] == "playing"
+				}, 2*time.Second, 20*time.Millisecond)
+			}
+			snapshot, err := runtime.Snapshot(context.Background())
+			require.NoError(t, err)
+			if paused {
+				require.Equal(t, "ready", snapshot["nowPlaying"].(map[string]any)["sessionState"])
+			}
+		})
+	}
+}
+
 func TestPauseFreezesCurrentPosition(t *testing.T) {
 	store := realtimeStore(t)
 	manager := NewManager(store, 10, time.Second, time.Hour, &recordingBroadcaster{})

@@ -123,7 +123,10 @@ func (api *WebSocketAPI) handle(w http.ResponseWriter, r *http.Request) {
 		client.Close(websocket.StatusInternalError, "Room unavailable")
 		return
 	}
-	defer func() { _ = runtime.Detach(context.Background()) }()
+	defer func() {
+		_ = runtime.PlaybackConnectionClosed(context.Background(), client.ID)
+		_ = runtime.Detach(context.Background())
+	}()
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	writeDone := make(chan error, 1)
@@ -228,7 +231,7 @@ func (api *WebSocketAPI) dispatch(ctx context.Context, client *wsruntime.Client,
 		if json.Unmarshal(envelope.Payload, &report) != nil || report.PlayEpoch <= 0 || report.QueueID == "" {
 			return
 		}
-		_ = runtime.ReportPlayback(ctx, kind, report, &session.PublicID)
+		_ = runtime.ReportPlayback(ctx, kind, report, &session.PublicID, client.ID)
 	case "user.me":
 		_ = client.Send("user.me", "", api.currentUser(session))
 	case "users.online":
