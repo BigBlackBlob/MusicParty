@@ -276,6 +276,7 @@ type RoomRuntime struct {
 	currentQueueID      string
 	sessionState        string
 	sessionStateSince   time.Time
+	failedEpoch         int64
 	clockOwner          string
 	timeoutStartPending bool
 	eventWake           chan struct{}
@@ -1485,6 +1486,7 @@ func (r *RoomRuntime) logEventAt(kind, queueID string, epoch int64, result, reas
 }
 
 type PlaybackReport struct {
+	Code       string `json:"code"`
 	PlayEpoch  int64  `json:"playEpoch"`
 	QueueID    string `json:"queueId"`
 	PositionMS int64  `json:"positionMs"`
@@ -1513,6 +1515,31 @@ func (r *RoomRuntime) ReportPlayback(ctx context.Context, kind string, report Pl
 		nextState := clonePlaybackState(runtime.state)
 		nextSessionState := runtime.sessionState
 		switch kind {
+		case "playback.error":
+			if runtime.state.CurrentMusic == nil || runtime.failedEpoch == report.PlayEpoch || (runtime.sessionState != "ready" && (connection == "" || runtime.clockOwner != connection)) {
+				runtime.logEvent(kind, report.QueueID, "ignored", "not_owner_or_state", actor)
+				return nil, nil
+			}
+			reason, message := "unknown", "Playback failed after retrying"
+			switch report.Code {
+			case "stream-trial-only":
+				reason, message = "preview_only", "Only a preview is available for this track"
+			case "stream-unavailable":
+				reason, message = "unavailable", "This track is unavailable for streaming"
+			case "retries-exhausted":
+			default:
+				return nil, nil
+			}
+			music := runtime.state.CurrentMusic
+			payload := map[string]string{"queueId": report.QueueID, "musicId": music.ID, "name": music.Name, "platform": music.Platform, "reason": reason, "message": message}
+			epoch := runtime.state.PlayEpoch
+			if err := runtime.advance(ctx); err != nil {
+				return nil, err
+			}
+			runtime.failedEpoch = epoch
+			runtime.broadcast("player.failed", payload)
+			runtime.logEventAt(kind, report.QueueID, epoch, "applied", reason, actor)
+			return nil, nil
 		case "playback.started":
 			if runtime.sessionState != "ready" && runtime.sessionState != "stalled" {
 				runtime.logEvent(kind, report.QueueID, "ignored", "state", actor)

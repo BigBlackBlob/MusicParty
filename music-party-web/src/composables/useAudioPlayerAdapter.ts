@@ -36,7 +36,8 @@ export function useAudioPlayerAdapter() {
     playPrevious: commands.playPrevious,
     tryReconnect: coordinator.tryReconnect,
     requestSyncRefresh: coordinator.requestSyncRefresh,
-    reportPlayback: (type: 'playback.started' | 'playback.stalled' | 'playback.ended', payload: { playEpoch: number; queueId: string; positionMs?: number; clientTime?: number; durationMs?: number }) => {
+    reportPlayback: (type: 'playback.started' | 'playback.stalled' | 'playback.ended' | 'playback.error', payload: { playEpoch: number; queueId: string; positionMs?: number; clientTime?: number; durationMs?: number; code?: 'stream-trial-only' | 'stream-unavailable' | 'retries-exhausted' }) => {
+      if (type === 'playback.error') return realtimeClient.send(type, { playEpoch: payload.playEpoch, queueId: payload.queueId, code: payload.code ?? 'retries-exhausted' })
       if (type === 'playback.started') return realtimeClient.send(type, { playEpoch: payload.playEpoch, queueId: payload.queueId, positionMs: payload.positionMs ?? 0, clientTime: payload.clientTime ?? Date.now(), durationMs: payload.durationMs ?? 0 })
       if (type === 'playback.stalled') return realtimeClient.send(type, { playEpoch: payload.playEpoch, queueId: payload.queueId, positionMs: payload.positionMs ?? 0 })
       return realtimeClient.send(type, { playEpoch: payload.playEpoch, queueId: payload.queueId })

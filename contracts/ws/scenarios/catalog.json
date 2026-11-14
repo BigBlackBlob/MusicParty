@@ -16,6 +16,7 @@
     "enqueue.room-playlist",
     "history.list",
     "playback.ended",
+    "playback.error",
     "playback.stalled",
     "playback.started",
     "player.resync",

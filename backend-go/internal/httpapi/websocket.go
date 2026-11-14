@@ -227,7 +227,7 @@ func (api *WebSocketAPI) dispatch(ctx context.Context, client *wsruntime.Client,
 			return
 		}
 		_ = client.Send("sync.pong", "", map[string]any{"pingId": ping.PingID, "clientSendTime": *ping.ClientSendTime, "serverReceiveTime": time.Now().UnixMilli(), "serverSendTime": time.Now().UnixMilli()})
-	case "playback.started", "playback.stalled", "playback.ended":
+	case "playback.started", "playback.stalled", "playback.ended", "playback.error":
 		var report realtime.PlaybackReport
 		if json.Unmarshal(envelope.Payload, &report) != nil || report.PlayEpoch <= 0 || report.QueueID == "" {
 			return

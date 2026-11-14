@@ -77,6 +77,7 @@ func clientMessageSpecs() []messageSpec {
 		{"player.resync", fields()},
 		{"playback.started", fields("playEpoch", "number", "queueId", "string", "positionMs", "number", "clientTime", "number", "durationMs", "number")},
 		{"playback.stalled", fields("playEpoch", "number", "queueId", "string", "positionMs", "number")},
+		{"playback.error", fields("playEpoch", "number", "queueId", "string", "code", "\"stream-trial-only\" | \"stream-unavailable\" | \"retries-exhausted\"")},
 		{"playback.ended", fields("playEpoch", "number", "queueId", "string")},
 		{"playlist.add-items", fields("scope", "string", "playlistId", "string", "mutationId", "string", "items", "Music[]")},
 		{"playlist.create", fields("scope", "string", "name", "string", "mutationId", "string")},

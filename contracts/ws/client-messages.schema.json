@@ -918,6 +918,52 @@
         "payload": {
           "additionalProperties": false,
           "properties": {
+            "code": {
+              "type": "object",
+              "x-typescript-type": "\"stream-trial-only\" | \"stream-unavailable\" | \"retries-exhausted\""
+            },
+            "playEpoch": {
+              "type": "number"
+            },
+            "queueId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "playEpoch",
+            "queueId"
+          ],
+          "type": "object"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "playback.error"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
             "playEpoch": {
               "type": "number"
             },

@@ -19,6 +19,7 @@ export interface HistoryListClientEnvelope { type: "history.list"; requestId?: s
 export interface PlayerResyncClientEnvelope { type: "player.resync"; requestId?: string | null; roomId?: string | null; payload: { } }
 export interface PlaybackStartedClientEnvelope { type: "playback.started"; requestId?: string | null; roomId?: string | null; payload: { clientTime: number; durationMs: number; playEpoch: number; positionMs: number; queueId: string; } }
 export interface PlaybackStalledClientEnvelope { type: "playback.stalled"; requestId?: string | null; roomId?: string | null; payload: { playEpoch: number; positionMs: number; queueId: string; } }
+export interface PlaybackErrorClientEnvelope { type: "playback.error"; requestId?: string | null; roomId?: string | null; payload: { code: "stream-trial-only" | "stream-unavailable" | "retries-exhausted"; playEpoch: number; queueId: string; } }
 export interface PlaybackEndedClientEnvelope { type: "playback.ended"; requestId?: string | null; roomId?: string | null; payload: { playEpoch: number; queueId: string; } }
 export interface PlaylistAddItemsClientEnvelope { type: "playlist.add-items"; requestId?: string | null; roomId?: string | null; payload: { items: Music[]; mutationId: string; playlistId: string; scope: string; } }
 export interface PlaylistCreateClientEnvelope { type: "playlist.create"; requestId?: string | null; roomId?: string | null; payload: { mutationId: string; name: string; scope: string; } }
@@ -63,6 +64,7 @@ export type ClientEnvelope =
   | PlayerResyncClientEnvelope
   | PlaybackStartedClientEnvelope
   | PlaybackStalledClientEnvelope
+  | PlaybackErrorClientEnvelope
   | PlaybackEndedClientEnvelope
   | PlaylistAddItemsClientEnvelope
   | PlaylistCreateClientEnvelope

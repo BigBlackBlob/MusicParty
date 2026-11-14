@@ -744,3 +744,34 @@ func TestSeekWithoutMutationLogsActor(t *testing.T) {
 		return err == nil && actor.Valid && actor.String == "user"
 	}, time.Second, 10*time.Millisecond)
 }
+
+func TestPlaybackErrorOwnerValidationAndSingleAdvance(t *testing.T) {
+	for _, ready := range []bool{true, false} {
+		t.Run(fmt.Sprint(ready), func(t *testing.T) {
+			store := realtimeStore(t)
+			broadcaster := &recordingBroadcaster{}
+			manager := NewManager(store, 10, time.Second, time.Hour, broadcaster)
+			t.Cleanup(manager.Close)
+			runtime, err := manager.Room(context.Background(), "lounge")
+			require.NoError(t, err)
+			for _, id := range []string{"first", "second", "third"} {
+				_, err = runtime.Enqueue(context.Background(), account.Session{PublicID: "user"}, storesqlite.Music{ID: id, Duration: 60000, Platform: "local"}, id)
+				require.NoError(t, err)
+			}
+			n := nowPlaying(t, runtime)
+			report := PlaybackReport{PlayEpoch: n["playEpoch"].(int64), QueueID: n["queueId"].(string), Code: "stream-trial-only"}
+			if !ready {
+				require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.started", report, nil, "owner"))
+				require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.error", report, nil, "other"))
+				require.Equal(t, 0, broadcaster.count("player.failed"))
+			}
+			require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.error", report, nil, "owner"))
+			require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.error", report, nil, "owner"))
+			require.Equal(t, 1, broadcaster.count("player.failed"))
+			event, ok := broadcaster.last("player.failed")
+			require.True(t, ok)
+			require.Equal(t, "preview_only", event.payload.(map[string]string)["reason"])
+			require.Equal(t, "second", nowPlaying(t, runtime)["music"].(*storesqlite.PlayableMusic).ID)
+		})
+	}
+}

@@ -396,6 +396,14 @@ const clearStalledWatchdog = () => {
         watch(userVolumeRef, applyEffectiveVolume, { immediate: true });
     }
 
+    let reportedErrorEpoch = null;
+    const reportPlaybackError = (code, track = playerStore.nowPlaying) => {
+        const current = playerStore.nowPlaying;
+        if (!track?.queueId || track.playEpoch !== current?.playEpoch || track.queueId !== current?.queueId || reportedErrorEpoch === track.playEpoch) return;
+        reportedErrorEpoch = track.playEpoch;
+        playerStore.reportPlayback?.('playback.error', { playEpoch: track.playEpoch, queueId: track.queueId, code });
+    };
+
     // === 4. 错误重试机制 ===
     const handleError = () => {
         if (!playerStore.nowPlaying?.music?.url) return;
@@ -417,9 +425,22 @@ const clearStalledWatchdog = () => {
         if (retryCount.value >= 3) {
             isErrorState.value = true;
             audioRef.value?.pause();
+            reportPlaybackError('retries-exhausted');
             return;
         }
 
+        // Media elements do not expose an HTTP status/body. Probe only after a
+        // real media error, cancel the body, and ignore results for old epochs.
+        const failedTrack = playerStore.nowPlaying;
+        fetch(failedTrack.music.url, { headers: { Range: 'bytes=0-0' } }).then(async response => {
+            if (response.status === 422) {
+                const problem = await response.json();
+                const code = problem.code || problem.type?.split('/').pop();
+                if (code === 'stream-trial-only' || code === 'stream-unavailable') reportPlaybackError(code, failedTrack);
+            } else {
+                await response.body?.cancel();
+            }
+        }).catch(() => {});
         retryCount.value++;
         console.log(`Retry audio (${retryCount.value})...`);
         const scheduledTrackId = playerStore.nowPlaying?.music?.id;
