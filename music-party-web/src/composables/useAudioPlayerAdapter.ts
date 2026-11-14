@@ -30,7 +30,7 @@ export function useAudioPlayerAdapter() {
     set forceNextSyncSeek(value: boolean) { audio.forceNextSyncSeek = value },
     setPlaybackPosition: audio.setPlaybackPosition,
     getCurrentProgress: synchronizer.getCurrentProgress,
-    serverNow: () => Date.now() + runtime.serverClockOffset,
+    serverNow: () => Math.round(Date.now() + runtime.serverClockOffset),
     togglePause: commands.togglePause,
     playNext: commands.playNext,
     playPrevious: commands.playPrevious,
