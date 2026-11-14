@@ -32,8 +32,8 @@ var (
 const (
 	endedToleranceMS = int64(3000)
 	fallbackGraceMS  = int64(5000)
-	readyGraceMS     = 8000 * time.Millisecond
-	stallGraceMS     = 15000 * time.Millisecond
+	readyGrace       = 8000 * time.Millisecond
+	stallGrace       = 15000 * time.Millisecond
 )
 
 type Broadcaster interface {
@@ -1453,7 +1453,7 @@ func (r *RoomRuntime) onTick(now time.Time) {
 	if r.state.CurrentMusic == nil || r.state.Paused {
 		return
 	}
-	if (r.sessionState == "ready" && now.Sub(r.sessionStateSince) >= readyGraceMS) || (r.sessionState == "stalled" && now.Sub(r.sessionStateSince) >= stallGraceMS) {
+	if (r.sessionState == "ready" && now.Sub(r.sessionStateSince) >= readyGrace) || (r.sessionState == "stalled" && now.Sub(r.sessionStateSince) >= stallGrace) {
 		r.timeoutStartPending = true
 		return
 	}
@@ -1551,7 +1551,7 @@ func (r *RoomRuntime) ReportPlayback(ctx context.Context, kind string, report Pl
 			connection = connectionID[0]
 		}
 		nextState := clonePlaybackState(runtime.state)
-		nextSessionState := runtime.sessionState
+		var nextSessionState string
 		switch kind {
 		case "playback.error":
 			if runtime.state.CurrentMusic == nil || runtime.failedEpoch == report.PlayEpoch || (runtime.sessionState != "ready" && (connection == "" || runtime.clockOwner != connection)) {

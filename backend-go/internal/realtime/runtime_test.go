@@ -67,15 +67,6 @@ func realtimeStore(t *testing.T) *storesqlite.Store {
 	return store
 }
 
-func realtimeReport(runtime *RoomRuntime, kind string, epoch, positionMS, durationMS int64) error {
-	snapshot, err := runtime.Snapshot(context.Background())
-	if err != nil {
-		return err
-	}
-	nowPlaying := snapshot["nowPlaying"].(map[string]any)
-	return runtime.ReportPlayback(context.Background(), kind, PlaybackReport{PlayEpoch: epoch, QueueID: nowPlaying["queueId"].(string), PositionMS: positionMS, ClientTime: time.Now().UnixMilli(), DurationMS: durationMS}, nil)
-}
-
 func TestRoomRuntimeSerializesConcurrentMutationsAndDeduplicates(t *testing.T) {
 	store := realtimeStore(t)
 	broadcaster := &recordingBroadcaster{}
@@ -253,7 +244,7 @@ func TestReadyTimeoutStartsClockButPausePreventsIt(t *testing.T) {
 			require.NoError(t, err)
 			_, err = runtime.Execute(context.Background(), func(rt *RoomRuntime, _ context.Context) (any, error) {
 				rt.state.Paused = paused
-				rt.sessionStateSince = time.Now().Add(-readyGraceMS - time.Second)
+				rt.sessionStateSince = time.Now().Add(-readyGrace - time.Second)
 				rt.onTick(time.Now())
 				return nil, nil
 			})
@@ -288,7 +279,7 @@ func TestStallTimeoutResumesClock(t *testing.T) {
 	require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.started", report, nil, "owner"))
 	require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.stalled", report, nil, "owner"))
 	_, err = runtime.Execute(context.Background(), func(rt *RoomRuntime, _ context.Context) (any, error) {
-		rt.sessionStateSince = time.Now().Add(-stallGraceMS - time.Second)
+		rt.sessionStateSince = time.Now().Add(-stallGrace - time.Second)
 		rt.onTick(time.Now())
 		return nil, nil
 	})
@@ -308,7 +299,7 @@ func TestReadyTimeoutLetsEmptyRoomAdvance(t *testing.T) {
 	_, err = runtime.Enqueue(context.Background(), account.Session{PublicID: "user"}, storesqlite.Music{ID: "song", Duration: 10, Platform: "local"}, "one")
 	require.NoError(t, err)
 	_, err = runtime.Execute(context.Background(), func(rt *RoomRuntime, _ context.Context) (any, error) {
-		rt.sessionStateSince = time.Now().Add(-readyGraceMS - time.Second)
+		rt.sessionStateSince = time.Now().Add(-readyGrace - time.Second)
 		rt.onTick(time.Now())
 		return nil, nil
 	})
