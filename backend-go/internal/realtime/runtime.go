@@ -645,8 +645,8 @@ func (r *RoomRuntime) ToggleShuffleAs(ctx context.Context, admin bool, mutation 
 		return nil
 	}, func(s *storesqlite.PlaybackState) { s.Shuffle = !s.Shuffle })
 }
-func (r *RoomRuntime) Seek(ctx context.Context, requested int64, _ string, _ bool, expectedEpoch *int64, mutation ...ControlMutation) (ControlResult, error) {
-	return r.mutateStateChecked(ctx, "control.seek", requested, expectedEpoch, mutation, func(s storesqlite.PlaybackState) error {
+func (r *RoomRuntime) Seek(ctx context.Context, requested int64, publicID string, _ bool, expectedEpoch *int64, mutation ...ControlMutation) (ControlResult, error) {
+	return r.mutateStateChecked(WithControlActor(ctx, publicID), "control.seek", requested, expectedEpoch, mutation, func(s storesqlite.PlaybackState) error {
 		if expectedEpoch != nil && *expectedEpoch != s.PlayEpoch {
 			return ErrPreconditionFailed
 		}
@@ -1177,11 +1177,6 @@ func (r *RoomRuntime) mutateStateChecked(ctx context.Context, kind string, posit
 		if err := runtime.mutateStateDirect(ctx, mutate); err != nil {
 			return nil, err
 		}
-		var actor *string
-		if len(mutation) > 0 && mutation[0].ActorID != "" {
-			actor = &mutation[0].ActorID
-		}
-		runtime.logEvent(kind, runtime.currentQueueID, "applied", "", actor)
 		return ControlResult{Applied: true, Committed: runtime.watermark()}, nil
 	})
 	if err != nil {

@@ -38,12 +38,34 @@ func controlResultValue(value any) ControlResult {
 	return result
 }
 
+type controlActorKey struct{}
+
+// WithControlActor supplies the authenticated actor independently of idempotency.
+func WithControlActor(ctx context.Context, publicID string) context.Context {
+	return context.WithValue(ctx, controlActorKey{}, publicID)
+}
+
 // Scope and room are implicit in this runtime-owned map. Only completed
 // outcomes are cached; failed persistence can be retried with the same ID.
 func (r *RoomRuntime) executeControl(ctx context.Context, kind string, positionMS int64, epoch *int64, mutations []ControlMutation, apply func(*RoomRuntime, context.Context) (any, error)) (any, error) {
 	return r.Execute(ctx, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
+		applyAndLog := func() (any, error) {
+			value, err := apply(runtime, ctx)
+			if err == nil && controlResultValue(value).Applied {
+				actorID, _ := ctx.Value(controlActorKey{}).(string)
+				if actorID == "" && len(mutations) > 0 {
+					actorID = mutations[0].ActorID
+				}
+				var actor *string
+				if actorID != "" {
+					actor = &actorID
+				}
+				runtime.logEvent(kind, runtime.currentQueueID, "applied", "", actor)
+			}
+			return value, err
+		}
 		if len(mutations) == 0 {
-			return apply(runtime, ctx)
+			return applyAndLog()
 		}
 		m := mutations[0]
 		result := ControlResult{MutationID: m.MutationID}
@@ -75,7 +97,7 @@ func (r *RoomRuntime) executeControl(ctx context.Context, kind string, positionM
 		if len(runtime.controlMutations) >= controlMutationCapacity || runtime.controlCounts[m.ActorID] >= mutationActorCapacity {
 			return result, ErrMutationCapacity
 		}
-		value, err := apply(runtime, ctx)
+		value, err := applyAndLog()
 		result = controlResultValue(value)
 		result.MutationID = m.MutationID
 		record := controlRecord{fingerprint: fingerprint, result: result, err: err, expires: time.Now().Add(ControlMutationTTL)}

@@ -191,6 +191,7 @@ func (api *WebSocketAPI) dispatch(ctx context.Context, client *wsruntime.Client,
 		return
 	}
 	session = currentSession
+	ctx = realtime.WithControlActor(ctx, session.PublicID)
 	client.UpdateIdentity(currentSession)
 	if (kind == "rooms.create" || kind == "rooms.delete") && !session.Admin() {
 		api.event(client, "CONTROL_DENIED", "administrator required")

@@ -727,3 +727,20 @@ func queueIDs(items []storesqlite.QueueItem) []string {
 	}
 	return ids
 }
+
+func TestSeekWithoutMutationLogsActor(t *testing.T) {
+	store := realtimeStore(t)
+	manager := NewManager(store, 10, time.Second, time.Hour, &recordingBroadcaster{})
+	t.Cleanup(manager.Close)
+	runtime, err := manager.Room(context.Background(), "lounge")
+	require.NoError(t, err)
+	_, err = runtime.Enqueue(context.Background(), account.Session{PublicID: "user"}, storesqlite.Music{ID: "song", Duration: 60_000, Platform: "local"}, "one")
+	require.NoError(t, err)
+	_, err = runtime.Seek(context.Background(), 1000, "user", false, nil)
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		var actor sql.NullString
+		err := store.Reader().QueryRow(`select actor_public_id from playback_event_log where event_type='control.seek' and result='applied'`).Scan(&actor)
+		return err == nil && actor.Valid && actor.String == "user"
+	}, time.Second, 10*time.Millisecond)
+}
