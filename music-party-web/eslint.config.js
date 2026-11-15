@@ -5,7 +5,7 @@ import tsParser from '@typescript-eslint/parser';
 
 export default [
   {
-    ignores: ['dist/**', 'node_modules/**', 'playwright-report/**', 'test-results/**']
+    ignores: ['dist/**', 'node_modules/**', '.tmp/**', 'playwright-report/**', 'test-results/**']
   },
   js.configs.recommended,
   ...pluginVue.configs['flat/recommended'],

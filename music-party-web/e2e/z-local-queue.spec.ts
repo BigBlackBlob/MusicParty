@@ -141,7 +141,7 @@ test('local tracks use the Go search, queue priority reorder, multi-client sync,
   await uploadFixture(page, fourth)
 
   await enqueueLocalTrack(page, first)
-  await expect(page.locator('.track-title-marquee').getByText(first, { exact: true }).first()).toBeVisible({ timeout: 15_000 })
+  await expect(page.locator('.track-title').getByText(first, { exact: true }).first()).toBeVisible({ timeout: 15_000 })
   await enqueueLocalTrack(page, second)
   await enqueueLocalTrack(page, third)
   await expectQueueOrder(page, [second, third])
@@ -202,7 +202,7 @@ test('playback like settles through the server and remains after reload', async 
   await enqueueLocalTrack(page, title)
 
   await page.getByRole('dialog').getByRole('button', { name: /Close|关闭/ }).click()
-  await expect(page.locator('.track-title-marquee').getByText(title, { exact: true }).first()).toBeVisible({ timeout: 15_000 })
+  await expect(page.locator('.track-title').getByText(title, { exact: true }).first()).toBeVisible({ timeout: 15_000 })
   const heart = page.locator('.player-console button[aria-label="Like"], .player-console button[aria-label="Remove from liked"], .player-console button[aria-label="喜欢"], .player-console button[aria-label="取消喜欢"]')
   await expect(heart).toBeVisible({ timeout: 15_000 })
   await expect(heart).toHaveAttribute('aria-label', /^(Like|喜欢)$/)
@@ -296,5 +296,5 @@ test('local standby survives queue consumption and becomes the active element', 
   await page.locator('.player-console').getByRole('button', { name: /^(Next|下一首)$/ }).click()
   await expect.poll(() => elements.nth(1).evaluate(element => (element as HTMLAudioElement).paused)).toBe(false)
   await expect.poll(() => elements.nth(0).evaluate(element => (element as HTMLAudioElement).paused)).toBe(true)
-  await expect(page.locator('.track-title-marquee').getByText(second, { exact: true }).first()).toBeVisible()
+  await expect(page.locator('.track-title').getByText(second, { exact: true }).first()).toBeVisible()
 })

@@ -32,6 +32,9 @@ async function hidePlaybackStateGlyph(page: Page): Promise<void> {
       }
     }
   })
+  await page.locator('.player-play-button svg').evaluateAll((elements) => {
+    for (const element of elements) (element as SVGElement).style.visibility = 'hidden'
+  })
 }
 
 const settingsDynamicMasks = (page: Page) => [
