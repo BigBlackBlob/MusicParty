@@ -79,7 +79,7 @@ func run() error {
 	}
 	platformClient := platform.NewClient(15 * time.Second)
 	services := []platform.Service{
-		netease.New(platformClient, cfg.Platforms.Netease.BaseURL, neteaseCookie),
+		netease.New(platformClient, cfg.Platforms.Netease.BaseURL, neteaseCookie, cfg.Platforms.Netease.Quality),
 		bilibili.New(platformClient, cfg.Platforms.Bilibili.BaseURL, bilibiliCookie),
 		youtube.New(platformClient, cfg.Platforms.YouTube.Enabled, cfg.Platforms.YouTube.APIKey, cfg.Platforms.YouTube.MaxResults, cfg.Platforms.YouTube.YTDLPPath),
 		subsonic.New(platformClient, subsonic.Config{ID: "navidrome", BaseURL: cfg.Platforms.Navidrome.BaseURL, Username: cfg.Platforms.Navidrome.Username, Password: cfg.Platforms.Navidrome.Password, Client: cfg.Platforms.Navidrome.Client, Version: cfg.Platforms.Navidrome.APIVersion, ProxyPrefix: "/api/navidrome/cover", Enabled: cfg.Platforms.Navidrome.Enabled}),

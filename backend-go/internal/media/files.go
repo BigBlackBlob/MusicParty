@@ -49,6 +49,18 @@ func ServeFile(w http.ResponseWriter, r *http.Request, path, contentType, cacheC
 		contentType = mime.TypeByExtension(filepath.Ext(path))
 	}
 	if contentType == "" {
+		// Cache files use a content-neutral .media extension; sniff the first
+		// 512 bytes so the browser gets the correct audio/* type.
+		header := make([]byte, 512)
+		n, _ := file.Read(header)
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
+		if n > 0 {
+			contentType = http.DetectContentType(header[:n])
+		}
+	}
+	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
 	w.Header().Set("Content-Type", contentType)

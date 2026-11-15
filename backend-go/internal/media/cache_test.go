@@ -21,11 +21,11 @@ func TestCacheDownloadsAtomicallyAndEvictsLRU(t *testing.T) {
 	cache, err := NewCache(t.TempDir(), 4, server.Client(), 1, 2, 0, time.Millisecond)
 	require.NoError(t, err)
 	defer cache.Close()
-	require.NoError(t, cache.Submit("one", server.URL+"/one"))
+	require.NoError(t, cache.Submit("one", server.URL+"/one", nil))
 	path := waitCache(t, cache, "one")
 	require.FileExists(t, path)
 	require.NoFileExists(t, path+".part")
-	require.NoError(t, cache.Submit("two", server.URL+"/two"))
+	require.NoError(t, cache.Submit("two", server.URL+"/two", nil))
 	_ = waitCache(t, cache, "two")
 	_, oneExists := cache.Get("one")
 	require.False(t, oneExists)
@@ -44,8 +44,8 @@ func TestCacheRetriesTransientFailuresAndDeduplicatesInflightKey(t *testing.T) {
 	cache, err := NewCache(t.TempDir(), 1024, server.Client(), 1, 2, 2, time.Millisecond)
 	require.NoError(t, err)
 	defer cache.Close()
-	require.NoError(t, cache.Submit("local:same", server.URL))
-	require.NoError(t, cache.Submit("local:same", server.URL))
+	require.NoError(t, cache.Submit("local:same", server.URL, nil))
+	require.NoError(t, cache.Submit("local:same", server.URL, nil))
 	path := waitCache(t, cache, "local:same")
 	require.Equal(t, int32(3), requests.Load())
 	contents, err := os.ReadFile(path)
@@ -71,14 +71,14 @@ func TestCacheQueueFullAndCancellationRemovePartialFile(t *testing.T) {
 	root := t.TempDir()
 	cache, err := NewCache(root, 1024, server.Client(), 1, 1, 0, time.Millisecond)
 	require.NoError(t, err)
-	require.NoError(t, cache.Submit("one", server.URL))
+	require.NoError(t, cache.Submit("one", server.URL, nil))
 	select {
 	case <-started:
 	case <-time.After(time.Second):
 		t.Fatal("download did not start")
 	}
-	require.NoError(t, cache.Submit("two", server.URL))
-	require.ErrorIs(t, cache.Submit("three", server.URL), ErrDownloadQueueFull)
+	require.NoError(t, cache.Submit("two", server.URL, nil))
+	require.ErrorIs(t, cache.Submit("three", server.URL, nil), ErrDownloadQueueFull)
 	cache.Close()
 	cache.mu.Lock()
 	require.Zero(t, cache.reservedBytes)
@@ -87,7 +87,7 @@ func TestCacheQueueFullAndCancellationRemovePartialFile(t *testing.T) {
 	partials, err := filepath.Glob(filepath.Join(root, "*.part"))
 	require.NoError(t, err)
 	require.Empty(t, partials)
-	require.ErrorIs(t, cache.Submit("closed", server.URL), context.Canceled)
+	require.ErrorIs(t, cache.Submit("closed", server.URL, nil), context.Canceled)
 }
 
 func TestParseByteSize(t *testing.T) {

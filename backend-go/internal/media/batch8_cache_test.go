@@ -65,7 +65,7 @@ func TestBatch8DownloadEvictsUnreadPreexistingFile(t *testing.T) {
 	cache, err := NewCache(root, 10, upstream.Client(), 1, 1, 0, 0)
 	require.NoError(t, err)
 	defer cache.Close()
-	require.NoError(t, cache.Submit("new", upstream.URL))
+	require.NoError(t, cache.Submit("new", upstream.URL, nil))
 	_ = waitCache(t, cache, "new")
 	require.NoFileExists(t, old)
 	require.LessOrEqual(t, batch8DiskBytes(t, root), int64(10))
@@ -84,7 +84,7 @@ func TestBatch8UnknownLengthCannotOverflowPartialQuota(t *testing.T) {
 	cache, err := NewCache(root, 8, upstream.Client(), 1, 1, 0, 0)
 	require.NoError(t, err)
 	defer cache.Close()
-	require.NoError(t, cache.Submit("large", upstream.URL))
+	require.NoError(t, cache.Submit("large", upstream.URL, nil))
 	require.Eventually(t, func() bool {
 		cache.mu.Lock()
 		active := len(cache.inflight)
@@ -127,13 +127,13 @@ func TestBatch8PlayingFileKeepsItsQuotaUntilReleased(t *testing.T) {
 	require.True(t, ok)
 	defer release()
 	require.Equal(t, old, path)
-	require.NoError(t, cache.Submit("new", upstream.URL))
+	require.NoError(t, cache.Submit("new", upstream.URL, nil))
 	batch8WaitIdle(t, cache)
 	require.FileExists(t, old, "playing files cannot be evicted to free phantom space")
 	_, found := cache.Get("new")
 	require.False(t, found)
 	release()
-	require.NoError(t, cache.Submit("new", upstream.URL))
+	require.NoError(t, cache.Submit("new", upstream.URL, nil))
 	_ = waitCache(t, cache, "new")
 	require.NoFileExists(t, old)
 	batch8WaitIdle(t, cache)
@@ -168,7 +168,7 @@ func TestBatch8FileLimitRejectsKnownAndUnknownResponses(t *testing.T) {
 			cache, err := NewCache(root, 128, upstream.Client(), 1, 1, 2, 0, CacheOptions{MaxFileBytes: 32, ReservationBytes: 8})
 			require.NoError(t, err)
 			defer cache.Close()
-			require.NoError(t, cache.Submit("large", upstream.URL))
+			require.NoError(t, cache.Submit("large", upstream.URL, nil))
 			batch8WaitIdle(t, cache)
 			require.Zero(t, batch8DiskBytes(t, root))
 			_, cached := cache.Get("large")
@@ -201,7 +201,7 @@ func TestBatch8ConcurrentUnknownDownloadsShareOneQuota(t *testing.T) {
 	require.NoError(t, err)
 	defer cache.Close()
 	for _, key := range []string{"one", "two", "three"} {
-		require.NoError(t, cache.Submit(key, upstream.URL))
+		require.NoError(t, cache.Submit(key, upstream.URL, nil))
 	}
 	for range 3 {
 		select {
@@ -253,7 +253,7 @@ func TestBatch8TaskDeadlineBoundsRetryAfterAndBodyReads(t *testing.T) {
 			cache, err := NewCache(root, 128, upstream.Client(), 1, 1, 10, time.Millisecond, CacheOptions{TaskTTL: 500 * time.Millisecond, ReservationBytes: 16})
 			require.NoError(t, err)
 			defer cache.Close()
-			require.NoError(t, cache.Submit("slow", upstream.URL))
+			require.NoError(t, cache.Submit("slow", upstream.URL, nil))
 			batch8WaitIdle(t, cache)
 			require.EqualValues(t, 1, calls.Load())
 			require.Zero(t, batch8DiskBytes(t, root))
@@ -275,7 +275,7 @@ func TestBatch8FailedAttemptReleasesQuotaBeforeRetry(t *testing.T) {
 	cache, err := NewCache(t.TempDir(), 128, upstream.Client(), 1, 1, 1, time.Millisecond)
 	require.NoError(t, err)
 	defer cache.Close()
-	require.NoError(t, cache.Submit("retry", upstream.URL))
+	require.NoError(t, cache.Submit("retry", upstream.URL, nil))
 	_ = waitCache(t, cache, "retry")
 	batch8WaitIdle(t, cache)
 	require.EqualValues(t, 2, calls.Load())
@@ -320,7 +320,7 @@ func TestBatch8CacheDeadlineDoesNotShortenPlaybackProxy(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("playback did not start")
 	}
-	require.NoError(t, cache.Submit("slow", upstream.URL+"/cache"))
+	require.NoError(t, cache.Submit("slow", upstream.URL+"/cache", nil))
 	batch8WaitIdle(t, cache)
 	select {
 	case err := <-done:
