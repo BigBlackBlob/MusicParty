@@ -165,6 +165,15 @@ onBeforeUnmount(() => {
   box-shadow: none;
 }
 
+.layout-module-wrapper[data-id="queue"] {
+  background: var(--queue-panel);
+}
+
+.layout-column {
+  container-name: stage-column;
+  container-type: inline-size;
+}
+
 .module-list {
   scrollbar-width: none;
 }
@@ -175,7 +184,7 @@ onBeforeUnmount(() => {
 .edit-mode.module-list {
   padding: 1rem;
   border: 1px dashed var(--border-subtle);
-  background: rgba(var(--accent-rgb, 211, 194, 243), 0.02);
+  background: color-mix(in srgb, var(--accent) 2%, transparent);
 }
 
 .edit-mode-module {

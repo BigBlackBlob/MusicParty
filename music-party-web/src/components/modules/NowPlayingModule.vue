@@ -1,11 +1,11 @@
 <template>
-  <div class="flex h-full min-h-0 min-w-0 flex-col items-center justify-center overflow-hidden gap-5">
+  <div class="now-playing-layout flex h-full min-h-0 min-w-0 flex-col items-center overflow-hidden gap-5" :class="music ? 'is-playing' : 'is-empty'">
     <div
       v-if="music || player.isLoading || player.isBuffering || player.isErrorState"
-      class="now-playing-cover-stage relative flex min-h-0 w-full flex-1 items-center justify-center"
+      class="now-playing-cover-stage relative flex min-h-0 w-full items-center justify-center"
     >
       <div
-        class="now-playing-cover relative aspect-square shrink overflow-hidden rounded-xl bg-surface-raised album-shadow"
+        class="now-playing-cover relative aspect-square shrink-0 overflow-hidden rounded-xl bg-surface-raised"
         :class="player.isPaused ? 'saturate-[0.86]' : 'saturate-100'"
         @click="handleCoverClick"
       >
@@ -15,8 +15,6 @@
           class="h-full w-full"
           loading="eager"
         />
-        <div class="absolute inset-0 bg-gradient-to-b from-[var(--album-gradient-top)] via-transparent to-[var(--album-gradient-bottom)]" />
-        <div class="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-[var(--border-subtle)]" />
 
         <div v-if="player.isLoading || player.isBuffering" class="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-[var(--media-overlay)] text-text-primary backdrop-blur-xl">
           <div class="h-12 w-12 animate-spin rounded-full border-[3px] border-[var(--surface-control-active)] border-t-[var(--accent)]" />
@@ -30,32 +28,21 @@
       </div>
     </div>
 
-    <div v-else class="w-full min-h-0 flex-1" aria-hidden="true"></div>
-
-    <div class="pointer-events-none relative h-6 w-full shrink-0 -mt-6"
-         aria-hidden="true"
-         style="background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--surface-0) 60%, transparent))">
-    </div>
+    <div v-else class="now-playing-cover-stage relative flex min-h-0 w-full items-center justify-center" aria-hidden="true"></div>
 
     <div
-      class="player-console w-full shrink-0 flex flex-col bg-transparent px-4 py-5"
-      :class="music ? 'h-[256px]' : 'h-[204px]'"
+      class="player-console flex min-h-0 flex-col justify-end gap-1.5 bg-transparent pt-5"
     >
-      <div v-if="music" class="text-center">
+      <div v-if="music" class="shrink-0 text-center">
         <div class="mb-2 flex min-w-0 items-center justify-center gap-2">
           <span class="rounded bg-[var(--surface-control)] px-2 py-1 font-micro text-micro uppercase text-text-muted">{{ platformLabel }}</span>
           <span v-if="requesterName" class="min-w-0 max-w-[150px] truncate rounded bg-[var(--surface-control)] px-2 py-1 font-micro text-micro text-text-muted">{{ t('player.requestedBy', { name: requesterName }) }}</span>
         </div>
-        <div ref="titleViewportRef" class="track-title-marquee" :class="{ 'track-title-marquee--scroll': shouldScrollTitle }" :title="trackTitle">
-          <span ref="titleTrackRef" class="track-title-marquee__track">
-            <span>{{ trackTitle }}</span>
-            <span v-if="shouldScrollTitle" aria-hidden="true">{{ trackTitle }}</span>
-          </span>
-        </div>
-        <p class="mt-0.5 truncate font-title text-[14px] leading-tight text-primary/80">{{ artistLine }}</p>
+        <h1 class="track-title line-clamp-2 break-words font-extrabold" :title="trackTitle">{{ trackTitle }}</h1>
+        <p class="mt-0.5 truncate font-title text-[14px] leading-tight text-primary/80" :title="artistLine">{{ artistLine }}</p>
       </div>
 
-      <div class="mt-auto flex flex-col gap-3">
+      <div class="player-controls flex shrink-0 flex-col gap-3">
         <div class="flex items-center justify-center gap-3">
           <div class="flex items-center justify-end gap-1 w-14">
             <span v-if="!canSeek && durationMs > 0" class="material-symbols-outlined text-[12px] text-text-muted opacity-50" :title="t('player.onlyRequester')">lock</span>
@@ -76,85 +63,85 @@
           <span class="w-14 font-micro text-micro tabular-nums text-text-muted">{{ formatDuration(durationMs) }}</span>
         </div>
 
-        <div class="flex items-center justify-center gap-5">
+        <div class="player-transport flex w-full items-center justify-between gap-1">
           <button
-            class="flex h-11 w-11 items-center justify-center text-text-muted transition-colors hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] rounded-md"
-            :class="player.isShuffle ? 'text-primary' : ''"
+            class="player-icon-button"
+            :class="{ 'is-active': player.isShuffle }"
             :disabled="player.isShuffleLocked"
             @click="player.toggleShuffle"
             :aria-label="t('player.shuffle')"
             :title="t('player.shuffle')"
           >
-            <span class="material-symbols-outlined text-[20px]" :aria-label="playModeLabel" :title="playModeLabel">shuffle</span>
+            <Shuffle :stroke-width="1.75" aria-hidden="true" :title="playModeLabel" />
           </button>
           <button
-            class="flex h-12 w-12 items-center justify-center rounded-full text-text-secondary transition-all hover:bg-[var(--surface-control-hover)] hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
+            class="player-icon-button"
             :disabled="player.isSkipLocked || !player.canOperate || !player.historyCursor"
             @click="player.playPrevious"
             :aria-label="player.historyCursor ? t('player.prev') : t('player.prevUnavailable')"
             :title="player.historyCursor ? t('player.prev') : t('player.prevUnavailable')"
           >
-            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">skip_previous</span>
+            <SkipBack :stroke-width="1.75" aria-hidden="true" />
           </button>
           <button
-            class="flex h-[52px] w-[52px] items-center justify-center rounded-lg transition-colors active:bg-primary disabled:cursor-not-allowed disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
-            :class="music ? 'bg-primary text-on-primary shadow-lg hover:bg-[var(--accent-hover)]' : 'bg-surface-raised text-text-secondary shadow-none hover:bg-[var(--surface-control-hover)] hover:text-text-primary'"
+            class="player-play-button"
             :disabled="player.isPauseLocked && !player.isPaused"
             @click="player.togglePause"
             :aria-label="player.isPaused ? t('player.play') : t('player.pause')"
             :title="player.isPaused ? t('player.play') : t('player.pause')"
           >
-            <span v-if="player.isPaused" class="material-symbols-outlined text-[28px]" style="font-variation-settings: 'FILL' 1;">play_arrow</span>
-            <span v-else class="material-symbols-outlined text-[28px]" style="font-variation-settings: 'FILL' 1;">pause</span>
+            <Play v-if="player.isPaused" :stroke-width="1.75" fill="currentColor" aria-hidden="true" />
+            <Pause v-else :stroke-width="1.75" fill="currentColor" aria-hidden="true" />
           </button>
           <button
-            class="flex h-12 w-12 items-center justify-center rounded-full text-text-secondary transition-all hover:bg-[var(--surface-control-hover)] hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
+            class="player-icon-button"
             :disabled="player.isSkipLocked || !player.canOperate"
             @click="player.playNext"
             :aria-label="t('player.next')"
             :title="t('player.next')"
           >
-            <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">skip_next</span>
+            <SkipForward :stroke-width="1.75" aria-hidden="true" />
           </button>
           <button
-            class="flex h-11 w-11 items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-control-hover)] hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
-            :class="isLiked ? 'text-primary' : 'text-text-muted'"
+            class="player-icon-button"
+            :class="{ 'is-active': isLiked }"
             @click="toggleLike"
             :aria-label="isLiked ? t('player.unlike') : t('player.like')"
             :title="isLiked ? t('player.unlike') : t('player.like')"
           >
-            <span class="material-symbols-outlined text-[20px]" :style="isLiked ? `font-variation-settings: 'FILL' 1;` : ''">favorite</span>
+            <Heart :stroke-width="1.75" :fill="isLiked ? 'currentColor' : 'none'" aria-hidden="true" />
           </button>
           <button
-            class="flex h-11 w-11 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-[var(--surface-control-hover)] hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
+            class="player-icon-button"
             @click="saveCurrentToPersonalPlaylist"
             :aria-label="t('personalPlaylists.saveSong')"
             :title="t('personalPlaylists.saveSong')"
           >
-            <span class="material-symbols-outlined text-[20px]">playlist_add</span>
+            <ListPlus :stroke-width="1.75" aria-hidden="true" />
           </button>
         </div>
 
-        <div class="flex w-full items-center justify-between border-t border-border-subtle pt-2.5">
+        <div class="player-footer-row flex w-full items-center justify-between border-t border-border-subtle pt-2.5">
           <div class="flex min-w-0 items-center gap-3">
             <span class="material-symbols-outlined text-[20px] text-primary" style="font-variation-settings: 'FILL' 1;">graphic_eq</span>
             <div class="min-w-0 text-left">
-              <div class="font-micro text-micro uppercase leading-none text-text-muted">{{ t('player.nowPlayingIn') }}</div>
+              <div class="player-footer-label font-micro text-micro uppercase leading-none text-text-muted">{{ t('player.nowPlayingIn') }}</div>
               <div class="mt-1 flex items-center gap-1.5 truncate leading-none">
                 <span class="font-compact text-compact font-bold text-primary tabular-nums">{{ activeUserCount }}</span>
                 <span class="font-micro text-micro text-text-secondary uppercase">{{ t('settings.active') }}</span>
               </div>
             </div>
           </div>
-          <div class="flex items-center gap-4">
-            <div class="flex items-center gap-3">
-              <button class="flex items-center text-text-muted transition-colors hover:text-text-primary" @click="toggleMute" :aria-label="t('player.volume')" :title="t('player.volume')">
-                <span class="material-symbols-outlined text-[18px]">{{ uiStore.volume === 0 ? 'volume_off' : 'volume_up' }}</span>
+          <div class="flex min-w-0 items-center gap-2">
+            <div class="flex min-w-0 items-center gap-2">
+              <button class="player-icon-button player-icon-button--compact" @click="toggleMute" :aria-label="t('player.volume')" :title="t('player.volume')">
+                <VolumeX v-if="uiStore.volume === 0" :stroke-width="1.75" aria-hidden="true" />
+                <Volume2 v-else :stroke-width="1.75" aria-hidden="true" />
               </button>
-              <div class="relative flex items-center">
+              <div class="relative flex min-w-0 items-center">
                 <input
                   v-model.number="uiStore.volume"
-                  class="lounge-volume w-20"
+                  class="lounge-volume min-w-0 w-20"
                   min="0"
                   max="1"
                   step="0.01"
@@ -178,13 +165,13 @@
               </div>
             </div>
             <button
-              class="flex items-center justify-center text-primary transition-colors hover:text-text-primary"
+              class="player-icon-button player-icon-button--compact"
               :class="{ 'opacity-50': !isQueuePlaced }"
               :aria-label="t('nav.queue')"
               :title="t('nav.queue')"
               @click="toggleQueueModule"
             >
-              <span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">queue_music</span>
+              <ListMusic :stroke-width="1.75" aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -194,8 +181,9 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { Shuffle, SkipBack, Play, Pause, SkipForward, Heart, ListPlus, VolumeX, Volume2, ListMusic } from 'lucide-vue-next';
 import CoverImage from '../CoverImage.vue';
 import { useNowPlayingViewModel } from '../../composables/useNowPlayingViewModel';
 import { useLayoutStore } from '../../stores/layout';
@@ -227,9 +215,6 @@ const {
   toggleLike
 } = useNowPlayingViewModel({ artistSeparator: ' • ' });
 
-const titleViewportRef = ref(null);
-const titleTrackRef = ref(null);
-const shouldScrollTitle = ref(false);
 const volumeValueVisible = ref(false);
 let volumeValueTimer;
 
@@ -290,37 +275,66 @@ const showVolumeValueSoon = () => {
   hideVolumeValueSoon();
 };
 
-const measureTitleOverflow = () => {
-  const viewport = titleViewportRef.value;
-  const track = titleTrackRef.value;
-  if (!viewport || !track) return;
-  shouldScrollTitle.value = track.scrollWidth > viewport.clientWidth + 2;
-};
-
-let titleResizeObserver;
-
-onMounted(() => {
-  measureTitleOverflow();
-  if (typeof ResizeObserver !== 'undefined') {
-    titleResizeObserver = new ResizeObserver(measureTitleOverflow);
-    if (titleViewportRef.value) titleResizeObserver.observe(titleViewportRef.value);
-    if (titleTrackRef.value) titleResizeObserver.observe(titleTrackRef.value);
-  }
-});
-
 onBeforeUnmount(() => {
   clearTimeout(volumeValueTimer);
-  titleResizeObserver?.disconnect();
-});
-
-watch(trackTitle, async () => {
-  shouldScrollTitle.value = false;
-  await nextTick();
-  measureTitleOverflow();
 });
 </script>
 
 <style scoped>
+.now-playing-layout {
+  container-type: size;
+  --player-console-min-height: 204px;
+  justify-content: center;
+}
+
+.now-playing-layout.is-playing {
+  --player-console-min-height: 256px;
+}
+
+.now-playing-cover-stage,
+.player-console {
+  width: min(100cqw, calc(100cqh - var(--player-console-min-height) - 20px));
+  max-width: 100%;
+}
+
+.now-playing-cover-stage {
+  height: min(100cqw, calc(100cqh - var(--player-console-min-height) - 20px));
+  flex: none;
+}
+
+.player-console {
+  min-height: var(--player-console-min-height);
+  padding-bottom: 0;
+  flex: 0 1 auto;
+}
+
+.player-console > * {
+  width: 100%;
+}
+
+.player-footer-label {
+  white-space: nowrap;
+}
+
+.track-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-family: var(--font-display, Geist, sans-serif);
+  font-size: clamp(1.25rem, 1.8vw, 1.625rem);
+  line-height: 1.12;
+  letter-spacing: 0;
+  color: var(--text-primary);
+}
+
+.player-transport > .player-icon-button {
+  min-width: 24px;
+  flex: 0 1 44px;
+}
+
 .lounge-volume {
   accent-color: var(--accent);
 }
@@ -335,46 +349,15 @@ watch(trackTitle, async () => {
 
 .now-playing-cover {
   width: min(100cqw, 100cqh);
-  max-height: 100%;
+  height: min(100cqw, 100cqh);
+  aspect-ratio: 1 / 1;
+  flex: none;
+  border: 0;
+  outline: 0;
   min-width: 0;
 }
 
 .now-playing-cover-stage {
   container-type: size;
-}
-
-.track-title-marquee {
-  position: relative;
-  width: 100%;
-  overflow: hidden;
-  white-space: nowrap;
-  font-family: var(--font-display, Geist, sans-serif);
-  font-size: clamp(1.25rem, 1.8vw, 1.625rem);
-  font-weight: 800;
-  line-height: 1.12;
-  letter-spacing: 0;
-  color: var(--text-primary);
-}
-
-.track-title-marquee__track {
-  display: inline-flex;
-  gap: 2.5rem;
-  flex: 0 0 auto;
-  min-width: 0;
-  padding-inline: 0.25rem;
-  transform: translateX(0);
-}
-
-.track-title-marquee--scroll .track-title-marquee__track {
-  animation: title-marquee 12s linear infinite;
-}
-
-@keyframes title-marquee {
-  0%, 14% {
-    transform: translateX(0);
-  }
-  86%, 100% {
-    transform: translateX(calc(-50% - 1.25rem));
-  }
 }
 </style>

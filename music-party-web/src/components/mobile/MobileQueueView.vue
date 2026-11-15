@@ -1,7 +1,7 @@
 <template>
-  <section class="flex flex-col h-full bg-bg-base relative overflow-hidden">
+  <section class="flex flex-col h-full bg-transparent relative overflow-hidden">
     <!-- Header / Tab View -->
-    <header class="w-full z-40 bg-surface-panel border-b border-border-default pt-md px-md flex-shrink-0 safe-area-top">
+    <header class="w-full z-40 bg-transparent border-b border-border-default pt-md px-md flex-shrink-0 safe-area-top">
       <div class="flex justify-between items-center mb-md">
         <h1 class="font-title text-title text-text-primary">{{ roomStore.currentRoom?.name || 'Lounge' }}</h1>
         <div class="flex items-center">
@@ -61,7 +61,7 @@
             class="flex items-center p-sm rounded-xl transition-colors group cursor-pointer"
             :class="[
               isSelected(item.queueId) ? 'bg-accent-subtle' : 'hover:bg-surface-raised',
-              player.nowPlaying?.music?.id === item.music?.id ? 'border border-primary/20' : ''
+              player.nowPlaying?.music?.id === item.music?.id ? 'border border-[var(--border-accent)] bg-accent-subtle' : ''
             ]"
             @click="handleQueueItemClick(item.queueId)"
             @pointerdown="startLongPress(item.queueId)"
@@ -109,7 +109,7 @@
               v-for="(item, index) in visibleQueue"
               :key="item.queueId || `${item.music?.platform}:${item.music?.id}:${index}`"
               class="flex items-center p-sm rounded-xl transition-colors group cursor-pointer"
-              :class="[isSelected(item.queueId) ? 'bg-accent-subtle' : 'hover:bg-surface-raised', player.nowPlaying?.music?.id === item.music?.id ? 'border border-primary/20' : '']"
+              :class="[isSelected(item.queueId) ? 'bg-accent-subtle' : 'hover:bg-surface-raised', player.nowPlaying?.music?.id === item.music?.id ? 'border border-[var(--border-accent)] bg-accent-subtle' : '']"
               @click="handleQueueItemClick(item.queueId)"
             >
               <div class="relative w-[44px] h-[44px] rounded-md overflow-hidden flex-shrink-0 mr-sm"><CoverImage :src="item.music?.coverUrl" class="w-full h-full object-cover" /></div>

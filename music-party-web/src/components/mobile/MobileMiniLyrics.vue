@@ -118,7 +118,7 @@ const currentLineKey = computed(() => {
   font-weight: 700;
   line-height: 1.35;
   letter-spacing: 0;
-  text-shadow: 0 2px 14px var(--surface-glass-bg);
+  text-shadow: none;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow-wrap: anywhere;

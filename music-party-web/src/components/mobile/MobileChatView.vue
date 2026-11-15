@@ -1,7 +1,7 @@
 <template>
-  <section class="flex flex-col h-full bg-bg-base relative overflow-hidden">
+  <section class="flex flex-col h-full bg-transparent relative overflow-hidden">
     <!-- Header Section -->
-    <header class="z-20 bg-surface-panel border-b border-border-default pt-md px-md pb-3 flex flex-col gap-4 flex-shrink-0 safe-area-top">
+    <header class="z-20 bg-transparent border-b border-border-default pt-md px-md pb-3 flex flex-col gap-4 flex-shrink-0 safe-area-top">
       <div class="flex justify-between items-center">
         <h1 class="font-title text-title text-text-primary">{{ t('chat.title') }}</h1>
         <div class="flex items-center gap-2">

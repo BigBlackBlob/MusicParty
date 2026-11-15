@@ -1,10 +1,11 @@
 // src/stores/ui.js
 import { defineStore } from 'pinia';
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { STORAGE_KEYS } from '../constants/keys';
 import { httpClient as client } from '../transport/httpClient';
 import { musicApi } from '../api/music';
 import { withNavidromeResourceToken } from '../utils/audioUrl';
+import { deriveCoverTheme } from '../utils/coverTheme';
 
 export const useUiStore = defineStore('ui', () => {
     const mobileNowDensityOptions = ['compact', 'standard', 'relaxed'];
@@ -28,92 +29,8 @@ export const useUiStore = defineStore('ui', () => {
     const dynamicAccent = ref(null);
     const lastAccentCoverUrl = ref('');
 
-    const defaultAccentSet = {
-        dark: {
-            accent: '#d3c2f3',
-            accentHover: '#e0d4f7',
-            accentMuted: 'rgba(211, 194, 243, 0.15)',
-            accentSubtle: 'rgba(211, 194, 243, 0.08)',
-            borderAccent: 'rgba(211, 194, 243, 0.5)'
-        },
-        light: {
-            accent: '#7c5cbf',
-            accentHover: '#8d6ec8',
-            accentMuted: 'rgba(124, 92, 191, 0.12)',
-            accentSubtle: 'rgba(124, 92, 191, 0.06)',
-            borderAccent: 'rgba(124, 92, 191, 0.5)'
-        }
-    };
-
-    const parseHexColor = (accent) => {
-        if (!accent || !accent.startsWith('#') || accent.length !== 7) {
-            return null;
-        }
-        return {
-            r: parseInt(accent.slice(1, 3), 16),
-            g: parseInt(accent.slice(3, 5), 16),
-            b: parseInt(accent.slice(5, 7), 16)
-        };
-    };
-
-    const toHex = ({ r, g, b }) => `#${[r, g, b].map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('')}`;
-
-    const toRgba = ({ r, g, b }, alpha) => `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${alpha})`;
-
-    const relativeLuminance = ({ r, g, b }) => {
-        const channel = (value) => {
-            const normalized = value / 255;
-            return normalized <= 0.03928 ? normalized / 12.92 : Math.pow((normalized + 0.055) / 1.055, 2.4);
-        };
-        return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
-    };
-
-    const mix = (color, target, amount) => ({
-        r: color.r + (target.r - color.r) * amount,
-        g: color.g + (target.g - color.g) * amount,
-        b: color.b + (target.b - color.b) * amount
-    });
-
-    const normalizeAccentForTheme = (accentSet) => {
-        const defaults = isDarkMode.value ? defaultAccentSet.dark : defaultAccentSet.light;
-        const parsed = parseHexColor(accentSet?.accent);
-        if (!parsed) return accentSet || defaults;
-
-        let color = parsed;
-        if (isDarkMode.value) {
-            let guard = 0;
-            while (relativeLuminance(color) < 0.32 && guard < 6) {
-                color = mix(color, { r: 255, g: 255, b: 255 }, 0.18);
-                guard++;
-            }
-        } else {
-            let guard = 0;
-            while (relativeLuminance(color) > 0.22 && guard < 10) {
-                color = mix(color, { r: 0, g: 0, b: 0 }, 0.20);
-                guard++;
-            }
-        }
-
-        const hoverTarget = isDarkMode.value ? { r: 255, g: 255, b: 255 } : { r: 0, g: 0, b: 0 };
-        const hover = mix(color, hoverTarget, isDarkMode.value ? 0.14 : 0.10);
-
-        return {
-            accent: toHex(color),
-            accentHover: toHex(hover),
-            accentMuted: toRgba(color, isDarkMode.value ? 0.18 : 0.14),
-            accentSubtle: toRgba(color, isDarkMode.value ? 0.10 : 0.07),
-            borderAccent: toRgba(color, 0.5)
-        };
-    };
-
-    const deriveBorderAccent = (accent) => {
-        const color = parseHexColor(accent);
-        if (!color) {
-            return isDarkMode.value ? defaultAccentSet.dark.borderAccent : defaultAccentSet.light.borderAccent;
-        }
-        const { r, g, b } = color;
-        return `rgba(${r}, ${g}, ${b}, 0.5)`;
-    };
+    const activeTheme = computed(() => deriveCoverTheme(dynamicAccent.value?.accent, isDarkMode.value));
+    const stageGradient = computed(() => activeTheme.value.stageGradient);
 
     const syncThemeClass = (val) => {
         const root = document.documentElement;
@@ -124,14 +41,14 @@ export const useUiStore = defineStore('ui', () => {
 
     const syncAccentVariables = () => {
         const root = document.documentElement;
-        const defaults = isDarkMode.value ? defaultAccentSet.dark : defaultAccentSet.light;
-        const active = normalizeAccentForTheme(dynamicAccent.value || defaults);
-
+        const active = activeTheme.value;
         root.style.setProperty('--accent', active.accent);
         root.style.setProperty('--accent-hover', active.accentHover);
         root.style.setProperty('--accent-muted', active.accentMuted);
         root.style.setProperty('--accent-subtle', active.accentSubtle);
-        root.style.setProperty('--border-accent', active.borderAccent || deriveBorderAccent(active.accent));
+        root.style.setProperty('--border-accent', active.borderAccent);
+        root.style.setProperty('--stage-tint', active.stageTint);
+        root.style.setProperty('--stage-gradient', active.stageGradient);
     };
 
     const setForceMobileLayout = (val) => {
@@ -218,23 +135,22 @@ export const useUiStore = defineStore('ui', () => {
         }
     };
 
+    let accentRequestRevision = 0;
+    let pendingAccentUrl = '';
+
     const clearDynamicAccent = () => {
+        accentRequestRevision++;
+        pendingAccentUrl = '';
         lastAccentCoverUrl.value = '';
         dynamicAccent.value = null;
         syncAccentVariables();
     };
 
     const setDynamicAccent = (accentSet) => {
-        const normalized = normalizeAccentForTheme(accentSet);
-        dynamicAccent.value = {
-            ...normalized,
-            borderAccent: accentSet.borderAccent || normalized.borderAccent || deriveBorderAccent(accentSet.accent)
-        };
+        // Keep the extracted color, not a theme-normalized result, for subsequent theme switches.
+        dynamicAccent.value = accentSet;
         syncAccentVariables();
     };
-
-    let lastAccentRequestTime = 0;
-    const ACCENT_THROTTLE_MS = 2000;
 
     const updateAccentFromCover = async (coverUrl) => {
         if (!coverUrl) {
@@ -244,29 +160,31 @@ export const useUiStore = defineStore('ui', () => {
 
         const requestUrl = withNavidromeResourceToken(coverUrl);
 
-        if (requestUrl === lastAccentCoverUrl.value && dynamicAccent.value) {
-            return;
-        }
+        if (requestUrl === pendingAccentUrl) return;
+        const revision = ++accentRequestRevision;
+        pendingAccentUrl = '';
+        // Remember completed failures too, so remounted views keep the fallback.
+        if (requestUrl === lastAccentCoverUrl.value) return;
+        pendingAccentUrl = requestUrl;
 
-        // 节流：2 秒内不重复请求（防止 sync 广播风暴时重复拉取）
-        const now = Date.now();
-        if (now - lastAccentRequestTime < ACCENT_THROTTLE_MS) {
-            return;
-        }
-        lastAccentRequestTime = now;
-
-
+        // Deduplicate broadcasts for one cover without dropping a different track's cover.
         try {
             const accentSet = await musicApi.extractCoverColor(requestUrl);
+            if (revision !== accentRequestRevision) return;
             if (accentSet?.accent) {
                 lastAccentCoverUrl.value = requestUrl;
                 setDynamicAccent(accentSet);
             } else {
                 clearDynamicAccent();
+                lastAccentCoverUrl.value = requestUrl;
             }
         } catch (e) {
+            if (revision !== accentRequestRevision) return;
             console.warn('Failed to update accent from cover', e);
             clearDynamicAccent();
+            lastAccentCoverUrl.value = requestUrl;
+        } finally {
+            if (revision === accentRequestRevision) pendingAccentUrl = '';
         }
     };
 
@@ -348,6 +266,8 @@ export const useUiStore = defineStore('ui', () => {
         backWords,
         fetchConfig,
         dynamicAccent,
+        activeTheme,
+        stageGradient,
         clearDynamicAccent,
         setDynamicAccent,
         updateAccentFromCover

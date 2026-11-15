@@ -2,13 +2,7 @@
   <Transition name="ambl-rise">
     <div v-if="open" class="ambl-wrap" role="dialog" aria-modal="true" :aria-label="t('lyrics.title', 'Lyrics')">
 
-      <!-- Blurred cover backdrop -->
-      <div class="ambl-bg" aria-hidden="true">
-        <img v-if="coverUrl" :src="coverUrl" class="ambl-bg__art" alt="" draggable="false" />
-        <div v-else class="ambl-bg__art ambl-bg__art--fallback ambient-canvas" />
-        <div class="ambl-bg__scrim" />
-        <div class="ambl-bg__vignette" />
-      </div>
+      <StageBackground />
 
       <!-- Header: "LYRICS" label + dismiss -->
       <header class="ambl-header">
@@ -35,7 +29,6 @@
           <span class="ambl-empty__label">{{ t('lyrics.empty') }}</span>
         </div>
         <template v-else>
-          <div class="ambl-glow" aria-hidden="true" />
           <div
             v-for="slot in visibleSlots"
             :key="slot.line.time ?? slot.line.text"
@@ -91,6 +84,7 @@
 </template>
 
 <script setup>
+import StageBackground from '../ui/StageBackground.vue';
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { mergeTranslatedLyrics, parseLyrics } from '../../utils/parser';
@@ -197,32 +191,6 @@ const visibleSlots = computed(() => {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
-.ambl-bg {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-}
-.ambl-bg__art {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  filter: var(--ambient-filter);
-  opacity: var(--ambient-opacity);
-  transform: scale(1.08);
-}
-.ambl-bg__art--fallback { display: block; }
-.ambl-bg__scrim {
-  position: absolute;
-  inset: 0;
-  background: var(--ambient-lyrics-overlay);
-}
-.ambl-bg__vignette {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(ellipse at 50% 42%, transparent 30%, rgba(0,0,0,0.55) 100%);
-  pointer-events: none;
-}
-
 .ambl-header {
   position: relative;
   z-index: 10;
@@ -285,22 +253,12 @@ const visibleSlots = computed(() => {
 }
 .ambl-stage__fade--top {
   top: 0;
-  background: linear-gradient(to bottom, var(--ambient-stage-fade) 0%, transparent 100%);
+  background: transparent;
 }
 .ambl-stage__fade--bottom {
   bottom: 0;
-  background: linear-gradient(to top, var(--ambient-stage-fade) 0%, transparent 100%);
+  background: transparent;
 }
-.ambl-glow {
-  position: absolute;
-  width: 70%;
-  height: 80px;
-  background: radial-gradient(ellipse at center, color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%);
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: 0;
-}
-
 .ambl-line {
   position: relative;
   z-index: 1;
@@ -323,7 +281,7 @@ const visibleSlots = computed(() => {
 .ambl-line--prev1 {
   font-size: clamp(0.82rem, 3.6vw, 1.05rem);
   font-weight: 500;
-  opacity: 0.22;
+  opacity: 0.5;
   transform: translateY(-6px);
   color: var(--text-primary);
 }
@@ -333,21 +291,19 @@ const visibleSlots = computed(() => {
   opacity: 1;
   color: var(--text-primary);
   line-height: 1.28;
-  text-shadow:
-    0 2px 28px color-mix(in srgb, var(--accent) 40%, transparent),
-    0 0 60px color-mix(in srgb, var(--accent) 12%, transparent);
+  text-shadow: none;
 }
 .ambl-line--next1 {
   font-size: clamp(0.88rem, 4vw, 1.12rem);
   font-weight: 500;
-  opacity: 0.28;
+  opacity: 0.72;
   transform: translateY(6px);
   color: var(--text-primary);
 }
 .ambl-line--next2 {
   font-size: clamp(0.76rem, 3.4vw, 0.96rem);
   font-weight: 400;
-  opacity: 0.12;
+  opacity: 0.5;
   transform: translateY(10px);
   color: var(--text-primary);
 }
@@ -399,6 +355,9 @@ const visibleSlots = computed(() => {
   gap: 12px;
 }
 .ambl-track__cover {
+  aspect-ratio: 1 / 1;
+  border: 0;
+  outline: 0;
   width: 44px;
   height: 44px;
   border-radius: var(--radius-lg);

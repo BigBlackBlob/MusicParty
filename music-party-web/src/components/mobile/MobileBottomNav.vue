@@ -11,6 +11,7 @@
       :class="active === item.key ? 'text-primary' : 'text-text-muted hover:text-primary'"
       @click="$emit('update:active', item.key)"
     >
+      <span v-if="active === item.key" class="absolute top-0 h-[2px] w-5 rounded-full bg-primary" aria-hidden="true" />
       <span class="material-symbols-outlined" :style="active === item.key ? 'font-variation-settings: \'FILL\' 1;' : ''">
         {{ item.iconName }}
       </span>

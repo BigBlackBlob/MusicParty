@@ -1,7 +1,7 @@
 <template>
-  <section class="flex flex-col h-full bg-bg-base relative overflow-hidden">
+  <section class="flex flex-col h-full bg-transparent relative overflow-hidden">
     <!-- Header Section (Fixed Top) -->
-    <header class="w-full z-20 bg-bg-base border-b border-border-default pt-3 pb-2 px-panelPadding flex flex-col gap-3 flex-shrink-0 safe-area-top">
+    <header class="w-full z-20 bg-transparent border-b border-border-default pt-3 pb-2 px-panelPadding flex flex-col gap-3 flex-shrink-0 safe-area-top">
       <!-- Search Bar & Cancel -->
       <form class="flex items-center gap-3" @submit.prevent="handleSearchAction">
         <div class="flex-1 flex items-center bg-surface-panel h-[40px] rounded-full px-3 border border-border-default focus-within:border-primary/50 transition-colors group">

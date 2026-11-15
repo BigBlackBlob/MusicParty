@@ -1,40 +1,23 @@
 <template>
   <div class="h-[var(--app-height)] w-full relative flex flex-col overflow-hidden bg-bg-base text-text-primary font-body text-body selection:bg-primary selection:text-on-primary" style="--top-bar-height: 64px;">
-    <!-- Full-Bleed Ambient Canvas -->
-    <div class="fixed inset-0 ambient-canvas z-0"></div>
-    <Transition name="desktop-cover-fade" mode="out-in">
-      <div
-        v-if="currentCover"
-        :key="currentCover"
-        class="pointer-events-none fixed inset-0 z-[1] overflow-hidden"
-      >
-        <div
-          class="desktop-page-cover-blur absolute"
-          :style="{ backgroundImage: `url(${currentCover})` }"
-        />
-        <div class="absolute inset-0 desktop-page-cover-wash"></div>
-      </div>
-    </Transition>
-
-    <!-- Background Vignette/Masking for depth -->
-    <div class="pointer-events-none fixed inset-0 z-10 shadow-[inset_0_0_200px_var(--surface-scrim)]"></div>
+    <StageBackground />
 
       <!-- Top Navigation Bar -->
-      <header class="fixed top-0 z-50 flex h-[64px] w-full items-center justify-between bg-transparent px-5">
-        <div class="flex min-w-0 items-center gap-5">
-          <div class="flex items-center gap-2">
+      <header class="desktop-top-bar fixed top-0 z-50 grid h-[64px] w-full items-center gap-6 bg-transparent px-5">
+        <div class="desktop-top-bar__room flex min-w-0 items-center gap-5">
+          <div class="flex min-w-0 items-center gap-2">
             <button
-              class="font-display flex items-center gap-2 text-[24px] font-black leading-none tracking-tighter text-primary transition-opacity hover:opacity-80"
+              class="font-display flex min-w-0 items-center gap-2 text-[24px] font-black leading-none tracking-tighter text-primary transition-opacity hover:opacity-80"
               @click="toggleRoomMenu"
               :aria-label="t('rooms.currentRoom', { name: currentRoomName })"
               :title="t('rooms.currentRoom', { name: currentRoomName })"
             >
-              <span>{{ currentRoomName }}</span>
+              <span class="truncate">{{ currentRoomName }}</span>
               <span class="material-symbols-outlined text-[18px]">expand_more</span>
             </button>
             <span
-              class="h-2 w-2 rounded-full"
-              :class="realtimeConnection.connected ? 'bg-success shadow-[0_0_14px_color-mix(in_srgb,var(--success)_45%,transparent)]' : 'bg-error'"
+              class="h-2 w-2 shrink-0 rounded-full"
+              :class="realtimeConnection.connected ? 'bg-primary' : 'bg-error'"
               :title="realtimeConnection.connected ? t('settings.connected') : t('settings.disconnected')"
             />
           </div>
@@ -99,18 +82,18 @@
               @keyup.enter="createRoom"
             />
           </div>
+        </div>
           <button
             type="button"
-            class="hidden min-w-[220px] cursor-pointer items-center gap-3 rounded-md border border-border-subtle bg-[var(--surface-control)] px-4 py-2 text-left transition-colors hover:bg-[var(--surface-control-hover)] focus-visible:ring-2 focus-visible:ring-[var(--accent-muted)] md:flex"
+            class="desktop-top-bar__search flex min-w-0 w-full cursor-pointer items-center gap-3 rounded-md border border-border-subtle bg-[var(--surface-control)] px-4 py-2 text-left transition-colors hover:bg-[var(--surface-control-hover)] focus-visible:ring-2 focus-visible:ring-[var(--accent-muted)]"
             :aria-label="t('search.searchAndAdd')"
             :title="t('search.searchAndAdd')"
             @click="handleSearchClick"
           >
             <span class="material-symbols-outlined text-text-muted text-[18px]">search</span>
-            <span class="text-text-muted font-compact text-compact flex items-center tracking-tight">{{ t('search.placeholder') }}</span>
+            <span class="text-text-muted font-compact text-compact truncate tracking-tight">{{ t('search.placeholder') }}</span>
           </button>
-        </div>
-        <div class="flex flex-shrink-0 items-center gap-3">
+        <div class="desktop-top-bar__actions flex flex-shrink-0 items-center justify-end gap-3">
           <div class="relative">
             <button
               type="button"
@@ -122,7 +105,7 @@
               <div
                 v-for="user in visibleUsers"
                 :key="user.publicId || user.name"
-                class="flex h-8 w-8 items-center justify-center rounded-full border-2 border-surface-overlay bg-accent-subtle text-primary shadow-lg"
+                class="flex h-8 w-8 items-center justify-center online-user-avatar text-primary"
                 :title="user.name"
               >
                 <span class="font-micro text-micro uppercase">{{ getInitials(user.name) }}</span>
@@ -203,12 +186,12 @@
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import SettingsCenter from '../SettingsCenter.vue';
+import StageBackground from '../ui/StageBackground.vue';
 import PrivateRoomAccessDialog from '../PrivateRoomAccessDialog.vue';
 import UserList from '../UserList.vue';
 import { useUserStore } from '../../stores/user';
 import { useUiStore } from '../../stores/ui';
 import { ROOM_SWITCH_PASSWORD_REQUIRED, useRoomRealtimeCoordinator } from '../../domains/realtime/roomRealtimeCoordinator';
-import { useRoomRuntimeStore } from '../../domains/realtime/roomRuntimeStore';
 import { useRoomPresenceStore } from '../../domains/realtime/roomPresenceStore';
 import { useRealtimeConnectionStore } from '../../domains/realtime/realtimeConnectionStore';
 import { useRoomStore } from '../../stores/room';
@@ -220,7 +203,6 @@ const emit = defineEmits(['search', 'toggle-mobile-chat']);
 const { t } = useI18n();
 const userStore = useUserStore();
 const uiStore = useUiStore();
-const playerRuntime = useRoomRuntimeStore();
 const presenceStore = useRoomPresenceStore();
 const realtimeConnection = useRealtimeConnectionStore();
 const realtimeCoordinator = useRoomRealtimeCoordinator();
@@ -239,8 +221,6 @@ const privateRoomDialogOpen = ref(false);
 const privateRoomDialogRoom = ref(null);
 const privateRoomDialogLoading = ref(false);
 const privateRoomDialogError = ref('');
-const currentMusic = computed(() => playerRuntime.nowPlaying?.music || null);
-const currentCover = computed(() => currentMusic.value?.coverUrl || '');
 const currentRoomName = computed(() => roomStore.currentRoom?.name || t('app.lounge'));
 const visibleUsers = computed(() => presenceStore.users.slice(0, 3));
 const extraUserCount = computed(() => Math.max(0, presenceStore.count - visibleUsers.value.length));
@@ -348,51 +328,16 @@ const getInitials = (name = '') => {
 </script>
 
 <style scoped>
-.desktop-page-cover-blur {
-  left: 50%;
-  top: 50%;
-  width: min(160vw, 2000px);
-  height: min(140vh, 1600px);
-  transform: translate(-50%, -50%) scale(1.04);
-  background-position: center;
-  background-size: cover;
-  background-repeat: no-repeat;
-  opacity: 0.26;
-  filter: blur(96px) saturate(1.4) brightness(0.82);
-  will-change: transform, opacity, filter;
-  mask-image: radial-gradient(ellipse at 50% 50%, black 0%, black 50%, transparent 82%);
+.desktop-top-bar {
+  grid-template-columns: minmax(0, 1fr) minmax(0, min(400px, calc(100vw - 640px))) minmax(0, 1fr);
 }
 
-.desktop-page-cover-wash {
-  background:
-    radial-gradient(ellipse at 50% -8%, rgba(0, 0, 0, 0.42) 0%, transparent 55%),
-    radial-gradient(ellipse at 50% 108%, rgba(0, 0, 0, 0.55) 0%, transparent 55%),
-    radial-gradient(ellipse at -4% 50%, rgba(0, 0, 0, 0.28) 0%, transparent 38%),
-    radial-gradient(ellipse at 104% 50%, rgba(0, 0, 0, 0.28) 0%, transparent 38%);
+.online-user-avatar {
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--stage-tint) 88%, var(--accent));
+  box-shadow: 0 0 0 1.5px var(--stage-tint);
 }
 
-.light .desktop-page-cover-blur {
-  opacity: 0.16;
-  filter: blur(92px) saturate(1.18) brightness(1.06);
-}
-
-.light .desktop-page-cover-wash {
-  background:
-    radial-gradient(ellipse at 50% -8%, rgba(255, 255, 255, 0.32) 0%, transparent 55%),
-    radial-gradient(ellipse at 50% 108%, rgba(255, 255, 255, 0.40) 0%, transparent 55%),
-    radial-gradient(ellipse at -4% 50%, rgba(255, 255, 255, 0.22) 0%, transparent 38%),
-    radial-gradient(ellipse at 104% 50%, rgba(255, 255, 255, 0.22) 0%, transparent 38%);
-}
-
-.desktop-cover-fade-enter-active,
-.desktop-cover-fade-leave-active {
-  transition: opacity 360ms ease, transform 360ms ease, filter 360ms ease;
-}
-
-.desktop-cover-fade-enter-from,
-.desktop-cover-fade-leave-to {
-  opacity: 0;
-  transform: scale(1.02);
-}
+.desktop-top-bar__actions { min-width: 0; }
+.desktop-top-bar__search > .material-symbols-outlined { flex-shrink: 0; }
 </style>
-

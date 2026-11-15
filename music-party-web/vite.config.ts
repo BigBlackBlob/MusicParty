@@ -31,7 +31,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': { target: apiUrl, changeOrigin: true },
-      '/ws': { target: backendUrl, ws: true, changeOrigin: true },
+      '/ws': { target: backendUrl, ws: true, changeOrigin: true, timeout: 0 },
       '/proxy': { target: backendUrl, changeOrigin: true },
       '/media': { target: backendUrl, changeOrigin: true }
     }

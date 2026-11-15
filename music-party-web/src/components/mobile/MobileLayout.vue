@@ -1,14 +1,6 @@
 <template>
   <div class="mobile-shell bg-bg-base overflow-hidden">
-    <!-- Ambient Background -->
-    <Transition name="mobile-ambient-fade">
-      <div
-        v-if="currentCover && activeTab === 'now'"
-        :key="currentCover"
-        class="mobile-ambient"
-        :style="{ backgroundImage: `url(${currentCover})` }"
-      />
-    </Transition>
+    <StageBackground />
 
     <main class="mobile-shell-main">
       <Transition name="fade-slide" mode="out-in">
@@ -33,8 +25,8 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import SettingsCenter from '../SettingsCenter.vue';
+import StageBackground from '../ui/StageBackground.vue';
 import { useChatStore } from '../../stores/chat';
-import { useRoomRuntimeStore } from '../../domains/realtime/roomRuntimeStore';
 import { useUiStore } from '../../stores/ui';
 import MobileBottomNav from './MobileBottomNav.vue';
 import MobileChatView from './MobileChatView.vue';
@@ -44,14 +36,12 @@ import MobileSearchView from './MobileSearchView.vue';
 
 const showSettings = ref(false);
 const chat = useChatStore();
-const player = useRoomRuntimeStore();
 const ui = useUiStore();
 const activeTab = computed({
   get: () => ui.mobileActiveTab,
   set: (tab) => ui.setMobileActiveTab(tab)
 });
 
-const currentCover = computed(() => player.nowPlaying?.music?.coverUrl || '');
 watch(activeTab, (tab) => {
   chat.isOpen = tab === 'chat';
   if (tab === 'chat') chat.unreadCount = 0;
@@ -66,18 +56,6 @@ watch(activeTab, (tab) => {
   height: 100%;
   min-height: 0;
   flex-direction: column;
-}
-
-.mobile-ambient {
-  pointer-events: none;
-  position: absolute;
-  inset: -10%;
-  z-index: 0;
-  background-position: center;
-  background-size: cover;
-  filter: blur(60px) saturate(1.2) brightness(0.4);
-  opacity: 0.3;
-  transform: scale(1.1);
 }
 
 .mobile-shell-main {
@@ -103,13 +81,4 @@ watch(activeTab, (tab) => {
   transform: translateX(-10px);
 }
 
-.mobile-ambient-fade-enter-active,
-.mobile-ambient-fade-leave-active {
-  transition: opacity 1000ms ease-out;
-}
-
-.mobile-ambient-fade-enter-from,
-.mobile-ambient-fade-leave-to {
-  opacity: 0;
-}
 </style>

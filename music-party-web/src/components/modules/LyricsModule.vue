@@ -2,7 +2,7 @@
   <div class="flex h-full min-h-0 min-w-0 flex-col justify-center overflow-hidden">
     <AppleLyricsPanel
       v-if="currentMusic || player.isLoading || player.isBuffering || player.isErrorState"
-      class="h-full w-full px-4 md:px-8"
+      class="h-full w-full"
       :lyrics="player.lyricDetail.lyric || player.lyricText"
       :translated-lyrics="player.lyricDetail.translatedLyric"
       :romanized-lyrics="player.lyricDetail.romanizedLyric"

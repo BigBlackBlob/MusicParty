@@ -1,5 +1,5 @@
 <template>
-  <section class="flex flex-col h-full bg-bg-base relative overflow-hidden">
+  <section class="flex flex-col h-full bg-transparent relative overflow-hidden">
     <!-- Top Navigation (Modal style) -->
     <header class="flex items-center justify-between px-md w-full h-[64px] flex-shrink-0 z-20 relative">
       <div class="flex-1 flex justify-start">
@@ -26,8 +26,8 @@
       <!-- Artwork Section -->
       <div
         v-if="music || player.isLoading || player.isBuffering || player.isErrorState"
-        class="mobile-now-playing-art w-full aspect-square max-h-[42dvh] max-w-[42dvh] mb-6 rounded-2xl overflow-hidden flex-shrink-0 relative z-10 group mx-auto"
-        :class="music ? 'shadow-[0_30px_60px_rgba(0,0,0,0.6)]' : 'mobile-empty-art'"
+        class="mobile-now-playing-art aspect-square mb-6 rounded-2xl overflow-hidden flex-shrink-0 relative z-10 group mx-auto"
+        :class="{ 'mobile-empty-art': !music }"
       >
         <div v-if="!music && !player.isLoading && !player.isBuffering" class="mobile-empty-art__content" aria-hidden="true">
           <span class="material-symbols-outlined mobile-empty-art__icon">graphic_eq</span>
@@ -38,7 +38,7 @@
           :alt="trackTitle"
           loading="eager"
           decoding="async"
-          class="h-full w-full object-cover transition-transform duration-700 ease-out group-active:scale-[0.98]"
+          class="absolute inset-0 h-full w-full object-cover transition-transform duration-700 ease-out group-active:scale-[0.98]"
         />
         <div v-if="player.isLoading || player.isBuffering" class="absolute inset-0 flex flex-col items-center justify-center bg-black/40 backdrop-blur-sm text-white">
           <span class="h-8 w-8 animate-spin rounded-full border-[2.5px] border-white/20 border-t-white" />
@@ -53,14 +53,12 @@
             <button
               @click="toggleLike"
               :disabled="!music"
-              class="mobile-now-playing-like flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full text-primary hover:bg-accent-subtle transition-colors"
+              class="mobile-now-playing-like player-icon-button"
+              :class="{ 'is-active': isLiked }"
               :aria-label="isLiked ? t('player.unlike') : t('player.like')"
               :title="isLiked ? t('player.unlike') : t('player.like')"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" height="26" width="26" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true">
-                <path v-if="isLiked" d="m480-120-58-52q-101-91-167-157T150-447.5Q111-500 95.5-544T80-634q0-94 63-157t157-63q52 0 99 22t81 62q34-40 81-62t99-22q94 0 157 63t63 157q0 46-15.5 90T810-447.5Q771-395 705-329T538-172l-58 52Z"/>
-                <path v-else d="m480-120-58-52q-101-91-167-157T150-447.5Q111-500 95.5-544T80-634q0-94 63-157t157-63q52 0 99 22t81 62q34-40 81-62t99-22q94 0 157 63t63 157q0 46-15.5 90T810-447.5Q771-395 705-329T538-172l-58 52Zm0-108q96-86 158-147.5t98-107q36-45.5 50-81t14-70.5q0-60-40-100t-100-40q-47 0-87 26.5T518-680h-76q-15-41-55-67.5T300-774q-60 0-100 40t-40 100q0 35 14 70.5t50 81q36 45.5 98 107T480-228Zm0-273Z"/>
-              </svg>
+              <Heart :stroke-width="1.75" :fill="isLiked ? 'currentColor' : 'none'" aria-hidden="true" />
             </button>
           </div>
           <h1 class="mobile-now-playing-empty__title">{{ trackTitle }}</h1>
@@ -73,7 +71,7 @@
       <div class="flex-1 min-h-[15px] flex-shrink-0" aria-hidden="true" />
 
       <!-- Track Info & Like -->
-      <div v-if="music || player.isLoading || player.isBuffering || player.isErrorState" class="mobile-now-playing-track flex items-center justify-between mb-8 flex-shrink-0 z-10 px-1">
+      <div v-if="music || player.isLoading || player.isBuffering || player.isErrorState" class="mobile-now-playing-track flex items-center justify-between mb-8 flex-shrink-0 z-10 mx-auto">
         <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
           <h1 class="font-title text-title text-text-primary line-clamp-2 break-words leading-snug tracking-tight">{{ trackTitle }}</h1>
           <p class="font-body text-body text-text-secondary truncate mt-1">{{ artistLine }}</p>
@@ -81,17 +79,17 @@
         <button 
           @click="toggleLike"
           :disabled="!music"
-          class="ml-4 w-[44px] h-[44px] flex items-center justify-center rounded-full text-primary hover:bg-accent-subtle transition-all active:scale-90 flex-shrink-0"
+          class="player-icon-button ml-4"
+          :class="{ 'is-active': isLiked }"
+          :aria-label="isLiked ? t('player.unlike') : t('player.like')"
+          :title="isLiked ? t('player.unlike') : t('player.like')"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" height="28" width="28" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true">
-              <path v-if="isLiked" d="m480-120-58-52q-101-91-167-157T150-447.5Q111-500 95.5-544T80-634q0-94 63-157t157-63q52 0 99 22t81 62q34-40 81-62t99-22q94 0 157 63t63 157q0 46-15.5 90T810-447.5Q771-395 705-329T538-172l-58 52Z"/>
-              <path v-else d="m480-120-58-52q-101-91-167-157T150-447.5Q111-500 95.5-544T80-634q0-94 63-157t157-63q52 0 99 22t81 62q34-40 81-62t99-22q94 0 157 63t63 157q0 46-15.5 90T810-447.5Q771-395 705-329T538-172l-58 52Zm0-108q96-86 158-147.5t98-107q36-45.5 50-81t14-70.5q0-60-40-100t-100-40q-47 0-87 26.5T518-680h-76q-15-41-55-67.5T300-774q-60 0-100 40t-40 100q0 35 14 70.5t50 81q36 45.5 98 107T480-228Zm0-273Z"/>
-            </svg>
+          <Heart :stroke-width="1.75" :fill="isLiked ? 'currentColor' : 'none'" aria-hidden="true" />
         </button>
       </div>
 
       <!-- Progress Bar -->
-      <div class="mobile-now-playing-progress flex flex-col gap-xs mb-8 flex-shrink-0 z-10 px-1">
+      <div class="mobile-now-playing-progress flex flex-col gap-xs mb-8 flex-shrink-0 z-10 mx-auto">
         <ProgressScrubber
           :current-ms="player.playbackPositionMs"
           :duration="durationMs"
@@ -112,18 +110,21 @@
       </div>
 
       <!-- Playback Controls -->
-      <div class="mobile-now-playing-controls flex items-center flex-shrink-0 z-10 w-full max-w-[420px] mx-auto px-1">
+      <div class="mobile-now-playing-controls flex items-center flex-shrink-0 z-10 mx-auto">
         <!-- 1. Volume -->
         <div class="flex-1 flex justify-center items-center">
           <div class="relative" ref="volumePanelContainerRef">
             <button 
               @click="toggleVolumePanel"
-              class="w-[44px] h-[44px] flex items-center justify-center transition-colors active:scale-90"
-              :class="volumePanelOpen ? 'text-primary' : 'text-text-secondary hover:text-primary'"
+              class="player-icon-button"
+              :class="{ 'is-active': volumePanelOpen }"
+              :aria-label="t('player.volume')"
+              :title="t('player.volume')"
+              :aria-expanded="volumePanelOpen"
             >
-              <span class="material-symbols-outlined text-[24px]">
-                {{ ui.volume === 0 ? 'volume_off' : (ui.volume < 0.5 ? 'volume_down' : 'volume_up') }}
-              </span>
+              <VolumeX v-if="ui.volume === 0" :stroke-width="1.75" aria-hidden="true" />
+              <Volume1 v-else-if="ui.volume < 0.5" :stroke-width="1.75" aria-hidden="true" />
+              <Volume2 v-else :stroke-width="1.75" aria-hidden="true" />
             </button>
 
             <Transition name="mobile-volume-popover">
@@ -151,24 +152,39 @@
           <button 
             @click="player.toggleShuffle"
             :disabled="player.isShuffleLocked"
-            class="w-[44px] h-[44px] flex items-center justify-center transition-colors active:scale-90"
-            :class="player.isShuffle ? 'text-primary' : 'text-text-secondary hover:text-primary'"
+            class="player-icon-button"
+            :class="{ 'is-active': player.isShuffle }"
+            :aria-label="t('player.shuffle')"
+            :title="playModeLabel"
           >
-            <span class="material-symbols-outlined text-[24px]" :aria-label="playModeLabel" :title="playModeLabel">shuffle</span>
+            <Shuffle :stroke-width="1.75" aria-hidden="true" />
           </button>
         </div>
 
-        <!-- 3. Play/Pause -->
+        <!-- Previous uses the same command and availability rules as desktop. -->
+        <div class="flex-1 flex justify-center items-center">
+          <button
+            @click="player.playPrevious"
+            :disabled="player.isSkipLocked || !player.canOperate || !player.historyCursor"
+            class="player-icon-button"
+            :aria-label="player.historyCursor ? t('player.prev') : t('player.prevUnavailable')"
+            :title="player.historyCursor ? t('player.prev') : t('player.prevUnavailable')"
+          >
+            <SkipBack :stroke-width="1.75" aria-hidden="true" />
+          </button>
+        </div>
+
+        <!-- Play/Pause -->
         <div class="flex-1 flex justify-center items-center">
           <button 
             @click="player.togglePause"
             :disabled="player.isPauseLocked && !player.isPaused"
-            class="w-[64px] h-[64px] flex items-center justify-center rounded-full transition-colors active:scale-95"
-            :class="music ? 'text-primary bg-accent-subtle shadow-lg shadow-primary/20 hover:text-white hover:scale-105' : 'text-text-secondary bg-surface-raised hover:bg-[var(--surface-control-hover)] hover:text-text-primary'"
+            class="player-play-button"
+            :aria-label="player.isPaused ? t('player.play') : t('player.pause')"
+            :title="player.isPaused ? t('player.play') : t('player.pause')"
           >
-            <span class="material-symbols-outlined text-[40px]" style="font-variation-settings: 'FILL' 1;">
-              {{ player.isPaused ? 'play_arrow' : 'pause' }}
-            </span>
+            <Play v-if="player.isPaused" :stroke-width="1.75" fill="currentColor" aria-hidden="true" />
+            <Pause v-else :stroke-width="1.75" fill="currentColor" aria-hidden="true" />
           </button>
         </div>
 
@@ -177,9 +193,11 @@
           <button
             @click="player.playNext"
             :disabled="player.isSkipLocked || !player.canOperate"
-            class="w-[44px] h-[44px] flex items-center justify-center text-primary hover:text-white transition-colors active:scale-90"
+            class="player-icon-button"
+            :aria-label="t('player.next')"
+            :title="t('player.next')"
           >
-            <span class="material-symbols-outlined text-[36px]" style="font-variation-settings: 'FILL' 1;">skip_next</span>
+            <SkipForward :stroke-width="1.75" aria-hidden="true" />
           </button>
         </div>
 
@@ -188,12 +206,11 @@
           <button
             @click="lyricsOpen = true"
             :disabled="!music"
-            class="w-[44px] h-[44px] flex items-center justify-center transition-colors active:scale-90"
-            :class="music ? 'text-text-secondary hover:text-primary' : 'text-text-secondary/40'"
+            class="player-icon-button"
             :aria-label="t('lyrics.title', 'Lyrics')"
             :title="t('lyrics.title', 'Lyrics')"
           >
-            <span class="material-symbols-outlined text-[24px]">lyrics</span>
+            <Captions :stroke-width="1.75" aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -233,6 +250,7 @@ import { useI18n } from 'vue-i18n';
 import { useNowPlayingViewModel } from '../../composables/useNowPlayingViewModel';
 import { useRoomStore } from '../../stores/room';
 import MobileAmbientLyrics from './MobileAmbientLyrics.vue';
+import { Heart, VolumeX, Volume1, Volume2, Shuffle, SkipBack, Play, Pause, SkipForward, Captions } from 'lucide-vue-next';
 import CoverImage from '../CoverImage.vue';
 import ProgressScrubber from '../ui/ProgressScrubber.vue';
 
@@ -291,13 +309,40 @@ defineEmits(['close', 'open-settings']);
 </script>
 
 <style scoped>
+main.mobile-now-playing-main {
+  --mobile-cover-max: 42dvh;
+}
+
+.mobile-now-playing-art {
+  width: min(100%, var(--mobile-cover-max));
+  height: auto;
+  aspect-ratio: 1 / 1;
+  border: 0;
+  outline: 0;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.24);
+}
+
+.mobile-now-playing-track,
+.mobile-now-playing-progress,
+.mobile-now-playing-controls {
+  width: min(100%, var(--mobile-cover-max));
+}
+
+:global(.light) .mobile-now-playing-art {
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.16);
+}
+
+
 @media (max-width: 360px) and (max-height: 740px) {
   .mobile-now-playing-main {
     padding-block: 8px;
   }
 
+  main.mobile-now-playing-main {
+    --mobile-cover-max: 38dvh;
+  }
+
   .mobile-now-playing-art {
-    max-height: 38dvh;
     margin-bottom: 16px;
   }
 
@@ -312,7 +357,6 @@ defineEmits(['close', 'open-settings']);
 }
 
 .mobile-empty-art {
-  border: 1px solid var(--border-default);
   background: var(--surface-0);
 }
 

@@ -2,7 +2,7 @@
   <div
     class="group flex min-h-[60px] items-center gap-3 rounded-md border p-2.5 transition-colors focus-visible:ring-2 focus-visible:ring-[var(--accent-muted)]"
     :class="[
-      active ? 'border-border-subtle bg-[var(--surface-control-active)]' : 'border-transparent hover:bg-[var(--surface-control-hover)]',
+      active ? 'border-[var(--border-accent)] bg-accent-subtle' : 'border-transparent hover:bg-[var(--surface-control-hover)]',
       clickable ? 'cursor-pointer' : '',
       unplayable ? 'opacity-60' : ''
     ]"

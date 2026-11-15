@@ -83,7 +83,7 @@ export function useNowPlayingViewModel(options: { artistSeparator?: string } = {
   ))
   const isLiked = computed(() => Boolean(nowPlaying.value?.likedUserIds.includes(user.publicId)))
   const activeUserCount = computed(() => presence.count)
-  const ambientAccent = computed(() => (ui.dynamicAccent as { accent?: string } | null)?.accent || '#ede1ff')
+  const ambientAccent = computed(() => ui.activeTheme.accent)
 
   function seekToRatio(ratio: number): void {
     if (!canSeek.value) return

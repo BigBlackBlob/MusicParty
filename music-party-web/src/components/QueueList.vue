@@ -4,7 +4,7 @@
     <div class="mb-3 flex flex-shrink-0 items-center justify-between gap-3 px-1">
       <div class="flex min-w-0 flex-1 gap-1 border-b border-border-subtle">
         <button
-          class="relative px-3 py-2 text-xs font-semibold tracking-wide transition-colors"
+          class="queue-tab relative whitespace-nowrap px-3 py-2 text-xs font-semibold tracking-wide transition-colors"
           :class="activeView === 'queue' ? 'text-text-primary' : 'text-text-tertiary hover:text-text-secondary'"
           @click="activeView = 'queue'"
         >
@@ -12,7 +12,7 @@
           <span v-if="activeView === 'queue'" class="absolute inset-x-2 -bottom-px h-[2px] rounded-full bg-primary"></span>
         </button>
         <button
-          class="relative px-3 py-2 text-xs font-semibold tracking-wide transition-colors"
+          class="queue-tab relative whitespace-nowrap px-3 py-2 text-xs font-semibold tracking-wide transition-colors"
           :class="activeView === 'liked' ? 'text-text-primary' : 'text-text-tertiary hover:text-text-secondary'"
           @click="activeView = 'liked'"
         >
@@ -23,7 +23,7 @@
 
       <!-- Actions / Metadata -->
       <div class="flex min-w-0 items-center gap-2">
-        <span class="font-micro text-micro text-text-muted uppercase">{{ activeView === 'queue' ? queue.length : liked.likedSongs.length }} {{ t('queue.tracks') }}</span>
+        <span class="queue-track-count font-micro text-micro text-text-muted uppercase">{{ activeView === 'queue' ? queue.length : liked.likedSongs.length }} {{ t('queue.tracks') }}</span>
         <button v-if="activeView === 'queue' && queue.length > 0" @click="toggleSelectionMode" class="flex h-8 w-8 items-center justify-center rounded-md text-text-muted hover:bg-[var(--surface-control-hover)] hover:text-text-primary" :aria-label="t('queue.selectTracks')" :title="t('queue.selectTracks')">
           <span class="material-symbols-outlined text-[16px]">{{ selectionMode ? 'close' : 'checklist' }}</span>
         </button>
@@ -254,5 +254,11 @@ const formatArtists = (artists) => Array.isArray(artists) && artists.length ? ar
   color: var(--accent);
   font-size: 28px;
   opacity: 0.70;
+}
+
+@media (min-width: 768px) and (max-width: 1200px) {
+  .queue-track-count {
+    display: none;
+  }
 }
 </style>

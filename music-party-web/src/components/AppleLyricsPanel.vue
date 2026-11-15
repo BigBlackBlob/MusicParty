@@ -30,7 +30,7 @@
                 v-for="(line, index) in displayLines"
                 :key="`${line.time}-${index}`"
                 :ref="(el) => setLineRef(el, index)"
-                class="lyrics-line transition-[opacity,transform,color,text-shadow] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
+                class="lyrics-line transition-[opacity,transform,color] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
                 :class="[getLineClass(index), alignmentClass]"
                 :style="getLineStyle(index)"
               >
@@ -251,11 +251,11 @@ const scaledFont = (base) => `${Math.max(10, Math.round(base + fontScale.value *
 const shellStyle = computed(() => ({
   '--lyrics-text-active': props.isDarkMode ? 'rgba(255,255,255,0.98)' : 'rgba(26,26,26,0.98)',
   '--lyrics-word-todo': props.isDarkMode ? 'rgba(255,255,255,0.38)' : 'rgba(26,26,26,0.32)',
-  '--lyrics-text-mid': props.isDarkMode ? 'rgba(255,255,255,0.6)' : 'rgba(26,26,26,0.6)',
-  '--lyrics-text-low': props.isDarkMode ? 'rgba(255,255,255,0.3)' : 'rgba(26,26,26,0.3)',
-  '--lyrics-translation-active': props.isDarkMode ? 'rgba(255,255,255,0.68)' : 'rgba(26,26,26,0.58)',
-  '--lyrics-translation-mid': props.isDarkMode ? 'rgba(255,255,255,0.42)' : 'rgba(26,26,26,0.38)',
-  '--lyrics-translation-low': props.isDarkMode ? 'rgba(255,255,255,0.22)' : 'rgba(26,26,26,0.22)',
+  '--lyrics-text-mid': props.isDarkMode ? 'rgba(255,255,255,0.72)' : '#515856',
+  '--lyrics-text-low': props.isDarkMode ? 'rgba(255,255,255,0.5)' : '#515856',
+  '--lyrics-translation-active': props.isDarkMode ? 'rgba(255,255,255,0.68)' : '#353535',
+  '--lyrics-translation-mid': props.isDarkMode ? 'rgba(255,255,255,0.42)' : '#353535',
+  '--lyrics-translation-low': props.isDarkMode ? 'rgba(255,255,255,0.22)' : '#353535',
   '--lyrics-empty': props.isDarkMode ? 'rgba(255,255,255,0.5)' : 'rgba(26,26,26,0.55)',
   '--lyrics-accent-glow': props.bgColor || (props.isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(26,26,26,0.06)'),
   '--lyrics-active-size': props.mobile
@@ -317,16 +317,14 @@ const getLineStyle = (index) => {
       color: 'var(--lyrics-text-active)',
       '--lyrics-translation-size': 'var(--lyrics-translation-active-size)',
       '--lyrics-translation-color': 'var(--lyrics-translation-active)',
-      textShadow: props.isDarkMode
-        ? '0 8px 24px rgba(0,0,0,0.22), 0 0 22px color-mix(in srgb, var(--lyrics-accent-glow) 36%, transparent)'
-        : '0 6px 18px rgba(255,255,255,0.08)'
+      textShadow: 'none'
     };
   }
 
   if (distance <= 2) {
     const offset = activeIndex.value === -1 ? 0 : (index < activeIndex.value ? -8 : 8);
     return {
-      opacity: 0.6,
+      opacity: 1,
       transform: `scale(0.84) translate3d(0, ${offset}px, 0)`,
       fontSize: 'var(--lyrics-mid-size)',
       fontWeight: 600,
@@ -339,7 +337,7 @@ const getLineStyle = (index) => {
 
   const offset = activeIndex.value === -1 ? 0 : (index < activeIndex.value ? -14 : 14);
   return {
-    opacity: 0.3,
+    opacity: 1,
     transform: `scale(0.72) translate3d(0, ${offset}px, 0)`,
     fontSize: 'var(--lyrics-low-size)',
     fontWeight: 500,
@@ -575,7 +573,19 @@ onBeforeUnmount(() => {
 
 @media (min-width: 768px) {
   .lyrics-scroll__content {
-    max-width: min(820px, 92%);
+    max-width: 820px;
+  }
+
+  /* The panel owns the inset; each line gets the remaining column width. */
+  .lyrics-shell:not(.lyrics-shell--mobile) .lyrics-line,
+  .lyrics-shell:not(.lyrics-shell--mobile) .lyrics-line__primary,
+  .lyrics-shell:not(.lyrics-shell--mobile) .lyrics-line__translation,
+  .lyrics-shell:not(.lyrics-shell--mobile) .lyrics-line__romanization {
+    width: 100%;
+    max-width: 100%;
+    word-break: normal;
+    line-break: strict;
+    text-wrap: pretty;
   }
 
   .lyrics-line--active {
@@ -609,6 +619,16 @@ onBeforeUnmount(() => {
   word-break: break-word;
   will-change: transform, opacity;
   letter-spacing: 0;
+}
+
+@container stage-column (max-width: 400px) {
+  .lyrics-line--active {
+    font-size: clamp(1rem, 7cqw, 1.75rem) !important;
+  }
+
+  .lyrics-line--mid {
+    font-size: clamp(0.9rem, 5cqw, 1.25rem) !important;
+  }
 }
 
 .lyrics-line__primary,

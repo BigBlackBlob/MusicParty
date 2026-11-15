@@ -5,6 +5,7 @@
 
     <!-- Main Grid -->
     <div
+      ref="gridRef"
       class="layout-grid flex-1 grid h-full w-full overflow-hidden"
       :style="gridStyle"
     >
@@ -36,7 +37,7 @@
 
 <script setup>
 import { ref, computed } from 'vue';
-import { useWindowSize } from '@vueuse/core';
+import { useElementSize, useWindowSize } from '@vueuse/core';
 import { useLayoutStore } from '../stores/layout';
 import { useUiStore } from '../stores/ui';
 import { MODULE_MANIFEST } from './moduleManifest';
@@ -48,6 +49,8 @@ import ModulePicker from './ModulePicker.vue';
 const layoutStore = useLayoutStore();
 const uiStore = useUiStore();
 const { width: windowWidth } = useWindowSize();
+const gridRef = ref(null);
+const { width: gridWidth } = useElementSize(gridRef);
 const showModulePicker = ref(false);
 const activeColumnId = ref(null);
 const DESKTOP_HORIZONTAL_PADDING = 40;
@@ -65,14 +68,14 @@ const stageGap = computed(() => (
       BASE_STAGE_GAP
         + ((uiStore.mainStageScale - 1) * STAGE_GAP_SCALE_FACTOR)
         - ((uiStore.globalZoomLevel - 1) * ZOOM_GAP_COMPRESSION)
-        - (windowWidth.value <= 1180 ? 4 : 0)
     )
   ))
 ));
 
-const availableStageWidth = computed(() => {
-  return Math.max(0, windowWidth.value / uiStore.globalZoomLevel - DESKTOP_HORIZONTAL_PADDING);
-});
+const availableStageWidth = computed(() => Math.max(
+  0,
+  windowWidth.value / uiStore.globalZoomLevel - (DESKTOP_HORIZONTAL_PADDING * 2)
+));
 
 const columnMinWidth = (column) => Math.max(
   0,
@@ -103,6 +106,34 @@ const effectiveColumns = computed(() => {
 
 const gridStyle = computed(() => {
   const cols = effectiveColumns.value;
+  if (windowWidth.value <= 1200 && !layoutStore.isEditMode) {
+    const gapWidth = Math.max(0, cols.length - 1) * stageGap.value;
+    // Budget against the grid itself so padding and zoom cannot add hidden overflow.
+    const availableWidth = Math.max(0, gridWidth.value - gapWidth);
+    const scale = Math.max(0, windowWidth.value - 1024);
+    const minimumWidths = cols.map(column => {
+      if (column.modules.includes('nowplaying')) return Math.min(340, 320 + scale * 0.05);
+      if (column.modules.includes('queue')) return Math.min(300, 288 + scale * 0.03);
+      if (column.modules.includes('lyrics')) return 300;
+      return 0;
+    });
+    const minimumTotal = minimumWidths.reduce((sum, width) => sum + width, 0);
+    const remaining = Math.max(0, availableWidth - minimumTotal);
+    const flexibleColumns = cols.map(column => !column.modules.includes('nowplaying') && !column.modules.includes('queue'));
+    const hasFlexibleColumn = flexibleColumns.some(Boolean);
+    const weights = cols.map((column, index) => !hasFlexibleColumn || flexibleColumns[index] ? column.widthPercent : 0);
+    const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+    const compression = minimumTotal > 0 ? Math.min(1, availableWidth / minimumTotal) : 1;
+    const widths = minimumWidths.map((minimum, index) => minimum * compression + (totalWeight > 0 ? remaining * weights[index] / totalWeight : 0));
+
+    return {
+      // The last track absorbs subpixel rounding without extending past the grid.
+      gridTemplateColumns: widths.map((width, index) => index === cols.length - 1 ? 'minmax(0, 1fr)' : `${width}px`).join(' '),
+      columnGap: `${stageGap.value}px`,
+      transition: 'grid-template-columns 0.2s ease'
+    };
+  }
+
   const templateParts = [];
   
   cols.forEach((col, index) => {
