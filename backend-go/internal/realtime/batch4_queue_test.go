@@ -124,10 +124,12 @@ func TestBatch4PrioritySurvivesRebuildAndOrdinaryReorder(t *testing.T) {
 	require.NoError(t, err)
 	for i, wanted := range []string{"c", "a", "b"} {
 		if i == 1 {
-			// Natural completion uses the same priority selection as manual next.
+			// Simulate the server fallback timer after the first item has started.
 			_, err = r.Execute(ctx, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
 				runtime.state.CurrentMusic.Duration = 1
-				runtime.onTick(time.Now().Add(time.Second))
+				runtime.sessionState = "playing"
+				runtime.state.TimestampAnchor = time.Now().Add(-7 * time.Second).UnixMilli()
+				runtime.onTick(time.Now())
 				return nil, nil
 			})
 		} else {

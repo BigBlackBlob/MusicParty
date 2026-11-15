@@ -166,7 +166,7 @@ if [[ "$FRONTEND_ONLY" == false ]]; then
   export STATIC_PATH="${STATIC_PATH:-$ROOT_DIR/music-party-web/dist}"
   export AUTH_SECURE_COOKIES="${AUTH_SECURE_COOKIES:-false}"
   export NETEASE_API_URL="${NETEASE_API_URL:-http://127.0.0.1:$NETEASE_API_PORT}"
-  start_process backend "$ROOT_DIR" go run "$BACKEND_DIR/cmd/musicparty"
+  start_process backend "$BACKEND_DIR" go run ./cmd/musicparty
   wait_for_url "http://127.0.0.1:$BACKEND_PORT/actuator/health/readiness" "Go backend"
 fi
 

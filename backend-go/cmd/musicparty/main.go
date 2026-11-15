@@ -79,7 +79,7 @@ func run() error {
 	}
 	platformClient := platform.NewClient(15 * time.Second)
 	services := []platform.Service{
-		netease.New(platformClient, cfg.Platforms.Netease.BaseURL, neteaseCookie),
+		netease.New(platformClient, cfg.Platforms.Netease.BaseURL, neteaseCookie, cfg.Platforms.Netease.Quality),
 		bilibili.New(platformClient, cfg.Platforms.Bilibili.BaseURL, bilibiliCookie),
 		youtube.New(platformClient, cfg.Platforms.YouTube.Enabled, cfg.Platforms.YouTube.APIKey, cfg.Platforms.YouTube.MaxResults, cfg.Platforms.YouTube.YTDLPPath),
 		subsonic.New(platformClient, subsonic.Config{ID: "navidrome", BaseURL: cfg.Platforms.Navidrome.BaseURL, Username: cfg.Platforms.Navidrome.Username, Password: cfg.Platforms.Navidrome.Password, Client: cfg.Platforms.Navidrome.Client, Version: cfg.Platforms.Navidrome.APIVersion, ProxyPrefix: "/api/navidrome/cover", Enabled: cfg.Platforms.Navidrome.Enabled}),
@@ -103,6 +103,7 @@ func run() error {
 	var roomService *roomdomain.Service
 	if databaseStore != nil {
 		accountService = accountdomain.New(databaseStore)
+		platformAPI.SetAccounts(accountService)
 		if cfg.Application.BootstrapAdminUsername != "" || cfg.Application.BootstrapAdminPassword != "" {
 			if err := accountService.Bootstrap(applicationContext, cfg.Application.BootstrapAdminUsername, cfg.Application.BootstrapAdminPassword); err != nil {
 				return fmt.Errorf("bootstrap administrator: %w", err)
@@ -198,6 +199,12 @@ func run() error {
 		defer func() { stopCleanup(); <-cleanupDone }()
 		authAPI.SetSessionPresenceUpdater(socketHub)
 		realtimeManager = realtime.NewManager(databaseStore, cfg.Performance.RoomCommandQueueCapacity, cfg.Performance.RoomCommandQueueTimeout, cfg.Player.RoomEvictionIdle, socketHub, realtime.QueueLimits{MaxSize: cfg.Queue.MaxSize, MaxUserSongs: cfg.Queue.MaxUserSongs, HistorySize: cfg.Queue.HistorySize})
+		realtimeManager.SetPreResolver(func(ctx context.Context, music storesqlite.Music) {
+			platformAPI.PreResolveMedia(ctx, platform.Music{ID: music.ID, Name: music.Name, Artists: music.Artists, Duration: music.Duration, Platform: music.Platform, CoverURL: music.CoverURL}, mediaCache)
+		})
+		realtimeManager.SetStreamVerifier(func(ctx context.Context, music storesqlite.Music) error {
+			return platformAPI.VerifyStream(ctx, music.Platform, music.ID)
+		})
 		realtimeManager.SetChatLimits(realtime.ChatLimits{MinInterval: cfg.Chat.MinInterval, MaxHistorySize: cfg.Chat.MaxHistorySize, MaxMessageLength: cfg.Chat.MaxMessageLength})
 		defer realtimeManager.Close()
 		defer socketHub.Close()

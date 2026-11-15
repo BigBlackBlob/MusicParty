@@ -139,6 +139,12 @@ func Recover(logger *slog.Logger) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() {
 				if recovered := recover(); recovered != nil {
+					// ErrAbortHandler is a deliberate connection abort after headers
+					// were sent (e.g. a failed partial media stream). Re-panic so
+					// net/http drops the connection instead of appending an error body.
+					if recovered == http.ErrAbortHandler {
+						panic(recovered)
+					}
 					logger.Error("http handler panic", "panic", recovered, "method", r.Method, "path", r.URL.Path)
 					WriteMappedError(w, errors.New("panic"))
 				}

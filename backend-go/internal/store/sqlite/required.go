@@ -53,6 +53,12 @@ func EnsureCompatibleSchema(ctx context.Context, store *Store, initializeEmpty b
 			return fmt.Errorf("initialize frozen SQLite schema: %w", err)
 		}
 	}
+	if err := store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `create table if not exists playback_event_log (id integer primary key autoincrement, room_id text not null, server_time_ms integer not null, event_type text not null, play_epoch integer not null, queue_id text not null, actor_public_id text, result text not null, reason text not null)`)
+		return err
+	}); err != nil {
+		return fmt.Errorf("migrate playback event log: %w", err)
+	}
 	required, err := RequiredSchema()
 	if err != nil {
 		return err

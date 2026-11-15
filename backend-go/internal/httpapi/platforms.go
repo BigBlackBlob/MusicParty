@@ -9,7 +9,6 @@ import (
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
-	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -20,8 +19,10 @@ import (
 
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/config"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/domain/account"
+	"github.com/BigBlackBlob/MusicParty/backend-go/internal/media"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform"
 	"github.com/go-chi/chi/v5"
+	"golang.org/x/sync/singleflight"
 )
 
 type PlatformAPI struct {
@@ -29,14 +30,13 @@ type PlatformAPI struct {
 	mu         sync.RWMutex
 	services   map[string]platform.Service
 	access     map[string]func(context.Context, string) bool
-	cacheMu    sync.Mutex
-	cache      map[string]cachedPlayable
 	coverSlots chan struct{}
-}
 
-type cachedPlayable struct {
-	value     platform.PlayableMusic
-	expiresAt time.Time
+	accounts     *account.Service
+	coverClient  *http.Client
+	colorsMu     sync.Mutex
+	colors       map[string]cachedCoverColor
+	colorFlights singleflight.Group
 }
 
 // decodedURLParam restores the complete value emitted by encodeURIComponent.
@@ -53,14 +53,25 @@ func decodedURLParam(r *http.Request, name string) (string, error) {
 	return value, nil
 }
 
-func NewPlatformAPI(cfg config.Config, services ...platform.Service) *PlatformAPI {
+func NewPlatformAPI(cfg config.Config, services ...platform.Service) (api *PlatformAPI) {
+	defer func() {
+		api.coverClient = newCoverClient()
+		api.colors = make(map[string]cachedCoverColor)
+	}()
 	m := make(map[string]platform.Service, len(services))
 	for _, service := range services {
 		if service != nil {
 			m[service.Name()] = service
 		}
 	}
-	return &PlatformAPI{cfg: cfg, services: m, access: map[string]func(context.Context, string) bool{}, cache: map[string]cachedPlayable{}, coverSlots: make(chan struct{}, 2)}
+	return &PlatformAPI{cfg: cfg, services: m, access: map[string]func(context.Context, string) bool{}, coverSlots: make(chan struct{}, 2)}
+}
+
+// SetAccounts configures session authentication for cover-color requests.
+func (api *PlatformAPI) SetAccounts(accounts *account.Service) {
+	api.mu.Lock()
+	defer api.mu.Unlock()
+	api.accounts = accounts
 }
 
 // PlatformAccess builds the same allowlist policy for startup configuration and live updates.
@@ -126,10 +137,16 @@ func (api *PlatformAPI) Service(name string) (platform.Service, bool) {
 // authorizedMediaSource snapshots a service and its policy together, then runs
 // the policy without holding the registry lock across account/database work.
 func (api *PlatformAPI) authorizedMediaSource(r *http.Request, name string) (platform.MediaSource, error) {
+	return api.MediaSourceFor(r.Context(), name, sessionToken(r))
+}
+
+// MediaSourceFor resolves and authorizes a platform media source without requiring
+// an HTTP request, so the room runtime can use it for pre-resolution at track change.
+func (api *PlatformAPI) MediaSourceFor(ctx context.Context, name, token string) (platform.MediaSource, error) {
 	api.mu.RLock()
 	service, check := api.services[name], api.access[name]
 	api.mu.RUnlock()
-	if service == nil || !service.Available() || (check != nil && !check(r.Context(), sessionToken(r))) {
+	if service == nil || !service.Available() || (check != nil && !check(ctx, token)) {
 		return nil, &APIError{Status: http.StatusForbidden, Message: "Forbidden"}
 	}
 	source, ok := service.(platform.MediaSource)
@@ -137,6 +154,32 @@ func (api *PlatformAPI) authorizedMediaSource(r *http.Request, name string) (pla
 		return nil, BadGateway("Platform does not expose media")
 	}
 	return source, nil
+}
+
+// PreResolveMedia submits a best-effort cache job for a queued track. It shares
+// the same resolver, cache key, and upstream headers as the serving path.
+func (api *PlatformAPI) PreResolveMedia(ctx context.Context, music platform.Music, cache *media.Cache) {
+	if cache == nil || music.Platform == "local" || music.ID == "" {
+		return
+	}
+	source, err := api.MediaSourceFor(ctx, music.Platform, "")
+	if err != nil {
+		return
+	}
+	target, err := source.StreamURL(ctx, music.ID)
+	if err != nil || target == "" {
+		return
+	}
+	headers := http.Header{"Accept": {"application/octet-stream"}}
+	if music.Platform == "netease" {
+		headers.Set("Referer", "https://music.163.com/")
+		headers.Set("User-Agent", "Mozilla/5.0")
+	}
+	if music.Platform == "bilibili" {
+		headers.Set("Referer", "https://www.bilibili.com/video/"+music.ID)
+		headers.Set("User-Agent", "Mozilla/5.0")
+	}
+	_ = cache.Submit(platformCacheKey(source, music.Platform, music.ID), target, headers)
 }
 func (api *PlatformAPI) SupportsCredentialUpdate(name string) bool {
 	api.mu.RLock()
@@ -154,13 +197,6 @@ func (api *PlatformAPI) UpdateCredential(name, credential string) error {
 		return fmt.Errorf("platform credential updates are not supported")
 	}
 	updater.UpdateCredential(credential)
-	api.cacheMu.Lock()
-	for key := range api.cache {
-		if strings.HasPrefix(key, name+":") {
-			delete(api.cache, key)
-		}
-	}
-	api.cacheMu.Unlock()
 	return nil
 }
 
@@ -173,34 +209,28 @@ func platformCacheKey(source any, name, id string) string {
 	return name + ":" + id
 }
 
+// VerifyStream checks media resolution without fetching audio. Room verification has
+// no user session, just like pre-resolution. Token-restricted sources remain
+// unconfirmed when their access policy rejects the empty session token.
+func (api *PlatformAPI) VerifyStream(ctx context.Context, platformName, musicID string) error {
+	source, err := api.MediaSourceFor(ctx, platformName, "")
+	if err != nil {
+		return err
+	}
+	_, err = source.StreamURL(ctx, musicID)
+	return err
+}
+
 func (api *PlatformAPI) ResolvePlayable(ctx context.Context, platformName, musicID, sessionToken string) (platform.PlayableMusic, error) {
 	service, err := api.authorizedPlatform(ctx, platformName, sessionToken)
 	if err != nil {
 		return platform.PlayableMusic{}, err
 	}
-	key := platformCacheKey(service, platformName, musicID)
-	now := time.Now()
-	api.cacheMu.Lock()
-	if cached, ok := api.cache[key]; ok && now.Before(cached.expiresAt) {
-		api.cacheMu.Unlock()
-		return cached.value, nil
-	}
-	api.cacheMu.Unlock()
 	resolver, ok := service.(platform.PlayableResolver)
 	if !ok {
 		return platform.PlayableMusic{}, fmt.Errorf("platform %s does not resolve playable tracks", platformName)
 	}
-	resolved, err := resolver.ResolvePlayable(ctx, musicID)
-	if err != nil {
-		return platform.PlayableMusic{}, err
-	}
-	api.cacheMu.Lock()
-	if len(api.cache) >= 2048 {
-		clear(api.cache)
-	}
-	api.cache[key] = cachedPlayable{value: resolved, expiresAt: now.Add(5 * time.Minute)}
-	api.cacheMu.Unlock()
-	return resolved, nil
+	return resolver.ResolvePlayable(ctx, musicID)
 }
 
 func (api *PlatformAPI) Routes(r chi.Router) {
@@ -214,7 +244,7 @@ func (api *PlatformAPI) Routes(r chi.Router) {
 	r.Get("/api/user/search/{platform}/{keyword}", Adapt(api.searchUsers))
 	r.Get("/api/music/lyric/{platform}/{musicId}", Adapt(api.lyric))
 	r.Get("/api/music/lyric-detail/{platform}/{musicId}", Adapt(api.lyricDetail))
-	r.Get("/api/theme/extract-cover-color", Adapt(api.coverColor))
+	r.With(api.requireCoverSession).Get("/api/theme/extract-cover-color", Adapt(api.coverColor))
 }
 func (api *PlatformAPI) config(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, map[string]string{"authorName": api.cfg.Application.AuthorName, "backWords": api.cfg.Application.BackWords})
@@ -432,10 +462,18 @@ func (api *PlatformAPI) lyricDetail(w http.ResponseWriter, r *http.Request) erro
 	return writePlatformResult(w, v, err)
 }
 func (api *PlatformAPI) coverColor(w http.ResponseWriter, r *http.Request) error {
-	coverPath := r.URL.Query().Get("url")
-	name, id, err := proxiedCover(coverPath)
+	target, upstreamErr := upstreamCoverURL(r.URL.Query().Get("url"))
+	if upstreamErr == nil {
+		value, err := api.upstreamColor(r.Context(), target)
+		if err != nil {
+			return err
+		}
+		writeJSON(w, value)
+		return nil
+	}
+	name, id, err := proxiedCover(r.URL.Query().Get("url"))
 	if err != nil {
-		return &APIError{Status: http.StatusBadRequest, Message: "Only proxied cover URLs are supported"}
+		return badRequest("Only proxied or allowlisted cover URLs are supported")
 	}
 	source, err := api.authorizedMediaSource(r, name)
 	if err != nil {
@@ -447,55 +485,16 @@ func (api *PlatformAPI) coverColor(w http.ResponseWriter, r *http.Request) error
 	default:
 		return &APIError{Status: http.StatusServiceUnavailable, Message: "Cover processing capacity reached"}
 	}
-	target, err := source.CoverURL(r.Context(), id)
+	target, err = source.CoverURL(r.Context(), id)
 	if err != nil || target == "" {
 		return BadGateway("Cover source unavailable")
 	}
-	request, err := http.NewRequestWithContext(r.Context(), http.MethodGet, target, nil)
+	// Configured media sources retain their existing network and access policy.
+	value, err := api.readCoverColor(r.Context(), target, &http.Client{Timeout: 5 * time.Second, CheckRedirect: noCoverRedirect})
 	if err != nil {
 		return err
 	}
-	coverClient := &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	response, err := coverClient.Do(request)
-	if err != nil {
-		return mapPlatformError(err)
-	}
-	defer response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode >= 300 || response.StatusCode/100 == 3 {
-		return BadGateway("Cover proxy request failed")
-	}
-	if !strings.HasPrefix(strings.ToLower(response.Header.Get("Content-Type")), "image/") {
-		return BadGateway("Cover response is not an image")
-	}
-	encoded, err := io.ReadAll(io.LimitReader(response.Body, (3<<20)+1))
-	if err != nil || len(encoded) > 3<<20 {
-		return BadGateway("Cover image exceeds byte limit")
-	}
-	decoded, err := decodeBoundedCover(encoded)
-	if err != nil {
-		return BadGateway("Cover image could not be decoded")
-	}
-	bounds := decoded.Bounds()
-	stepX, stepY := max(1, bounds.Dx()/64), max(1, bounds.Dy()/64)
-	var red, green, blue, count uint64
-	for y := bounds.Min.Y; y < bounds.Max.Y; y += stepY {
-		for x := bounds.Min.X; x < bounds.Max.X; x += stepX {
-			r, g, b, a := decoded.At(x, y).RGBA()
-			if a < 0x4000 {
-				continue
-			}
-			red += uint64(r >> 8)
-			green += uint64(g >> 8)
-			blue += uint64(b >> 8)
-			count++
-		}
-	}
-	if count == 0 {
-		return BadGateway("Cover image has no visible pixels")
-	}
-	r8, g8, b8 := red/count, green/count, blue/count
-	accent := fmt.Sprintf("#%02x%02x%02x", r8, g8, b8)
-	writeJSON(w, map[string]string{"accent": accent, "accentHover": accent, "accentMuted": fmt.Sprintf("rgba(%d, %d, %d, 0.16)", r8, g8, b8), "accentSubtle": fmt.Sprintf("rgba(%d, %d, %d, 0.08)", r8, g8, b8)})
+	writeJSON(w, value)
 	return nil
 }
 

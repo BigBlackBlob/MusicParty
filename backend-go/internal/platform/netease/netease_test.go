@@ -6,7 +6,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform"
 	"github.com/stretchr/testify/require"
@@ -146,4 +149,104 @@ func TestMissingCookieDoesNotCallUpstream(t *testing.T) {
 	require.ErrorAs(t, err, &credentialErr)
 	require.Equal(t, "netease", credentialErr.Platform)
 	require.Zero(t, calls)
+}
+
+func TestStreamResolution(t *testing.T) {
+	cases := []struct {
+		name       string
+		quality    string
+		responses  map[string]string
+		wantURL    string
+		wantKind   string
+		wantLevels []string
+	}{
+		{name: "full", quality: "exhigh", responses: map[string]string{"exhigh": `{"data":[{"id":42,"url":"https://cdn.test/full","code":200,"expi":1200,"br":320000,"type":"mp3","size":10,"freeTrialInfo":null,"freeTrialPrivilege":{"cannotListenReason":0}}]}`}, wantURL: "https://cdn.test/full", wantLevels: []string{"exhigh"}},
+		{name: "trial", quality: "exhigh", responses: map[string]string{"exhigh": `{"data":[{"id":42,"url":"https://cdn.test/preview","code":200,"expi":1200,"freeTrialInfo":{"start":0,"end":30},"freeTrialPrivilege":{"cannotListenReason":1}}]}`}, wantKind: platform.StreamTrialOnly, wantLevels: []string{"exhigh"}},
+		{name: "step down", quality: "exhigh", responses: map[string]string{"exhigh": `{"data":[]}`, "higher": `{"data":[{"id":42,"url":"https://cdn.test/lower","code":200,"expi":1200}]}`}, wantURL: "https://cdn.test/lower", wantLevels: []string{"exhigh", "higher"}},
+		{name: "invalid quality", quality: "invalid", responses: map[string]string{"exhigh": `{"data":[{"id":42,"url":"https://cdn.test/default","code":200,"expi":1200}]}`}, wantURL: "https://cdn.test/default", wantLevels: []string{"exhigh"}},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			var levels []string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				require.NotEmpty(t, r.URL.Query().Get("timestamp"))
+				levels = append(levels, r.URL.Query().Get("level"))
+				_, _ = w.Write([]byte(test.responses[r.URL.Query().Get("level")]))
+			}))
+			defer server.Close()
+			service := New(&platform.Client{HTTP: server.Client(), Retries: 0, MaxBody: 2048}, server.URL, "secret", test.quality)
+			got, err := service.StreamURL(context.Background(), "42")
+			require.Equal(t, test.wantURL, got)
+			if test.wantKind != "" {
+				var streamErr *platform.StreamResolutionError
+				require.ErrorAs(t, err, &streamErr)
+				require.Equal(t, test.wantKind, streamErr.Kind)
+				if test.wantKind == platform.StreamTrialOnly {
+					require.Equal(t, 1, streamErr.Reason)
+				}
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, test.wantLevels, levels)
+		})
+	}
+}
+
+func TestStreamCacheExpiryInvalidationAndCredentialUpdate(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		require.NotEmpty(t, r.URL.Query().Get("timestamp"))
+		_, _ = w.Write([]byte(`{"data":[{"id":42,"url":"https://cdn.test/stream","code":200,"expi":180}]}`))
+	}))
+	defer server.Close()
+	service := New(&platform.Client{HTTP: server.Client(), Retries: 0, MaxBody: 2048}, server.URL, "first")
+	now := time.Unix(100, 0)
+	service.now = func() time.Time { return now }
+	for i := 0; i < 2; i++ {
+		_, err := service.StreamURL(context.Background(), "42")
+		require.NoError(t, err)
+	}
+	require.EqualValues(t, 1, calls.Load())
+	now = now.Add(61 * time.Second) // expi minus two-minute margin is clamped to one second.
+	_, err := service.StreamURL(context.Background(), "42")
+	require.NoError(t, err)
+	require.EqualValues(t, 2, calls.Load())
+	service.InvalidateStream("42")
+	_, err = service.StreamURL(context.Background(), "42")
+	require.NoError(t, err)
+	require.EqualValues(t, 3, calls.Load())
+	service.UpdateCredential("second")
+	_, err = service.StreamURL(context.Background(), "42")
+	require.NoError(t, err)
+	require.EqualValues(t, 4, calls.Load())
+}
+
+func TestConcurrentStreamRequestsShareUpstreamCall(t *testing.T) {
+	var calls atomic.Int32
+	started := make(chan struct{})
+	proceed := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if calls.Add(1) == 1 {
+			close(started)
+		}
+		<-proceed
+		_, _ = w.Write([]byte(`{"data":[{"id":42,"url":"https://cdn.test/shared","code":200,"expi":1200}]}`))
+	}))
+	defer server.Close()
+	service := New(&platform.Client{HTTP: server.Client(), Retries: 0, MaxBody: 2048}, server.URL, "cookie")
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			got, err := service.StreamURL(context.Background(), "42")
+			require.NoError(t, err)
+			require.Equal(t, "https://cdn.test/shared", got)
+		}()
+	}
+	<-started
+	close(proceed)
+	wg.Wait()
+	require.EqualValues(t, 1, calls.Load())
 }

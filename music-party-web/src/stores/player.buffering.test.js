@@ -61,22 +61,11 @@ describe('buffering progress + reload position restore', () => {
     expect(src).toContain('audio.bufferedMs');
   });
 
-  it('useAudio implements three-level soft retry (L1 wait / L2 soft retry / L3 hard reload)', () => {
+  it('useAudio lets the media element recover stalls without reloading its source', () => {
     const src = readSrc('src/composables/useAudio.js');
-    // 三级超时常量
-    expect(src).toContain('STALLED_L1_SOFT_WAIT_MS');
-    expect(src).toContain('STALLED_L2_SOFT_RETRY_MS');
-    expect(src).toContain('STALLED_L3_HARD_RELOAD_MS');
-    // 旧的单一 7s watchdog 常量已移除
-    expect(src).not.toContain('STALLED_WATCHDOG_MS');
-    // 三级实现函数
-    expect(src).toContain('softRetrySource');
-    expect(src).toContain('hardReloadSource');
-    // L2 软重试用 src=src 保留缓冲，不是 load()
-    expect(src).toContain('audio.src = currentSrc');
-    // L3 硬重载仍用 load() + pendingResumePositionMs 恢复
-    expect(src).toContain('currentAudio.load()');
-    // isActuallyStalled 过滤误判
+    expect(src).not.toContain('playbackRate =');
+    expect(src).not.toContain('audio.src = currentSrc');
+    expect(src).not.toContain('audio.src = currentSrc');
     expect(src).toContain('isActuallyStalled');
     expect(src).toContain("reason === 'emptied'");
     expect(src).toContain("reason === 'suspend'");

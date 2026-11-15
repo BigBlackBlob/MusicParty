@@ -64,10 +64,10 @@ func clientMessageSpecs() []messageSpec {
 		{"client.hello", fields("apiVersion", "string", "clientVersion", "string")},
 		{"chat.history.fetch", fields("offset", "number?", "limit", "number?")},
 		{"chat.message", fields("content", "string")},
-		{"control.like", controlFields("expectedPlayEpoch", "number?")}, {"control.next", controlFields()},
-		{"control.previous", controlFields("expectedPlayEpoch", "number?")},
-		{"control.seek", controlFields("expectedPlayEpoch", "number?", "positionMs", "number")},
-		{"control.toggle-pause", controlFields()}, {"control.toggle-shuffle", controlFields()},
+		{"control.like", controlFields("expectedPlayEpoch", "number?")}, {"control.next", controlFields("playEpoch", "number", "queueId", "string", "stateVersion", "number", "positionMs", "number", "clientTime", "number")},
+		{"control.previous", controlFields("playEpoch", "number", "queueId", "string", "stateVersion", "number", "positionMs", "number", "clientTime", "number")},
+		{"control.seek", controlFields("playEpoch", "number", "queueId", "string", "stateVersion", "number", "positionMs", "number", "clientTime", "number")},
+		{"control.toggle-pause", controlFields("playEpoch", "number", "queueId", "string", "stateVersion", "number", "positionMs", "number", "clientTime", "number")}, {"control.toggle-shuffle", controlFields()},
 		{"control.unlike", controlFields("expectedPlayEpoch", "number?")},
 		{"enqueue", fields("platform", "string", "musicId", "string", "mutationId", "string")},
 		{"enqueue.album", fields("platform", "string", "albumId", "string", "mutationId", "string")},
@@ -75,6 +75,10 @@ func clientMessageSpecs() []messageSpec {
 		{"enqueue.room-playlist", fields("playlistId", "string", "mutationId", "string")},
 		{"history.list", fields("offset", "number?", "limit", "number?")},
 		{"player.resync", fields()},
+		{"playback.started", fields("playEpoch", "number", "queueId", "string", "positionMs", "number", "clientTime", "number", "durationMs", "number")},
+		{"playback.stalled", fields("playEpoch", "number", "queueId", "string", "positionMs", "number")},
+		{"playback.error", fields("playEpoch", "number", "queueId", "string", "code", "\"stream-trial-only\" | \"stream-unavailable\" | \"retries-exhausted\"")},
+		{"playback.ended", fields("playEpoch", "number", "queueId", "string")},
 		{"playlist.add-items", fields("scope", "string", "playlistId", "string", "mutationId", "string", "items", "Music[]")},
 		{"playlist.create", fields("scope", "string", "name", "string", "mutationId", "string")},
 		{"playlist.delete", fields("scope", "string", "playlistId", "string", "mutationId", "string")},
@@ -109,6 +113,7 @@ func serverMessageSpecs() []messageSpec {
 		{"enqueue.nack", fields("accepted", "boolean?", "mutationId", "string", "reason", "string", "queueVersion", "number?")},
 		{"history.page", fields("roomId", "string", "total", "number", "offset", "number", "items", "PlaybackHistoryItem[]")},
 		directMessage("player.events", "PlayerEvent"),
+		directMessage("player.failed", "PlayerFailed"),
 		{"player.state", fields("nowPlaying", "NowPlaying | null?", "queue", "QueueItem[]?", "isShuffle", "boolean", "isPaused", "boolean", "isPauseLocked", "boolean", "isSkipLocked", "boolean", "isShuffleLocked", "boolean", "isLoading", "boolean", "serverTimestamp", "number", "stateVersion", "number", "playEpoch", "number", "queueVersion", "number", "queueEpoch", "string?", "historyCursor", "number", "idempotencyScopeId", "string?", "idempotencyTtlMs", "number?")},
 		{"playlist.ack", fields("operation", "string", "scope", "string", "mutationId", "string", "playlist", "PlaylistSummary?", "playlistId", "string?", "playlists", "PlaylistSummary[]?", "tracks", "PlaylistTrack[]?", "addedCount", "number?", "skippedCount", "number?", "removedCount", "number?", "count", "number?")},
 		{"playlist.data", fields("operation", "string", "scope", "string", "playlists", "PlaylistSummary[]?", "playlistId", "string?", "tracks", "PlaylistTrack[]?")},
@@ -246,8 +251,8 @@ export interface RoomInvite { id: string; secret?: string; label: string; expire
 export interface PlatformDescriptor { id: string; label: string; supportsAlbumSearch: boolean; subsonic: boolean }
 export interface Music { id: string; name: string; artists: string[]; duration: number; platform: string; coverUrl: string }
 export interface PlayableMusic extends Music { url: string; needsProxy: boolean }
-export interface NowPlaying { music: PlayableMusic; currentPosition: number; enqueuedById?: string | null; enqueuedByName?: string | null; likedUserIds: string[]; likeMarkers: number[]; playEpoch: number; positionUpdatedAt: number }
-export interface QueueItem { playbackPriority?: number; queueId: string; music: Music; enqueuedBy: UserSummary; status: string }
+export interface NowPlaying { music: PlayableMusic; currentPosition: number; enqueuedById?: string | null; enqueuedByName?: string | null; likedUserIds: string[]; likeMarkers: number[]; playEpoch: number; positionUpdatedAt: number; queueId: string; sessionState: 'resolving' | 'ready' | 'playing' | 'stalled' | 'ended' | 'failed' }
+export interface QueueItem { playbackPriority?: number; queueId: string; music: PlayableMusic; enqueuedBy: UserSummary; status: string }
 export interface PlaylistSummary { id: string; ownerPublicId?: string; roomId?: string; name: string; systemKey: string | null; trackCount: number; createdAt: number; updatedAt: number }
 export interface PlaylistTrack { id: string; playlistId: string; music: Music; sortOrder: number; createdAt: number }
 export interface LocalTrack extends Music { path?: string; size?: number; modifiedAt?: number }
@@ -255,6 +260,7 @@ export interface ChatMessage { id: string; userId: string; userName: string; con
 export interface PlaybackHistoryItem { id: string; music: Music; enqueuerPublicId: string | null; enqueuerName: string | null; playedAt: number }
 export type PlayerEventCode = 'CONTROL_DENIED' | 'RENAME_FAILED' | 'ROOM_PASSWORD_CHANGED' | 'ROOM_DELETED' | 'ROOM_PLAYLISTS_UPDATED' | 'RESET' | 'REMOVE' | 'ERROR_LOAD' | 'SYSTEM_MESSAGE' | 'SEEK_DENIED' | 'LIKE' | 'USER_JOIN' | 'USER_LEAVE' | 'PLAY_START'
 export interface PlayerEvent { code: PlayerEventCode; severity: 'info' | 'success' | 'warning' | 'error'; message: string; actor?: UserSummary; metadata?: Record<string, string | number | boolean> }
+export interface PlayerFailed { queueId: string; musicId: string; name: string; platform: string; reason: 'preview_only' | 'unavailable' | 'resolve_failed' | 'unknown'; message: string }
 export interface APIError { status: number; code: string; message: string; requestId?: string; fieldErrors?: Record<string, string> }
 `
 }
@@ -268,7 +274,7 @@ export type { AccountStatus, APIError, LocalTrack, Music, PlatformDescriptor, Pl
 func generatedWebSocket(client, server []messageSpec) string {
 	var output strings.Builder
 	output.WriteString("// Code generated by backend-go/cmd/contractgen. DO NOT EDIT.\n")
-	output.WriteString("import type { ChatMessage, ControlAckCommitted, ControlAckOutcome, Music, NowPlaying, PlaybackHistoryItem, PlayerEvent, PlaylistSummary, PlaylistTrack, PresenceSnapshot, QueueItem, QueuePatchOperation, RoomSummary, UserSummary } from './models'\n\n")
+	output.WriteString("import type { ChatMessage, ControlAckCommitted, ControlAckOutcome, Music, NowPlaying, PlaybackHistoryItem, PlayerEvent, PlayerFailed, PlaylistSummary, PlaylistTrack, PresenceSnapshot, QueueItem, QueuePatchOperation, RoomSummary, UserSummary } from './models'\n\n")
 	writeEnvelopeTypes(&output, client, "Client")
 	writeEnvelopeTypes(&output, server, "Server")
 	return output.String()

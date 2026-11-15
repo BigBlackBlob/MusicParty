@@ -22,6 +22,17 @@ type cacheEntry struct {
 	accessOrder uint64
 }
 
+type inflightEntry struct {
+	url     string
+	headers http.Header
+	total   int64
+	written int64
+	done    bool
+	failed  bool
+	attempt uint64
+	changed chan struct{}
+}
+
 // CacheOptions apply only to background downloads, never the playback proxy.
 type CacheOptions struct {
 	PlatformLimits                 map[string]int
@@ -49,6 +60,7 @@ func ParseByteSize(value string) (int64, error) {
 type downloadJob struct {
 	key, url string
 	deadline time.Time
+	headers  http.Header
 }
 
 // Cache accounts for committed files plus reservations covering all partial writes.
@@ -66,7 +78,7 @@ type Cache struct {
 	mu                       sync.Mutex
 	entries                  map[string]cacheEntry
 	usedBytes, reservedBytes int64
-	inflight                 map[string]struct{}
+	inflight                 map[string]*inflightEntry
 	readers                  map[string]int
 	limits                   map[string]chan struct{}
 	accessSeq                uint64
@@ -109,7 +121,7 @@ func NewCache(root string, maxBytes int64, client *http.Client, workers, capacit
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &Cache{ctx: ctx, cancel: cancel, root: root, maxBytes: maxBytes, client: client, retries: retries, retryBase: retryBase, options: opts,
-		jobs: make(chan downloadJob, max(1, capacity)), entries: map[string]cacheEntry{}, inflight: map[string]struct{}{}, readers: map[string]int{}, limits: map[string]chan struct{}{}}
+		jobs: make(chan downloadJob, max(1, capacity)), entries: map[string]cacheEntry{}, inflight: map[string]*inflightEntry{}, readers: map[string]int{}, limits: map[string]chan struct{}{}}
 	if err := c.scan(); err != nil {
 		cancel()
 		return nil, err
@@ -183,7 +195,7 @@ func (c *Cache) lookupLocked(id string) (string, bool) {
 	return path, exists
 }
 
-func (c *Cache) Submit(key, url string) error {
+func (c *Cache) Submit(key, url string, headers http.Header) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed {
@@ -195,12 +207,16 @@ func (c *Cache) Submit(key, url string) error {
 	if _, ok := c.inflight[key]; ok {
 		return nil
 	}
-	c.inflight[key] = struct{}{}
+	if headers == nil {
+		headers = make(http.Header)
+	}
+	headers = headers.Clone()
+	c.inflight[key] = &inflightEntry{url: url, headers: headers, total: -1, changed: make(chan struct{})}
 	select {
 	case <-c.ctx.Done():
 		delete(c.inflight, key)
 		return context.Canceled
-	case c.jobs <- downloadJob{key: key, url: url, deadline: time.Now().Add(c.options.TaskTTL)}:
+	case c.jobs <- downloadJob{key: key, url: url, deadline: time.Now().Add(c.options.TaskTTL), headers: headers}:
 		return nil
 	default:
 		delete(c.inflight, key)
@@ -240,6 +256,12 @@ func (c *Cache) worker() {
 		case job := <-c.jobs:
 			c.download(job)
 			c.mu.Lock()
+			if entry := c.inflight[job.key]; entry != nil {
+				if !entry.done {
+					entry.failed = true
+				}
+				wakeInflightLocked(entry)
+			}
 			delete(c.inflight, job.key)
 			c.mu.Unlock()
 		}

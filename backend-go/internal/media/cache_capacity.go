@@ -178,6 +178,8 @@ func (c *Cache) commitPartial(ctx context.Context, part, path string, size int64
 type cacheWriter struct {
 	ctx         context.Context
 	cache       *Cache
+	entry       *inflightEntry
+	attempt     uint64
 	file        io.Writer
 	reservation *cacheReservation
 	written     int64
@@ -195,5 +197,18 @@ func (w *cacheWriter) Write(bytes []byte) (int, error) {
 	}
 	n, err := w.file.Write(bytes)
 	w.written += int64(n)
+	if n > 0 {
+		w.cache.mu.Lock()
+		if w.entry.attempt == w.attempt {
+			w.entry.written = w.written
+			wakeInflightLocked(w.entry)
+		}
+		w.cache.mu.Unlock()
+	}
 	return n, err
+}
+
+func wakeInflightLocked(entry *inflightEntry) {
+	close(entry.changed)
+	entry.changed = make(chan struct{})
 }

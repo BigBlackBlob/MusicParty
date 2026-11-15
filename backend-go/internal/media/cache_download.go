@@ -29,7 +29,16 @@ func (c *Cache) download(job downloadJob) {
 		if attempt > 0 && !waitDownload(ctx, c.retryDelay(attempt)) {
 			return
 		}
-		retry, after := c.downloadAttempt(ctx, job)
+		entry, generation := c.startInflightAttempt(job.key)
+		retry, after := c.downloadAttempt(ctx, job, entry, generation)
+		if retry {
+			c.mu.Lock()
+			if entry != nil && entry.attempt == generation && !entry.done {
+				entry.failed = true
+				wakeInflightLocked(entry)
+			}
+			c.mu.Unlock()
+		}
 		if !retry || ctx.Err() != nil {
 			return
 		}
@@ -41,10 +50,32 @@ func (c *Cache) download(job downloadJob) {
 
 // Each attempt owns one reservation and one partial. The task deadline spans
 // queueing, platform admission, all retries and response-body reads.
-func (c *Cache) downloadAttempt(ctx context.Context, job downloadJob) (bool, time.Duration) {
+func (c *Cache) startInflightAttempt(key string) (*inflightEntry, uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry := c.inflight[key]
+	if entry == nil {
+		return nil, 0
+	}
+	entry.attempt++
+	entry.total = -1
+	entry.written = 0
+	entry.failed = false
+	entry.done = false
+	wakeInflightLocked(entry)
+	return entry, entry.attempt
+}
+
+func (c *Cache) downloadAttempt(ctx context.Context, job downloadJob, entry *inflightEntry, generation uint64) (bool, time.Duration) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, job.url, nil)
 	if err != nil {
 		return false, 0
+	}
+	// Apply platform-specific headers for Bilibili and NetEase CDN requests.
+	for name, values := range job.headers {
+		for _, value := range values {
+			request.Header.Add(name, value)
+		}
 	}
 	response, err := c.client.Do(request)
 	if err != nil {
@@ -59,6 +90,12 @@ func (c *Cache) downloadAttempt(ctx context.Context, job downloadJob) (bool, tim
 		}
 		return response.StatusCode >= 500, 0
 	}
+	c.mu.Lock()
+	if entry != nil && entry.attempt == generation {
+		entry.total = response.ContentLength
+		wakeInflightLocked(entry)
+	}
+	c.mu.Unlock()
 	if response.ContentLength > c.options.MaxFileBytes {
 		return false, 0
 	}
@@ -83,7 +120,7 @@ func (c *Cache) downloadAttempt(ctx context.Context, job downloadJob) (bool, tim
 			c.discardPartial(part, reservation)
 		}
 	}()
-	writer := &cacheWriter{ctx: ctx, cache: c, file: file, reservation: reservation}
+	writer := &cacheWriter{ctx: ctx, cache: c, entry: entry, attempt: generation, file: file, reservation: reservation}
 	size, copyErr := io.Copy(writer, response.Body)
 	closeErr := errors.Join(file.Close(), response.Body.Close())
 	if ctx.Err() != nil {
@@ -96,6 +133,12 @@ func (c *Cache) downloadAttempt(ctx context.Context, job downloadJob) (bool, tim
 		return false, 0
 	}
 	committed = true
+	c.mu.Lock()
+	if entry != nil && entry.attempt == generation {
+		entry.done = true
+		wakeInflightLocked(entry)
+	}
+	c.mu.Unlock()
 	return false, 0
 }
 
