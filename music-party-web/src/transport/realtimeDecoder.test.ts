@@ -151,3 +151,9 @@ describe('decodeServerEnvelope', () => {
     for (const envelope of invalid) expect(decodeServerEnvelope(JSON.stringify(envelope))).toBeNull()
   })
 })
+
+it('decodes playback failures and rejects unknown reasons', () => {
+  const payload = { queueId: 'q', musicId: 'm', name: 'Track', platform: 'local', reason: 'preview_only', message: 'Only a preview is available' }
+  expect(decodeServerEnvelope(JSON.stringify({ type: 'player.failed', roomId: 'lounge', payload }))).toMatchObject({ type: 'player.failed', payload })
+  expect(decodeServerEnvelope(JSON.stringify({ type: 'player.failed', payload: { ...payload, reason: 'invalid' } }))).toBeNull()
+})

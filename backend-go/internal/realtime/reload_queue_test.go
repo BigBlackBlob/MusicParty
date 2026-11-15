@@ -45,7 +45,7 @@ func TestReloadQueueDropsRemovedTracksAndBumpsVersion(t *testing.T) {
 
 	after, err := runtime.Snapshot(ctx)
 	require.NoError(t, err)
-	queue, ok := after["queue"].([]storesqlite.QueueItem)
+	queue, ok := after["queue"].([]clientQueueItem)
 	require.True(t, ok)
 	require.Len(t, queue, 1)
 	require.Equal(t, "keep", queue[0].Music.ID)
@@ -98,7 +98,7 @@ func TestReloadQueueDropsDeletedCurrentTrack(t *testing.T) {
 	require.NoError(t, err)
 	music := after["nowPlaying"].(map[string]any)["music"].(*storesqlite.PlayableMusic)
 	require.Equal(t, "keep", music.ID, "the next queued track takes over")
-	queue, ok := after["queue"].([]storesqlite.QueueItem)
+	queue, ok := after["queue"].([]clientQueueItem)
 	require.True(t, ok)
 	require.Empty(t, queue)
 	require.Equal(t, version+1, after["queueVersion"].(int64))

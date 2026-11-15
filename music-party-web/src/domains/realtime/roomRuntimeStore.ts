@@ -31,6 +31,7 @@ export const useRoomRuntimeStore = defineStore('room-runtime', () => {
   const historyCursor = ref(0)
   const lastStateVersion = ref(0)
   const lastQueueVersion = ref(0)
+  const playbackQueueVersion = ref(0)
   const queueEpoch = ref('')
   const idempotencyScopeId = ref('')
   const idempotencyTtlMs = ref(0)
@@ -116,6 +117,7 @@ export const useRoomRuntimeStore = defineStore('room-runtime', () => {
     historyCursor.value = 0
     lastStateVersion.value = 0
     lastQueueVersion.value = 0
+    playbackQueueVersion.value = 0
     queueEpoch.value = ''
     idempotencyScopeId.value = ''
     idempotencyTtlMs.value = 0
@@ -131,7 +133,7 @@ export const useRoomRuntimeStore = defineStore('room-runtime', () => {
   return {
     nowPlaying, queue, isPaused, isShuffle,
     isPauseLocked, isSkipLocked, isShuffleLocked, isLoading, historyCursor,
-    lastStateVersion, lastQueueVersion, lastPlayEpoch, lastServerTimestamp,
+    playbackQueueVersion, lastStateVersion, lastQueueVersion, lastPlayEpoch, lastServerTimestamp,
     remotePosition, lastSyncTime, serverClockOffset, hasClockSample,
     queueEpoch, idempotencyScopeId, idempotencyTtlMs, acceptQueueEpoch, replaceQueue, applyQueuePatch,
     reset

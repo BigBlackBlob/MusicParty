@@ -16,8 +16,8 @@ export interface RoomInvite { id: string; secret?: string; label: string; expire
 export interface PlatformDescriptor { id: string; label: string; supportsAlbumSearch: boolean; subsonic: boolean }
 export interface Music { id: string; name: string; artists: string[]; duration: number; platform: string; coverUrl: string }
 export interface PlayableMusic extends Music { url: string; needsProxy: boolean }
-export interface NowPlaying { music: PlayableMusic; currentPosition: number; enqueuedById?: string | null; enqueuedByName?: string | null; likedUserIds: string[]; likeMarkers: number[]; playEpoch: number; positionUpdatedAt: number }
-export interface QueueItem { playbackPriority?: number; queueId: string; music: Music; enqueuedBy: UserSummary; status: string }
+export interface NowPlaying { music: PlayableMusic; currentPosition: number; enqueuedById?: string | null; enqueuedByName?: string | null; likedUserIds: string[]; likeMarkers: number[]; playEpoch: number; positionUpdatedAt: number; queueId: string; sessionState: 'resolving' | 'ready' | 'playing' | 'stalled' | 'ended' | 'failed' }
+export interface QueueItem { playbackPriority?: number; queueId: string; music: PlayableMusic; enqueuedBy: UserSummary; status: string }
 export interface PlaylistSummary { id: string; ownerPublicId?: string; roomId?: string; name: string; systemKey: string | null; trackCount: number; createdAt: number; updatedAt: number }
 export interface PlaylistTrack { id: string; playlistId: string; music: Music; sortOrder: number; createdAt: number }
 export interface LocalTrack extends Music { path?: string; size?: number; modifiedAt?: number }
@@ -25,4 +25,5 @@ export interface ChatMessage { id: string; userId: string; userName: string; con
 export interface PlaybackHistoryItem { id: string; music: Music; enqueuerPublicId: string | null; enqueuerName: string | null; playedAt: number }
 export type PlayerEventCode = 'CONTROL_DENIED' | 'RENAME_FAILED' | 'ROOM_PASSWORD_CHANGED' | 'ROOM_DELETED' | 'ROOM_PLAYLISTS_UPDATED' | 'RESET' | 'REMOVE' | 'ERROR_LOAD' | 'SYSTEM_MESSAGE' | 'SEEK_DENIED' | 'LIKE' | 'USER_JOIN' | 'USER_LEAVE' | 'PLAY_START'
 export interface PlayerEvent { code: PlayerEventCode; severity: 'info' | 'success' | 'warning' | 'error'; message: string; actor?: UserSummary; metadata?: Record<string, string | number | boolean> }
+export interface PlayerFailed { queueId: string; musicId: string; name: string; platform: string; reason: 'preview_only' | 'unavailable' | 'resolve_failed' | 'unknown'; message: string }
 export interface APIError { status: number; code: string; message: string; requestId?: string; fieldErrors?: Record<string, string> }

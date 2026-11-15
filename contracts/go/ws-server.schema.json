@@ -334,6 +334,35 @@
       "additionalProperties": false,
       "properties": {
         "payload": {
+          "type": "object",
+          "x-typescript-type": "PlayerFailed"
+        },
+        "requestId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "roomId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "player.failed"
+        }
+      },
+      "required": [
+        "type",
+        "payload"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "payload": {
           "additionalProperties": false,
           "properties": {
             "historyCursor": {

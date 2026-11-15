@@ -266,6 +266,7 @@ export class RealtimeClient {
       case 'enqueue.ack': handlers['enqueue.ack']?.(envelope.payload, envelope); return
       case 'enqueue.nack': handlers['enqueue.nack']?.(envelope.payload, envelope); return
       case 'player.events': handlers['player.events']?.(envelope.payload, envelope); return
+      case 'player.failed': handlers['player.failed']?.(envelope.payload, envelope); return
       case 'player.state': handlers['player.state']?.(envelope.payload, envelope); return
       case 'public-chat.history': handlers['public-chat.history']?.(envelope.payload, envelope); return
       case 'public-chat.message': handlers['public-chat.message']?.(envelope.payload, envelope); return

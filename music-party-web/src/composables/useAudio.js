@@ -3,19 +3,14 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue';
 import { isUserGestureRequiredError } from '../utils/audioPlayback';
 
-const SMALL_DRIFT_MS = 250;
-const RATE_CORRECTION_DRIFT_MS = 2000;
-const BACKGROUND_HARD_SEEK_DRIFT_MS = 10000;
 const TRANSITION_FADE_MS = 1500;
-// 分级软重试：L1 软等待 → L2 软重试(保留缓冲) → L3 硬重载
-// L1: 卡住后只显示缓冲遮罩，不动 audio，给浏览器自我恢复的机会
 const STALLED_L1_SOFT_WAIT_MS = 2500;
-// L2: L1 没恢复，重新发同一个网络请求（浏览器会做 Range 续传补缺口），保留 currentTime 和已缓冲区间
 const STALLED_L2_SOFT_RETRY_MS = 3000;
-// L3: L2 也没恢复，才 load() 核弹重拉（会清空缓冲、currentTime 归零）
 const STALLED_L3_HARD_RELOAD_MS = 5000;
 const STALLED_RETRY_DELAY_MS = 800;
 const STALLED_MAX_RETRIES = 2;
+// 分级软重试：L1 软等待 → L2 软重试(保留缓冲) → L3 硬重载
+// L1: 卡住后只显示缓冲遮罩，不动 audio，给浏览器自我恢复的机会
 const SUPPORTED_TRANSITION_PLATFORMS = new Set(['netease', 'bilibili', 'youtube']);
 
 export function useAudio(audioRef, playerStore, userVolumeRef) {
@@ -27,7 +22,6 @@ export function useAudio(audioRef, playerStore, userVolumeRef) {
     const needsUserGesture = ref(false);
     let syncTimer = null;
     let wakeLock = null;
-    let smoothSeekInFlight = false;
     let fadeGain = 1;
     let activeFadeToken = 0;
     let transitionFadeInPending = false;
@@ -87,13 +81,9 @@ const clearStalledWatchdog = () => {
         clearStalledWatchdog();
         isBuffering.value = false;
         isErrorState.value = true;
-        if (audioRef.value) {
-            audioRef.value.pause();
-            audioRef.value.playbackRate = 1;
-        }
+        audioRef.value?.pause();
         console.warn('[Audio] playback stalled, pausing current track', {
             reason,
-            currentSrc: audioRef.value?.currentSrc,
             readyState: audioRef.value?.readyState,
             networkState: audioRef.value?.networkState,
             platform: playerStore.nowPlaying?.music?.platform
@@ -135,10 +125,6 @@ const clearStalledWatchdog = () => {
         try {
             // 重新赋值 src 触发网络层重新请求，但浏览器会保留 buffered ranges
             // 并按需发 Range 请求补齐，不重置 currentTime
-            const currentSrc = audio.currentSrc || audio.src;
-            if (currentSrc) {
-                audio.src = currentSrc;
-            }
             safePlay();
         } catch (e) {
             // 软重试失败，直接进 L3
@@ -224,21 +210,6 @@ const clearStalledWatchdog = () => {
         }
     };
 
-    const waitForAudioReady = (audio, timeoutMs = 800) => new Promise((resolve) => {
-        let done = false;
-        const finish = () => {
-            if (done) return;
-            done = true;
-            audio.removeEventListener('seeked', finish);
-            audio.removeEventListener('canplay', finish);
-            clearTimeout(timer);
-            resolve();
-        };
-        const timer = setTimeout(finish, timeoutMs);
-        audio.addEventListener('seeked', finish, { once: true });
-        audio.addEventListener('canplay', finish, { once: true });
-    });
-
     const fadeToGain = (targetGain, durationMs) => new Promise((resolve) => {
         const token = ++activeFadeToken;
         const startGain = fadeGain;
@@ -266,28 +237,6 @@ const clearStalledWatchdog = () => {
         applyEffectiveVolume();
     };
 
-    const smoothSeekTo = async (targetSeconds) => {
-        const audio = audioRef.value;
-        if (!audio || smoothSeekInFlight) return;
-        smoothSeekInFlight = true;
-
-        const restoreGain = fadeGain;
-        try {
-            await fadeToGain(0, 120);
-            audio.currentTime = targetSeconds;
-            await waitForAudioReady(audio);
-            await fadeToGain(restoreGain, 160);
-        } catch {
-            if (audioRef.value) {
-                audioRef.value.currentTime = targetSeconds;
-                setFadeGain(restoreGain);
-            }
-        } finally {
-            setFadeGain(restoreGain);
-            smoothSeekInFlight = false;
-        }
-    };
-
     const supportsTransitionFade = () => {
         const platform = playerStore.nowPlaying?.music?.platform;
         return SUPPORTED_TRANSITION_PLATFORMS.has(platform);
@@ -303,7 +252,7 @@ const clearStalledWatchdog = () => {
     };
 
     const updateTransitionFadeOut = (targetTime) => {
-        if (!audioRef.value || playerStore.isPaused || smoothSeekInFlight || !supportsTransitionFade()) return;
+        if (!audioRef.value || playerStore.isPaused || !supportsTransitionFade()) return;
         const duration = playerStore.nowPlaying?.music?.duration || 0;
         if (!duration || duration <= TRANSITION_FADE_MS) return;
         const remainingMs = duration - targetTime;
@@ -447,6 +396,20 @@ const clearStalledWatchdog = () => {
         watch(userVolumeRef, applyEffectiveVolume, { immediate: true });
     }
 
+    let reportedErrorEpoch = null;
+    const reportedErrorCodes = new Set();
+    const reportPlaybackError = (code, track = playerStore.nowPlaying) => {
+        const current = playerStore.nowPlaying;
+        if (!track?.queueId || track.playEpoch !== current?.playEpoch || track.queueId !== current?.queueId) return;
+        if (reportedErrorEpoch !== track.playEpoch) {
+            reportedErrorEpoch = track.playEpoch;
+            reportedErrorCodes.clear();
+        }
+        if (reportedErrorCodes.has(code)) return;
+        reportedErrorCodes.add(code);
+        playerStore.reportPlayback?.('playback.error', { playEpoch: track.playEpoch, queueId: track.queueId, code });
+    };
+
     // === 4. 错误重试机制 ===
     const handleError = () => {
         if (!playerStore.nowPlaying?.music?.url) return;
@@ -462,16 +425,28 @@ const clearStalledWatchdog = () => {
                 message: audioRef.value.error?.message,
                 networkState: audioRef.value.networkState,
                 readyState: audioRef.value.readyState,
-                currentSrc: audioRef.value.currentSrc,
                 platform: playerStore.nowPlaying?.music?.platform
             });
         }
         if (retryCount.value >= 3) {
             isErrorState.value = true;
             audioRef.value?.pause();
+            reportPlaybackError('retries-exhausted');
             return;
         }
 
+        // Media elements do not expose an HTTP status/body. Probe only after a
+        // real media error, cancel the body, and ignore results for old epochs.
+        const failedTrack = playerStore.nowPlaying;
+        fetch(failedTrack.music.url, { headers: { Range: 'bytes=0-0' } }).then(async response => {
+            if (response.status === 422) {
+                const problem = await response.json();
+                const code = problem.code || problem.type?.split('/').pop();
+                if (code === 'stream-trial-only' || code === 'stream-unavailable') reportPlaybackError(code, failedTrack);
+            } else {
+                await response.body?.cancel();
+            }
+        }).catch(() => {});
         retryCount.value++;
         console.log(`Retry audio (${retryCount.value})...`);
         const scheduledTrackId = playerStore.nowPlaying?.music?.id;
@@ -520,7 +495,6 @@ const clearStalledWatchdog = () => {
             if (!playerStore.nowPlaying) {
                 localProgress.value = 0;
                 bufferedMs.value = 0;
-                if (audioRef.value) audioRef.value.playbackRate = 1;
                 setFadeGain(1);
                 return;
             }
@@ -540,8 +514,7 @@ const clearStalledWatchdog = () => {
             if (audioRef.value && !isBuffering.value && !isErrorState.value && !playerStore.isSeekingPreview) {
                 // 如果是暂停状态，强制对齐
                 if (playerStore.isPaused) {
-                    audioRef.value.playbackRate = 1;
-                    // 避免重复赋值导致杂音
+                    // Avoid repeated assignments while paused.
                     if (Math.abs(audioRef.value.currentTime * 1000 - targetTime) > 200) {
                         audioRef.value.currentTime = targetTime / 1000;
                     }
@@ -553,29 +526,12 @@ const clearStalledWatchdog = () => {
                     const absDrift = Math.abs(drift);
 
                     if (playerStore.forceNextSyncSeek && audioRef.value.readyState >= 2) {
-                        audioRef.value.playbackRate = 1;
                         audioRef.value.currentTime = targetTime / 1000;
                         playerStore.forceNextSyncSeek = false;
-                    } else if (absDrift <= SMALL_DRIFT_MS) {
-                        audioRef.value.playbackRate = 1;
-                    } else if (absDrift <= RATE_CORRECTION_DRIFT_MS) {
-                        audioRef.value.playbackRate = drift > 0 ? 1.03 : 0.97;
-                    } else if (document.hidden) {
-                        audioRef.value.playbackRate = 1;
-                        if (absDrift > BACKGROUND_HARD_SEEK_DRIFT_MS && audioRef.value.readyState >= 2) {
-                            console.log(`[Sync] Background hard seek: ${domTime} -> ${targetTime}`);
-                            audioRef.value.currentTime = targetTime / 1000;
-                        }
-                    } else if (audioRef.value.readyState >= 2) {
-                        audioRef.value.playbackRate = 1;
-                        if (!smoothSeekInFlight) {
-                            console.log(`[Sync] Smooth seek: ${domTime} -> ${targetTime}`);
-                            smoothSeekTo(targetTime / 1000);
-                        }
+                    } else if (absDrift > 1000 && audioRef.value.readyState >= 2) {
+                        audioRef.value.currentTime = targetTime / 1000;
                     }
                 }
-            } else if (audioRef.value) {
-                audioRef.value.playbackRate = 1;
             }
         }, 200);
     });
@@ -586,7 +542,6 @@ const clearStalledWatchdog = () => {
         clearInterval(syncTimer);
         clearStalledWatchdog();
         clearRetryTimers();
-        if (audioRef.value) audioRef.value.playbackRate = 1;
         setFadeGain(1);
         releaseWakeLock();
     });
