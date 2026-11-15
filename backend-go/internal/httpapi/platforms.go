@@ -29,14 +29,7 @@ type PlatformAPI struct {
 	mu         sync.RWMutex
 	services   map[string]platform.Service
 	access     map[string]func(context.Context, string) bool
-	cacheMu    sync.Mutex
-	cache      map[string]cachedPlayable
 	coverSlots chan struct{}
-}
-
-type cachedPlayable struct {
-	value     platform.PlayableMusic
-	expiresAt time.Time
 }
 
 // decodedURLParam restores the complete value emitted by encodeURIComponent.
@@ -60,7 +53,7 @@ func NewPlatformAPI(cfg config.Config, services ...platform.Service) *PlatformAP
 			m[service.Name()] = service
 		}
 	}
-	return &PlatformAPI{cfg: cfg, services: m, access: map[string]func(context.Context, string) bool{}, cache: map[string]cachedPlayable{}, coverSlots: make(chan struct{}, 2)}
+	return &PlatformAPI{cfg: cfg, services: m, access: map[string]func(context.Context, string) bool{}, coverSlots: make(chan struct{}, 2)}
 }
 
 // PlatformAccess builds the same allowlist policy for startup configuration and live updates.
@@ -126,10 +119,16 @@ func (api *PlatformAPI) Service(name string) (platform.Service, bool) {
 // authorizedMediaSource snapshots a service and its policy together, then runs
 // the policy without holding the registry lock across account/database work.
 func (api *PlatformAPI) authorizedMediaSource(r *http.Request, name string) (platform.MediaSource, error) {
+	return api.MediaSourceFor(r.Context(), name, sessionToken(r))
+}
+
+// MediaSourceFor resolves and authorizes a platform media source without requiring
+// an HTTP request, so the room runtime can use it for pre-resolution at track change.
+func (api *PlatformAPI) MediaSourceFor(ctx context.Context, name, token string) (platform.MediaSource, error) {
 	api.mu.RLock()
 	service, check := api.services[name], api.access[name]
 	api.mu.RUnlock()
-	if service == nil || !service.Available() || (check != nil && !check(r.Context(), sessionToken(r))) {
+	if service == nil || !service.Available() || (check != nil && !check(ctx, token)) {
 		return nil, &APIError{Status: http.StatusForbidden, Message: "Forbidden"}
 	}
 	source, ok := service.(platform.MediaSource)
@@ -154,13 +153,6 @@ func (api *PlatformAPI) UpdateCredential(name, credential string) error {
 		return fmt.Errorf("platform credential updates are not supported")
 	}
 	updater.UpdateCredential(credential)
-	api.cacheMu.Lock()
-	for key := range api.cache {
-		if strings.HasPrefix(key, name+":") {
-			delete(api.cache, key)
-		}
-	}
-	api.cacheMu.Unlock()
 	return nil
 }
 
@@ -178,29 +170,11 @@ func (api *PlatformAPI) ResolvePlayable(ctx context.Context, platformName, music
 	if err != nil {
 		return platform.PlayableMusic{}, err
 	}
-	key := platformCacheKey(service, platformName, musicID)
-	now := time.Now()
-	api.cacheMu.Lock()
-	if cached, ok := api.cache[key]; ok && now.Before(cached.expiresAt) {
-		api.cacheMu.Unlock()
-		return cached.value, nil
-	}
-	api.cacheMu.Unlock()
 	resolver, ok := service.(platform.PlayableResolver)
 	if !ok {
 		return platform.PlayableMusic{}, fmt.Errorf("platform %s does not resolve playable tracks", platformName)
 	}
-	resolved, err := resolver.ResolvePlayable(ctx, musicID)
-	if err != nil {
-		return platform.PlayableMusic{}, err
-	}
-	api.cacheMu.Lock()
-	if len(api.cache) >= 2048 {
-		clear(api.cache)
-	}
-	api.cache[key] = cachedPlayable{value: resolved, expiresAt: now.Add(5 * time.Minute)}
-	api.cacheMu.Unlock()
-	return resolved, nil
+	return resolver.ResolvePlayable(ctx, musicID)
 }
 
 func (api *PlatformAPI) Routes(r chi.Router) {

@@ -1161,7 +1161,22 @@ func position(state storesqlite.PlaybackState, now int64) int64 {
 func (r *RoomRuntime) snapshot() map[string]any {
 	var nowPlaying any
 	if r.state.CurrentMusic != nil {
-		nowPlaying = map[string]any{"music": r.state.CurrentMusic, "currentPosition": position(r.state, time.Now().UnixMilli()), "enqueuedById": r.state.CurrentEnqueuerID, "enqueuedByName": r.state.CurrentEnqueuerName, "likedUserIds": setValues(r.state.LikedUserIDs), "likeMarkers": r.state.LikeMarkers, "playEpoch": r.state.PlayEpoch, "positionUpdatedAt": r.state.PositionUpdatedAt}
+		sessionState := "playing"
+		if r.state.Paused {
+			sessionState = "paused"
+		}
+		nowPlaying = map[string]any{
+			"music":             r.state.CurrentMusic,
+			"currentPosition":   position(r.state, time.Now().UnixMilli()),
+			"enqueuedById":      r.state.CurrentEnqueuerID,
+			"enqueuedByName":    r.state.CurrentEnqueuerName,
+			"likedUserIds":      setValues(r.state.LikedUserIDs),
+			"likeMarkers":       r.state.LikeMarkers,
+			"playEpoch":         r.state.PlayEpoch,
+			"positionUpdatedAt": r.state.PositionUpdatedAt,
+			"sessionState":      sessionState,
+			"media":             map[string]any{"durationMs": r.state.CurrentMusic.Duration, "seekable": true},
+		}
 	}
 	return map[string]any{"nowPlaying": nowPlaying, "queue": r.queue, "isShuffle": r.state.Shuffle, "isPaused": r.state.Paused, "isPauseLocked": r.state.PauseLocked, "isSkipLocked": r.state.SkipLocked, "isShuffleLocked": r.state.ShuffleLocked, "isLoading": r.state.Loading, "serverTimestamp": time.Now().UnixMilli(), "stateVersion": r.state.StateVersion, "playEpoch": r.state.PlayEpoch, "queueVersion": r.queueVersion, "queueEpoch": r.controlScope, "historyCursor": r.historyCursor(), "idempotencyScopeId": r.controlScope, "idempotencyTtlMs": ControlMutationTTL.Milliseconds()}
 }
@@ -1181,6 +1196,20 @@ func (r *RoomRuntime) loop() {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
+		// Process a pending advance before blocking so DB-write latency does not delay subsequent ticks.
+		if r.advancePending && !time.Now().Before(r.advanceRetryAt) {
+			ctx, cancel := context.WithTimeout(r.ctx, r.timeout)
+			err := r.advance(ctx)
+			cancel()
+			if err != nil {
+				r.advanceFailures++
+				r.advanceRetryAt = time.Now().Add(min(30*time.Second, time.Second<<min(r.advanceFailures, 5)))
+				slog.Warn("auto advance failed", "room", r.roomID, "attempt", r.advanceFailures, "error", err)
+			} else {
+				r.advanceFailures = 0
+				r.advanceRetryAt = time.Time{}
+			}
+		}
 		select {
 		case <-r.ctx.Done():
 			r.rejectPending()
@@ -1217,18 +1246,6 @@ func (r *RoomRuntime) onTick(now time.Time) {
 	r.broadcast("player.progress", map[string]any{"currentPosition": current, "serverTimestamp": now.UnixMilli(), "stateVersion": r.state.StateVersion, "playEpoch": r.state.PlayEpoch})
 	if r.state.CurrentMusic.Duration > 0 && current >= r.state.CurrentMusic.Duration && !r.advancePending && !now.Before(r.advanceRetryAt) {
 		r.advancePending = true
-		ctx, cancel := context.WithTimeout(r.ctx, r.timeout)
-		err := r.advance(ctx)
-		cancel()
-		if err == nil {
-			r.advanceFailures = 0
-			r.advanceRetryAt = time.Time{}
-		} else {
-			r.advancePending = false
-			r.advanceFailures++
-			r.advanceRetryAt = now.Add(min(30*time.Second, time.Second<<min(r.advanceFailures, 5)))
-			slog.Warn("auto advance failed", "room", r.roomID, "attempt", r.advanceFailures, "error", err)
-		}
 	}
 }
 
