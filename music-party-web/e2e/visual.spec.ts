@@ -1,7 +1,23 @@
-import { expect, test, type Page } from '@playwright/test'
+import { readFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
+import { expect, test, type BrowserContext, type Page } from '@playwright/test'
 
 const adminUsername = process.env.E2E_ADMIN_USERNAME || 'e2e-admin'
 const adminPassword = process.env.E2E_ADMIN_PASSWORD || 'E2E-Password-2026!'
+
+// Pin font bytes, including the preferred CJK family, so installed fonts and
+// third-party font availability cannot change Windows visual acceptance.
+async function installVisualFonts(context: BrowserContext): Promise<void> {
+  const fontDirectory = new URL('./fixtures/fonts/', import.meta.url)
+  const css = await readFile(new URL('fonts.css', fontDirectory), 'utf8')
+  await context.route('https://fonts.loli.net/**', route => route.fulfill({
+    contentType: 'text/css', body: css,
+  }))
+  await context.route('**/__visual_fonts__/*.woff2', route => route.fulfill({
+    contentType: 'font/woff2',
+    path: fileURLToPath(new URL(new URL(route.request().url()).pathname.split('/').pop()!, fontDirectory)),
+  }))
+}
 
 async function waitForFonts(page: Page): Promise<void> {
   await page.evaluate(() => document.fonts.ready)
@@ -51,6 +67,8 @@ const mainDynamicMasks = (page: Page) => [
 ]
 
 test.describe('visual baselines', () => {
+  test.beforeEach(async ({ context }) => installVisualFonts(context))
+
   test('entry remains visually stable at supported viewports', async ({ page }) => {
     for (const viewport of [
       { width: 390, height: 844, name: '390x844' },
@@ -158,6 +176,7 @@ test.describe('visual baselines', () => {
   test('private room access dialog retains its visual structure', async ({ browser }) => {
     const roomName = `Visual Private ${Date.now()} ${Math.random().toString(36).slice(2, 6)}`
     const adminContext = await browser.newContext({ viewport: { width: 1024, height: 768 } })
+    await installVisualFonts(adminContext)
     const adminPage = await adminContext.newPage()
     await loginAsAdmin(adminPage)
     await adminPage.getByPlaceholder('Create a room...').fill(roomName)
@@ -168,6 +187,7 @@ test.describe('visual baselines', () => {
     await adminContext.close()
 
     const guestContext = await browser.newContext({ viewport: { width: 1024, height: 768 } })
+    await installVisualFonts(guestContext)
     const page = await guestContext.newPage()
     await page.goto('/')
     await page.getByRole('button', { name: '以访客身份进入' }).click()
