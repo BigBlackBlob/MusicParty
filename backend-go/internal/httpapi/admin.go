@@ -68,7 +68,7 @@ func (api *AdminAPI) updatePlatformCredential(w http.ResponseWriter, r *http.Req
 		return accessDenied(w)
 	}
 	platformName := strings.ToLower(strings.TrimSpace(request.Platform))
-	if platformName != "netease" && platformName != "bilibili" && platformName != "qq" {
+	if platformName != "netease" && platformName != "bilibili" && platformName != "qq" && platformName != "soundcloud" {
 		return badRequest("Unsupported platform")
 	}
 	credential := strings.TrimSpace(request.Credential)
@@ -83,6 +83,8 @@ func (api *AdminAPI) updatePlatformCredential(w http.ResponseWriter, r *http.Req
 		key = "bilibili.sessdata"
 	} else if platformName == "qq" {
 		key = "qq.cookie"
+	} else if platformName == "soundcloud" {
+		key = "soundcloud.token"
 	}
 	if err := storesqlite.NewSiteSettingRepository(api.store).Upsert(r.Context(), storesqlite.SiteSetting{Key: key, Value: &credential, Secret: true, UpdatedAt: time.Now().UnixMilli()}); err != nil {
 		return err

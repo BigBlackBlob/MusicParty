@@ -36,7 +36,8 @@
         loop
     ></audio>
   </div>
-  <YouTubePlayerAdapter v-else />
+  <YouTubePlayerAdapter v-else-if="player.nowPlaying?.music?.playerType === 'youtube-embed'" />
+  <SoundCloudPlayerAdapter v-else />
   <button
       v-if="!isEmbedPlayer && needsUserGesture"
       type="button"
@@ -54,6 +55,7 @@ import { useUiStore } from '../stores/ui';
 import { useAudio } from '../composables/useAudio';
 import { withPlaybackToken } from '../utils/audioUrl';
 import YouTubePlayerAdapter from './YouTubePlayerAdapter.vue';
+import SoundCloudPlayerAdapter from './SoundCloudPlayerAdapter.vue';
 
 const player = useAudioPlayerAdapter();
 const ui = useUiStore();
@@ -81,7 +83,10 @@ const {
 } = useAudio(audioRef, player, computed(() => ui.volume));
 
 const audioSrc = computed(() => withPlaybackToken(player.nowPlaying?.music));
-const isEmbedPlayer = computed(() => player.nowPlaying?.music?.playerType === 'youtube-embed');
+const isEmbedPlayer = computed(() =>
+  player.nowPlaying?.music?.playerType === 'youtube-embed' ||
+  player.nowPlaying?.music?.playerType === 'soundcloud-widget'
+);
 // Queue snapshots and patches carry the server media URL for standby preload.
 const queuedAudioSrc = computed(() => withPlaybackToken(player.queue?.[0]?.music));
 // A removal patch can precede its player.state by a frame. Keep the buffered

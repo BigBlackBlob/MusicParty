@@ -194,5 +194,5 @@ func loadCredentialKey(path string, create bool) (string, error) {
 }
 
 func isPlatformCredential(key string) bool {
-	return key == "netease.cookie" || key == "bilibili.sessdata" || key == "qq.cookie"
+	return key == "netease.cookie" || key == "bilibili.sessdata" || key == "qq.cookie" || key == "soundcloud.token"
 }

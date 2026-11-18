@@ -620,6 +620,28 @@
       "description": "MusicParty Go runtime configuration"
     },
     {
+      "name": "SOUNDCLOUD_CLIENT_ID",
+      "required": false,
+      "secret": false,
+      "deprecated": false,
+      "description": "MusicParty Go runtime configuration"
+    },
+    {
+      "name": "SOUNDCLOUD_CLIENT_SECRET",
+      "required": false,
+      "secret": true,
+      "deprecated": false,
+      "description": "MusicParty Go runtime configuration"
+    },
+    {
+      "name": "SOUNDCLOUD_ENABLED",
+      "default": "false",
+      "required": false,
+      "secret": false,
+      "deprecated": false,
+      "description": "MusicParty Go runtime configuration"
+    },
+    {
       "name": "SPRING_PROFILES_ACTIVE",
       "required": false,
       "secret": false,

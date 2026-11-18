@@ -77,11 +77,12 @@ type Application struct {
 }
 
 type Platforms struct {
-	Netease   Netease
-	Bilibili  Bilibili
-	YouTube   YouTube
-	Navidrome Subsonic
-	Squidify  Subsonic
+	Netease    Netease
+	Bilibili   Bilibili
+	YouTube    YouTube
+	SoundCloud SoundCloud
+	Navidrome  Subsonic
+	Squidify   Subsonic
 }
 
 type Netease struct {
@@ -100,6 +101,12 @@ type YouTube struct {
 	APIKey     string
 	YTDLPPath  string
 	MaxResults int
+}
+
+type SoundCloud struct {
+	Enabled      bool
+	ClientID     string
+	ClientSecret string
 }
 
 type Subsonic struct {
@@ -239,6 +246,11 @@ func Load(lookup LookupEnv) (Config, error) {
 			YouTube: YouTube{
 				Enabled: r.bool("YOUTUBE_ENABLED", true), APIKey: r.string("YOUTUBE_API_KEY", ""),
 				YTDLPPath: r.string("YTDLP_PATH", "yt-dlp"), MaxResults: r.int("YOUTUBE_SEARCH_LIMIT", 20),
+			},
+			SoundCloud: SoundCloud{
+				Enabled:      r.bool("SOUNDCLOUD_ENABLED", false),
+				ClientID:     r.string("SOUNDCLOUD_CLIENT_ID", ""),
+				ClientSecret: r.string("SOUNDCLOUD_CLIENT_SECRET", ""),
 			},
 			Navidrome: Subsonic{
 				Enabled: r.bool("NAVIDROME_ENABLED", false), ID: "navidrome", Label: "Navidrome",

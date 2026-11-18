@@ -254,8 +254,7 @@ func (api *PlatformAPI) config(w http.ResponseWriter, _ *http.Request) {
 
 // albumSearchSupported answers "does this provider have albums at all" in one place, so the web
 // list and the desktop capabilities cannot drift apart. It mirrors what the providers do: netease
-// and the subsonic family issue a real upstream call, while bilibili, youtube and local return an
-// empty page.
+// and the subsonic family issue a real upstream call. Other providers return an empty page.
 func albumSearchSupported(name string) bool {
 	return name == "netease" || name == "navidrome" || name == "squidify" || strings.HasPrefix(name, "subsonic-")
 }
@@ -274,7 +273,7 @@ func (api *PlatformAPI) platforms(w http.ResponseWriter, r *http.Request) {
 	}
 	api.mu.RUnlock()
 	var out []item
-	for _, name := range []string{"netease", "bilibili", "youtube", "local", "navidrome", "squidify"} {
+	for _, name := range []string{"netease", "bilibili", "youtube", "soundcloud", "local", "navidrome", "squidify"} {
 		if service := services[name]; service != nil && service.Available() {
 			if !api.PlatformAllowed(r.Context(), name, sessionToken(r)) {
 				continue
