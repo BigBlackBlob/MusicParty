@@ -25,7 +25,6 @@ describe('accessible control semantics', () => {
     expect(source).toContain(':aria-label="player.isPaused ? t(\'player.play\') : t(\'player.pause\')"');
     expect(source).toContain(':aria-label="t(\'player.next\')"');
     expect(source).toContain(':aria-label="isLiked ? t(\'player.unlike\') : t(\'player.like\')"');
-    expect(source).toContain(':aria-label="t(\'personalPlaylists.saveSong\')"');
   });
 
   it('does not expose clickable track rows without a label or focus ring', () => {

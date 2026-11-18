@@ -111,14 +111,6 @@
           >
             <Heart :stroke-width="1.75" :fill="isLiked ? 'currentColor' : 'none'" aria-hidden="true" />
           </button>
-          <button
-            class="player-icon-button"
-            @click="saveCurrentToPersonalPlaylist"
-            :aria-label="t('personalPlaylists.saveSong')"
-            :title="t('personalPlaylists.saveSong')"
-          >
-            <ListPlus :stroke-width="1.75" aria-hidden="true" />
-          </button>
         </div>
 
         <div class="player-footer-row flex w-full items-center justify-between border-t border-border-subtle pt-2.5">
@@ -183,17 +175,14 @@
 <script setup>
 import { computed, onBeforeUnmount, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { Shuffle, SkipBack, Play, Pause, SkipForward, Heart, ListPlus, VolumeX, Volume2, ListMusic } from 'lucide-vue-next';
+import { Shuffle, SkipBack, Play, Pause, SkipForward, Heart, VolumeX, Volume2, ListMusic } from 'lucide-vue-next';
 import CoverImage from '../CoverImage.vue';
 import { useNowPlayingViewModel } from '../../composables/useNowPlayingViewModel';
 import { useLayoutStore } from '../../stores/layout';
-import { useUserPlaylistsStore } from '../../stores/userPlaylists';
-import { useToast } from '../../composables/useToast';
 import { formatDuration } from '../../utils/format';
 
 const { t } = useI18n();
 const layoutStore = useLayoutStore();
-const userPlaylistsStore = useUserPlaylistsStore();
 
 const {
   player,
@@ -243,14 +232,6 @@ const handleSeek = (event) => {
 
 const handleCoverClick = () => {
   toggleLike();
-};
-
-const saveCurrentToPersonalPlaylist = async () => {
-  const music = player.value?.nowPlaying?.music || player.nowPlaying?.music;
-  if (!music) return;
-  const result = await userPlaylistsStore.addTracksToSelected([music], t('personalPlaylists.defaultName'));
-  if (!result) return;
-  useToast().success(t('personalPlaylists.savedResult', { added: result.addedCount, skipped: result.skippedCount }));
 };
 
 const toggleMute = () => {

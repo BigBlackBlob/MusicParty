@@ -7,12 +7,12 @@
         <div class="desktop-top-bar__room flex min-w-0 items-center gap-5">
           <div class="flex min-w-0 items-center gap-2">
             <button
-              class="font-display flex min-w-0 items-center gap-2 text-[24px] font-black leading-none tracking-tighter text-primary transition-opacity hover:opacity-80"
+              class="font-display flex min-w-0 items-center gap-2 text-[24px] font-black leading-tight tracking-tighter text-primary transition-opacity hover:opacity-80"
               @click="toggleRoomMenu"
               :aria-label="t('rooms.currentRoom', { name: currentRoomName })"
               :title="t('rooms.currentRoom', { name: currentRoomName })"
             >
-              <span class="truncate">{{ currentRoomName }}</span>
+              <span class="truncate py-1">{{ currentRoomName }}</span>
               <span class="material-symbols-outlined text-[18px]">expand_more</span>
             </button>
             <span
