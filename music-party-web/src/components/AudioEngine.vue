@@ -1,5 +1,5 @@
 <template>
-  <div class="hidden">
+  <div v-if="!isEmbedPlayer" class="hidden">
     <!-- 主播放器 -->
     <audio
         :ref="setAudioElement(0)"
@@ -36,8 +36,9 @@
         loop
     ></audio>
   </div>
+  <YouTubePlayerAdapter v-else />
   <button
-      v-if="needsUserGesture"
+      v-if="!isEmbedPlayer && needsUserGesture"
       type="button"
       class="fixed bottom-24 left-1/2 z-[var(--z-toast)] -translate-x-1/2 rounded-full bg-primary px-5 py-3 text-sm font-black text-on-primary shadow-xl shadow-black/20"
       @click="safePlay"
@@ -52,6 +53,7 @@ import { useAudioPlayerAdapter } from '../composables/useAudioPlayerAdapter';
 import { useUiStore } from '../stores/ui';
 import { useAudio } from '../composables/useAudio';
 import { withPlaybackToken } from '../utils/audioUrl';
+import YouTubePlayerAdapter from './YouTubePlayerAdapter.vue';
 
 const player = useAudioPlayerAdapter();
 const ui = useUiStore();
@@ -79,6 +81,7 @@ const {
 } = useAudio(audioRef, player, computed(() => ui.volume));
 
 const audioSrc = computed(() => withPlaybackToken(player.nowPlaying?.music));
+const isEmbedPlayer = computed(() => player.nowPlaying?.music?.playerType === 'youtube-embed');
 // Queue snapshots and patches carry the server media URL for standby preload.
 const queuedAudioSrc = computed(() => withPlaybackToken(player.queue?.[0]?.music));
 // A removal patch can precede its player.state by a frame. Keep the buffered

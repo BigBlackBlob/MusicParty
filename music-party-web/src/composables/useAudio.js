@@ -11,7 +11,7 @@ const STALLED_RETRY_DELAY_MS = 800;
 const STALLED_MAX_RETRIES = 2;
 // 分级软重试：L1 软等待 → L2 软重试(保留缓冲) → L3 硬重载
 // L1: 卡住后只显示缓冲遮罩，不动 audio，给浏览器自我恢复的机会
-const SUPPORTED_TRANSITION_PLATFORMS = new Set(['netease', 'bilibili', 'youtube']);
+const SUPPORTED_TRANSITION_PLATFORMS = new Set(['netease', 'bilibili']);
 
 export function useAudio(audioRef, playerStore, userVolumeRef) {
     const localProgress = ref(0);

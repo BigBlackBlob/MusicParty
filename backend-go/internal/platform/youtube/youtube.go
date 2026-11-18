@@ -115,7 +115,7 @@ func (s *Service) ResolvePlayable(ctx context.Context, id string) (platform.Play
 		return platform.PlayableMusic{}, err
 	}
 	music := platform.Music{ID: item.ID, Name: item.Snippet.Title, Artists: []string{item.Snippet.ChannelTitle}, Duration: duration.Milliseconds(), Platform: "youtube", CoverURL: item.Snippet.Thumbnails.High.URL}
-	return platform.PlayableMusic{Music: music, URL: "/api/youtube/stream/" + url.PathEscape(id)}, nil
+	return platform.PlayableMusic{Music: music, PlayerType: "youtube-embed", EmbedID: id}, nil
 }
 
 type snippet struct {
@@ -180,4 +180,5 @@ func (*Service) Lyric(context.Context, string) (platform.Lyric, error) { return 
 func (s *Service) StreamURL(ctx context.Context, id string) (string, error) {
 	return media.ResolveYTDLP(ctx, s.ytdlpPath, id)
 }
+func (*Service) StreamCacheable() bool { return false }
 func (*Service) CoverURL(context.Context, string) (string, error) { return "", nil }
