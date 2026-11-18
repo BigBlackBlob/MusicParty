@@ -398,7 +398,9 @@ func (api *MediaAPI) proxyPlatform(w http.ResponseWriter, r *http.Request, name,
 		headers.Set("User-Agent", "Mozilla/5.0")
 	}
 	if !cover && api.cache != nil {
-		_ = api.cache.Submit(cacheKey, target, headers)
+		if cacheable, ok := source.(platform.StreamCacheable); !ok || cacheable.StreamCacheable() {
+			_ = api.cache.Submit(cacheKey, target, headers)
+		}
 	}
 	if cover {
 		w.Header().Set("Cache-Control", "private, max-age=86400")

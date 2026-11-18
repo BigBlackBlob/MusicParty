@@ -35,6 +35,13 @@ func (p Proxy) ServeWithStatus(w http.ResponseWriter, r *http.Request, upstreamU
 		w.WriteHeader(http.StatusNotFound)
 		return response.StatusCode, nil
 	}
+	if response.StatusCode == http.StatusRequestedRangeNotSatisfiable {
+		if value := response.Header.Get("Content-Range"); value != "" {
+			w.Header().Set("Content-Range", value)
+		}
+		w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+		return response.StatusCode, nil
+	}
 	if response.StatusCode >= 400 {
 		w.WriteHeader(http.StatusBadGateway)
 		return response.StatusCode, nil

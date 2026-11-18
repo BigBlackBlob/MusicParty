@@ -16,6 +16,13 @@ type Music struct {
 type PlayableMusic struct {
 	Music
 	URL string
+	// PlayerType distinguishes native audio from embed players.
+	// Empty string means native audio (backward-compatible default).
+	// Valid values: "audio-url", "youtube-embed", "soundcloud-widget"
+	PlayerType string `json:"playerType,omitempty"`
+	// EmbedID is the platform-native video/track ID used to construct the embed.
+	// Only set when PlayerType is not "audio-url".
+	EmbedID string `json:"embedId,omitempty"`
 }
 
 type PlayableResolver interface {
@@ -85,6 +92,13 @@ type CredentialUpdater interface {
 type MediaSource interface {
 	StreamURL(context.Context, string) (string, error)
 	CoverURL(context.Context, string) (string, error)
+}
+
+// StreamCacheable is implemented by MediaSource when its resolved URLs are
+// stable enough to cache. Sources that return short-lived signed URLs must
+// NOT implement this interface - the proxy will skip cache.Submit for them.
+type StreamCacheable interface {
+	StreamCacheable() bool
 }
 
 type Unsupported struct{ Platform string }

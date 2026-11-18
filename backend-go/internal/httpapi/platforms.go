@@ -179,7 +179,9 @@ func (api *PlatformAPI) PreResolveMedia(ctx context.Context, music platform.Musi
 		headers.Set("Referer", "https://www.bilibili.com/video/"+music.ID)
 		headers.Set("User-Agent", "Mozilla/5.0")
 	}
-	_ = cache.Submit(platformCacheKey(source, music.Platform, music.ID), target, headers)
+	if cacheable, ok := source.(platform.StreamCacheable); !ok || cacheable.StreamCacheable() {
+		_ = cache.Submit(platformCacheKey(source, music.Platform, music.ID), target, headers)
+	}
 }
 func (api *PlatformAPI) SupportsCredentialUpdate(name string) bool {
 	api.mu.RLock()
@@ -271,8 +273,8 @@ func (api *PlatformAPI) platforms(w http.ResponseWriter, r *http.Request) {
 		services[name] = service
 	}
 	api.mu.RUnlock()
-	out := []item{{"netease", "netease", albumSearchSupported("netease"), false}, {"bilibili", "bilibili", albumSearchSupported("bilibili"), false}}
-	for _, name := range []string{"youtube", "local", "navidrome", "squidify"} {
+	var out []item
+	for _, name := range []string{"netease", "bilibili", "youtube", "local", "navidrome", "squidify"} {
 		if service := services[name]; service != nil && service.Available() {
 			if !api.PlatformAllowed(r.Context(), name, sessionToken(r)) {
 				continue
