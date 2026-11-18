@@ -1,6 +1,6 @@
 <template>
   <div
-    class="group flex min-h-[60px] items-center gap-3 rounded-md border p-2.5 transition-colors focus-visible:ring-2 focus-visible:ring-[var(--accent-muted)]"
+    class="group flex min-h-[56px] items-center gap-3 rounded-md border p-2.5 transition-colors focus-visible:ring-2 focus-visible:ring-[var(--accent-muted)]"
     :class="[
       active ? 'border-[var(--border-accent)] bg-accent-subtle' : 'border-transparent hover:bg-[var(--surface-control-hover)]',
       clickable ? 'cursor-pointer' : '',
@@ -19,8 +19,8 @@
     </div>
 
     <!-- Cover -->
-    <CoverImage v-if="coverUrl" :src="coverUrl" :alt="title" class="h-10 w-10 flex-shrink-0 rounded object-cover" />
-    <div v-else class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded bg-[var(--surface-control)]">
+    <CoverImage v-if="coverUrl" :src="coverUrl" :alt="title" class="h-9 w-9 flex-shrink-0 rounded object-cover" />
+    <div v-else class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded bg-[var(--surface-control)]">
       <span class="material-symbols-outlined text-text-muted text-[20px]">music_note</span>
     </div>
 

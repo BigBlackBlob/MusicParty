@@ -211,6 +211,11 @@ export const useLayoutStore = defineStore('layout', () => {
     }
   }
 
+  function removeModuleById(moduleId) {
+    const col = layout.value.columns.find(column => column.modules.includes(moduleId));
+    if (col) removeModule(moduleId, col.id);
+  }
+
   function swapColumns(indexA, indexB) {
     const cols = layout.value.columns;
     if (indexA < 0 || indexA >= cols.length || indexB < 0 || indexB >= cols.length) return;
@@ -256,6 +261,7 @@ export const useLayoutStore = defineStore('layout', () => {
     moveModule,
     addModule,
     removeModule,
+    removeModuleById,
     swapColumns,
     resizeColumns
   };

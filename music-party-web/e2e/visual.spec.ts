@@ -110,7 +110,7 @@ test.describe('visual baselines', () => {
       maxDiffPixels: 3_000,
     })
 
-    await page.getByRole('button', { name: /Search and add|搜索并添加/ }).click()
+    await page.locator('[data-id=queue]').getByRole('button', { name: /Search and add|搜索并添加/ }).click()
     const searchDialog = page.getByRole('dialog')
     await expect(searchDialog).toBeVisible()
     await expect(page).toHaveScreenshot('desktop-search-1440x900.png', {

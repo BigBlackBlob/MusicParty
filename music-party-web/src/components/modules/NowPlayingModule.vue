@@ -158,10 +158,10 @@
             </div>
             <button
               class="player-icon-button player-icon-button--compact"
-              :class="{ 'opacity-50': !isQueuePlaced }"
+              v-if="!isQueuePlaced"
               :aria-label="t('nav.queue')"
               :title="t('nav.queue')"
-              @click="toggleQueueModule"
+              @click="openQueueModule"
             >
               <ListMusic :stroke-width="1.75" aria-hidden="true" />
             </button>
@@ -210,17 +210,9 @@ let volumeValueTimer;
 const isQueuePlaced = computed(() => layoutStore.placedModuleIds.includes('queue'));
 const playModeLabel = computed(() => player.isShuffle ? t('player.shuffle') : t('player.listPlayback'));
 
-const toggleQueueModule = () => {
-  if (isQueuePlaced.value) {
-    // Remove queue from wherever it is
-    layoutStore.layout.columns.forEach(col => {
-      layoutStore.removeModule('queue', col.id);
-    });
-  } else {
-    // Add to the last column by default
-    const lastCol = layoutStore.sortedColumns[layoutStore.sortedColumns.length - 1];
-    layoutStore.addModule('queue', lastCol.id);
-  }
+const openQueueModule = () => {
+  const lastCol = layoutStore.sortedColumns[layoutStore.sortedColumns.length - 1];
+  if (lastCol) layoutStore.addModule('queue', lastCol.id);
 };
 
 const handleSeek = (event) => {

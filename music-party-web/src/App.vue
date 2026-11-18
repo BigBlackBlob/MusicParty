@@ -177,7 +177,7 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue';
+import { computed, provide, ref, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useWindowSize } from '@vueuse/core';
 import { useRoomRealtimeCoordinator } from './domains/realtime/roomRealtimeCoordinator';
 import { useRealtimeConnectionStore } from './domains/realtime/realtimeConnectionStore';
@@ -437,6 +437,8 @@ const handleSearchClick = () => {
     showSearch.value = true;
   }
 };
+
+provide('openSearch', handleSearchClick);
 
 const handleMobileChat = () => {
   // chat is a layout module on desktop; no overlay needed
