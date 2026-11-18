@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { getPlayUrl, search } from '@sansenjian/qq-music-api/sdk';
 
 // The SDK's debug logs can include the cookie and its derived authentication token.
-process.env.DEBUG = 'false';
+process.env.DEBUG = '';
 
 const pageSize = 50;
 const port = Number(process.env.QQ_SIDECAR_PORT || '3100');
