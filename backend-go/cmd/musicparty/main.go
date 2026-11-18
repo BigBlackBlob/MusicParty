@@ -24,6 +24,7 @@ import (
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform/bilibili"
 	localplatform "github.com/BigBlackBlob/MusicParty/backend-go/internal/platform/local"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform/netease"
+	qqplatform "github.com/BigBlackBlob/MusicParty/backend-go/internal/platform/qq"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform/soundcloud"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform/subsonic"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform/youtube"
@@ -74,18 +75,21 @@ func run() error {
 			}
 		}()
 	}
-	neteaseCookie, bilibiliCookie, navidromeAllowedUsers, soundcloudToken, err := loadPlatformSettings(applicationContext, cfg, databaseStore)
+	neteaseCookie, bilibiliCookie, navidromeAllowedUsers, soundcloudToken, qqCookie, err := loadPlatformSettings(applicationContext, cfg, databaseStore)
 	if err != nil {
 		return err
 	}
 	platformClient := platform.NewClient(15 * time.Second)
 	soundcloudService := soundcloud.New(platformClient, cfg.Platforms.SoundCloud.Enabled, cfg.Platforms.SoundCloud.ClientID, cfg.Platforms.SoundCloud.ClientSecret)
 	soundcloudService.UpdateCredential(soundcloudToken)
+	qqService := qqplatform.New(platformClient, cfg.Platforms.QQMusic.Enabled, cfg.Platforms.QQMusic.SidecarURL)
+	qqService.UpdateCredential(qqCookie)
 	services := []platform.Service{
 		netease.New(platformClient, cfg.Platforms.Netease.BaseURL, neteaseCookie, cfg.Platforms.Netease.Quality),
 		bilibili.New(platformClient, cfg.Platforms.Bilibili.BaseURL, bilibiliCookie),
 		youtube.New(platformClient, cfg.Platforms.YouTube.Enabled, cfg.Platforms.YouTube.APIKey, cfg.Platforms.YouTube.MaxResults, cfg.Platforms.YouTube.YTDLPPath),
 		soundcloudService,
+		qqService,
 		subsonic.New(platformClient, subsonic.Config{ID: "navidrome", BaseURL: cfg.Platforms.Navidrome.BaseURL, Username: cfg.Platforms.Navidrome.Username, Password: cfg.Platforms.Navidrome.Password, Client: cfg.Platforms.Navidrome.Client, Version: cfg.Platforms.Navidrome.APIVersion, ProxyPrefix: "/api/navidrome/cover", Enabled: cfg.Platforms.Navidrome.Enabled}),
 		subsonic.New(platformClient, subsonic.Config{ID: "subsonic-" + cfg.Platforms.Squidify.ID + "@lounge", Label: cfg.Platforms.Squidify.Label, RoomID: "lounge", BaseURL: cfg.Platforms.Squidify.BaseURL, Username: cfg.Platforms.Squidify.Username, Password: cfg.Platforms.Squidify.Password, Client: cfg.Platforms.Squidify.Client, Version: cfg.Platforms.Squidify.APIVersion, ProxyPrefix: "/api/subsonic/lounge/" + cfg.Platforms.Squidify.ID + "/cover", Enabled: cfg.Platforms.Squidify.Enabled}),
 	}
@@ -291,29 +295,33 @@ func openDatabase(ctx context.Context, cfg config.Config) (*storesqlite.Store, e
 	return store, nil
 }
 
-func loadPlatformSettings(ctx context.Context, cfg config.Config, store *storesqlite.Store) (string, string, string, string, error) {
+func loadPlatformSettings(ctx context.Context, cfg config.Config, store *storesqlite.Store) (string, string, string, string, string, error) {
 	neteaseCookie := cfg.Platforms.Netease.Cookie
 	bilibiliCookie := cfg.Platforms.Bilibili.Sessdata
 	navidromeAllowedUsers := cfg.Platforms.Navidrome.AllowedUsers
 	soundcloudToken := ""
+	qqCookie := ""
 	if store == nil {
-		return neteaseCookie, bilibiliCookie, navidromeAllowedUsers, soundcloudToken, nil
+		return neteaseCookie, bilibiliCookie, navidromeAllowedUsers, soundcloudToken, qqCookie, nil
 	}
 	settings := storesqlite.NewSiteSettingRepository(store)
 	var err error
 	if neteaseCookie, err = settingOrDefault(ctx, settings, "netease.cookie", neteaseCookie); err != nil {
-		return "", "", "", "", fmt.Errorf("load Netease cookie setting: %w", err)
+		return "", "", "", "", "", fmt.Errorf("load Netease cookie setting: %w", err)
 	}
 	if bilibiliCookie, err = settingOrDefault(ctx, settings, "bilibili.sessdata", bilibiliCookie); err != nil {
-		return "", "", "", "", fmt.Errorf("load Bilibili cookie setting: %w", err)
+		return "", "", "", "", "", fmt.Errorf("load Bilibili cookie setting: %w", err)
 	}
 	if soundcloudToken, err = settingOrDefault(ctx, settings, "soundcloud.token", ""); err != nil {
-		return "", "", "", "", fmt.Errorf("load SoundCloud token setting: %w", err)
+		return "", "", "", "", "", fmt.Errorf("load SoundCloud token setting: %w", err)
+	}
+	if qqCookie, err = settingOrDefault(ctx, settings, "qq.cookie", ""); err != nil {
+		return "", "", "", "", "", fmt.Errorf("load QQ Music cookie setting: %w", err)
 	}
 	if navidromeAllowedUsers, err = settingValue(ctx, settings, "navidrome.allowed-users", navidromeAllowedUsers); err != nil {
-		return "", "", "", "", fmt.Errorf("load Navidrome allowed users setting: %w", err)
+		return "", "", "", "", "", fmt.Errorf("load Navidrome allowed users setting: %w", err)
 	}
-	return neteaseCookie, bilibiliCookie, navidromeAllowedUsers, soundcloudToken, nil
+	return neteaseCookie, bilibiliCookie, navidromeAllowedUsers, soundcloudToken, qqCookie, nil
 }
 
 func newProxyClient() *http.Client {

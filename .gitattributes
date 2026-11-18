@@ -6,4 +6,5 @@
 /.github/workflows/go-backend*.yml text eol=lf
 /start-dev.sh text eol=lf
 /start-netease-api.sh text eol=lf
+/start-qq-sidecar.sh text eol=lf
 /local-verification.sh text eol=lf

@@ -56,6 +56,7 @@ func (api *MediaAPI) Routes(r chi.Router) {
 	r.Get("/api/netease/stream/{songId}", Adapt(api.neteaseStream))
 	r.Get("/api/bilibili/stream/{bvid}", Adapt(api.bilibiliStream))
 	r.Get("/api/youtube/stream/{videoId}", Adapt(api.youtubeStream))
+	r.Get("/api/qq/stream/{songId}", Adapt(api.qqStream))
 	r.Get("/api/navidrome/stream/{songId}", Adapt(api.navidromeStream))
 	r.Get("/api/navidrome/cover/{coverId}", Adapt(api.navidromeCover))
 	r.Get("/api/subsonic/{sourceId}/stream/{songId}", Adapt(api.subsonicStream))
@@ -290,6 +291,9 @@ func (api *MediaAPI) bilibiliStream(w http.ResponseWriter, r *http.Request) erro
 }
 func (api *MediaAPI) youtubeStream(w http.ResponseWriter, r *http.Request) error {
 	return api.proxyPlatform(w, r, "youtube", chi.URLParam(r, "videoId"), false)
+}
+func (api *MediaAPI) qqStream(w http.ResponseWriter, r *http.Request) error {
+	return api.proxyPlatform(w, r, "qq", chi.URLParam(r, "songId"), false)
 }
 func (api *MediaAPI) navidromeStream(w http.ResponseWriter, r *http.Request) error {
 	return api.proxyPlatform(w, r, "navidrome", chi.URLParam(r, "songId"), false)

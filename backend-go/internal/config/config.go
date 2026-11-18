@@ -81,6 +81,7 @@ type Platforms struct {
 	Bilibili   Bilibili
 	YouTube    YouTube
 	SoundCloud SoundCloud
+	QQMusic    QQMusic
 	Navidrome  Subsonic
 	Squidify   Subsonic
 }
@@ -107,6 +108,11 @@ type SoundCloud struct {
 	Enabled      bool
 	ClientID     string
 	ClientSecret string
+}
+
+type QQMusic struct {
+	Enabled    bool
+	SidecarURL string
 }
 
 type Subsonic struct {
@@ -251,6 +257,10 @@ func Load(lookup LookupEnv) (Config, error) {
 				Enabled:      r.bool("SOUNDCLOUD_ENABLED", false),
 				ClientID:     r.string("SOUNDCLOUD_CLIENT_ID", ""),
 				ClientSecret: r.string("SOUNDCLOUD_CLIENT_SECRET", ""),
+			},
+			QQMusic: QQMusic{
+				Enabled:    r.bool("QQ_MUSIC_ENABLED", false),
+				SidecarURL: r.string("QQ_SIDECAR_URL", "http://127.0.0.1:3100"),
 			},
 			Navidrome: Subsonic{
 				Enabled: r.bool("NAVIDROME_ENABLED", false), ID: "navidrome", Label: "Navidrome",

@@ -1,0 +1,9 @@
+{
+  "name": "qq-music-sidecar",
+  "version": "1.0.0",
+  "type": "module",
+  "engines": { "node": "^20.17.0 || >=22.9.0" },
+  "dependencies": {
+    "@sansenjian/qq-music-api": "2.6.0"
+  }
+}

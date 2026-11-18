@@ -273,7 +273,7 @@ func (api *PlatformAPI) platforms(w http.ResponseWriter, r *http.Request) {
 	}
 	api.mu.RUnlock()
 	var out []item
-	for _, name := range []string{"netease", "bilibili", "youtube", "soundcloud", "local", "navidrome", "squidify"} {
+	for _, name := range []string{"netease", "bilibili", "youtube", "soundcloud", "qq", "local", "navidrome", "squidify"} {
 		if service := services[name]; service != nil && service.Available() {
 			if !api.PlatformAllowed(r.Context(), name, sessionToken(r)) {
 				continue

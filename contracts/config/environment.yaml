@@ -541,6 +541,22 @@
       "description": "MusicParty Go runtime configuration"
     },
     {
+      "name": "QQ_MUSIC_ENABLED",
+      "default": "false",
+      "required": false,
+      "secret": false,
+      "deprecated": false,
+      "description": "MusicParty Go runtime configuration"
+    },
+    {
+      "name": "QQ_SIDECAR_URL",
+      "default": "http://127.0.0.1:3100",
+      "required": false,
+      "secret": false,
+      "deprecated": false,
+      "description": "MusicParty Go runtime configuration"
+    },
+    {
       "name": "QUEUE_HISTORY_SIZE",
       "default": "50",
       "required": false,

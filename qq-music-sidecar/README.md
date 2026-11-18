@@ -1,0 +1,1 @@
+This experimental QQ Music sidecar uses `@sansenjian/qq-music-api`, which its maintainer provides for non-commercial study and research. QQ Music is off by default in MusicParty. With the dependency installed, run `node index.js` from this directory. The sidecar listens on `127.0.0.1:3100` by default, with the port set by `QQ_SIDECAR_PORT`.

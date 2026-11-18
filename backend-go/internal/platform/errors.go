@@ -12,6 +12,7 @@ type CredentialNotConfiguredError struct {
 type StreamResolutionError struct {
 	Kind   string
 	Reason int
+	Detail string
 }
 
 const (
@@ -22,6 +23,9 @@ const (
 func (e *StreamResolutionError) Error() string {
 	if e.Kind == StreamTrialOnly {
 		return "only a trial preview is available"
+	}
+	if e.Detail != "" {
+		return e.Detail
 	}
 	return "stream is unavailable"
 }

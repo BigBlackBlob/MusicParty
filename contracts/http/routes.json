@@ -1,5 +1,5 @@
 {
-  "routeCount": 104,
+  "routeCount": 105,
   "routes": [
     {
       "method": "GET",
@@ -455,6 +455,12 @@
       "method": "GET",
       "path": "/api/playlist/songs/{platform}/{playlistId}",
       "operationId": "get.api.playlist.songs.platform.playlistId",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "GET",
+      "path": "/api/qq/stream/{songId}",
+      "operationId": "get.api.qq.stream.songId",
       "source": "backend-go/internal/httpapi"
     },
     {
