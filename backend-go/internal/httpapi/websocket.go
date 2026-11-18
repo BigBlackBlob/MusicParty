@@ -568,7 +568,7 @@ func (api *WebSocketAPI) enqueue(ctx context.Context, client *wsruntime.Client, 
 	if playable.Platform == "" {
 		playable.Platform = request.Platform
 	}
-	music := storesqlite.Music{ID: playable.ID, Name: playable.Name, Artists: playable.Artists, Duration: playable.Duration, Platform: playable.Platform, CoverURL: playable.CoverURL}
+	music := storesqlite.Music{ID: playable.ID, Name: playable.Name, Artists: playable.Artists, Duration: playable.Duration, Platform: playable.Platform, CoverURL: playable.CoverURL, PlayerType: playable.PlayerType, EmbedID: playable.EmbedID}
 	item, err := runtime.Enqueue(ctx, session, music, queueMutationID(session, request.MutationID))
 	if err != nil {
 		api.nack(client, "enqueue.nack", request.MutationID, err)

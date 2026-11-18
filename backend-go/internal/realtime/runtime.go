@@ -1286,7 +1286,20 @@ func playableMusic(music storesqlite.Music) *storesqlite.PlayableMusic {
 			streamURL = "/api/subsonic/" + url.PathEscape(sourceID) + "/stream/" + escapedID
 		}
 	}
-	return &storesqlite.PlayableMusic{ID: music.ID, Name: music.Name, Artists: slices.Clone(music.Artists), Duration: music.Duration, Platform: music.Platform, URL: streamURL, CoverURL: music.CoverURL}
+	playerType := music.PlayerType
+	embedID := music.EmbedID
+	if playerType == "" {
+		switch music.Platform {
+		case "youtube":
+			playerType, embedID = "youtube-embed", music.ID
+		case "soundcloud":
+			playerType, embedID = "soundcloud-widget", music.ID
+		}
+	}
+	if playerType == "youtube-embed" || playerType == "soundcloud-widget" {
+		streamURL = ""
+	}
+	return &storesqlite.PlayableMusic{ID: music.ID, Name: music.Name, Artists: slices.Clone(music.Artists), Duration: music.Duration, Platform: music.Platform, URL: streamURL, CoverURL: music.CoverURL, PlayerType: playerType, EmbedID: embedID}
 }
 
 func clonePlaybackState(state storesqlite.PlaybackState) storesqlite.PlaybackState {

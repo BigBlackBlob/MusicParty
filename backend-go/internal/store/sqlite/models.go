@@ -71,12 +71,14 @@ func (invite RoomInvite) Active(now int64) bool {
 }
 
 type Music struct {
-	ID       string   `json:"id"`
-	Name     string   `json:"name"`
-	Artists  []string `json:"artists"`
-	Duration int64    `json:"duration"`
-	Platform string   `json:"platform"`
-	CoverURL string   `json:"coverUrl"`
+	ID         string   `json:"id"`
+	Name       string   `json:"name"`
+	Artists    []string `json:"artists"`
+	Duration   int64    `json:"duration"`
+	Platform   string   `json:"platform"`
+	CoverURL   string   `json:"coverUrl"`
+	PlayerType string   `json:"playerType,omitempty"`
+	EmbedID    string   `json:"embedId,omitempty"`
 }
 
 type PlayableMusic struct {
@@ -88,6 +90,8 @@ type PlayableMusic struct {
 	URL        string   `json:"url"`
 	CoverURL   string   `json:"coverUrl"`
 	NeedsProxy bool     `json:"needsProxy"`
+	PlayerType string   `json:"playerType,omitempty"`
+	EmbedID    string   `json:"embedId,omitempty"`
 }
 
 type UserSummary struct {
