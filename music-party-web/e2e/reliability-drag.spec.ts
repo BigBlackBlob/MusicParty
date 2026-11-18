@@ -117,7 +117,7 @@ async function enterRoom(page: Page, name: string, create = false): Promise<void
   }
   await expect(page.getByText(name, { exact: true })).toBeVisible()
   await page.getByText(name, { exact: true }).click()
-  const searchButton = page.getByRole('button', { name: /Search and add|搜索并添加/ })
+  const searchButton = page.getByRole('banner').getByRole('button', { name: /Search and add|搜索并添加/ })
   if (!await searchButton.isVisible().catch(() => false)) {
     await page.getByRole('button', { name: new RegExp(`(Enter|进入) ${name}`) }).click()
   }

@@ -47,7 +47,7 @@ async function createRoom(page: Page, name: string): Promise<void> {
   await page.getByRole('button', { name: 'Create', exact: true }).click()
   await expect(page.getByText(name, { exact: true })).toBeVisible()
   await page.getByText(name, { exact: true }).click()
-  const searchButton = page.getByRole('button', { name: /Search and add|搜索并添加/ })
+  const searchButton = page.getByRole('banner').getByRole('button', { name: /Search and add|搜索并添加/ })
   if (!await searchButton.isVisible().catch(() => false)) {
     await page.getByRole('button', { name: new RegExp(`(Enter|进入) ${name}`) }).click()
   }
@@ -61,7 +61,7 @@ async function loginAndEnterLounge(page: Page): Promise<void> {
   await page.getByLabel('管理员密码').fill(adminPassword)
   await page.getByRole('button', { name: '平台管理员登录' }).click()
   await page.getByRole('button', { name: /Enter Lounge|进入 Lounge/ }).click()
-  await expect(page.getByRole('button', { name: /Search and add|搜索并添加/ })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('banner').getByRole('button', { name: /Search and add|搜索并添加/ })).toBeVisible({ timeout: 15_000 })
 }
 
 async function uploadFixture(page: Page, title: string): Promise<void> {
@@ -98,7 +98,7 @@ async function uploadFixture(page: Page, title: string): Promise<void> {
 async function enqueueLocalTrack(page: Page, title: string): Promise<void> {
   const dialog = page.getByRole('dialog')
   if (!await dialog.isVisible().catch(() => false)) {
-    await page.getByRole('button', { name: /Search and add|搜索并添加/ }).click()
+    await page.getByRole('banner').getByRole('button', { name: /Search and add|搜索并添加/ }).click()
   }
 
   const localPlatform = dialog.getByRole('button', { name: /^local$/i })
