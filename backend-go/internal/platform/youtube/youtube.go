@@ -2,8 +2,11 @@ package youtube
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -32,6 +35,23 @@ func (s *Service) Available() bool { return s.enabled && s.apiKey != "" }
 func (s *Service) Search(ctx context.Context, keyword string, offset, limit int) ([]platform.Music, error) {
 	if err := platform.ValidateSearch(keyword, offset, limit); err != nil {
 		return nil, err
+	}
+	if id := trackURLID(keyword); id != "" {
+		if offset != 0 {
+			return []platform.Music{}, nil
+		}
+		music, err := s.fetchTrack(ctx, id)
+		if err != nil {
+			var upstream *platform.UpstreamError
+			if errors.As(err, &upstream) && upstream.Status == http.StatusNotFound {
+				return []platform.Music{}, nil
+			}
+			return nil, err
+		}
+		if music.ID == "" {
+			return []platform.Music{}, nil
+		}
+		return []platform.Music{music}, nil
 	}
 	// This endpoint is queried without a page token, so a page is cut out of one over-fetched
 	// window: ask for offset+limit and drop the head. Past the window the caller gets fewer
@@ -92,7 +112,48 @@ func (s *Service) Search(ctx context.Context, keyword string, offset, limit int)
 	}
 	return out[offset:], nil
 }
+
+var videoID = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
+
+func trackURLID(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" {
+		return ""
+	}
+	var id string
+	host := strings.ToLower(u.Host)
+	switch host {
+	case "youtu.be":
+		id = strings.TrimPrefix(u.Path, "/")
+	case "www.youtube.com", "m.youtube.com", "music.youtube.com":
+		if u.Path == "/watch" {
+			id = u.Query().Get("v")
+		} else if host == "www.youtube.com" {
+			if embedded, ok := strings.CutPrefix(u.Path, "/embed/"); ok {
+				id = embedded
+			} else if short, ok := strings.CutPrefix(u.Path, "/shorts/"); ok {
+				id = short
+			}
+		}
+	}
+	if videoID.MatchString(id) {
+		return id
+	}
+	return ""
+}
+
 func (s *Service) ResolvePlayable(ctx context.Context, id string) (platform.PlayableMusic, error) {
+	music, err := s.fetchTrack(ctx, id)
+	if err != nil {
+		return platform.PlayableMusic{}, err
+	}
+	if music.ID == "" {
+		return platform.PlayableMusic{}, fmt.Errorf("youtube video %s was not found", id)
+	}
+	return platform.PlayableMusic{Music: music, PlayerType: "youtube-embed", EmbedID: id}, nil
+}
+
+func (s *Service) fetchTrack(ctx context.Context, id string) (platform.Music, error) {
 	var videos struct {
 		Items []struct {
 			ID      string  `json:"id"`
@@ -104,18 +165,17 @@ func (s *Service) ResolvePlayable(ctx context.Context, id string) (platform.Play
 	}
 	query := url.Values{"part": {"snippet,contentDetails"}, "id": {id}, "key": {s.apiKey}}
 	if err := s.client.JSON(ctx, "https://www.googleapis.com/youtube/v3/videos?"+query.Encode(), nil, &videos); err != nil {
-		return platform.PlayableMusic{}, err
+		return platform.Music{}, err
 	}
 	if len(videos.Items) == 0 {
-		return platform.PlayableMusic{}, fmt.Errorf("youtube video %s was not found", id)
+		return platform.Music{}, nil
 	}
 	item := videos.Items[0]
 	duration, err := parseDuration(item.Content.Duration)
 	if err != nil {
-		return platform.PlayableMusic{}, err
+		return platform.Music{}, err
 	}
-	music := platform.Music{ID: item.ID, Name: item.Snippet.Title, Artists: []string{item.Snippet.ChannelTitle}, Duration: duration.Milliseconds(), Platform: "youtube", CoverURL: item.Snippet.Thumbnails.High.URL}
-	return platform.PlayableMusic{Music: music, PlayerType: "youtube-embed", EmbedID: id}, nil
+	return platform.Music{ID: item.ID, Name: item.Snippet.Title, Artists: []string{item.Snippet.ChannelTitle}, Duration: duration.Milliseconds(), Platform: "youtube", CoverURL: item.Snippet.Thumbnails.High.URL}, nil
 }
 
 type snippet struct {

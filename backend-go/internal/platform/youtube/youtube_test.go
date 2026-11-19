@@ -5,10 +5,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,7 +21,7 @@ func TestParseDuration(t *testing.T) {
 }
 
 // rewriteToFixture sends the service's absolute Google URLs to a local server, because the client
-// builds those URLs itself. It exists so paging is testable at all without an API key.
+// builds those URLs itself.
 type rewriteToFixture struct{ base string }
 
 func (t rewriteToFixture) RoundTrip(request *http.Request) (*http.Response, error) {
@@ -74,6 +76,89 @@ func TestSearchPagesWithoutRepeating(t *testing.T) {
 	beyond, err := service.Search(context.Background(), "song", 6, 3)
 	require.NoError(t, err)
 	require.Empty(t, beyond, "past the window is an empty page, never a repeat of page 1")
+}
+
+func TestSearchTrackURLs(t *testing.T) {
+	const id = "Ab-12_cdE34"
+	const watch = "https://www.youtube.com/watch?v=" + id
+	const video = `{"items":[{"id":"` + id + `","snippet":{"title":"Track","channelTitle":"Artist","thumbnails":{"high":{"url":"https://img.test/cover.jpg"}}},"contentDetails":{"duration":"PT1M2S"}}]}`
+	want := []platform.Music{{ID: id, Name: "Track", Artists: []string{"Artist"}, Duration: 62000, Platform: "youtube", CoverURL: "https://img.test/cover.jpg"}}
+	for _, test := range []struct {
+		name, keyword string
+		status        int
+		body          string
+		offset        int
+		fallback      bool
+	}{
+		{name: "watch", keyword: watch + "&t=42", body: video},
+		{name: "short link", keyword: "https://youtu.be/" + id, body: video},
+		{name: "embed", keyword: "https://www.youtube.com/embed/" + id, body: video},
+		{name: "shorts", keyword: "https://www.youtube.com/shorts/" + id, body: video},
+		{name: "mobile", keyword: "https://m.youtube.com/watch?v=" + id, body: video},
+		{name: "music", keyword: "https://music.youtube.com/watch?v=" + id, body: video},
+		{name: "later page", keyword: watch, offset: 1},
+		{name: "empty items", keyword: watch, body: `{"items":[]}`},
+		{name: "not found", keyword: watch, status: http.StatusNotFound},
+		{name: "unauthorized", keyword: watch, status: http.StatusUnauthorized},
+		{name: "upstream failure", keyword: watch, status: http.StatusInternalServerError},
+		{name: "profile", keyword: "https://www.youtube.com/@artist?v=" + id, fallback: true},
+		{name: "playlist", keyword: "https://www.youtube.com/playlist?list=list-id", fallback: true},
+		{name: "wrong host", keyword: "https://www.youtube.com.other.test/watch?v=" + id, fallback: true},
+		{name: "http scheme", keyword: "http://www.youtube.com/watch?v=" + id, fallback: true},
+		{name: "invalid ID length", keyword: "https://youtu.be/short", fallback: true},
+		{name: "invalid ID characters", keyword: "https://www.youtube.com/embed/Ab-12.cdE34", fallback: true},
+		{name: "extra path segment", keyword: "https://youtu.be/" + id + "/other", fallback: true},
+		{name: "missing v", keyword: "https://www.youtube.com/watch?list=list-id", fallback: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				query := r.URL.Query()
+				assert.Equal(t, http.MethodGet, r.Method)
+				assert.Equal(t, "key", query.Get("key"))
+				if test.fallback {
+					assert.Equal(t, "/youtube/v3/search", r.URL.Path)
+					assert.Equal(t, test.keyword, query.Get("q"))
+					_, _ = w.Write([]byte(`{"items":[]}`))
+					return
+				}
+				assert.Equal(t, "/youtube/v3/videos", r.URL.Path)
+				assert.Equal(t, id, query.Get("id"))
+				assert.Equal(t, "snippet,contentDetails", query.Get("part"))
+				if test.status != 0 {
+					w.WriteHeader(test.status)
+				}
+				_, _ = w.Write([]byte(test.body))
+			}))
+			t.Cleanup(server.Close)
+			client := platform.NewClient(time.Second)
+			client.HTTP.Transport = rewriteToFixture{base: server.URL}
+			client.Retries = 0
+			service := New(client, true, "key", 20)
+			tracks, err := service.Search(t.Context(), test.keyword, test.offset, 20)
+			switch {
+			case test.offset != 0:
+				require.NoError(t, err)
+				require.Equal(t, []platform.Music{}, tracks)
+				require.Zero(t, calls.Load())
+			case test.status == http.StatusUnauthorized || test.status == http.StatusInternalServerError:
+				var upstream *platform.UpstreamError
+				require.ErrorAs(t, err, &upstream)
+				require.Equal(t, test.status, upstream.Status)
+				require.Empty(t, tracks)
+			case test.body == video:
+				require.NoError(t, err)
+				require.Equal(t, want, tracks)
+			default:
+				require.NoError(t, err)
+				require.Equal(t, []platform.Music{}, tracks)
+			}
+			if test.offset == 0 {
+				require.EqualValues(t, 1, calls.Load())
+			}
+		})
+	}
 }
 
 func ids(items []platform.Music) []string {

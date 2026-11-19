@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -33,6 +35,85 @@ func TestSearchMapsJavaCompatibleMusic(t *testing.T) {
 // The desktop album view needs a real page and the upstream's own match count. Measured against
 // the deployed netease-api on 2026-09-25: offset 0 and offset 5 return different ids and both
 // report albumCount 592, so `total` is a whole-session count rather than a page size.
+func TestSearchTrackURLs(t *testing.T) {
+	const id = "28816031"
+	const link = "https://music.163.com/song?id=" + id
+	const song = `{"songs":[{"id":` + id + `,"name":"Track","dt":62000,"ar":[{"name":"Artist"}],"al":{"picUrl":"http://img.test/cover.jpg"}}]}`
+	want := []platform.Music{{ID: id, Name: "Track", Artists: []string{"Artist"}, Duration: 62000, Platform: "netease", CoverURL: "https://img.test/cover.jpg?param=1000y1000"}}
+	for _, test := range []struct {
+		name, keyword string
+		status        int
+		body          string
+		offset        int
+		fallback      bool
+	}{
+		{name: "hash route", keyword: "https://music.163.com/#/song?id=" + id, body: song},
+		{name: "fragment query takes precedence", keyword: "https://music.163.com/?id=42#/song?foo=bar&id=" + id, body: song},
+		{name: "plain query", keyword: link, body: song},
+		{name: "mobile", keyword: "https://y.music.163.com/m/song?id=" + id, body: song},
+		{name: "later page", keyword: link, offset: 1},
+		{name: "empty songs", keyword: link, body: `{"songs":[]}`},
+		{name: "not found", keyword: link, status: http.StatusNotFound},
+		{name: "unauthorized", keyword: link, status: http.StatusUnauthorized},
+		{name: "upstream failure", keyword: link, status: http.StatusInternalServerError},
+		{name: "profile", keyword: "https://music.163.com/user/home?id=" + id, fallback: true},
+		{name: "playlist", keyword: "https://music.163.com/#/playlist?id=" + id, fallback: true},
+		{name: "wrong host", keyword: "https://music.163.com.other.test/song?id=" + id, fallback: true},
+		{name: "http scheme", keyword: "http://music.163.com/song?id=" + id, fallback: true},
+		{name: "invalid numeric ID", keyword: "https://music.163.com/song?id=123a", fallback: true},
+		{name: "missing ID", keyword: "https://music.163.com/song?name=track", fallback: true},
+		{name: "invalid fragment ID", keyword: "https://music.163.com/#/song?id=123%26foo=bar", fallback: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				query := r.URL.Query()
+				assert.Equal(t, http.MethodGet, r.Method)
+				assert.Equal(t, "secret", query.Get("cookie"))
+				if test.fallback {
+					assert.Equal(t, "/cloudsearch", r.URL.Path)
+					assert.Equal(t, test.keyword, query.Get("keywords"))
+					_, _ = w.Write([]byte(`{"result":{"songs":[]}}`))
+					return
+				}
+				assert.Equal(t, "/song/detail", r.URL.Path)
+				assert.Equal(t, id, query.Get("ids"))
+				if test.status != 0 {
+					w.WriteHeader(test.status)
+				}
+				_, _ = w.Write([]byte(test.body))
+			}))
+			t.Cleanup(server.Close)
+			client := platform.NewClient(time.Second)
+			client.HTTP.Transport = rewriteToFixture{base: server.URL}
+			client.Retries = 0
+			service := New(client, "https://netease-api.test", "secret")
+			tracks, err := service.Search(t.Context(), test.keyword, test.offset, 20)
+			switch {
+			case test.offset != 0:
+				require.NoError(t, err)
+				require.Equal(t, []platform.Music{}, tracks)
+				require.Zero(t, calls.Load())
+			case test.status == http.StatusUnauthorized || test.status == http.StatusInternalServerError:
+				var upstream *platform.UpstreamError
+				require.ErrorAs(t, err, &upstream)
+				require.Equal(t, test.status, upstream.Status)
+				require.Empty(t, tracks)
+			case test.body == song:
+				require.NoError(t, err)
+				require.Equal(t, want, tracks)
+			default:
+				require.NoError(t, err)
+				require.Equal(t, []platform.Music{}, tracks)
+			}
+			if test.offset == 0 {
+				require.EqualValues(t, 1, calls.Load())
+			}
+		})
+	}
+}
+
 func TestSearchAlbumsPagesAndReportsTotal(t *testing.T) {
 	var askedOffset, askedLimit string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -143,11 +224,12 @@ func TestMissingCookieDoesNotCallUpstream(t *testing.T) {
 	defer server.Close()
 
 	service := New(&platform.Client{HTTP: server.Client(), Retries: 0, MaxBody: 1024}, server.URL, "")
-	_, err := service.Search(context.Background(), "contract", 0, 20)
-
-	var credentialErr *platform.CredentialNotConfiguredError
-	require.ErrorAs(t, err, &credentialErr)
-	require.Equal(t, "netease", credentialErr.Platform)
+	for _, keyword := range []string{"contract", "https://music.163.com/#/song?id=28816031"} {
+		_, err := service.Search(t.Context(), keyword, 0, 20)
+		var credentialErr *platform.CredentialNotConfiguredError
+		require.ErrorAs(t, err, &credentialErr)
+		require.Equal(t, "netease", credentialErr.Platform)
+	}
 	require.Zero(t, calls)
 }
 
@@ -249,4 +331,18 @@ func TestConcurrentStreamRequestsShareUpstreamCall(t *testing.T) {
 	close(proceed)
 	wg.Wait()
 	require.EqualValues(t, 1, calls.Load())
+}
+
+type rewriteToFixture struct{ base string }
+
+func (t rewriteToFixture) RoundTrip(request *http.Request) (*http.Response, error) {
+	fixture, err := url.Parse(t.base)
+	if err != nil {
+		return nil, err
+	}
+	forked := request.Clone(request.Context())
+	forked.URL.Scheme = fixture.Scheme
+	forked.URL.Host = fixture.Host
+	forked.Host = ""
+	return http.DefaultTransport.RoundTrip(forked)
 }

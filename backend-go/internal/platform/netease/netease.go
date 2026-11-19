@@ -3,10 +3,12 @@ package netease
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -112,6 +114,23 @@ func (s *Service) Search(ctx context.Context, keyword string, offset, limit int)
 	if err := platform.ValidateSearch(keyword, offset, limit); err != nil {
 		return nil, err
 	}
+	if id := trackURLID(keyword); id != "" {
+		if offset != 0 {
+			return []platform.Music{}, nil
+		}
+		music, err := s.fetchTrack(ctx, id)
+		if err != nil {
+			var upstream *platform.UpstreamError
+			if errors.As(err, &upstream) && upstream.Status == http.StatusNotFound {
+				return []platform.Music{}, nil
+			}
+			return nil, err
+		}
+		if music.ID == "" {
+			return []platform.Music{}, nil
+		}
+		return []platform.Music{music}, nil
+	}
 	var response struct {
 		Result struct {
 			Songs []song `json:"songs"`
@@ -120,19 +139,56 @@ func (s *Service) Search(ctx context.Context, keyword string, offset, limit int)
 	err := s.get(ctx, "/cloudsearch", url.Values{"keywords": {keyword}, "offset": {strconv.Itoa(offset)}, "limit": {strconv.Itoa(limit)}}, &response)
 	return mapSongs(response.Result.Songs, ""), err
 }
-func (s *Service) ResolvePlayable(ctx context.Context, musicID string) (platform.PlayableMusic, error) {
-	var response struct {
-		Songs []song `json:"songs"`
+
+var songID = regexp.MustCompile(`^[0-9]+$`)
+
+func trackURLID(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" {
+		return ""
 	}
-	err := s.get(ctx, "/song/detail", url.Values{"ids": {musicID}}, &response)
+	host := strings.ToLower(u.Host)
+	var id string
+	switch {
+	case host == "music.163.com" && u.Path == "/":
+		// The hash route carries its own query string.
+		if query, ok := strings.CutPrefix(u.EscapedFragment(), "/song?"); ok {
+			values, err := url.ParseQuery(query)
+			if err == nil {
+				id = values.Get("id")
+			}
+		}
+	case host == "music.163.com" && u.Path == "/song", host == "y.music.163.com" && u.Path == "/m/song":
+		id = u.Query().Get("id")
+	}
+	if songID.MatchString(id) {
+		return id
+	}
+	return ""
+}
+
+func (s *Service) ResolvePlayable(ctx context.Context, musicID string) (platform.PlayableMusic, error) {
+	music, err := s.fetchTrack(ctx, musicID)
 	if err != nil {
 		return platform.PlayableMusic{}, err
 	}
-	if len(response.Songs) == 0 {
+	if music.ID == "" {
 		return platform.PlayableMusic{}, fmt.Errorf("netease song %s was not found", musicID)
 	}
-	music := mapSongs(response.Songs[:1], "")[0]
 	return platform.PlayableMusic{Music: music, URL: "/api/netease/stream/" + url.PathEscape(music.ID)}, nil
+}
+
+func (s *Service) fetchTrack(ctx context.Context, id string) (platform.Music, error) {
+	var response struct {
+		Songs []song `json:"songs"`
+	}
+	if err := s.get(ctx, "/song/detail", url.Values{"ids": {id}}, &response); err != nil {
+		return platform.Music{}, err
+	}
+	if len(response.Songs) == 0 {
+		return platform.Music{}, nil
+	}
+	return mapSongs(response.Songs[:1], "")[0], nil
 }
 func (s *Service) UserPlaylists(ctx context.Context, userID string) ([]platform.Playlist, error) {
 	var response struct {

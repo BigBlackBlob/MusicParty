@@ -6,8 +6,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"path"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -52,8 +54,26 @@ func (s *Service) Search(ctx context.Context, keyword string, offset, limit int)
 	if err := platform.ValidateSearch(keyword, offset, limit); err != nil {
 		return nil, err
 	}
+	id := trackURLID(keyword)
+	if id != "" && offset != 0 {
+		return []platform.Music{}, nil
+	}
 	if strings.TrimSpace(s.credential()) == "" {
 		return nil, errors.New("bilibili SESSDATA is not configured")
+	}
+	if id != "" {
+		music, err := s.fetchTrack(ctx, id)
+		if err != nil {
+			var upstream *platform.UpstreamError
+			if errors.As(err, &upstream) && upstream.Status == http.StatusNotFound {
+				return []platform.Music{}, nil
+			}
+			return nil, err
+		}
+		if music.ID == "" {
+			return []platform.Music{}, nil
+		}
+		return []platform.Music{music}, nil
 	}
 	page := offset/max(1, limit) + 1
 	query, err := s.sign(ctx, url.Values{"search_type": {"video"}, "keyword": {keyword}, "page": {strconv.Itoa(page)}, "page_size": {strconv.Itoa(limit)}})
@@ -85,7 +105,33 @@ func (s *Service) Search(ctx context.Context, keyword string, offset, limit int)
 	}
 	return result, nil
 }
+
+var videoID = regexp.MustCompile(`^BV[A-Za-z0-9]{10}$`)
+
+func trackURLID(raw string) string {
+	u, err := url.Parse(raw)
+	// TODO: Resolve b23.tv short links, which redirect to the canonical URL.
+	if err != nil || u.Scheme != "https" || !strings.EqualFold(u.Host, "www.bilibili.com") {
+		return ""
+	}
+	if id, ok := strings.CutPrefix(u.Path, "/video/"); ok && videoID.MatchString(id) {
+		return id
+	}
+	return ""
+}
+
 func (s *Service) ResolvePlayable(ctx context.Context, bvid string) (platform.PlayableMusic, error) {
+	music, err := s.fetchTrack(ctx, bvid)
+	if err != nil {
+		return platform.PlayableMusic{}, err
+	}
+	if music.ID == "" {
+		return platform.PlayableMusic{}, fmt.Errorf("bilibili video %s was not found", bvid)
+	}
+	return platform.PlayableMusic{Music: music, URL: "/api/bilibili/stream/" + url.PathEscape(bvid)}, nil
+}
+
+func (s *Service) fetchTrack(ctx context.Context, bvid string) (platform.Music, error) {
 	var response struct {
 		Code int `json:"code"`
 		Data struct {
@@ -97,13 +143,12 @@ func (s *Service) ResolvePlayable(ctx context.Context, bvid string) (platform.Pl
 		} `json:"data"`
 	}
 	if err := s.client.JSON(ctx, s.baseURL+"/x/web-interface/view?"+url.Values{"bvid": {bvid}}.Encode(), s.headers(), &response); err != nil {
-		return platform.PlayableMusic{}, err
+		return platform.Music{}, err
 	}
 	if response.Code != 0 || response.Data.BVID == "" {
-		return platform.PlayableMusic{}, fmt.Errorf("bilibili video %s was not found", bvid)
+		return platform.Music{}, nil
 	}
-	music := platform.Music{ID: response.Data.BVID, Name: response.Data.Title, Artists: []string{response.Data.Owner.Name}, Duration: response.Data.Duration * 1000, Platform: "bilibili", CoverURL: normalizeImage(response.Data.Pic)}
-	return platform.PlayableMusic{Music: music, URL: "/api/bilibili/stream/" + url.PathEscape(bvid)}, nil
+	return platform.Music{ID: response.Data.BVID, Name: response.Data.Title, Artists: []string{response.Data.Owner.Name}, Duration: response.Data.Duration * 1000, Platform: "bilibili", CoverURL: normalizeImage(response.Data.Pic)}, nil
 }
 
 var mixinTable = []int{46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49, 33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52}
