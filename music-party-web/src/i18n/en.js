@@ -411,6 +411,11 @@ export default {
     deleteConfirm: 'Delete “{name}”?',
     uploadCover: 'Upload playlist cover',
     importPlatform: 'Playlist provider',
+    description: 'Description',
+    addDescription: 'Add description…',
+    editDescription: 'Edit description',
+    loadingProviders: 'Loading providers…',
+    noProviders: 'No providers available',
     addToQueue: 'Add to queue',
     editNotes: 'Track notes',
     reorder: 'Reorder {name}',
@@ -465,6 +470,9 @@ export default {
     netease: 'Netease',
     bilibili: 'Bilibili',
     youtube: 'YouTube',
+    qq: 'QQ Music',
+    soundcloud: 'SoundCloud',
+    squidify: 'Squidify',
     navidrome: 'Navidrome',
     local: 'Local'
   }

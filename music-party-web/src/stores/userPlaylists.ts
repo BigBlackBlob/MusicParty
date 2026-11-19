@@ -15,6 +15,7 @@ import {
   removePlaylist as removeScopedPlaylist,
   removePlaylistTrack,
   renamePlaylist as renameScopedPlaylist,
+  updatePlaylistDescription,
   type PlaylistScope
 } from '../domains/playlists/playlistService'
 import { useUserStore } from './user'
@@ -89,6 +90,10 @@ export const useUserPlaylistsStore = defineStore('userPlaylists', () => {
     await renameScopedPlaylist(scope.value, playlistId, name)
   }
 
+  async function updateDescription(playlistId: string, description: string): Promise<void> {
+    await updatePlaylistDescription(scope.value, playlistId, description)
+  }
+
   async function deletePlaylist(playlistId: string): Promise<void> {
     await removeScopedPlaylist(scope.value, playlistId)
     if (selectedPlaylistId.value === playlistId) selectedPlaylistId.value = ''
@@ -127,7 +132,7 @@ export const useUserPlaylistsStore = defineStore('userPlaylists', () => {
 
   return {
     playlists, selectedPlaylistId, selectedPlaylist, selectedTracks, likedPlaylist, loading, error,
-    requireNamedUser, loadPlaylists, loadTracks, ensurePlaylist, createPlaylist, renamePlaylist,
+    requireNamedUser, loadPlaylists, loadTracks, ensurePlaylist, createPlaylist, renamePlaylist, updateDescription,
     deletePlaylist, addTracks, addTracksToSelected,
     importNetease: (playlistId: string, externalPlaylistId: string) => importPlaylist(playlistId, 'netease', externalPlaylistId),
     importPlaylist, removeTrack, deleteTrack: removeTrack, exportPlaylist, enqueue

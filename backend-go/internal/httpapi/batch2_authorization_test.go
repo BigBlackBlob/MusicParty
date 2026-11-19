@@ -109,24 +109,28 @@ func TestPlaylistImportsUsePlatformAuthorization(t *testing.T) {
 	insertStage5User(t, store, "member-token", "member", "MEMBER")
 	insertStage5Room(t, store, "room", "PUBLIC", 0)
 	cfg := testConfig(t)
-	service := &restrictedFixture{name: "qq"}
-	platforms := NewPlatformAPI(cfg, service)
-	api := NewPlaylistAPI(cfg, store, accounts, roomdomain.New(store, accounts), platforms)
-	userPlaylist, err := api.users.CreatePlaylist(context.Background(), "member", "Personal")
-	require.NoError(t, err)
-	roomPlaylist, err := api.roomPlaylists.CreatePlaylist(context.Background(), "room", "Room")
-	require.NoError(t, err)
-	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
-	for _, path := range []string{"/api/me/playlists/" + userPlaylist.ID + "/import", "/api/rooms/room/playlists/" + roomPlaylist.ID + "/import"} {
-		platforms.SetAccess("qq", PlatformAccess(accounts, "nobody"))
-		before := service.calls.Load()
-		denied := batch2Request(handler, http.MethodPost, path, `{"platform":"qq","playlistId":"remote"}`, "member-token", "")
-		require.Equal(t, http.StatusForbidden, denied.Code, denied.Body.String())
-		require.Equal(t, before, service.calls.Load(), "denied import must not call provider")
-		platforms.SetAccess("qq", PlatformAccess(accounts, "member"))
-		allowed := batch2Request(handler, http.MethodPost, path, `{"platform":"qq","playlistId":"remote"}`, "member-token", "")
-		require.Equal(t, http.StatusOK, allowed.Code, allowed.Body.String())
-		require.Equal(t, before+1, service.calls.Load())
+	for _, name := range []string{"qq", "bilibili"} {
+		t.Run(name, func(t *testing.T) {
+			service := &restrictedFixture{name: name}
+			platforms := NewPlatformAPI(cfg, service)
+			api := NewPlaylistAPI(cfg, store, accounts, roomdomain.New(store, accounts), platforms)
+			userPlaylist, err := api.users.CreatePlaylist(context.Background(), "member", "Personal")
+			require.NoError(t, err)
+			roomPlaylist, err := api.roomPlaylists.CreatePlaylist(context.Background(), "room", "Room")
+			require.NoError(t, err)
+			handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
+			for _, path := range []string{"/api/me/playlists/" + userPlaylist.ID + "/import", "/api/rooms/room/playlists/" + roomPlaylist.ID + "/import"} {
+				platforms.SetAccess(name, PlatformAccess(accounts, "nobody"))
+				before := service.calls.Load()
+				denied := batch2Request(handler, http.MethodPost, path, `{"platform":"`+name+`","playlistId":"remote"}`, "member-token", "")
+				require.Equal(t, http.StatusForbidden, denied.Code, denied.Body.String())
+				require.Equal(t, before, service.calls.Load(), "denied import must not call provider")
+				platforms.SetAccess(name, PlatformAccess(accounts, "member"))
+				allowed := batch2Request(handler, http.MethodPost, path, `{"platform":"`+name+`","playlistId":"remote"}`, "member-token", "")
+				require.Equal(t, http.StatusOK, allowed.Code, allowed.Body.String())
+				require.Equal(t, before+1, service.calls.Load())
+			}
+		})
 	}
 }
 

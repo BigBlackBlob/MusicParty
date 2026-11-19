@@ -36,6 +36,8 @@ export const playlistsApi = {
     form.append('file', file)
     return client.put<void, FormData>(`${base(roomId)}/${id(playlistId)}/cover`, form)
   },
+  updateDescription: (roomId: string, playlistId: string, description: string) =>
+    client.patch<void, { description: string }>(`${base(roomId)}/${id(playlistId)}/description`, { description }),
   updateTrackNotes: (roomId: string, playlistId: string, trackId: string, notes: string) =>
     client.patch<void, { notes: string }>(`${base(roomId)}/${id(playlistId)}/tracks/${id(trackId)}/notes`, { notes }),
   exportPlaylist: (roomId: string, playlistId: string, format = 'txt') =>

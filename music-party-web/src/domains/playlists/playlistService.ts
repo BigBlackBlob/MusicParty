@@ -104,6 +104,16 @@ export async function uploadPlaylistCover(scope: PlaylistScope, playlistId: stri
   await refresh(scope)
 }
 
+export async function updatePlaylistDescription(scope: PlaylistScope, playlistId: string, description: string): Promise<void> {
+  if (scope.type === 'personal') await personalPlaylistsApi.updateDescription(playlistId, description)
+  else await playlistsApi.updateDescription(scope.roomId, playlistId, description)
+
+  queryClient.setQueryData<PlaylistSummary[]>(playlistKeys.list(scope), playlists =>
+    playlists?.map(playlist => playlist.id === playlistId ? { ...playlist, description } : playlist),
+  )
+  await refresh(scope)
+}
+
 export async function updatePlaylistTrackNotes(scope: PlaylistScope, playlistId: string, trackId: string, notes: string): Promise<void> {
   if (scope.type === 'personal') await personalPlaylistsApi.updateTrackNotes(playlistId, trackId, notes)
   else await playlistsApi.updateTrackNotes(scope.roomId, playlistId, trackId, notes)

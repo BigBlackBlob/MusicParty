@@ -11,6 +11,7 @@ import {
   removePlaylist as removeScopedPlaylist,
   removePlaylistTrack,
   renamePlaylist as renameScopedPlaylist,
+  updatePlaylistDescription,
   reorderPlaylistTracks,
   roomPlaylistListQueryOptions,
   roomPlaylistTracksQueryOptions,
@@ -65,6 +66,10 @@ export const useRoomPlaylistsStore = defineStore('roomPlaylists', () => {
     await renameScopedPlaylist(scope.value, playlistId, name)
   }
 
+  async function updateDescription(playlistId: string, description: string): Promise<void> {
+    await updatePlaylistDescription(scope.value, playlistId, description)
+  }
+
   async function deletePlaylist(playlistId: string): Promise<void> {
     await removeScopedPlaylist(scope.value, playlistId)
     if (selectedPlaylistId.value === playlistId) selectedPlaylistId.value = ''
@@ -93,7 +98,7 @@ export const useRoomPlaylistsStore = defineStore('roomPlaylists', () => {
 
   return {
     playlists, selectedPlaylistId, selectedPlaylist, selectedTracks, loading, error,
-    loadPlaylists, loadTracks, createPlaylist, renamePlaylist, deletePlaylist, deleteTrack,
+    loadPlaylists, loadTracks, createPlaylist, renamePlaylist, updateDescription, deletePlaylist, deleteTrack,
     reorderTracks, importExternal, playPlaylist, exportPlaylist
   }
 })

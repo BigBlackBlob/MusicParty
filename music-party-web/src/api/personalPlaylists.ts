@@ -34,6 +34,8 @@ export const personalPlaylistsApi = {
     form.append('file', file)
     return client.put<void, FormData>(`${base}/${id(playlistId)}/cover`, form)
   },
+  updateDescription: (playlistId: string, description: string) =>
+    client.patch<void, { description: string }>(`${base}/${id(playlistId)}/description`, { description }),
   updateTrackNotes: (playlistId: string, trackId: string, notes: string) =>
     client.patch<void, { notes: string }>(`${base}/${id(playlistId)}/tracks/${id(trackId)}/notes`, { notes }),
   move: (playlistId: string, position: number) =>

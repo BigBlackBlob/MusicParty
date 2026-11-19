@@ -47,16 +47,18 @@ func annotateHTTPValidation(item route, operation map[string]any) {
 		operation["parameters"] = parameters
 		operation["responses"].(map[string]any)["400"] = map[string]any{"$ref": "#/components/responses/Error"}
 	}
-	if item.Method != "POST" && item.Method != "PUT" {
-		return
-	}
 	var schema map[string]any
-	switch item.Path {
-	case "/api/me/playlists/{playlistId}/tracks/batch":
+	switch {
+	case item.Method == "PATCH" && (item.Path == "/api/me/playlists/{playlistId}/description" || item.Path == "/api/rooms/{roomId}/playlists/{playlistId}/description"):
+		schema = map[string]any{
+			"type": "object", "required": []string{"description"},
+			"properties": map[string]any{"description": map[string]any{"type": "string", "maxLength": 500}},
+		}
+	case item.Method == "POST" && item.Path == "/api/me/playlists/{playlistId}/tracks/batch":
 		schema = map[string]any{"type": "object", "required": []string{"musics"}, "properties": map[string]any{"musics": map[string]any{"type": "array", "minItems": 1, "maxItems": 200, "items": map[string]any{"$ref": "#/components/schemas/MusicInput"}}}}
-	case "/api/rooms/{roomId}/playlists/{playlistId}/tracks":
+	case item.Method == "POST" && item.Path == "/api/rooms/{roomId}/playlists/{playlistId}/tracks":
 		schema = map[string]any{"type": "object", "required": []string{"music"}, "properties": map[string]any{"music": map[string]any{"$ref": "#/components/schemas/MusicInput"}}}
-	case "/api/me/liked-songs/{platform}/{musicId}":
+	case item.Method == "PUT" && item.Path == "/api/me/liked-songs/{platform}/{musicId}":
 		schema = musicInputSchema()
 		schema["required"] = []string{"name"}
 		properties := schema["properties"].(map[string]any)

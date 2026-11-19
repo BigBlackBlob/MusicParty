@@ -1,5 +1,5 @@
 {
-  "routeCount": 112,
+  "routeCount": 114,
   "routes": [
     {
       "method": "GET",
@@ -380,6 +380,12 @@
       "source": "backend-go/internal/httpapi"
     },
     {
+      "method": "PATCH",
+      "path": "/api/me/playlists/{playlistId}/description",
+      "operationId": "patch.api.me.playlists.playlistId.description",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
       "method": "POST",
       "path": "/api/me/playlists/{playlistId}/enqueue",
       "operationId": "post.api.me.playlists.playlistId.enqueue",
@@ -563,6 +569,12 @@
       "method": "PUT",
       "path": "/api/rooms/{roomId}/playlists/{playlistId}/cover",
       "operationId": "put.api.rooms.roomId.playlists.playlistId.cover",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/rooms/{roomId}/playlists/{playlistId}/description",
+      "operationId": "patch.api.rooms.roomId.playlists.playlistId.description",
       "source": "backend-go/internal/httpapi"
     },
     {

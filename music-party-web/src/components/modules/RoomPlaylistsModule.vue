@@ -191,9 +191,20 @@
                   )
                 }}
               </p>
-              <p v-if="store.selectedPlaylist.description" class="hd-desc">
-                {{ store.selectedPlaylist.description }}
-              </p>
+              <div v-if="store.selectedPlaylist.description" class="hd-description">
+                <p class="hd-desc" :title="store.selectedPlaylist.description">{{ store.selectedPlaylist.description }}</p>
+                <button
+                  v-if="canEdit"
+                  type="button"
+                  class="icon-btn description-edit-btn"
+                  :aria-label="t('roomPlaylists.editDescription')"
+                  :title="t('roomPlaylists.editDescription')"
+                  :disabled="busy || editor === 'description'"
+                  @click="openDescription"
+                >
+                  <span class="material-symbols-outlined" aria-hidden="true">edit</span>
+                </button>
+              </div>
             </div>
             <button
               v-if="store.selectedTracks.length && hasRoom"
@@ -218,10 +229,14 @@
               v-model="importPlatform"
               class="text-field"
               :aria-label="t('roomPlaylists.importPlatform')"
-              :disabled="busy"
+              :disabled="busy || !importPlatforms.length"
             >
-              <option value="netease">NetEase</option>
-              <option value="qq">QQ Music</option>
+              <option v-if="!importPlatforms.length" value="">
+                {{ t(platformsQuery.isPending.value ? 'roomPlaylists.loadingProviders' : 'roomPlaylists.noProviders') }}
+              </option>
+              <option v-for="platform in importPlatforms" :key="platform.id" :value="platform.id">
+                {{ t(`platforms.${platform.id}`, platform.label) }}
+              </option>
             </select>
             <input
               v-model.trim="externalPlaylistId"
@@ -232,7 +247,7 @@
             /><button
               type="submit"
               class="chip-btn"
-              :disabled="busy || !externalPlaylistId"
+              :disabled="busy || !importPlatform || !externalPlaylistId"
             >
               {{ t("search.importPlaylist") }}
             </button>
@@ -398,6 +413,28 @@
                 {{ t("common.cancel") }}
               </button>
             </form>
+            <form
+              v-else-if="editor === 'description'"
+              class="footer-edit"
+              @submit.prevent="saveDescription"
+            >
+              <textarea
+                ref="descriptionInput"
+                v-model="descriptionValue"
+                class="text-field description-field"
+                rows="3"
+                maxlength="500"
+                :aria-label="t('roomPlaylists.description')"
+                :disabled="busy"
+                @keydown.esc.prevent="editor = null"
+              ></textarea>
+              <button type="submit" class="chip-btn chip-primary" :disabled="busy">
+                {{ t("roomPlaylists.save") }}
+              </button>
+              <button type="button" class="chip-btn" :disabled="busy" @click="editor = null">
+                {{ t("common.cancel") }}
+              </button>
+            </form>
             <div v-else-if="editor === 'delete'" class="d3-delete-confirm">
               <span role="status">{{
                 t("roomPlaylists.deleteConfirm", {
@@ -447,6 +484,15 @@
               </div>
               <div v-if="canEdit" class="footer-right">
                 <button
+                  v-if="!store.selectedPlaylist.description"
+                  type="button"
+                  class="description-add-btn"
+                  :disabled="busy"
+                  @click="openDescription"
+                >
+                  {{ t("roomPlaylists.addDescription") }}
+                </button>
+                <button
                   type="button"
                   class="chip-btn"
                   :disabled="busy"
@@ -475,10 +521,13 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useQuery } from '@tanstack/vue-query'
+import { musicApi } from '../../api/music'
 import type { PlaylistTrack } from '../../contracts/generated/models'
 import { useLikedSongsStore } from '../../domains/playback/likedSongs'
 import { bindPlaylistSort } from '../../domains/playlists/playlistSort'
 import { moveUserPlaylist, reorderPlaylistTracks, updatePlaylistTrackNotes, uploadPlaylistCover, type PlaylistScope } from '../../domains/playlists/playlistService'
+import { queryKeys } from '../../domains/queryKeys'
 import { useRoomCommandStore } from '../../domains/realtime/roomCommandStore'
 import { useRoomStore } from '../../stores/room'
 import { useRoomPlaylistsStore } from '../../stores/roomPlaylists'
@@ -513,17 +562,32 @@ const canSort = computed(() => scope.value === 'personal' && !user.isGuest && (v
 const busy = ref(false)
 const message = ref('')
 const newName = ref('')
-const importPlatform = ref<'netease' | 'qq'>('netease')
+const importPlatform = ref<string>('')
+const playlistProviders = new Set(['netease', 'qq', 'bilibili', 'youtube', 'soundcloud', 'squidify'])
+const platformsQuery = useQuery({
+  queryKey: computed(() => queryKeys.platforms.byRoom(room.currentRoomId)),
+  queryFn: ({ queryKey: [, roomId], signal }) => musicApi.getPlatforms(roomId, signal),
+})
+const importPlatforms = computed(() => platformsQuery.data.value?.filter(platform => playlistProviders.has(platform.id)) ?? [])
+
+watch(importPlatforms, (platforms) => {
+  if (!platforms.some(platform => platform.id === importPlatform.value)) {
+    importPlatform.value = platforms[0]?.id ?? ''
+  }
+}, { immediate: true })
+
 const externalPlaylistId = ref('')
 const exportFormat = ref<(typeof exportFormats)[number]>('txt')
-const editor = ref<'rename' | 'delete' | null>(null)
+const editor = ref<'rename' | 'description' | 'delete' | null>(null)
 const renameValue = ref('')
+const descriptionValue = ref('')
 const editingTrackId = ref<string | null>(null)
 const selectedTrackId = ref<string | null>(null)
 const trackNotes = ref('')
 const sortList = ref<HTMLElement | null>(null)
 const coverInput = ref<HTMLInputElement | null>(null)
 const renameInput = ref<HTMLInputElement | null>(null)
+const descriptionInput = ref<HTMLTextAreaElement | null>(null)
 
 watch([sortList, canSort, busy, viewMode], ([list, enabled, pending], _, onCleanup) => {
   if (list && enabled && !pending) onCleanup(bindPlaylistSort(list, move))
@@ -589,6 +653,22 @@ function rename() {
   })
 }
 
+async function openDescription() {
+  descriptionValue.value = store.value.selectedPlaylist?.description ?? ''
+  editor.value = 'description'
+  await nextTick()
+  descriptionInput.value?.focus()
+}
+
+function saveDescription() {
+  const id = store.value.selectedPlaylistId
+  if (!id || !canEdit.value) return
+  void run(async () => {
+    await store.value.updateDescription(id, descriptionValue.value)
+    if (store.value.selectedPlaylistId === id && editor.value === 'description') editor.value = null
+  })
+}
+
 function deleteSelected() {
   const id = store.value.selectedPlaylistId
   if (!id) return
@@ -600,7 +680,7 @@ function deleteSelected() {
 
 function importExternal() {
   const id = store.value.selectedPlaylistId
-  if (!id || !externalPlaylistId.value) return
+  if (!id || !importPlatform.value || !externalPlaylistId.value) return
   void run(async () => {
     if (scope.value === 'room') await roomPlaylists.importExternal(importPlatform.value, externalPlaylistId.value)
     else await personalPlaylists.importPlaylist(id, importPlatform.value, externalPlaylistId.value)
@@ -709,39 +789,20 @@ function setSortList(element: Element | ComponentPublicInstance | null) {
 </script>
 <style scoped>
 .playlist-module {
-  --bg: #0b0b0b;
-  --surface: #111111;
-  --surface-2: #181818;
-  --surface-3: #222222;
-  --surface-4: #2c2c2c;
-  --border: #252525;
-  --border-str: #3a3a3a;
-  --text: #f0f0f0;
-  --text-sec: #888888;
-  --text-ter: #555555;
-  --accent: #71bd99;
-  --accent-h: #8dcbad;
-  --accent-dim: rgba(113, 189, 153, 0.14);
-  --accent-txt: #000000;
-  --danger: #e05252;
-  --danger-bg: rgba(224, 82, 82, 0.12);
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 10px;
-  --playlist-accent: #71bd99;
   display: flex;
   width: 100%;
   height: 100%;
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
-  background: var(--bg);
-  color: var(--text);
+  background: var(--surface-0);
+  color: var(--text-primary);
   font-size: 13px;
 }
 .playlist-module button,
 .playlist-module input,
-.playlist-module select {
+.playlist-module select,
+.playlist-module textarea {
   color: inherit;
   font: inherit;
 }
@@ -752,13 +813,13 @@ function setSortList(element: Element | ComponentPublicInstance | null) {
 .message-line {
   flex: none;
   padding: 4px 10px;
-  color: var(--danger);
+  color: var(--error);
   font-size: 12px;
 }
 .guest-state,
 .empty-state {
   padding: 28px 12px;
-  color: var(--text-sec);
+  color: var(--text-secondary);
   font-size: 13px;
   text-align: center;
 }
@@ -773,13 +834,13 @@ function setSortList(element: Element | ComponentPublicInstance | null) {
   flex-direction: column;
   border-radius: 10px;
   overflow: hidden;
-  border: 1px solid var(--border);
-  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-1);
 }
 .d3-tab-bar {
   display: flex;
   align-items: center;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-subtle);
   padding: 0 14px;
   background: var(--surface-2);
   flex-shrink: 0;
@@ -790,7 +851,7 @@ function setSortList(element: Element | ComponentPublicInstance | null) {
   padding: 11px 14px;
   font-size: 13px;
   font-weight: 500;
-  color: var(--text-sec);
+  color: var(--text-secondary);
   border-bottom: 2px solid transparent;
   transition: color 0.12s, border-color 0.12s;
   min-height: 42px;
@@ -802,14 +863,14 @@ function setSortList(element: Element | ComponentPublicInstance | null) {
   cursor: pointer;
 }
 .d3-tab:hover {
-  color: var(--text);
+  color: var(--text-primary);
 }
 .d3-tab.on {
   color: var(--accent);
   border-bottom-color: var(--accent);
 }
 .d3-tab-sep {
-  color: var(--text-ter);
+  color: var(--text-tertiary);
   font-size: 13px;
   padding: 0 2px;
 }
@@ -831,12 +892,12 @@ function setSortList(element: Element | ComponentPublicInstance | null) {
   min-height: 28px;
   padding: 4px 10px;
   border-radius: 4px;
-  color: var(--text-sec) !important;
+  color: var(--text-secondary) !important;
   font-size: 12px !important;
 }
 .scope-btn:hover {
   background: var(--surface-3);
-  color: var(--text) !important;
+  color: var(--text-primary) !important;
 }
 .scope-btn.on {
   color: var(--accent) !important;
@@ -859,9 +920,9 @@ function setSortList(element: Element | ComponentPublicInstance | null) {
   min-width: 0;
   min-height: 28px;
   padding: 5px 8px;
-  border: 1px solid var(--border-str) !important;
+  border: 1px solid var(--border-strong) !important;
   border-radius: 4px;
-  background: var(--surface) !important;
+  background: var(--surface-1) !important;
   font-size: 12px !important;
 }
 .chip-btn {
@@ -880,14 +941,14 @@ function setSortList(element: Element | ComponentPublicInstance | null) {
 }
 .chip-primary {
   background: var(--accent) !important;
-  color: var(--accent-txt) !important;
+  color: var(--on-primary) !important;
   font-weight: 600 !important;
 }
 .chip-primary:hover:not(:disabled) {
-  background: var(--accent-h) !important;
+  background: var(--accent-hover) !important;
 }
 .chip-danger {
-  color: var(--danger) !important;
+  color: var(--error) !important;
 }
 .chip-btn:disabled,
 .icon-btn:disabled {
@@ -900,7 +961,7 @@ function setSortList(element: Element | ComponentPublicInstance | null) {
   overflow: hidden;
   border-radius: 4px;
   background: var(--surface-3);
-  color: var(--text-ter);
+  color: var(--text-tertiary);
   object-fit: cover;
 }
 .cover-image {
@@ -924,14 +985,14 @@ function setSortList(element: Element | ComponentPublicInstance | null) {
 .sys-badge {
   padding: 1px 5px;
   border-radius: 3px;
-  background: var(--accent-dim);
+  background: var(--accent-muted);
   color: var(--accent);
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
 }
 .row-chevron {
-  color: var(--text-ter);
+  color: var(--text-tertiary);
 }
 .icon-btn {
   display: grid;
@@ -947,7 +1008,7 @@ function setSortList(element: Element | ComponentPublicInstance | null) {
   background: var(--surface-3);
 }
 .drag-handle {
-  color: var(--text-ter) !important;
+  color: var(--text-tertiary) !important;
   cursor: grab;
   touch-action: none;
 }
@@ -957,7 +1018,7 @@ function setSortList(element: Element | ComponentPublicInstance | null) {
 .note-line {
   margin: 2px 0 0;
   padding: 0 10px 6px 52px;
-  color: var(--text-sec);
+  color: var(--text-secondary);
   font-size: 11px;
   white-space: pre-wrap;
   word-break: break-word;
@@ -968,7 +1029,7 @@ function setSortList(element: Element | ComponentPublicInstance | null) {
   gap: 8px;
   flex-wrap: wrap;
   padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
 .d3-index-toolbar .text-field {
@@ -982,7 +1043,7 @@ function setSortList(element: Element | ComponentPublicInstance | null) {
 .d3-playlist-row-wrap {
   display: flex;
   align-items: center;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-subtle);
 }
 .d3-playlist-row {
   display: flex;
@@ -1002,7 +1063,7 @@ function setSortList(element: Element | ComponentPublicInstance | null) {
   background: var(--surface-2);
 }
 .d3-playlist-row.selected {
-  background: var(--accent-dim);
+  background: var(--accent-muted);
 }
 .d3-playlist-cover {
   width: 44px;
@@ -1015,14 +1076,14 @@ function setSortList(element: Element | ComponentPublicInstance | null) {
 }
 .d3-playlist-row .row-sub {
   font-size: 12px;
-  color: var(--text-sec);
+  color: var(--text-secondary);
 }
 .d3-detail-header {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
 .cover-wrap {
@@ -1061,16 +1122,28 @@ function setSortList(element: Element | ComponentPublicInstance | null) {
 }
 .hd-sub {
   font-size: 12px;
-  color: var(--text-sec);
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+.hd-description {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
   margin-top: 2px;
 }
 .hd-desc {
-  font-size: 12px;
-  color: var(--text-sec);
+  display: -webkit-box;
+  min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  margin-top: 2px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.description-edit-btn {
+  flex-shrink: 0;
 }
 .play-all {
   flex: none;
@@ -1080,7 +1153,7 @@ function setSortList(element: Element | ComponentPublicInstance | null) {
   flex-wrap: wrap;
   gap: 6px;
   padding: 8px 16px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
   background: var(--surface-2);
 }
@@ -1097,7 +1170,7 @@ function setSortList(element: Element | ComponentPublicInstance | null) {
   position: relative;
 }
 .track-entry {
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-subtle);
 }
 .d3-track-row {
   display: flex;
@@ -1108,13 +1181,13 @@ function setSortList(element: Element | ComponentPublicInstance | null) {
   cursor: pointer;
 }
 .d3-track-row.selected {
-  background: var(--accent-dim);
+  background: var(--accent-muted);
 }
 .d3-track-num {
   width: 20px;
   text-align: right;
   font-size: 12px;
-  color: var(--text-ter);
+  color: var(--text-tertiary);
   flex-shrink: 0;
 }
 .d3-track-cover {
@@ -1128,11 +1201,11 @@ function setSortList(element: Element | ComponentPublicInstance | null) {
 }
 .d3-track-row .track-art {
   font-size: 12px;
-  color: var(--text-sec);
+  color: var(--text-secondary);
 }
 .d3-track-row .track-note-line {
   font-size: 11px;
-  color: var(--text-sec);
+  color: var(--text-secondary);
   margin-top: 2px;
   white-space: pre-wrap;
   word-break: break-word;
@@ -1145,7 +1218,7 @@ function setSortList(element: Element | ComponentPublicInstance | null) {
   background: var(--surface-3);
   border-radius: 4px;
   padding: 2px;
-  border: 1px solid var(--border-str);
+  border: 1px solid var(--border-strong);
 }
 .d3-action-bar .icon-btn {
   width: 28px;
@@ -1174,7 +1247,7 @@ function setSortList(element: Element | ComponentPublicInstance | null) {
 .d3-footer {
   flex-shrink: 0;
   padding: 8px 16px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-subtle);
   background: var(--surface-2);
 }
 .footer-row {
@@ -1191,7 +1264,21 @@ function setSortList(element: Element | ComponentPublicInstance | null) {
 }
 .footer-right {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
+}
+.footer-right .description-add-btn {
+  min-height: 28px;
+  padding: 4px 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.description-add-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+.description-add-btn:disabled {
+  opacity: 0.4;
 }
 .footer-edit {
   display: flex;
@@ -1203,6 +1290,11 @@ function setSortList(element: Element | ComponentPublicInstance | null) {
   flex: 1;
   min-width: 120px;
 }
+.footer-edit .description-field {
+  flex-basis: 100%;
+  resize: vertical;
+  max-height: 120px;
+}
 .d3-delete-confirm {
   display: flex;
   flex-wrap: wrap;
@@ -1212,7 +1304,7 @@ function setSortList(element: Element | ComponentPublicInstance | null) {
 .d3-delete-confirm span {
   flex: 1;
   font-size: 12px;
-  color: var(--text-sec);
+  color: var(--text-secondary);
   min-width: 120px;
 }
 .rename-field {

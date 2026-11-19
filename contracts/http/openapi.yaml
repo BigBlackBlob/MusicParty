@@ -1134,6 +1134,42 @@
         "x-go-source": "backend-go/internal/httpapi"
       }
     },
+    "/api/me/playlists/{playlistId}/description": {
+      "patch": {
+        "operationId": "patch.api.me.playlists.playlistId.description",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "description": {
+                    "maxLength": 500,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "description"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
+      }
+    },
     "/api/me/playlists/{playlistId}/enqueue": {
       "post": {
         "operationId": "post.api.me.playlists.playlistId.enqueue",
@@ -1601,6 +1637,42 @@
         "responses": {
           "200": {
             "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
+      }
+    },
+    "/api/rooms/{roomId}/playlists/{playlistId}/description": {
+      "patch": {
+        "operationId": "patch.api.rooms.roomId.playlists.playlistId.description",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "description": {
+                    "maxLength": 500,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "description"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
           },
           "default": {
             "$ref": "#/components/responses/Error"

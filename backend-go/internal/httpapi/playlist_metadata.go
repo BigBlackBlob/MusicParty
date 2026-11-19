@@ -104,6 +104,41 @@ func writePlaylistCover(w http.ResponseWriter, r *http.Request, data []byte, err
 	return nil
 }
 
+func requestPlaylistDescription(r *http.Request) (string, error) {
+	var body struct {
+		Description *string `json:"description"`
+	}
+	if err := decodeJSONBody(r, &body); err != nil || body.Description == nil || utf8.RuneCountInString(*body.Description) > 500 {
+		return "", badRequest("description must be a string of up to 500 characters")
+	}
+	return *body.Description, nil
+}
+
+func (api *PlaylistAPI) userDescription(w http.ResponseWriter, r *http.Request) error {
+	session, err := api.user(r)
+	if err != nil {
+		return unauthorized(w)
+	}
+	description, err := requestPlaylistDescription(r)
+	if err != nil {
+		return err
+	}
+	changed, err := api.users.SetDescription(r.Context(), session.PublicID, chi.URLParam(r, "playlistId"), description)
+	return noContentOrNotFound(w, changed, err)
+}
+
+func (api *PlaylistAPI) roomDescription(w http.ResponseWriter, r *http.Request) error {
+	if err := api.roomAccess(r); err != nil {
+		return roomAccessError(w, err)
+	}
+	description, err := requestPlaylistDescription(r)
+	if err != nil {
+		return err
+	}
+	changed, err := api.roomPlaylists.SetDescription(r.Context(), chi.URLParam(r, "roomId"), chi.URLParam(r, "playlistId"), description)
+	return noContentOrNotFound(w, changed, err)
+}
+
 func requestPlaylistNotes(r *http.Request) (string, error) {
 	var body struct {
 		Notes *string `json:"notes"`

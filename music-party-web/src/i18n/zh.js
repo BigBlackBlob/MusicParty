@@ -410,6 +410,11 @@ export default {
     deleteConfirm: '删除「{name}」？',
     uploadCover: '上传歌单封面',
     importPlatform: '歌单来源',
+    description: '歌单描述',
+    addDescription: '添加描述…',
+    editDescription: '编辑描述',
+    loadingProviders: '正在加载歌单来源…',
+    noProviders: '暂无可用的歌单来源',
     addToQueue: '加入播放队列',
     editNotes: '歌曲备注',
     reorder: '调整 {name} 的顺序',
@@ -464,6 +469,9 @@ export default {
     netease: '网易云',
     bilibili: '哔哩哔哩',
     youtube: 'YouTube',
+    qq: 'QQ 音乐',
+    soundcloud: 'SoundCloud',
+    squidify: 'Squidify',
     navidrome: 'Navidrome',
     local: '本地'
   }

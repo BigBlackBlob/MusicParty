@@ -32,6 +32,14 @@ func readPlaylistCover(row *sql.Row) ([]byte, error) {
 	return data, err
 }
 
+func (repository *UserPlaylistRepository) SetDescription(ctx context.Context, owner, playlistID, description string) (bool, error) {
+	return updatePlaylistMetadata(ctx, repository.store, `update user_playlist set description = ?, updated_at = ? where owner_public_id = ? and id = ? and system_key is null`, description, repository.now().UnixMilli(), owner, playlistID)
+}
+
+func (repository *RoomPlaylistRepository) SetDescription(ctx context.Context, room, playlistID, description string) (bool, error) {
+	return updatePlaylistMetadata(ctx, repository.store, `update room_playlist set description = ?, updated_at = ? where room_id = ? and id = ?`, description, repository.now().UnixMilli(), room, playlistID)
+}
+
 func (repository *UserPlaylistRepository) SetTrackNotes(ctx context.Context, owner, playlistID, trackID, notes string) (bool, error) {
 	return updatePlaylistMetadata(ctx, repository.store, `update user_playlist_track set notes = ? where playlist_id = ? and id = ?
 		and exists (select 1 from user_playlist where id = ? and owner_public_id = ? and system_key is null)`, notes, playlistID, trackID, playlistID, owner)

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -42,6 +43,7 @@ func (api *PlaylistAPI) Routes(r chi.Router) {
 	r.Patch("/api/me/playlists/{playlistId}", Adapt(api.userRename))
 	r.Get("/api/me/playlists/{playlistId}/cover", Adapt(api.userCover))
 	r.Put("/api/me/playlists/{playlistId}/cover", Adapt(api.userUploadCover))
+	r.Patch("/api/me/playlists/{playlistId}/description", Adapt(api.userDescription))
 	r.Patch("/api/me/playlists/{playlistId}/tracks/{trackId}/notes", Adapt(api.userTrackNotes))
 	r.Put("/api/me/playlists/{playlistId}/order", Adapt(api.userPlaylistOrder))
 	r.Delete("/api/me/playlists/{playlistId}", Adapt(api.userDelete))
@@ -60,6 +62,7 @@ func (api *PlaylistAPI) Routes(r chi.Router) {
 	r.Patch("/api/rooms/{roomId}/playlists/{playlistId}", Adapt(api.roomRename))
 	r.Get("/api/rooms/{roomId}/playlists/{playlistId}/cover", Adapt(api.roomCover))
 	r.Put("/api/rooms/{roomId}/playlists/{playlistId}/cover", Adapt(api.roomUploadCover))
+	r.Patch("/api/rooms/{roomId}/playlists/{playlistId}/description", Adapt(api.roomDescription))
 	r.Patch("/api/rooms/{roomId}/playlists/{playlistId}/tracks/{trackId}/notes", Adapt(api.roomTrackNotes))
 	r.Delete("/api/rooms/{roomId}/playlists/{playlistId}", Adapt(api.roomDelete))
 	r.Get("/api/rooms/{roomId}/playlists/{playlistId}/tracks", Adapt(api.roomTracks))
@@ -559,8 +562,10 @@ func (api *PlaylistAPI) roomExport(w http.ResponseWriter, r *http.Request) error
 	return exportTracks(w, r, values, err)
 }
 func (api *PlaylistAPI) remoteSongs(r *http.Request, name, id string) ([]platform.Music, error) {
-	if name != "netease" && name != "qq" {
-		return nil, badRequest("Playlist import supports Netease and QQ Music")
+	switch name {
+	case "netease", "qq", "bilibili":
+	default:
+		return nil, badRequest("Playlist import is not supported for this platform")
 	}
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -573,7 +578,7 @@ func (api *PlaylistAPI) remoteSongs(r *http.Request, name, id string) ([]platfor
 	if !ok {
 		return nil, badRequest("Platform not supported: " + name)
 	}
-	values, err := service.PlaylistSongs(r.Context(), id, 0, 500)
+	values, err := service.PlaylistSongs(r.Context(), id, 0, platform.MaxPlaylistLimit)
 	if err != nil {
 		if name == "netease" {
 			return nil, BadGateway("尚未配置网易云 Cookie，请联系管理员设置")
@@ -582,6 +587,10 @@ func (api *PlaylistAPI) remoteSongs(r *http.Request, name, id string) ([]platfor
 	}
 	if len(values) > platform.MaxPlaylistLimit {
 		return nil, BadGateway("Invalid upstream playlist items")
+	}
+	if name == "bilibili" {
+		// The provider keeps unavailable videos as sentinels to preserve pagination.
+		values = slices.DeleteFunc(values, func(music platform.Music) bool { return music.ID == "INVALID_SKIP" })
 	}
 	for _, music := range values {
 		if !validPlaylistMusic(toStoreMusic(music)) {
