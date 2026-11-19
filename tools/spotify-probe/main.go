@@ -44,21 +44,12 @@ const (
 	minimumBitrate = 96
 )
 
-// Keep the same device ID when the credentials move from Windows to Linux.
+// Keep the same device ID when the credentials move between Windows to Linux.
 // Data is the reusable access-point credential returned by go-librespot.
 type credentials struct {
 	DeviceID string `json:"device_id"`
 	Username string `json:"username"`
 	Data     []byte `json:"data"`
-}
-
-// tokenFile is the format saved by the Windows login step (OAuth tokens only).
-// check detects this format and converts it to credentials on first use.
-type tokenFile struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	Username     string `json:"username"`
-	SavedAt      string `json:"saved_at"`
 }
 
 var (
@@ -131,24 +122,33 @@ func run(args []string) int {
 	}
 }
 
-func login(ctx context.Context, path string) error {
-	clientID := strings.TrimSpace(os.Getenv("SPOTIFY_CLIENT_ID"))
-	if clientID == "" {
-		return errors.New("OAuth setup failed: set SPOTIFY_CLIENT_ID to your Spotify app's client ID")
-	}
+const loginTimeout = 5 * time.Minute
 
-	client := librespot.NewHttpClient()
-	tokens, err := authorize(ctx, client, clientID)
-	if err != nil {
-		return err
-	}
+func login(ctx context.Context, path string) error {
 	deviceID := hex.EncodeToString(randomBytes(20))
-	sess, err := connect(ctx, client, deviceID, session.SpotifyTokenCredentials{
-		Username: tokens.Username,
-		Token:    tokens.AccessToken,
+	ctx, cancel := context.WithTimeout(ctx, loginTimeout)
+	defer cancel()
+
+	sess, err := session.NewSessionFromOptions(ctx, &session.Options{
+		Log:        &librespot.NullLogger{},
+		DeviceType: devicespb.DeviceType_COMPUTER,
+		DeviceId:   deviceID,
+		Credentials: session.DeviceAuthCredentials{
+			OnCode: func(code *session.DeviceAuthCode) {
+				if code == nil {
+					return
+				}
+				fmt.Printf("\nOpen this URL to authorize Spotify:\n  %s\n", code.VerificationUrl)
+				if code.UserCode != "" {
+					fmt.Printf("Enter code if prompted: %s\n", code.UserCode)
+				}
+				fmt.Printf("Waiting for approval (expires %s)…\n\n", code.ExpiresAt.Local().Format("15:04:05"))
+			},
+		},
+		Client: librespot.NewHttpClient(),
 	})
 	if err != nil {
-		return fmt.Errorf("Session construction failed: %s", safeError(err, tokens.AccessToken, tokens.RefreshToken))
+		return fmt.Errorf("Device authorization failed: %s", safeError(err))
 	}
 	defer sess.Close()
 
@@ -165,7 +165,7 @@ func check(ctx context.Context, path, track string) error {
 	}
 
 	client := librespot.NewHttpClient()
-	stored, err := loadOrConvertCredentials(ctx, client, path)
+	stored, err := loadCredentials(path)
 	if err != nil {
 		return fmt.Errorf("Credential load failed: %w", err)
 	}
@@ -316,41 +316,6 @@ func readAudio(ctx context.Context, source librespot.Float32Reader, target int) 
 }
 func sessionCredentials(sess *session.Session, deviceID string) credentials {
 	return credentials{DeviceID: deviceID, Username: sess.Username(), Data: sess.StoredCredentials()}
-}
-
-func loadOrConvertCredentials(ctx context.Context, client *http.Client, path string) (credentials, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return credentials{}, err
-	}
-
-	// Try the native format first.
-	var creds credentials
-	if json.Unmarshal(data, &creds) == nil && creds.validate() == nil {
-		return creds, nil
-	}
-
-	// Try the Windows token file format.
-	var tf tokenFile
-	if err := json.Unmarshal(data, &tf); err != nil || tf.AccessToken == "" || tf.Username == "" {
-		return credentials{}, errors.New("credentials.json is not a valid format; re-run login")
-	}
-	fmt.Fprintln(os.Stderr, "Converting Windows token file to go-librespot credentials…")
-	deviceID := hex.EncodeToString(randomBytes(20))
-	sess, err := connect(ctx, client, deviceID, session.SpotifyTokenCredentials{
-		Username: tf.Username,
-		Token:    tf.AccessToken,
-	})
-	if err != nil {
-		return credentials{}, fmt.Errorf("Session construction failed during credential conversion: %s", safeError(err, tf.AccessToken))
-	}
-	defer sess.Close()
-	creds = sessionCredentials(sess, deviceID)
-	if err := saveCredentials(path, creds); err != nil {
-		return credentials{}, fmt.Errorf("Could not save converted credentials: %w", err)
-	}
-	fmt.Fprintln(os.Stderr, "Credentials converted and saved.")
-	return creds, nil
 }
 
 func loadCredentials(path string) (credentials, error) {
