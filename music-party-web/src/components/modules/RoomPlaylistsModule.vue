@@ -473,6 +473,7 @@
 </template>
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import type { ComponentPublicInstance } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { PlaylistTrack } from '../../contracts/generated/models'
 import { useLikedSongsStore } from '../../domains/playback/likedSongs'
@@ -702,7 +703,7 @@ function exportSelected() {
 }
 
 onMounted(() => { void run(() => roomPlaylists.loadPlaylists()) })
-function setSortList(element: Element | Record<string, unknown> | null) {
+function setSortList(element: Element | ComponentPublicInstance | null) {
   if (element instanceof HTMLElement) sortList.value = element
 }
 </script>
