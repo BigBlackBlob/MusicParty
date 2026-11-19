@@ -29,7 +29,7 @@ func (repository *UserPlaylistRepository) ListPlaylists(ctx context.Context, own
 	rows, err := repository.store.reader.QueryContext(ctx, userPlaylistSelect+`
 		where p.owner_public_id = ?
 		group by p.id, p.owner_public_id, p.name, p.system_key, p.created_at, p.updated_at
-		order by case when p.system_key is null then 1 else 0 end, p.created_at
+		order by case when p.system_key is null then 1 else 0 end, p.sort_order, p.created_at, p.id
 	`, ownerPublicID)
 	if err != nil {
 		return nil, fmt.Errorf("list user playlists: %w", err)
@@ -110,7 +110,7 @@ func (repository *UserPlaylistRepository) DeletePlaylist(ctx context.Context, ow
 
 func (repository *UserPlaylistRepository) ListTracks(ctx context.Context, ownerPublicID, playlistID string, offset, limit int) ([]PlaylistTrack, error) {
 	return listPlaylistTracks(ctx, repository.store.reader, `
-		select t.id, t.playlist_id, t.music_json, t.sort_order, t.created_at
+		select t.id, t.playlist_id, t.music_json, t.sort_order, t.created_at, t.notes, t.play_count
 		from user_playlist_track t join user_playlist p on p.id = t.playlist_id
 		where p.owner_public_id = ? and t.playlist_id = ? order by t.sort_order limit ? offset ?
 	`, ownerPublicID, playlistID, min(500, max(1, limit)), max(0, offset))
@@ -238,8 +238,7 @@ func (repository *UserPlaylistRepository) create(ctx context.Context, ownerPubli
 	playlist := Playlist{ID: id, OwnerID: ownerPublicID, Name: name, SystemKey: systemKey, CreatedAt: now, UpdatedAt: now}
 	err := repository.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		if systemKey == nil {
-			_, err := tx.ExecContext(ctx, `insert into user_playlist(id, owner_public_id, name, system_key, created_at, updated_at) values (?, ?, ?, null, ?, ?)`, id, ownerPublicID, name, now, now)
-			return err
+			return tx.QueryRowContext(ctx, `insert into user_playlist(id, owner_public_id, name, system_key, created_at, updated_at, sort_order) values (?, ?, ?, null, ?, ?, (select coalesce(max(sort_order), -1) + 1 from user_playlist where owner_public_id = ? and system_key is null)) returning sort_order`, id, ownerPublicID, name, now, now, ownerPublicID).Scan(&playlist.SortOrder)
 		}
 		_, err := tx.ExecContext(ctx, `
 			insert into user_playlist(id, owner_public_id, name, system_key, created_at, updated_at) values (?, ?, ?, ?, ?, ?)
@@ -322,7 +321,7 @@ func rewriteUserPlaylistOrder(ctx context.Context, tx *sql.Tx, ownerPublicID, pl
 func scanUserPlaylist(row rowScanner) (Playlist, error) {
 	var playlist Playlist
 	var systemKey sql.NullString
-	if err := row.Scan(&playlist.ID, &playlist.OwnerID, &playlist.Name, &systemKey, &playlist.CreatedAt, &playlist.UpdatedAt, &playlist.TrackCount); err != nil {
+	if err := row.Scan(&playlist.ID, &playlist.OwnerID, &playlist.Name, &systemKey, &playlist.CreatedAt, &playlist.UpdatedAt, &playlist.TrackCount, &playlist.Description, &playlist.SortOrder, &playlist.CoverURL); err != nil {
 		return Playlist{}, err
 	}
 	if systemKey.Valid {
@@ -332,6 +331,8 @@ func scanUserPlaylist(row rowScanner) (Playlist, error) {
 }
 
 const userPlaylistSelect = `
-	select p.id, p.owner_public_id, p.name, p.system_key, p.created_at, p.updated_at, count(t.id) as track_count
+	select p.id, p.owner_public_id, p.name, p.system_key, p.created_at, p.updated_at, count(t.id) as track_count, p.description, p.sort_order,
+		coalesce(nullif(p.cover_url, ''), (select json_extract(first.music_json, '$.coverUrl') from user_playlist_track first
+			where first.playlist_id = p.id order by first.sort_order, first.created_at, first.id limit 1), '')
 	from user_playlist p left join user_playlist_track t on t.playlist_id = p.id
 `

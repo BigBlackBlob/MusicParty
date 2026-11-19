@@ -1,5 +1,5 @@
 {
-  "routeCount": 105,
+  "routeCount": 112,
   "routes": [
     {
       "method": "GET",
@@ -368,6 +368,18 @@
       "source": "backend-go/internal/httpapi"
     },
     {
+      "method": "GET",
+      "path": "/api/me/playlists/{playlistId}/cover",
+      "operationId": "get.api.me.playlists.playlistId.cover",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/me/playlists/{playlistId}/cover",
+      "operationId": "put.api.me.playlists.playlistId.cover",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
       "method": "POST",
       "path": "/api/me/playlists/{playlistId}/enqueue",
       "operationId": "post.api.me.playlists.playlistId.enqueue",
@@ -392,6 +404,12 @@
       "source": "backend-go/internal/httpapi"
     },
     {
+      "method": "PUT",
+      "path": "/api/me/playlists/{playlistId}/order",
+      "operationId": "put.api.me.playlists.playlistId.order",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
       "method": "GET",
       "path": "/api/me/playlists/{playlistId}/tracks",
       "operationId": "get.api.me.playlists.playlistId.tracks",
@@ -413,6 +431,12 @@
       "method": "DELETE",
       "path": "/api/me/playlists/{playlistId}/tracks/{trackId}",
       "operationId": "delete.api.me.playlists.playlistId.tracks.trackId",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/me/playlists/{playlistId}/tracks/{trackId}/notes",
+      "operationId": "patch.api.me.playlists.playlistId.tracks.trackId.notes",
       "source": "backend-go/internal/httpapi"
     },
     {
@@ -531,6 +555,18 @@
     },
     {
       "method": "GET",
+      "path": "/api/rooms/{roomId}/playlists/{playlistId}/cover",
+      "operationId": "get.api.rooms.roomId.playlists.playlistId.cover",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/rooms/{roomId}/playlists/{playlistId}/cover",
+      "operationId": "put.api.rooms.roomId.playlists.playlistId.cover",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "GET",
       "path": "/api/rooms/{roomId}/playlists/{playlistId}/export",
       "operationId": "get.api.rooms.roomId.playlists.playlistId.export",
       "source": "backend-go/internal/httpapi"
@@ -563,6 +599,12 @@
       "method": "DELETE",
       "path": "/api/rooms/{roomId}/playlists/{playlistId}/tracks/{trackId}",
       "operationId": "delete.api.rooms.roomId.playlists.playlistId.tracks.trackId",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/rooms/{roomId}/playlists/{playlistId}/tracks/{trackId}/notes",
+      "operationId": "patch.api.rooms.roomId.playlists.playlistId.tracks.trackId.notes",
       "source": "backend-go/internal/httpapi"
     },
     {

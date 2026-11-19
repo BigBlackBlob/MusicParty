@@ -232,6 +232,9 @@ func openContractStore(t *testing.T) *Store {
 		store.Close()
 		t.Fatalf("apply contract schema: %v", err)
 	}
+	if err := migratePlaylistMetadata(context.Background(), store); err != nil {
+		t.Fatalf("migrate playlist metadata: %v", err)
+	}
 	return store
 }
 

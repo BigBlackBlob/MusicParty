@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"database/sql"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -39,6 +40,10 @@ func (api *PlaylistAPI) Routes(r chi.Router) {
 	r.Get("/api/me/playlists", Adapt(api.userList))
 	r.Post("/api/me/playlists", Adapt(api.userCreate))
 	r.Patch("/api/me/playlists/{playlistId}", Adapt(api.userRename))
+	r.Get("/api/me/playlists/{playlistId}/cover", Adapt(api.userCover))
+	r.Put("/api/me/playlists/{playlistId}/cover", Adapt(api.userUploadCover))
+	r.Patch("/api/me/playlists/{playlistId}/tracks/{trackId}/notes", Adapt(api.userTrackNotes))
+	r.Put("/api/me/playlists/{playlistId}/order", Adapt(api.userPlaylistOrder))
 	r.Delete("/api/me/playlists/{playlistId}", Adapt(api.userDelete))
 	r.Get("/api/me/playlists/{playlistId}/tracks", Adapt(api.userTracks))
 	r.Post("/api/me/playlists/{playlistId}/tracks/batch", Adapt(api.userAddBatch))
@@ -53,6 +58,9 @@ func (api *PlaylistAPI) Routes(r chi.Router) {
 	r.Get("/api/rooms/{roomId}/playlists", Adapt(api.roomList))
 	r.Post("/api/rooms/{roomId}/playlists", Adapt(api.roomCreate))
 	r.Patch("/api/rooms/{roomId}/playlists/{playlistId}", Adapt(api.roomRename))
+	r.Get("/api/rooms/{roomId}/playlists/{playlistId}/cover", Adapt(api.roomCover))
+	r.Put("/api/rooms/{roomId}/playlists/{playlistId}/cover", Adapt(api.roomUploadCover))
+	r.Patch("/api/rooms/{roomId}/playlists/{playlistId}/tracks/{trackId}/notes", Adapt(api.roomTrackNotes))
 	r.Delete("/api/rooms/{roomId}/playlists/{playlistId}", Adapt(api.roomDelete))
 	r.Get("/api/rooms/{roomId}/playlists/{playlistId}/tracks", Adapt(api.roomTracks))
 	r.Post("/api/rooms/{roomId}/playlists/{playlistId}/tracks", Adapt(api.roomAddTrack))
@@ -66,6 +74,9 @@ func (api *PlaylistAPI) Routes(r chi.Router) {
 func (api *PlaylistAPI) SetRealtime(manager *realtime.Manager) { api.runtimes = manager }
 
 type playlistView struct {
+	CoverURL      string  `json:"coverUrl,omitempty"`
+	Description   string  `json:"description,omitempty"`
+	SortOrder     *int    `json:"sortOrder,omitempty"`
 	ID            string  `json:"id"`
 	OwnerPublicID string  `json:"ownerPublicId,omitempty"`
 	RoomID        string  `json:"roomId,omitempty"`
@@ -76,6 +87,8 @@ type playlistView struct {
 	UpdatedAt     int64   `json:"updatedAt"`
 }
 type trackView struct {
+	Notes      string            `json:"notes,omitempty"`
+	PlayCount  int               `json:"playCount,omitempty"`
 	ID         string            `json:"id"`
 	PlaylistID string            `json:"playlistId"`
 	Music      storesqlite.Music `json:"music"`
@@ -84,13 +97,13 @@ type trackView struct {
 }
 
 func userPlaylist(value storesqlite.Playlist) playlistView {
-	return playlistView{ID: value.ID, OwnerPublicID: value.OwnerID, Name: value.Name, SystemKey: value.SystemKey, TrackCount: value.TrackCount, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
+	return playlistView{CoverURL: value.CoverURL, Description: value.Description, SortOrder: &value.SortOrder, ID: value.ID, OwnerPublicID: value.OwnerID, Name: value.Name, SystemKey: value.SystemKey, TrackCount: value.TrackCount, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
 }
 func roomPlaylist(value storesqlite.Playlist) playlistView {
-	return playlistView{ID: value.ID, RoomID: value.OwnerID, Name: value.Name, SystemKey: value.SystemKey, TrackCount: value.TrackCount, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
+	return playlistView{CoverURL: value.CoverURL, Description: value.Description, ID: value.ID, RoomID: value.OwnerID, Name: value.Name, SystemKey: value.SystemKey, TrackCount: value.TrackCount, CreatedAt: value.CreatedAt, UpdatedAt: value.UpdatedAt}
 }
 func track(value storesqlite.PlaylistTrack) trackView {
-	return trackView{ID: value.ID, PlaylistID: value.PlaylistID, Music: value.Music, SortOrder: value.SortOrder, CreatedAt: value.CreatedAt}
+	return trackView{Notes: value.Notes, PlayCount: value.PlayCount, ID: value.ID, PlaylistID: value.PlaylistID, Music: value.Music, SortOrder: value.SortOrder, CreatedAt: value.CreatedAt}
 }
 func (api *PlaylistAPI) user(r *http.Request) (account.Session, error) {
 	return api.accounts.Resolve(r.Context(), sessionToken(r))
@@ -580,9 +593,20 @@ func exportTracks(w http.ResponseWriter, r *http.Request, values []storesqlite.P
 		w.Header().Set("Content-Type", "text/plain;charset=UTF-8")
 		out := make([]map[string]any, 0, len(values))
 		for _, value := range values {
-			out = append(out, map[string]any{"id": value.Music.ID, "name": value.Music.Name, "artists": value.Music.Artists, "duration": value.Music.Duration, "platform": value.Music.Platform, "coverUrl": value.Music.CoverURL, "externalUrl": ""})
+			out = append(out, map[string]any{"id": value.Music.ID, "name": value.Music.Name, "artists": value.Music.Artists, "duration": value.Music.Duration, "platform": value.Music.Platform, "coverUrl": value.Music.CoverURL, "externalUrl": "", "notes": value.Notes})
 		}
 		return json.NewEncoder(w).Encode(out)
+	}
+	if format == "csv" {
+		w.Header().Set("Content-Type", "text/csv;charset=UTF-8")
+		writer := csv.NewWriter(w)
+		_ = writer.Write([]string{"id", "name", "artists", "duration", "platform", "coverUrl", "notes"})
+		for _, value := range values {
+			music := value.Music
+			_ = writer.Write([]string{csvCell(music.ID), csvCell(music.Name), csvCell(strings.Join(music.Artists, ", ")), strconv.FormatInt(music.Duration, 10), csvCell(music.Platform), csvCell(music.CoverURL), csvCell(value.Notes)})
+		}
+		writer.Flush()
+		return writer.Error()
 	}
 	w.Header().Set("Content-Type", "text/plain;charset=UTF-8")
 	for _, v := range values {
@@ -590,6 +614,16 @@ func exportTracks(w http.ResponseWriter, r *http.Request, values []storesqlite.P
 	}
 	return nil
 }
+
+// csvCell keeps user and provider strings from being evaluated as spreadsheet formulas.
+func csvCell(value string) string {
+	trimmed := strings.TrimLeft(value, " \t\r\n")
+	if value != "" && (strings.ContainsRune("\t\r\n", rune(value[0])) || (trimmed != "" && strings.ContainsRune("=+-@", rune(trimmed[0])))) {
+		return "'" + value
+	}
+	return value
+}
+
 func roomSessionToken(r *http.Request) string {
 	return sessionToken(r)
 }

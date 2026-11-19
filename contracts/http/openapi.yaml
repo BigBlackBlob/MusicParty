@@ -1108,6 +1108,32 @@
         "x-go-source": "backend-go/internal/httpapi"
       }
     },
+    "/api/me/playlists/{playlistId}/cover": {
+      "get": {
+        "operationId": "get.api.me.playlists.playlistId.cover",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
+      },
+      "put": {
+        "operationId": "put.api.me.playlists.playlistId.cover",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
+      }
+    },
     "/api/me/playlists/{playlistId}/enqueue": {
       "post": {
         "operationId": "post.api.me.playlists.playlistId.enqueue",
@@ -1153,6 +1179,20 @@
     "/api/me/playlists/{playlistId}/import/netease": {
       "post": {
         "operationId": "post.api.me.playlists.playlistId.import.netease",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
+      }
+    },
+    "/api/me/playlists/{playlistId}/order": {
+      "put": {
+        "operationId": "put.api.me.playlists.playlistId.order",
         "responses": {
           "200": {
             "description": "Success"
@@ -1235,6 +1275,20 @@
     "/api/me/playlists/{playlistId}/tracks/{trackId}": {
       "delete": {
         "operationId": "delete.api.me.playlists.playlistId.tracks.trackId",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
+      }
+    },
+    "/api/me/playlists/{playlistId}/tracks/{trackId}/notes": {
+      "patch": {
+        "operationId": "patch.api.me.playlists.playlistId.tracks.trackId.notes",
         "responses": {
           "200": {
             "description": "Success"
@@ -1529,6 +1583,32 @@
         "x-go-source": "backend-go/internal/httpapi"
       }
     },
+    "/api/rooms/{roomId}/playlists/{playlistId}/cover": {
+      "get": {
+        "operationId": "get.api.rooms.roomId.playlists.playlistId.cover",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
+      },
+      "put": {
+        "operationId": "put.api.rooms.roomId.playlists.playlistId.cover",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
+      }
+    },
     "/api/rooms/{roomId}/playlists/{playlistId}/export": {
       "get": {
         "operationId": "get.api.rooms.roomId.playlists.playlistId.export",
@@ -1621,6 +1701,20 @@
     "/api/rooms/{roomId}/playlists/{playlistId}/tracks/{trackId}": {
       "delete": {
         "operationId": "delete.api.rooms.roomId.playlists.playlistId.tracks.trackId",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
+      }
+    },
+    "/api/rooms/{roomId}/playlists/{playlistId}/tracks/{trackId}/notes": {
+      "patch": {
+        "operationId": "patch.api.rooms.roomId.playlists.playlistId.tracks.trackId.notes",
         "responses": {
           "200": {
             "description": "Success"

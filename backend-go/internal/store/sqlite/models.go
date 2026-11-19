@@ -125,6 +125,8 @@ type HistoryPageEntry struct {
 }
 
 type PlaylistTrack struct {
+	Notes      string
+	PlayCount  int
 	ID         string
 	PlaylistID string
 	Music      Music
@@ -163,13 +165,16 @@ type ChatMessage struct {
 }
 
 type Playlist struct {
-	ID         string
-	OwnerID    string
-	Name       string
-	SystemKey  *string
-	TrackCount int
-	CreatedAt  int64
-	UpdatedAt  int64
+	CoverURL    string
+	Description string
+	SortOrder   int
+	ID          string
+	OwnerID     string
+	Name        string
+	SystemKey   *string
+	TrackCount  int
+	CreatedAt   int64
+	UpdatedAt   int64
 }
 
 type SiteSetting struct {

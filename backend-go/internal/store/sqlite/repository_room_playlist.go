@@ -27,7 +27,9 @@ func NewRoomPlaylistRepository(store *Store, now func() time.Time, newID func() 
 
 func (repository *RoomPlaylistRepository) ListPlaylists(ctx context.Context, roomID string) ([]Playlist, error) {
 	rows, err := repository.store.reader.QueryContext(ctx, `
-		select p.id, p.room_id, p.name, p.created_at, p.updated_at, count(t.id) as track_count
+		select p.id, p.room_id, p.name, p.created_at, p.updated_at, count(t.id) as track_count, p.description, 0,
+		coalesce(nullif(p.cover_url, ''), (select json_extract(first.music_json, '$.coverUrl') from room_playlist_track first
+			where first.playlist_id = p.id order by first.sort_order, first.created_at, first.id limit 1), '')
 		from room_playlist p left join room_playlist_track t on t.playlist_id = p.id
 		where p.room_id = ?
 		group by p.id, p.room_id, p.name, p.created_at, p.updated_at
@@ -50,7 +52,9 @@ func (repository *RoomPlaylistRepository) ListPlaylists(ctx context.Context, roo
 
 func (repository *RoomPlaylistRepository) FindPlaylist(ctx context.Context, roomID, playlistID string) (*Playlist, error) {
 	playlist, err := scanRoomPlaylist(repository.store.reader.QueryRowContext(ctx, `
-		select p.id, p.room_id, p.name, p.created_at, p.updated_at, count(t.id) as track_count
+		select p.id, p.room_id, p.name, p.created_at, p.updated_at, count(t.id) as track_count, p.description, 0,
+		coalesce(nullif(p.cover_url, ''), (select json_extract(first.music_json, '$.coverUrl') from room_playlist_track first
+			where first.playlist_id = p.id order by first.sort_order, first.created_at, first.id limit 1), '')
 		from room_playlist p left join room_playlist_track t on t.playlist_id = p.id
 		where p.room_id = ? and p.id = ?
 		group by p.id, p.room_id, p.name, p.created_at, p.updated_at
@@ -114,7 +118,7 @@ func (repository *RoomPlaylistRepository) DeletePlaylist(ctx context.Context, ro
 
 func (repository *RoomPlaylistRepository) ListTracks(ctx context.Context, roomID, playlistID string, offset, limit int) ([]PlaylistTrack, error) {
 	return listPlaylistTracks(ctx, repository.store.reader, `
-		select t.id, t.playlist_id, t.music_json, t.sort_order, t.created_at
+		select t.id, t.playlist_id, t.music_json, t.sort_order, t.created_at, t.notes, t.play_count
 		from room_playlist_track t join room_playlist p on p.id = t.playlist_id
 		where p.room_id = ? and t.playlist_id = ? order by t.sort_order limit ? offset ?
 	`, roomID, playlistID, min(500, max(1, limit)), max(0, offset))
@@ -284,7 +288,7 @@ func rewriteRoomPlaylistOrder(ctx context.Context, tx *sql.Tx, roomID, playlistI
 
 func scanRoomPlaylist(row rowScanner) (Playlist, error) {
 	var playlist Playlist
-	if err := row.Scan(&playlist.ID, &playlist.OwnerID, &playlist.Name, &playlist.CreatedAt, &playlist.UpdatedAt, &playlist.TrackCount); err != nil {
+	if err := row.Scan(&playlist.ID, &playlist.OwnerID, &playlist.Name, &playlist.CreatedAt, &playlist.UpdatedAt, &playlist.TrackCount, &playlist.Description, &playlist.SortOrder, &playlist.CoverURL); err != nil {
 		return Playlist{}, err
 	}
 	return playlist, nil
@@ -304,7 +308,7 @@ func listPlaylistTracks(ctx context.Context, database queryer, query string, arg
 	for rows.Next() {
 		var track PlaylistTrack
 		var musicJSON string
-		if err := rows.Scan(&track.ID, &track.PlaylistID, &musicJSON, &track.SortOrder, &track.CreatedAt); err != nil {
+		if err := rows.Scan(&track.ID, &track.PlaylistID, &musicJSON, &track.SortOrder, &track.CreatedAt, &track.Notes, &track.PlayCount); err != nil {
 			return nil, fmt.Errorf("scan playlist track: %w", err)
 		}
 		if err := unmarshalJSON(musicJSON, &track.Music); err != nil {
