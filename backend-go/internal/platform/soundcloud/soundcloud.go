@@ -111,6 +111,15 @@ func (s *Service) Search(ctx context.Context, keyword string, offset, limit int)
 	if err := platform.ValidateSearch(keyword, offset, limit); err != nil {
 		return nil, err
 	}
+	if permalink, err := url.Parse(keyword); err == nil && permalink.Scheme == "https" && strings.EqualFold(permalink.Host, "soundcloud.com") {
+		segments := strings.Split(strings.TrimPrefix(permalink.Path, "/"), "/")
+		if len(segments) == 2 && segments[0] != "" && segments[1] != "" {
+			if offset != 0 {
+				return []platform.Music{}, nil
+			}
+			return s.resolvePermalink(ctx, keyword)
+		}
+	}
 	query := url.Values{
 		"q": {keyword}, "limit": {strconv.Itoa(limit)}, "offset": {strconv.Itoa(offset)},
 		"linked_partitioning": {"1"},
@@ -126,6 +135,24 @@ func (s *Service) Search(ctx context.Context, keyword string, offset, limit int)
 		}
 	}
 	return result, nil
+}
+
+func (s *Service) resolvePermalink(ctx context.Context, permalink string) ([]platform.Music, error) {
+	var item track
+	if err := s.getJSON(ctx, "/resolve", url.Values{"url": {permalink}}, &item); err != nil {
+		var upstream *platform.UpstreamError
+		var syntaxError *json.SyntaxError
+		var typeError *json.UnmarshalTypeError
+		if (errors.As(err, &upstream) && upstream.Status == http.StatusNotFound) ||
+			errors.As(err, &syntaxError) || errors.As(err, &typeError) {
+			return []platform.Music{}, nil
+		}
+		return nil, err
+	}
+	if !item.Streamable || item.ID < 0 || (item.ID == 0 && strings.TrimSpace(item.URN) == "") {
+		return []platform.Music{}, nil
+	}
+	return []platform.Music{item.music()}, nil
 }
 
 func (s *Service) trackInfo(ctx context.Context, id string) (platform.Music, error) {
