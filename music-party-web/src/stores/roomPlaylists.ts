@@ -29,7 +29,7 @@ export const useRoomPlaylistsStore = defineStore('roomPlaylists', () => {
   const scope = computed<Extract<PlaylistScope, { type: 'room' }>>(() => ({ type: 'room', roomId: roomId.value }))
   const listQuery = useQuery(computed(() => roomPlaylistListQueryOptions(scope.value)), queryClient)
   const tracksQuery = useQuery(computed(() => ({
-    ...roomPlaylistTracksQueryOptions(scope.value, selectedPlaylistId.value, 200),
+    ...roomPlaylistTracksQueryOptions(scope.value, selectedPlaylistId.value),
     enabled: Boolean(selectedPlaylistId.value),
   })), queryClient)
   const playlists = computed(() => listQuery.data.value ?? [])
@@ -53,7 +53,7 @@ export const useRoomPlaylistsStore = defineStore('roomPlaylists', () => {
   }
 
   async function loadTracks(playlistId = selectedPlaylistId.value) {
-    return playlistId ? listPlaylistTracks(scope.value, playlistId, 200) : []
+    return playlistId ? listPlaylistTracks(scope.value, playlistId) : []
   }
 
   async function createPlaylist(name: string): Promise<void> {

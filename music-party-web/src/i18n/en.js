@@ -406,7 +406,18 @@ export default {
     emptyTracks: 'This playlist has no tracks.',
     rename: 'Rename',
     delete: 'Delete',
-    namePrompt: 'Playlist name'
+    namePrompt: 'Playlist name',
+    save: 'Save',
+    deleteConfirm: 'Delete “{name}”?',
+    uploadCover: 'Upload playlist cover',
+    importPlatform: 'Playlist provider',
+    addToQueue: 'Add to queue',
+    editNotes: 'Track notes',
+    reorder: 'Reorder {name}',
+    reorderHint: 'Drag or use the up and down arrows',
+    loading: 'Loading playlist…',
+    actionFailed: 'Could not update the playlist.',
+    personalUnavailable: 'Personal playlists require a member account.'
   },
   userList: {
     me: 'Me',

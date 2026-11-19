@@ -18,10 +18,12 @@ import {
   type PlaylistScope
 } from '../domains/playlists/playlistService'
 import { useUserStore } from './user'
+import { useRoomStore } from './room'
 
 export const useUserPlaylistsStore = defineStore('userPlaylists', () => {
   const selectedPlaylistId = ref('')
   const userStore = useUserStore()
+  const roomStore = useRoomStore()
   const scope = computed<Extract<PlaylistScope, { type: 'personal' }>>(() => ({ type: 'personal', publicId: userStore.publicId }))
   const canQueryPersonalPlaylists = computed(() => userStore.hasDisplayName && !userStore.isGuest)
   const listQuery = useQuery(computed(() => ({
@@ -73,10 +75,12 @@ export const useUserPlaylistsStore = defineStore('userPlaylists', () => {
   async function ensurePlaylist(name = '我的歌单'): Promise<string | null> {
     if (!requireNamedUser()) return null
     if (!playlists.value.length) await loadPlaylists()
-    if (selectedPlaylistId.value) return selectedPlaylistId.value
-    if (playlists.value.length) {
-      selectedPlaylistId.value = playlists.value[0]?.id ?? ''
-      if (selectedPlaylistId.value) return selectedPlaylistId.value
+    const writable = playlists.value.filter(item => !item.systemKey)
+    if (writable.some(item => item.id === selectedPlaylistId.value)) return selectedPlaylistId.value
+    const first = writable[0]
+    if (first) {
+      selectedPlaylistId.value = first.id
+      return first.id
     }
     return (await createPlaylist(name))?.id ?? ''
   }
@@ -117,7 +121,7 @@ export const useUserPlaylistsStore = defineStore('userPlaylists', () => {
 
   async function enqueue(playlistId = selectedPlaylistId.value): Promise<boolean> {
     if (!playlistId || !requireNamedUser()) return false
-    await personalPlaylistsApi.enqueue(playlistId)
+    await personalPlaylistsApi.enqueue(playlistId, roomStore.currentRoomId)
     return true
   }
 

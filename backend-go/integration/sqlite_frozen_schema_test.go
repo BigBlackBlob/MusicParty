@@ -45,7 +45,11 @@ func TestSQLiteFrozenSchemaCompatibility(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenStore(frozen fixture): %v", err)
 	}
+	defer store.Close()
 	ctx := context.Background()
+	if err := storesqlite.EnsureCompatibleSchema(ctx, store, false); err != nil {
+		t.Fatalf("migrate frozen fixture: %v", err)
+	}
 	rooms := storesqlite.NewRoomRepository(store)
 	profiles := storesqlite.NewUserProfileRepository(store, nil)
 	accounts := storesqlite.NewUserAccountRepository(store)
@@ -144,7 +148,7 @@ func TestSQLiteFrozenSchemaCompatibility(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Check(frozen fixture after Go writes): %v", err)
 	}
-	if !result.OK() || result.ApplicationTables != 23 {
+	if !result.OK() || result.ApplicationTables != 24 {
 		t.Fatalf("frozen fixture after Go writes is unhealthy: %+v", result)
 	}
 	if err := store.Close(); err != nil {
@@ -176,7 +180,7 @@ func TestSQLiteFrozenSchemaCompatibility(t *testing.T) {
 		t.Fatalf("queue changed after reopen: %+v", reopenedQueue)
 	}
 	reopenedCheck, err := storesqlite.Check(ctx, reopened.Reader())
-	if err != nil || !reopenedCheck.OK() || reopenedCheck.ApplicationTables != 23 {
+	if err != nil || !reopenedCheck.OK() || reopenedCheck.ApplicationTables != 24 {
 		t.Fatalf("reopened frozen fixture is unhealthy: result=%+v err=%v", reopenedCheck, err)
 	}
 }

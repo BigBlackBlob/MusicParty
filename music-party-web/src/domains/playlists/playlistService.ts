@@ -98,6 +98,23 @@ export async function reorderPlaylistTracks(scope: PlaylistScope, playlistId: st
   await refresh(scope, playlistId)
 }
 
+export async function uploadPlaylistCover(scope: PlaylistScope, playlistId: string, file: File): Promise<void> {
+  if (scope.type === 'personal') await personalPlaylistsApi.uploadCover(playlistId, file)
+  else await playlistsApi.uploadCover(scope.roomId, playlistId, file)
+  await refresh(scope)
+}
+
+export async function updatePlaylistTrackNotes(scope: PlaylistScope, playlistId: string, trackId: string, notes: string): Promise<void> {
+  if (scope.type === 'personal') await personalPlaylistsApi.updateTrackNotes(playlistId, trackId, notes)
+  else await playlistsApi.updateTrackNotes(scope.roomId, playlistId, trackId, notes)
+  await refresh(scope, playlistId)
+}
+
+export async function moveUserPlaylist(scope: Extract<PlaylistScope, { type: 'personal' }>, playlistId: string, position: number): Promise<void> {
+  await personalPlaylistsApi.move(playlistId, position)
+  await refresh(scope)
+}
+
 export async function importPlaylist(scope: PlaylistScope, playlistId: string, platform: string, externalPlaylistId: string): Promise<PlaylistMutationResult> {
   const result = scope.type === 'personal'
     ? await personalPlaylistsApi.importPlaylist(playlistId, platform, externalPlaylistId)

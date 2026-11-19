@@ -405,7 +405,18 @@ export default {
     emptyTracks: '这个歌单还没有歌曲。',
     rename: '重命名',
     delete: '删除',
-    namePrompt: '歌单名称'
+    namePrompt: '歌单名称',
+    save: '保存',
+    deleteConfirm: '删除「{name}」？',
+    uploadCover: '上传歌单封面',
+    importPlatform: '歌单来源',
+    addToQueue: '加入播放队列',
+    editNotes: '歌曲备注',
+    reorder: '调整 {name} 的顺序',
+    reorderHint: '拖动或使用上下方向键',
+    loading: '正在加载歌单…',
+    actionFailed: '无法更新歌单。',
+    personalUnavailable: '个人歌单需要会员账户。'
   },
   userList: {
     me: '我',

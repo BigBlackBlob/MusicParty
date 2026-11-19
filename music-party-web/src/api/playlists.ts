@@ -31,6 +31,13 @@ export const playlistsApi = {
       `${base(roomId)}/${id(playlistId)}/import`,
       { platform, playlistId: externalPlaylistId }
     ),
+  uploadCover: (roomId: string, playlistId: string, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return client.put<void, FormData>(`${base(roomId)}/${id(playlistId)}/cover`, form)
+  },
+  updateTrackNotes: (roomId: string, playlistId: string, trackId: string, notes: string) =>
+    client.patch<void, { notes: string }>(`${base(roomId)}/${id(playlistId)}/tracks/${id(trackId)}/notes`, { notes }),
   exportPlaylist: (roomId: string, playlistId: string, format = 'txt') =>
-    client.get<string>(`${base(roomId)}/${id(playlistId)}/export`, { params: { format } })
+    client.get<string>(`${base(roomId)}/${id(playlistId)}/export`, { params: { format }, responseType: 'text' })
 }

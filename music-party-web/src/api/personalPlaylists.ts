@@ -29,9 +29,19 @@ export const personalPlaylistsApi = {
       `${base}/${id(playlistId)}/import`,
       { platform, playlistId: externalPlaylistId }
     ),
+  uploadCover: (playlistId: string, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return client.put<void, FormData>(`${base}/${id(playlistId)}/cover`, form)
+  },
+  updateTrackNotes: (playlistId: string, trackId: string, notes: string) =>
+    client.patch<void, { notes: string }>(`${base}/${id(playlistId)}/tracks/${id(trackId)}/notes`, { notes }),
+  move: (playlistId: string, position: number) =>
+    client.put<void, { position: number }>(`${base}/${id(playlistId)}/order`, { position }),
   exportPlaylist: (playlistId: string, format = 'txt') =>
-    client.get<string>(`${base}/${id(playlistId)}/export`, { params: { format } }),
-  enqueue: (playlistId: string) => client.post<PlaylistMutationResult>(`${base}/${id(playlistId)}/enqueue`),
+    client.get<string>(`${base}/${id(playlistId)}/export`, { params: { format }, responseType: 'text' }),
+  enqueue: (playlistId: string, roomId: string) =>
+    client.post<PlaylistMutationResult>(`${base}/${id(playlistId)}/enqueue`, undefined, { params: { roomId } }),
   likedSongs: () => client.get<LikedSongTrack[]>(likedBase),
   likeSong: (music: Music) => {
     const { id: musicId, name, artists, duration, platform, coverUrl } = music

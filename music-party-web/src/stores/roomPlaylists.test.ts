@@ -30,7 +30,7 @@ describe('room playlist query and commands', () => {
     expect(store.playlists.map(item => item.id)).toEqual(['room-p1'])
     expect(store.selectedTracks.map(track => track.id)).toEqual(['t1'])
     expect(playlistsApi.list).toHaveBeenCalledWith('lounge', expect.any(AbortSignal))
-    expect(playlistsApi.tracks).toHaveBeenCalledWith('lounge', 'room-p1', 0, 200)
+    expect(playlistsApi.tracks).toHaveBeenCalledWith('lounge', 'room-p1', 0, 500)
   })
 
   it('switches list scope with the active room and drops the old selection', async () => {
