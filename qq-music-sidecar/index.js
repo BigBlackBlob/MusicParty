@@ -4,7 +4,7 @@ process.env.DEBUG = '';
 console.log = () => {};
 console.error = () => {};
 const { getPlayUrl, search } = await import('@sansenjian/qq-music-api/sdk');
-const { getUserPlaylists, songListDetail } = await import('@sansenjian/qq-music-api/services');
+const { getUserPlaylists, UCommon } = await import('@sansenjian/qq-music-api/services');
 
 const pageSize = 50;
 const port = Number(process.env.QQ_SIDECAR_PORT || '3100');
@@ -85,22 +85,39 @@ async function playlistTracks(request, response, params) {
   const id = params.get('id');
   const offset = Number(params.get('offset') ?? '0');
   const limit = Number(params.get('limit') ?? '100');
-  if (!id || !/^\d{1,20}$/.test(id) || !Number.isSafeInteger(offset) || offset < 0 ||
+  if (!id || !/^\d+$/.test(id) || !Number.isSafeInteger(Number(id)) || Number(id) < 1 ||
+      !Number.isSafeInteger(offset) || offset < 0 ||
       !Number.isSafeInteger(limit) || limit < 1 || limit > 500) {
     return json(response, 400, { error: 'invalid_playlist_parameters' });
   }
   const cookie = request.headers['x-qq-cookie'];
-  const result = await songListDetail({
-    params: { disstid: id },
-    option: cookie ? { headers: { Cookie: cookie } } : {},
+  const uin = Number(cookie?.match(/(?:^|;\s*)(?:uin|wxuin)=o?(\d+)(?:;|$)/)?.[1] ?? 0);
+  // The legacy playlist endpoint rejects public playlists with a privacy error.
+  const result = await UCommon({
+    method: 'post',
+    option: {
+      timeout: 10000,
+      headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) },
+      data: JSON.stringify({
+        comm: { ct: 24, cv: 0, format: 'json', uin },
+        req: {
+          module: 'music.srfDissInfo.DissInfo',
+          method: 'CgiGetDiss',
+          param: {
+            disstid: Number(id), dirid: 0, tag: false, userinfo: false,
+            song_begin: offset, song_num: limit, orderlist: true, onlysonglist: true,
+          },
+        },
+      }),
+    },
   });
-  const payload = result.body?.response;
-  const songs = payload?.cdlist?.[0]?.songlist;
-  if (result.status !== 200 || payload?.code !== 0 || !Array.isArray(songs)) {
+  const payload = result.data?.req?.data;
+  const songs = payload?.songlist;
+  if (result.status !== 200 || result.data?.code !== 0 || result.data?.req?.code !== 0 ||
+      payload?.code !== 0 || !Array.isArray(songs)) {
     throw new Error('QQ Music playlist tracks failed');
   }
-  // The SDK detail call returns the full song list. Apply the requested window here.
-  const tracks = songs.slice(offset, offset + limit).flatMap(song => {
+  const tracks = songs.slice(0, limit).flatMap(song => {
     const mid = song?.mid ?? song?.songmid;
     const name = song?.name ?? song?.songname ?? song?.title;
     if (!mid || !name) return [];
