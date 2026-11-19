@@ -25,7 +25,7 @@ export interface SubsonicSourceInput {
 }
 
 export interface LocalTrackMetadata {
-  name?: string
+  title?: string
   artists?: string
   album?: string
   coverUrl?: string
@@ -60,7 +60,7 @@ export const authApi = {
   reorderSubsonicSource: (roomId: string, sourceId: string, sortOrder: number) =>
     client.post<void, { roomId: string; id: string; sortOrder: number }>('/api/admin/subsonic-source/order', { roomId, id: sourceId, sortOrder }),
   listLocalTracks: () => client.get<LocalTrack[]>('/api/local/tracks'),
-  uploadLocalTrack: (file: File, metadata: LocalTrackMetadata = {}) => {
+  uploadLocalTrack: (file: File, metadata: LocalTrackMetadata = {}, onProgress?: (percent: number) => void) => {
     const formData = new FormData()
     formData.append('file', file)
     Object.entries(metadata).forEach(([key, value]) => {
@@ -68,7 +68,10 @@ export const authApi = {
     })
     return client.post<LocalTrack, FormData>('/api/local/tracks/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 120_000
+      timeout: 120_000,
+      onUploadProgress: ({ loaded, total }) => {
+        if (total) onProgress?.(Math.min(100, Math.floor(100 * loaded / total)))
+      }
     })
   },
   updateLocalTrack: (trackId: string, track: Partial<LocalTrack>) => client.patch<LocalTrack, Partial<LocalTrack>>(`/api/local/tracks/${id(trackId)}`, track),

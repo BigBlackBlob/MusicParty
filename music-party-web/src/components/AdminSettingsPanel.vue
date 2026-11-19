@@ -22,19 +22,56 @@
       </div>
 
       <div class="admin-two-column">
-        <div class="admin-panel">
+        <div class="admin-panel local-upload-panel">
           <h4>{{ t('settings.admin.uploadLocalTrack') }}</h4>
+          <input
+            type="file" accept="audio/*" multiple class="admin-input"
+            :aria-label="t('settings.admin.localUploadChooseFiles')"
+            :disabled="busy || readingLocalTags" @change="onLocalFileChange"
+          />
+          <p v-if="localUploadQueue.length === 0" class="admin-hint">{{ t('settings.admin.localUploadEmpty') }}</p>
+          <ul v-else class="local-upload-list">
+            <li v-for="entry in localUploadQueue" :key="entry.id" class="source-row local-upload-row">
+              <div class="local-upload-header">
+                <div class="min-w-0">
+                  <p class="local-upload-filename">{{ entry.file.name }}</p>
+                  <p class="admin-hint" role="status">
+                    {{ t(entry.readingTags ? 'settings.admin.readingLocalTags' : localUploadStatusKeys[entry.status]) }}
+                  </p>
+                </div>
+                <button
+                  class="admin-action" type="button" :disabled="busy"
+                  :aria-label="t('settings.admin.localUploadRemoveFile', { file: entry.file.name })"
+                  @click="removeLocalUploadFile(entry.id)"
+                >{{ t('settings.admin.localUploadRemove') }}</button>
+              </div>
+              <div class="local-upload-fields">
+                <label>
+                  <span>{{ t('settings.admin.localTitlePlaceholder') }}</span>
+                  <input v-model="entry.title" type="text" class="admin-input" :disabled="busy || entry.readingTags" />
+                </label>
+                <label>
+                  <span>{{ t('settings.admin.localArtistsPlaceholder') }}</span>
+                  <input v-model="entry.artists" type="text" class="admin-input" :disabled="busy || entry.readingTags" />
+                </label>
+                <label>
+                  <span>{{ t('settings.admin.localAlbumPlaceholder') }}</span>
+                  <input v-model="entry.album" type="text" class="admin-input" :disabled="busy || entry.readingTags" />
+                </label>
+              </div>
+              <div v-if="entry.status === 'uploading' && entry.progress > 0" class="local-upload-progress">
+                <progress :value="entry.progress" max="100" :aria-label="t('settings.admin.localUploadProgress', { file: entry.file.name })" />
+                <span aria-hidden="true">{{ entry.progress }}%</span>
+              </div>
+              <p v-if="entry.error" class="admin-hint danger-link" role="alert">{{ entry.error }}</p>
+              <p v-else-if="entry.tagReadFailed" class="admin-hint" role="status">{{ t('settings.admin.localTagsReadFailed') }}</p>
+            </li>
+          </ul>
           <div class="grid grid-cols-2 gap-2">
-            <input v-model="localForm.title" type="text" class="admin-input" :placeholder="t('settings.admin.localTitlePlaceholder')" />
-            <input v-model="localForm.artists" type="text" class="admin-input" :placeholder="t('settings.admin.localArtistsPlaceholder')" />
-          </div>
-          <input v-model="localForm.album" type="text" class="admin-input" :placeholder="t('settings.admin.localAlbumPlaceholder')" />
-          <input ref="localFileInput" type="file" accept="audio/*" multiple class="admin-input" @change="onLocalFileChange" />
-          <div class="grid grid-cols-2 gap-2">
-            <button class="admin-action" type="button" :disabled="busy || readingLocalTags || localFiles.length === 0" @click="readSelectedLocalTags">
+            <button class="admin-action" type="button" :disabled="busy || readingLocalTags || localUploadQueue.length === 0" @click="readSelectedLocalTags()">
               {{ readingLocalTags ? t('settings.admin.readingLocalTags') : t('settings.admin.readLocalTags') }}
             </button>
-            <button class="admin-action" type="button" :disabled="busy || localFiles.length === 0" @click="runUploadLocalTrack">
+            <button class="admin-action" type="button" :disabled="busy || readingLocalTags || localUploadQueue.length === 0" @click="runUploadLocalTrack">
               {{ t('settings.admin.uploadLocalTrack') }}
             </button>
           </div>
@@ -46,7 +83,6 @@
               {{ loadingLocalTracks ? t('settings.admin.loadingSources') : t('common.refresh') }}
             </button>
           </div>
-          <p v-if="localTagHint" class="admin-hint">{{ localTagHint }}</p>
         </div>
 
         <div class="admin-panel">
@@ -281,7 +317,7 @@ import { useQuery, useQueryClient } from '@tanstack/vue-query';
 import { queryKeys } from '../domains/queryKeys';
 import { useRoomStore } from '../stores/room';
 import { useUserStore } from '../stores/user';
-import { readAudioTagsFromFile } from '../utils/id3Tags';
+import { useLocalUpload } from '../composables/useLocalUpload';
 import { extractErrorMessage } from '../utils/errors';
 
 const { t } = useI18n();
@@ -299,16 +335,21 @@ const props = defineProps({
 const targetUser = ref(userStore.currentUser?.name || '');
 const neteaseCredential = ref('');
 const bilibiliCredential = ref('');
-const localFiles = ref([]);
-const localFileInput = ref(null);
-const readingLocalTags = ref(false);
-const localTagHint = ref('');
+const {
+  queue: localUploadQueue,
+  readingTags: readingLocalTags,
+  addFiles: addLocalUploadFiles,
+  readTags: readSelectedLocalTags,
+  removeFile: removeLocalUploadFile,
+  upload: uploadLocalFiles
+} = useLocalUpload();
+const localUploadStatusKeys = {
+  queued: 'settings.admin.localUploadStatusQueued',
+  uploading: 'settings.admin.localUploadStatusUploading',
+  done: 'settings.admin.localUploadStatusDone',
+  failed: 'settings.admin.localUploadFailed'
+};
 const localAccessUser = ref('');
-const localForm = ref({
-  title: '',
-  artists: '',
-  album: ''
-});
 const defaultNavidromeForm = () => ({
   id: 'navidrome-custom',
   label: 'Navidrome',
@@ -357,7 +398,7 @@ const runAdminAction = async (action, successMessage = t('settings.admin.command
   busy.value = true;
   try {
     await action();
-    success(successMessage);
+    if (successMessage) success(successMessage);
     await queryClient.invalidateQueries({ queryKey: ['platforms'] });
   } catch (e) {
     error(extractErrorMessage(e, t('settings.admin.commandFailed')));
@@ -403,49 +444,17 @@ const loadLocalUploadAccess = async () => {
 };
 
 const onLocalFileChange = (event) => {
-  localFiles.value = Array.from(event.target.files || []);
-  localTagHint.value = localFiles.value.length > 1
-    ? t('settings.admin.localTagReadFirstFile')
-    : '';
+  const input = event.currentTarget;
+  const files = Array.from(input.files ?? []);
+  input.value = '';
+  return addLocalUploadFiles(files, t('settings.admin.localUploadUnknownArtist'));
 };
 
-const readSelectedLocalTags = async () => {
-  const file = localFiles.value[0];
-  if (!file) return;
-  readingLocalTags.value = true;
-  localTagHint.value = '';
-  try {
-    const tags = await readAudioTagsFromFile(file);
-    if (!tags.title && !tags.artists && !tags.album) {
-      localTagHint.value = t('settings.admin.localTagsNotFound');
-      return;
-    }
-    localForm.value = {
-      title: tags.title || localForm.value.title,
-      artists: tags.artists || localForm.value.artists,
-      album: tags.album || localForm.value.album
-    };
-    localTagHint.value = t('settings.admin.localTagsRead');
-  } catch (e) {
-    localTagHint.value = extractErrorMessage(e, t('settings.admin.localTagsReadFailed'));
-  } finally {
-    readingLocalTags.value = false;
-  }
-};
-
-const runUploadLocalTrack = () => runAdminAction(
-  async () => {
-    if (localFiles.value.length === 0) return;
-    for (const file of localFiles.value) {
-      await authApi.uploadLocalTrack(file, localForm.value);
-    }
-    localFiles.value = [];
-    localForm.value = { title: '', artists: '', album: '' };
-    if (localFileInput.value) localFileInput.value.value = '';
-    await loadLocalTracks();
-  },
-  t('settings.admin.localUploadQueued')
-);
+const runUploadLocalTrack = () => runAdminAction(async () => {
+  const uploaded = await uploadLocalFiles(t('settings.admin.localUploadFailed'));
+  await loadLocalTracks();
+  if (uploaded > 0) success(t('settings.admin.localUploadQueued'));
+}, null);
 
 const runUpdateLocalTrack = (track) => runAdminAction(
   async () => {
@@ -771,6 +780,74 @@ watch(
 .source-row-active {
   border-color: var(--border-default);
   background: var(--surface-control-hover);
+}
+
+.local-upload-panel .admin-input,
+.local-upload-panel .admin-action {
+  min-height: 44px;
+}
+
+.local-upload-panel .admin-input:focus-visible,
+.local-upload-panel .admin-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.local-upload-list {
+  display: grid;
+  gap: 8px;
+}
+
+.local-upload-row {
+  min-width: 0;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.local-upload-header,
+.local-upload-progress {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.local-upload-header .admin-action {
+  min-width: 44px;
+  flex-shrink: 0;
+}
+
+.local-upload-filename {
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.local-upload-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+  gap: 8px;
+}
+
+.local-upload-fields label {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: 4px;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.local-upload-progress {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.local-upload-progress progress {
+  width: 100%;
+  min-width: 0;
+  accent-color: var(--accent);
 }
 
 .source-state {
