@@ -6,7 +6,21 @@ services:
     restart: always
     environment:
       - PORT=3000
-      - HTTPS=true
+      # Without this, ncm-api forwards the caller's address (the app container's
+      # private Docker IP) to NetEase as X-Real-IP. Outside mainland China (e.g. a
+      # Hong Kong VPS) NetEase then applies overseas copyright rules. A random
+      # mainland IP per process avoids that for API lookups only; audio still
+      # downloads from the CDN directly.
+      - ENABLE_RANDOM_CN_IP=${NETEASE_ENABLE_RANDOM_CN_IP:-true}
+      # Keep third-party "unblock" sources (Kuwo etc.) off: they ignore the
+      # requested quality and return mismatched recordings.
+      - ENABLE_GENERAL_UNBLOCK=false
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks:
       - music-net
 
@@ -52,6 +66,11 @@ services:
       - YOUTUBE_API_KEY=
       - YTDLP_PATH=yt-dlp
       - YOUTUBE_SEARCH_LIMIT=20
+      # [可选] Spotify 实验性播放
+      - SPOTIFY_ENABLED=${SPOTIFY_ENABLED:-false}
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID:-}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET:-}
+      - SPOTIFY_MARKET=${SPOTIFY_MARKET:-US}
       # [可选] Navidrome 私有曲库；默认不启用，启用请配合 docker-compose.navidrome.yml
       # - NAVIDROME_ENABLED=false
       # - NAVIDROME_BASE_URL=http://navidrome:4533
@@ -88,7 +107,8 @@ services:
       - AUTH_BLOCK_DURATION=300      # 密码封锁时间 (秒)
 
     depends_on:
-      - netease-api
+      netease-api:
+        condition: service_healthy
     networks:
       - music-net
     volumes:

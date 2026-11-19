@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_DIR="$ROOT_DIR/.dev-logs"
 API_PORT="${API_PORT:-3000}"
-PACKAGE_VERSION="${NETEASE_API_PACKAGE_VERSION:-4.21.3}"
+PACKAGE_VERSION="${NETEASE_API_PACKAGE_VERSION:-4.41.1}"
 COOKIE_FILE="$ROOT_DIR/cookies.json"
 LOG_FILE="$LOG_DIR/netease-api.log"
 
@@ -45,7 +45,9 @@ NETEASE_COOKIE="${NETEASE_COOKIE:-$(read_json_field "$COOKIE_FILE" neteaseCookie
 
 export PORT="$API_PORT"
 export NETEASE_COOKIE
+export ENABLE_RANDOM_CN_IP="${ENABLE_RANDOM_CN_IP:-true}"
+export ENABLE_GENERAL_UNBLOCK=false
 
-echo "Starting NeteaseCloudMusicApi on http://127.0.0.1:$API_PORT"
+echo "Starting NeteaseCloudMusicApi Enhanced on http://127.0.0.1:$API_PORT"
 echo "Log: $LOG_FILE"
-exec npx -y "NeteaseCloudMusicApi@$PACKAGE_VERSION" 2>&1 | tee -a "$LOG_FILE"
+exec npx -y "@neteasecloudmusicapienhanced/api@$PACKAGE_VERSION" 2>&1 | tee -a "$LOG_FILE"

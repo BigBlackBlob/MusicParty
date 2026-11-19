@@ -33,6 +33,10 @@ func (api *StaticAPI) serve(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "Not found")
 		return
 	}
+	if r.URL.Path == "/spotify/callback" {
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Cache-Control", "no-store")
+	}
 	relative := strings.TrimPrefix(filepath.ToSlash(filepath.Clean(r.URL.Path)), "/")
 	path := filepath.Join(api.root, filepath.FromSlash(relative))
 	if relative == "" {

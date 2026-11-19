@@ -58,7 +58,7 @@ cp .env.example .env
 
 ```dotenv
 MUSIC_PARTY_IMAGE=ghcr.io/bigblackblob/musicparty@sha256:<immutable-digest>
-NETEASE_API_IMAGE=binaryify/neteasecloudmusicapi:4.21.3
+NETEASE_API_IMAGE=moefurina/ncm-api:4.41.1@sha256:2fcf4dc49313109a91f6cec99c6b36ebd17e8f1fdc89686121dfd14525937896
 BASE_URL=https://music.example.com
 ALLOWED_ORIGINS=https://music.example.com
 BOOTSTRAP_ADMIN_USERNAME=admin

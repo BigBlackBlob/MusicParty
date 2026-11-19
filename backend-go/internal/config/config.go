@@ -82,6 +82,7 @@ type Platforms struct {
 	YouTube    YouTube
 	SoundCloud SoundCloud
 	QQMusic    QQMusic
+	Spotify    Spotify
 	Navidrome  Subsonic
 	Squidify   Subsonic
 }
@@ -113,6 +114,13 @@ type SoundCloud struct {
 type QQMusic struct {
 	Enabled    bool
 	SidecarURL string
+}
+
+type Spotify struct {
+	Enabled      bool
+	ClientID     string
+	ClientSecret string
+	Market       string
 }
 
 type Subsonic struct {
@@ -257,6 +265,12 @@ func Load(lookup LookupEnv) (Config, error) {
 				Enabled:      r.bool("SOUNDCLOUD_ENABLED", false),
 				ClientID:     r.string("SOUNDCLOUD_CLIENT_ID", ""),
 				ClientSecret: r.string("SOUNDCLOUD_CLIENT_SECRET", ""),
+			},
+			Spotify: Spotify{
+				Enabled:      r.bool("SPOTIFY_ENABLED", false),
+				ClientID:     r.string("SPOTIFY_CLIENT_ID", ""),
+				ClientSecret: r.string("SPOTIFY_CLIENT_SECRET", ""),
+				Market:       spotifyMarket(r.string("SPOTIFY_MARKET", "US")),
 			},
 			QQMusic: QQMusic{
 				Enabled:    r.bool("QQ_MUSIC_ENABLED", false),
@@ -428,6 +442,13 @@ type reader struct {
 func (r *reader) raw(name string) (string, bool) {
 	value, ok := r.lookup(name)
 	return strings.TrimSpace(value), ok
+}
+
+func spotifyMarket(value string) string {
+	if market := strings.ToUpper(strings.TrimSpace(value)); market != "" {
+		return market
+	}
+	return "US"
 }
 
 func (r *reader) string(name, fallback string) string {

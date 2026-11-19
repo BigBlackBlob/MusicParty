@@ -19,7 +19,7 @@ command -v pnpm >/dev/null 2>&1 || { echo 'pnpm is required' >&2; exit 1; }
 docker version >/dev/null
 
 cd "$ROOT_DIR"
-NETEASE_API_IMAGE="binaryify/neteasecloudmusicapi:4.21.3" \
+NETEASE_API_IMAGE="moefurina/ncm-api:4.41.1@sha256:2fcf4dc49313109a91f6cec99c6b36ebd17e8f1fdc89686121dfd14525937896" \
   MUSIC_PARTY_IMAGE="$IMAGE_NAME" \
   BASE_URL="http://127.0.0.1:$HOST_PORT" \
   ALLOWED_ORIGINS="http://127.0.0.1:$HOST_PORT" \

@@ -841,3 +841,76 @@ func TestPlaybackErrorRequiresServerConfirmation(t *testing.T) {
 		require.Equal(t, "preview_only", event.payload.(map[string]string)["reason"])
 	})
 }
+
+func TestSpotifyTimelineSurvivesRestoreAndIgnoresClientReports(t *testing.T) {
+	ctx := context.Background()
+	store := realtimeStore(t)
+	accountSession := account.Session{PublicID: "user"}
+	spotify := storesqlite.Music{ID: "0123456789abcdefghijkl", Duration: 60_000, Platform: "spotify", PlayerType: "spotify-embed", EmbedID: "spotify:track:0123456789abcdefghijkl"}
+	broadcaster := &recordingBroadcaster{}
+	manager := NewManager(store, 10, time.Second, time.Hour, broadcaster)
+	t.Cleanup(manager.Close)
+	runtime, err := manager.Room(ctx, "lounge")
+	require.NoError(t, err)
+	_, err = runtime.Enqueue(ctx, accountSession, spotify, "spotify")
+	require.NoError(t, err)
+	_, err = runtime.Enqueue(ctx, accountSession, storesqlite.Music{ID: "next", Platform: "local", Duration: 60_000}, "next")
+	require.NoError(t, err)
+
+	snapshot, err := runtime.Snapshot(ctx)
+	require.NoError(t, err)
+	current := snapshot["nowPlaying"].(map[string]any)
+	require.Equal(t, "playing", current["sessionState"])
+	require.Equal(t, spotify.EmbedID, current["music"].(*storesqlite.PlayableMusic).EmbedID)
+	require.Empty(t, current["music"].(*storesqlite.PlayableMusic).URL)
+	report := PlaybackReport{PlayEpoch: current["playEpoch"].(int64), QueueID: current["queueId"].(string), Code: "retries-exhausted"}
+	for _, kind := range []string{"playback.started", "playback.stalled", "playback.ended", "playback.error"} {
+		require.NoError(t, runtime.ReportPlayback(ctx, kind, report, &accountSession.PublicID, "old-client"))
+	}
+	snapshot, err = runtime.Snapshot(ctx)
+	require.NoError(t, err)
+	require.Equal(t, report.PlayEpoch, snapshot["playEpoch"])
+	require.Equal(t, "playing", snapshot["nowPlaying"].(map[string]any)["sessionState"])
+	require.Zero(t, broadcaster.count("player.failed"))
+
+	_, err = runtime.TogglePause(ctx)
+	require.NoError(t, err)
+	_, err = runtime.Seek(ctx, 20_000, "user", true, &report.PlayEpoch)
+	require.NoError(t, err)
+	// Stop the room loop while leaving its persisted queue and anchor intact.
+	manager.CloseRoom("lounge")
+	restored, err := manager.Room(ctx, "lounge")
+	require.NoError(t, err)
+	snapshot, err = restored.Snapshot(ctx)
+	require.NoError(t, err)
+	require.Equal(t, true, snapshot["isPaused"])
+	current = snapshot["nowPlaying"].(map[string]any)
+	require.EqualValues(t, 20_000, current["currentPosition"])
+	require.Equal(t, spotify.EmbedID, current["music"].(*storesqlite.PlayableMusic).EmbedID)
+	_, err = restored.TogglePause(ctx)
+	require.NoError(t, err)
+	resumedPosition, err := restored.Execute(ctx, func(rt *RoomRuntime, _ context.Context) (any, error) {
+		anchor := time.UnixMilli(rt.state.TimestampAnchor)
+		position := rt.currentPosition(anchor.Add(time.Second).UnixMilli())
+		rt.onTick(anchor.Add(time.Minute))
+		return position, nil
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 21_000, resumedPosition)
+	require.Eventually(t, func() bool {
+		state, err := restored.Snapshot(ctx)
+		if err != nil {
+			return false
+		}
+		current, ok := state["nowPlaying"].(map[string]any)
+		return ok && current["music"].(*storesqlite.PlayableMusic).ID == "next" && current["sessionState"] == "ready"
+	}, 2*time.Second, 10*time.Millisecond)
+
+	_, err = restored.PreviousFor(ctx, true, nil, "")
+	require.NoError(t, err)
+	snapshot, err = restored.Snapshot(ctx)
+	require.NoError(t, err)
+	current = snapshot["nowPlaying"].(map[string]any)
+	require.Equal(t, "playing", current["sessionState"])
+	require.Equal(t, spotify.EmbedID, current["music"].(*storesqlite.PlayableMusic).EmbedID)
+}

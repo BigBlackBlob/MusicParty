@@ -333,7 +333,7 @@ func newRoomRuntime(ctx context.Context, store *storesqlite.Store, roomID string
 	r.controlScope = uuid.NewString()
 	if r.state.CurrentMusic != nil {
 		r.currentQueueID = uuid.NewString()
-		r.sessionState = "ready"
+		r.sessionState = initialPlaybackSession(r.state.CurrentMusic)
 		r.sessionStateSince = time.Now()
 	}
 	r.controlMutations = make(map[controlKey]controlRecord)
@@ -410,7 +410,7 @@ func (r *RoomRuntime) Enqueue(ctx context.Context, session account.Session, musi
 		}
 		if started {
 			runtime.currentQueueID = startedID
-			runtime.sessionState = "ready"
+			runtime.sessionState = initialPlaybackSession(nextState.CurrentMusic)
 			runtime.sessionStateSince = time.Now()
 			runtime.clockOwner = ""
 		}
@@ -463,7 +463,7 @@ func (r *RoomRuntime) EnqueueMany(ctx context.Context, session account.Session, 
 		}
 		if started {
 			runtime.currentQueueID = startedID
-			runtime.sessionState = "ready"
+			runtime.sessionState = initialPlaybackSession(nextState.CurrentMusic)
 			runtime.sessionStateSince = time.Now()
 			runtime.clockOwner = ""
 		}
@@ -625,7 +625,7 @@ func (r *RoomRuntime) TogglePauseAs(ctx context.Context, admin bool, mutation ..
 			}
 			return ControlResult{Applied: true, Committed: runtime.watermark()}, nil
 		}
-		if err := runtime.mutateStateDirect(ctx, func(s *storesqlite.PlaybackState) {
+		if err := runtime.mutateStateDirect(ctx, false, func(s *storesqlite.PlaybackState) {
 			now := time.Now().UnixMilli()
 			if !s.Paused {
 				s.PositionAnchor = position(*s, now)
@@ -832,7 +832,7 @@ func (r *RoomRuntime) PreviousFor(ctx context.Context, admin bool, expectedEpoch
 			return nil, ErrNoHistory
 		}
 		entry := runtime.history[runtime.historySkipped]
-		if err := runtime.mutateStateDirect(ctx, func(s *storesqlite.PlaybackState) {
+		if err := runtime.mutateStateDirect(ctx, true, func(s *storesqlite.PlaybackState) {
 			now := time.Now().UnixMilli()
 			s.CurrentMusic = playableMusic(entry.Music)
 			s.CurrentEnqueuerID = entry.EnqueuerPublicID
@@ -1010,7 +1010,7 @@ func (r *RoomRuntime) dropCurrentTrack(ctx context.Context, queue []storesqlite.
 	r.state = nextState
 	if nextQueueID != "" && nextState.CurrentMusic != nil {
 		r.currentQueueID = nextQueueID
-		r.sessionState = "ready"
+		r.sessionState = initialPlaybackSession(nextState.CurrentMusic)
 		r.sessionStateSince = time.Now()
 		r.clockOwner = ""
 	} else {
@@ -1032,7 +1032,7 @@ func (r *RoomRuntime) advance(ctx context.Context) error {
 	var history *storesqlite.HistoryEntry
 	removed := []string{}
 	if r.state.CurrentMusic != nil {
-		music := storesqlite.Music{ID: r.state.CurrentMusic.ID, Name: r.state.CurrentMusic.Name, Artists: r.state.CurrentMusic.Artists, Duration: r.state.CurrentMusic.Duration, Platform: r.state.CurrentMusic.Platform, CoverURL: r.state.CurrentMusic.CoverURL}
+		music := storesqlite.Music{ID: r.state.CurrentMusic.ID, Name: r.state.CurrentMusic.Name, Artists: r.state.CurrentMusic.Artists, Duration: r.state.CurrentMusic.Duration, Platform: r.state.CurrentMusic.Platform, CoverURL: r.state.CurrentMusic.CoverURL, PlayerType: r.state.CurrentMusic.PlayerType, EmbedID: r.state.CurrentMusic.EmbedID}
 		history = &storesqlite.HistoryEntry{ID: uuid.NewString(), RoomID: r.roomID, Music: music, EnqueuerPublicID: r.state.CurrentEnqueuerID, PlayedAt: time.Now().UnixMilli()}
 	}
 	if len(nextQueue) == 0 {
@@ -1042,9 +1042,10 @@ func (r *RoomRuntime) advance(ctx context.Context) error {
 		nextState.Paused = true
 	} else {
 		item := takeNext(&nextState, &nextQueue)
-		nextQueueID, nextSessionState = item.QueueID, "ready"
+		nextQueueID = item.QueueID
 		removed = append(removed, item.QueueID)
 		nextState.CurrentMusic = playableMusic(item.Music)
+		nextSessionState = initialPlaybackSession(nextState.CurrentMusic)
 		nextState.CurrentEnqueuerID = &item.EnqueuedBy.PublicID
 		nextState.CurrentEnqueuerName = &item.EnqueuedBy.Name
 		nextState.Paused = false
@@ -1187,7 +1188,7 @@ func (r *RoomRuntime) mutateStateChecked(ctx context.Context, kind string, posit
 				return nil, checkErr
 			}
 		}
-		if err := runtime.mutateStateDirect(ctx, mutate); err != nil {
+		if err := runtime.mutateStateDirect(ctx, false, mutate); err != nil {
 			return nil, err
 		}
 		return ControlResult{Applied: true, Committed: runtime.watermark()}, nil
@@ -1198,7 +1199,7 @@ func (r *RoomRuntime) mutateStateChecked(ctx context.Context, kind string, posit
 	return value.(ControlResult), nil
 }
 
-func (r *RoomRuntime) mutateStateDirect(ctx context.Context, mutate func(*storesqlite.PlaybackState)) error {
+func (r *RoomRuntime) mutateStateDirect(ctx context.Context, replacesTrack bool, mutate func(*storesqlite.PlaybackState)) error {
 	nextState := clonePlaybackState(r.state)
 	mutate(&nextState)
 	now := time.Now().UnixMilli()
@@ -1206,6 +1207,12 @@ func (r *RoomRuntime) mutateStateDirect(ctx context.Context, mutate func(*stores
 	nextState.LastPersistedAt = now
 	if err := r.stateRepo.Upsert(ctx, nextState); err != nil {
 		return err
+	}
+	if replacesTrack && (isSpotifyPlayback(r.state.CurrentMusic) || isSpotifyPlayback(nextState.CurrentMusic)) {
+		r.currentQueueID = uuid.NewString()
+		r.sessionState = initialPlaybackSession(nextState.CurrentMusic)
+		r.sessionStateSince = time.Now()
+		r.clockOwner = ""
 	}
 	r.state = nextState
 	r.broadcastState()
@@ -1294,12 +1301,27 @@ func playableMusic(music storesqlite.Music) *storesqlite.PlayableMusic {
 			playerType, embedID = "youtube-embed", music.ID
 		case "soundcloud":
 			playerType, embedID = "soundcloud-widget", music.ID
+		case "spotify":
+			// MusicParty playlists may contain catalog metadata without embed fields.
+			playerType, embedID = "spotify-embed", "spotify:track:"+music.ID
 		}
 	}
-	if playerType == "youtube-embed" || playerType == "soundcloud-widget" {
+	if playerType == "youtube-embed" || playerType == "soundcloud-widget" || playerType == "spotify-embed" {
 		streamURL = ""
 	}
 	return &storesqlite.PlayableMusic{ID: music.ID, Name: music.Name, Artists: slices.Clone(music.Artists), Duration: music.Duration, Platform: music.Platform, URL: streamURL, CoverURL: music.CoverURL, PlayerType: playerType, EmbedID: embedID}
+}
+
+func isSpotifyPlayback(music *storesqlite.PlayableMusic) bool {
+	return music != nil && music.PlayerType == "spotify-embed"
+}
+
+// Spotify advances from the committed room anchor without a client clock owner.
+func initialPlaybackSession(music *storesqlite.PlayableMusic) string {
+	if isSpotifyPlayback(music) {
+		return "playing"
+	}
+	return "ready"
 }
 
 func clonePlaybackState(state storesqlite.PlaybackState) storesqlite.PlaybackState {
@@ -1440,7 +1462,9 @@ func (r *RoomRuntime) loop() {
 			return
 		case now := <-ticker.C:
 			r.onTick(now)
-			if r.idle > 0 && r.clients == 0 && now.Sub(r.lastActivity) >= r.idle {
+			// Keep advancing Spotify until the room pauses or leaves the source.
+			spotifyPlaying := isSpotifyPlayback(r.state.CurrentMusic) && !r.state.Paused
+			if r.idle > 0 && r.clients == 0 && !spotifyPlaying && now.Sub(r.lastActivity) >= r.idle {
 				r.cancel()
 			}
 		case command := <-r.commands:
@@ -1555,7 +1579,7 @@ type PlaybackContext struct {
 
 func (r *RoomRuntime) ReportPlayback(ctx context.Context, kind string, report PlaybackReport, actor *string, connectionID ...string) error {
 	_, err := r.Execute(ctx, func(runtime *RoomRuntime, ctx context.Context) (any, error) {
-		if report.PlayEpoch != runtime.state.PlayEpoch || report.QueueID == "" || report.QueueID != runtime.currentQueueID {
+		if isSpotifyPlayback(runtime.state.CurrentMusic) || report.PlayEpoch != runtime.state.PlayEpoch || report.QueueID == "" || report.QueueID != runtime.currentQueueID {
 			return nil, nil
 		}
 		now := time.Now().UnixMilli()

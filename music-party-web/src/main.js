@@ -7,6 +7,7 @@ import App from './App.vue'
 import { useUiStore } from './stores/ui'
 import { i18n } from './i18n/index'
 import { queryClient } from './app/providers'
+import { spotifyCallbackPath, useSpotifyAuth } from './composables/useSpotifyAuth'
 import { removeObsoleteStorage } from './preferences/legacyStorage'
 
 removeObsoleteStorage()
@@ -30,4 +31,8 @@ watch(() => uiStore.locale, (locale) => {
 }, { immediate: true })
 document.documentElement.classList.toggle('dark', uiStore.isDarkMode)
 document.documentElement.classList.toggle('light', !uiStore.isDarkMode)
-app.mount('#app')
+if (location.pathname === spotifyCallbackPath) {
+  void useSpotifyAuth().handleCallback().finally(() => app.mount('#app'))
+} else {
+  app.mount('#app')
+}
