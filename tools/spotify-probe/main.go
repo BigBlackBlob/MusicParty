@@ -52,6 +52,15 @@ type credentials struct {
 	Data     []byte `json:"data"`
 }
 
+// tokenFile is the format saved by the Windows login step (OAuth tokens only).
+// check detects this format and converts it to credentials on first use.
+type tokenFile struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	Username     string `json:"username"`
+	SavedAt      string `json:"saved_at"`
+}
+
 var (
 	trackIDPattern = regexp.MustCompile(`^[0-9A-Za-z]{22}$`)
 	countryPattern = regexp.MustCompile(`^[A-Z]{2}$`)
@@ -150,16 +159,16 @@ func login(ctx context.Context, path string) error {
 }
 
 func check(ctx context.Context, path, track string) error {
-	stored, err := loadCredentials(path)
-	if err != nil {
-		return fmt.Errorf("Credential load failed: %w", err)
-	}
 	id, err := parseTrack(track)
 	if err != nil {
-		return fmt.Errorf("Track load failed: %w", err)
+		return fmt.Errorf("Track parse failed: %w", err)
 	}
 
 	client := librespot.NewHttpClient()
+	stored, err := loadOrConvertCredentials(ctx, client, path)
+	if err != nil {
+		return fmt.Errorf("Credential load failed: %w", err)
+	}
 	secret := base64.StdEncoding.EncodeToString(stored.Data)
 	sess, err := connect(ctx, client, stored.DeviceID, session.StoredCredentials{
 		Username: stored.Username,
@@ -307,6 +316,41 @@ func readAudio(ctx context.Context, source librespot.Float32Reader, target int) 
 }
 func sessionCredentials(sess *session.Session, deviceID string) credentials {
 	return credentials{DeviceID: deviceID, Username: sess.Username(), Data: sess.StoredCredentials()}
+}
+
+func loadOrConvertCredentials(ctx context.Context, client *http.Client, path string) (credentials, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return credentials{}, err
+	}
+
+	// Try the native format first.
+	var creds credentials
+	if json.Unmarshal(data, &creds) == nil && creds.validate() == nil {
+		return creds, nil
+	}
+
+	// Try the Windows token file format.
+	var tf tokenFile
+	if err := json.Unmarshal(data, &tf); err != nil || tf.AccessToken == "" || tf.Username == "" {
+		return credentials{}, errors.New("credentials.json is not a valid format; re-run login")
+	}
+	fmt.Fprintln(os.Stderr, "Converting Windows token file to go-librespot credentials…")
+	deviceID := hex.EncodeToString(randomBytes(20))
+	sess, err := connect(ctx, client, deviceID, session.SpotifyTokenCredentials{
+		Username: tf.Username,
+		Token:    tf.AccessToken,
+	})
+	if err != nil {
+		return credentials{}, fmt.Errorf("Session construction failed during credential conversion: %s", safeError(err, tf.AccessToken))
+	}
+	defer sess.Close()
+	creds = sessionCredentials(sess, deviceID)
+	if err := saveCredentials(path, creds); err != nil {
+		return credentials{}, fmt.Errorf("Could not save converted credentials: %w", err)
+	}
+	fmt.Fprintln(os.Stderr, "Credentials converted and saved.")
+	return creds, nil
 }
 
 func loadCredentials(path string) (credentials, error) {

@@ -35,6 +35,7 @@ const (
 type tokenFile struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
+	Username     string `json:"username"`
 	SavedAt      string `json:"saved_at"`
 }
 
@@ -99,6 +100,7 @@ func run(args []string) int {
 	if err := saveTokens(path, tokenFile{
 		AccessToken:  tokens.AccessToken,
 		RefreshToken: tokens.RefreshToken,
+		Username:     tokens.Username,
 		SavedAt:      time.Now().UTC().Format(time.RFC3339),
 	}); err != nil {
 		fmt.Fprintln(os.Stderr, "Credential save failed:", err)

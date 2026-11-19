@@ -40,6 +40,9 @@ type callback struct {
 }
 
 func authorize(ctx context.Context, client *http.Client, clientID string) (oauthTokens, error) {
+	if client == nil {
+		client = http.DefaultClient
+	}
 	verifier := base64.RawURLEncoding.EncodeToString(randomBytes(32))
 	challenge := sha256.Sum256([]byte(verifier))
 	state := base64.RawURLEncoding.EncodeToString(randomBytes(32))
@@ -61,6 +64,11 @@ func authorize(ctx context.Context, client *http.Client, clientID string) (oauth
 	if err != nil {
 		return oauthTokens{}, fmt.Errorf("OAuth exchange failed: %w", err)
 	}
+	username, err := fetchUsername(ctx, client, tokens.AccessToken)
+	if err != nil {
+		return oauthTokens{}, fmt.Errorf("Could not fetch Spotify username: %w", err)
+	}
+	tokens.Username = username
 	return tokens, nil
 }
 
@@ -140,6 +148,32 @@ func openBrowser(loginURL string) {
 	if err := cmd.Start(); err == nil {
 		go func() { _ = cmd.Wait() }()
 	}
+}
+
+func fetchUsername(ctx context.Context, client *http.Client, accessToken string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.spotify.com/v1/me", nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", errors.New(safeError(err, accessToken))
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("Spotify /v1/me returned HTTP %d", resp.StatusCode)
+	}
+	var body struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&body); err != nil {
+		return "", errors.New("Spotify returned an invalid /v1/me response")
+	}
+	if body.ID == "" {
+		return "", errors.New("Spotify /v1/me did not return a user ID")
+	}
+	return body.ID, nil
 }
 
 func exchangeCode(ctx context.Context, client *http.Client, clientID, verifier, code string) (oauthTokens, error) {
