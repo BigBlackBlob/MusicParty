@@ -1,132 +1,476 @@
 <template>
-  <section class="flex h-full min-h-0 w-full flex-col gap-3 overflow-hidden bg-black p-3 text-white [--playlist-accent:#71bd99]" :aria-label="t('roomPlaylists.title')">
-    <header v-if="viewMode === 'index'" class="flex shrink-0 flex-wrap items-center justify-between gap-2">
-      <div class="flex gap-2" role="group" :aria-label="t('roomPlaylists.title')">
-        <button v-for="option in scopes" :key="option" type="button" class="action" :aria-pressed="scope === option" @click="switchScope(option)">
-          {{ t(option === 'room' ? 'roomPlaylists.roomScope' : 'roomPlaylists.personalScope') }}
-        </button>
-      </div>
-      <span class="text-xs text-text-secondary">{{ store.playlists.length }} {{ t('roomPlaylists.title') }}</span>
-    </header>
-
-    <header v-else class="flex shrink-0 items-center gap-2">
-      <button type="button" class="action icon-action" :aria-label="t('common.back')" :title="t('common.back')" @click="goBack">
-        <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
-      </button>
-      <div class="group relative h-14 w-14 shrink-0 overflow-hidden rounded bg-neutral-900">
-        <CoverImage v-if="coverUrl" :src="coverUrl" alt="" class="h-full w-full" />
-        <span v-else class="material-symbols-outlined grid h-full place-items-center text-neutral-500" aria-hidden="true">album</span>
-        <button v-if="canEdit" type="button" class="action icon-action cover-action absolute inset-0 h-full w-full rounded-none bg-black/70" :aria-label="t('roomPlaylists.uploadCover')" :title="t('roomPlaylists.uploadCover')" :disabled="busy" @click="coverInput?.click()">
-          <span class="material-symbols-outlined" aria-hidden="true">photo_camera</span>
-        </button>
-        <input ref="coverInput" type="file" accept="image/png,image/jpeg" hidden @change="uploadCover">
-      </div>
-      <div class="min-w-0 flex-1">
-        <h2 class="truncate text-sm font-semibold">{{ store.selectedPlaylist?.name || t('roomPlaylists.loading') }}</h2>
-        <p class="text-xs text-text-secondary">{{ store.selectedPlaylist?.trackCount ?? 0 }} {{ t('queue.tracks') }}</p>
-        <p v-if="store.selectedPlaylist?.description" class="line-clamp-2 text-xs text-text-secondary">{{ store.selectedPlaylist.description }}</p>
-      </div>
-      <button v-if="store.selectedTracks.length && hasRoom" type="button" class="action icon-action primary-action" :aria-label="t('roomPlaylists.playAll')" :title="t('roomPlaylists.playAll')" :disabled="busy || !commands.canOperate" @click="playSelected">
-        <span class="material-symbols-outlined" aria-hidden="true">playlist_play</span>
-      </button>
-    </header>
-
-    <p v-if="message || store.error" class="shrink-0 text-xs text-error" role="alert">{{ message || store.error }}</p>
-    <p v-if="scope === 'personal' && user.isGuest" class="py-6 text-sm text-text-secondary">{{ t('roomPlaylists.personalUnavailable') }}</p>
-
-    <template v-else-if="viewMode === 'index'">
-      <form class="flex shrink-0 gap-2" @submit.prevent="create">
-        <input v-model.trim="newName" maxlength="64" class="field min-w-0 flex-1" :aria-label="t('roomPlaylists.newPlaceholder')" :placeholder="t('roomPlaylists.newPlaceholder')" :disabled="busy">
-        <button type="submit" class="action primary-action" :disabled="busy || !newName">{{ t('rooms.create') }}</button>
-      </form>
-      <div ref="sortList" class="min-h-0 flex-1 overflow-y-auto" :aria-busy="store.loading">
-        <div v-for="playlist in store.playlists" :key="playlist.id" :data-reorder-id="scope === 'personal' && !playlist.systemKey ? playlist.id : undefined" class="flex items-center gap-1 border-b border-neutral-900">
-          <button type="button" class="flex min-w-0 flex-1 items-center gap-2 rounded px-1.5 py-2 text-left hover:bg-neutral-900 focus-visible:outline focus-visible:outline-1 focus-visible:outline-[var(--playlist-accent)]" :disabled="busy" @click="select(playlist.id)">
-            <CoverImage v-if="playlist.coverUrl" :src="playlist.coverUrl" alt="" class="h-9 w-9 shrink-0 rounded" />
-            <span v-else class="material-symbols-outlined grid h-9 w-9 shrink-0 place-items-center rounded bg-neutral-900 text-neutral-500" aria-hidden="true">album</span>
-            <span class="min-w-0 flex-1">
-              <span class="block truncate text-sm">{{ playlist.name }}</span>
-              <span class="block text-xs text-text-secondary">{{ playlist.trackCount }} {{ t('queue.tracks') }}</span>
-            </span>
-            <span class="material-symbols-outlined text-neutral-500" aria-hidden="true">chevron_right</span>
-          </button>
-          <button v-if="canSort && !playlist.systemKey" type="button" data-reorder-handle class="action icon-action drag-handle" :aria-label="t('roomPlaylists.reorder', { name: playlist.name })" :title="t('roomPlaylists.reorderHint')" :disabled="busy"
-            @keydown.up.prevent="moveBy(playlist.id, -1)" @keydown.down.prevent="moveBy(playlist.id, 1)">
-            <span class="material-symbols-outlined" aria-hidden="true">drag_indicator</span>
+  <section class="playlist-module" :aria-label="t('roomPlaylists.title')">
+    <p v-if="message || store.error" class="message-line" role="alert">
+      {{ message || store.error }}
+    </p>
+    <p v-if="scope === 'personal' && user.isGuest" class="guest-state">
+      {{ t("roomPlaylists.personalUnavailable") }}
+    </p>
+    <div v-else class="d3-shell">
+      <div class="d3-tab-bar" role="tablist">
+        <div
+          class="scope-toggle"
+          role="group"
+          :aria-label="t('roomPlaylists.title')"
+        >
+          <button
+            v-for="option in scopes"
+            :key="option"
+            type="button"
+            class="d3-tab scope-btn"
+            role="tab"
+            :class="{ on: scope === option }"
+            :aria-pressed="scope === option"
+            :aria-selected="scope === option"
+            @click="switchScope(option)"
+          >
+            {{
+              t(
+                option === "room"
+                  ? "roomPlaylists.roomScope"
+                  : "roomPlaylists.personalScope",
+              )
+            }}
           </button>
         </div>
-        <p v-if="!store.loading && !store.playlists.length" class="py-6 text-sm text-text-secondary">{{ t('roomPlaylists.empty') }}</p>
-      </div>
-    </template>
-
-    <template v-else>
-      <form v-if="canEdit" class="flex shrink-0 flex-wrap gap-2" @submit.prevent="importExternal">
-        <select v-model="importPlatform" class="field" :aria-label="t('roomPlaylists.importPlatform')" :disabled="busy">
-          <option value="netease">NetEase</option>
-          <option value="qq">QQ Music</option>
-        </select>
-        <input v-model.trim="externalPlaylistId" class="field min-w-20 flex-1" :aria-label="t('roomPlaylists.externalPlaceholder')" :placeholder="t('roomPlaylists.externalPlaceholder')" :disabled="busy">
-        <button type="submit" class="action" :disabled="busy || !externalPlaylistId">{{ t('search.importPlaylist') }}</button>
-      </form>
-
-      <div ref="sortList" class="min-h-0 flex-1 overflow-y-auto" :aria-busy="store.loading">
-        <div v-for="track in store.selectedTracks" :key="track.id" :data-reorder-id="canSort ? track.id : undefined" class="border-b border-neutral-900 px-1.5 py-1.5">
-          <div class="flex items-center gap-2">
-            <CoverImage v-if="track.music.coverUrl" :src="track.music.coverUrl" alt="" class="h-8 w-8 shrink-0 rounded" />
-            <span v-else class="material-symbols-outlined grid h-8 w-8 shrink-0 place-items-center rounded bg-neutral-900 text-neutral-500" aria-hidden="true">music_note</span>
-            <div class="min-w-0 flex-1">
-              <p class="truncate text-sm">{{ track.music.name }}</p>
-              <p class="truncate text-xs text-text-secondary">{{ track.music.artists?.join(' / ') || track.music.platform }}</p>
-            </div>
-            <button v-if="scope === 'personal' && hasRoom" type="button" class="action icon-action" :aria-label="t('roomPlaylists.addToQueue')" :title="t('roomPlaylists.addToQueue')" :disabled="busy || !commands.canOperate" @click="commands.enqueue(track.music.platform, track.music.id)">
-              <span class="material-symbols-outlined" aria-hidden="true">add</span>
-            </button>
-            <button v-if="canEdit" type="button" class="action icon-action" :class="{ 'text-[var(--playlist-accent)]': track.notes }" :aria-expanded="editingTrackId === track.id" :aria-label="t('roomPlaylists.editNotes')" :title="t('roomPlaylists.editNotes')" :disabled="busy" @click="editNotes(track)">
-              <span class="material-symbols-outlined" aria-hidden="true">edit_note</span>
-            </button>
-            <button v-if="canEdit || isLikedPlaylist" type="button" class="action icon-action" :aria-label="t('queue.remove')" :title="t('queue.remove')" :disabled="busy" @click="deleteTrack(track)">
-              <span class="material-symbols-outlined" aria-hidden="true">{{ isLikedPlaylist ? 'heart_minus' : 'remove' }}</span>
-            </button>
-            <button v-if="canSort" type="button" data-reorder-handle class="action icon-action drag-handle" :aria-label="t('roomPlaylists.reorder', { name: track.music.name })" :title="t('roomPlaylists.reorderHint')" :disabled="busy"
-              @keydown.up.prevent="moveBy(track.id, -1)" @keydown.down.prevent="moveBy(track.id, 1)">
-              <span class="material-symbols-outlined" aria-hidden="true">drag_indicator</span>
-            </button>
-          </div>
-          <input v-if="editingTrackId === track.id" v-model="trackNotes" maxlength="1000" data-playlist-note class="field mt-1 w-full" :aria-label="t('roomPlaylists.editNotes')" :placeholder="t('roomPlaylists.editNotes')"
-            @blur="saveNotes(track)" @keydown.enter.prevent="saveNotes(track)" @keydown.esc.prevent="editingTrackId = null">
-          <p v-else-if="track.notes" class="mt-1 whitespace-pre-wrap break-words pl-10 text-xs text-text-secondary">{{ track.notes }}</p>
-        </div>
-        <p v-if="!store.loading && !store.selectedTracks.length" class="py-6 text-sm text-text-secondary">{{ t('roomPlaylists.emptyTracks') }}</p>
-      </div>
-
-      <footer v-if="store.selectedPlaylist" class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-neutral-800 pt-2">
-        <form v-if="editor === 'rename'" class="flex w-full flex-wrap gap-2" @submit.prevent="rename">
-          <input ref="renameInput" v-model.trim="renameValue" class="field min-w-24 flex-1" maxlength="64" :aria-label="t('roomPlaylists.namePrompt')" @keydown.esc.prevent="editor = null">
-          <button type="submit" class="action primary-action" :disabled="busy || !renameValue">{{ t('roomPlaylists.save') }}</button>
-          <button type="button" class="action" :disabled="busy" @click="editor = null">{{ t('common.cancel') }}</button>
-        </form>
-        <div v-else-if="editor === 'delete'" class="flex w-full flex-wrap items-center gap-2">
-          <span class="mr-auto text-xs" role="status">{{ t('roomPlaylists.deleteConfirm', { name: store.selectedPlaylist.name }) }}</span>
-          <button type="button" class="action text-error" :disabled="busy" @click="deleteSelected">{{ t('roomPlaylists.delete') }}</button>
-          <button type="button" class="action" :disabled="busy" @click="editor = null">{{ t('common.cancel') }}</button>
-        </div>
-        <template v-else>
-          <div class="flex gap-1">
-            <select v-model="exportFormat" class="field" :aria-label="t('common.export')">
-              <option v-for="format in exportFormats" :key="format" :value="format">{{ format.toUpperCase() }}</option>
-            </select>
-            <button type="button" class="action" :disabled="busy" @click="exportSelected">{{ t('common.export') }}</button>
-          </div>
-          <div v-if="canEdit" class="flex gap-1">
-            <button type="button" class="action" :disabled="busy" @click="openRename">{{ t('roomPlaylists.rename') }}</button>
-            <button type="button" class="action" :disabled="busy" @click="editor = 'delete'">{{ t('roomPlaylists.delete') }}</button>
-          </div>
+        <template v-if="viewMode === 'detail'">
+          <span class="d3-tab-sep" aria-hidden="true">›</span>
+          <button
+            class="d3-tab on"
+            type="button"
+            disabled
+          >
+            {{ store.selectedPlaylist?.name }}
+          </button>
+          <button
+            type="button"
+            class="icon-btn"
+            :aria-label="t('common.back')"
+            :title="t('common.back')"
+            @click="goBack"
+          >
+            <span class="material-symbols-outlined" aria-hidden="true"
+              >close</span
+            >
+          </button>
         </template>
-      </footer>
-    </template>
+      </div>
+
+      <div v-if="viewMode === 'index'" class="d3-pane show">
+        <form class="d3-index-toolbar" @submit.prevent="create">
+          <input
+            v-model.trim="newName"
+            maxlength="64"
+            class="text-field"
+            :aria-label="t('roomPlaylists.newPlaceholder')"
+            :placeholder="t('roomPlaylists.newPlaceholder')"
+            :disabled="busy"
+          /><button
+            type="submit"
+            class="chip-btn chip-primary"
+            :disabled="busy || !newName"
+          >
+            {{ t("rooms.create") }}
+          </button>
+        </form>
+        <div
+          :ref="viewMode === 'index' ? setSortList : undefined"
+          class="d3-playlist-list"
+          :aria-busy="store.loading"
+        >
+          <div
+            v-for="playlist in store.playlists"
+            :key="playlist.id"
+            class="d3-playlist-row-wrap"
+            :data-reorder-id="
+              canSort && !playlist.systemKey ? playlist.id : undefined
+            "
+          >
+            <button
+              type="button"
+              class="d3-playlist-row"
+              :class="{ selected: store.selectedPlaylistId === playlist.id }"
+              :disabled="busy"
+              @click="select(playlist.id)"
+            >
+              <CoverImage
+                v-if="playlist.coverUrl"
+                :src="playlist.coverUrl"
+                alt=""
+                class="cover-sq d3-playlist-cover"
+              /><span
+                v-else
+                class="cover-sq d3-playlist-cover material-symbols-outlined"
+                aria-hidden="true"
+                >album</span
+              ><span class="row-meta"
+                ><span class="row-name">{{ playlist.name }}</span
+                ><span class="row-sub"
+                  ><template v-if="playlist.systemKey"
+                    ><span class="sys-badge">System</span> &middot; </template
+                  >{{ playlist.trackCount }} {{ t("queue.tracks") }}</span
+                ></span
+              ><span
+                class="material-symbols-outlined row-chevron"
+                aria-hidden="true"
+                >chevron_right</span
+              >
+            </button>
+            <button
+              v-if="canSort && !playlist.systemKey"
+              type="button"
+              data-reorder-handle
+              class="icon-btn drag-handle"
+              :aria-label="t('roomPlaylists.reorder', { name: playlist.name })"
+              :title="t('roomPlaylists.reorderHint')"
+              :disabled="busy"
+              @keydown.up.prevent="moveBy(playlist.id, -1)"
+              @keydown.down.prevent="moveBy(playlist.id, 1)"
+            >
+              <span class="material-symbols-outlined" aria-hidden="true"
+                >drag_indicator</span
+              >
+            </button>
+          </div>
+          <p
+            v-if="!store.loading && !store.playlists.length"
+            class="empty-state"
+          >
+            {{ t("roomPlaylists.empty") }}
+          </p>
+        </div>
+      </div>
+
+      <div v-else class="d3-pane show">
+        <template v-if="store.selectedPlaylist">
+          <header class="d3-detail-header">
+            <div class="cover-wrap">
+              <CoverImage
+                v-if="coverUrl"
+                :src="coverUrl"
+                alt=""
+                class="cover-image"
+              /><span
+                v-else
+                class="material-symbols-outlined"
+                aria-hidden="true"
+                >album</span
+              ><button
+                v-if="canEdit"
+                type="button"
+                class="cover-cam-btn"
+                :aria-label="t('roomPlaylists.uploadCover')"
+                :title="t('roomPlaylists.uploadCover')"
+                :disabled="busy"
+                @click="coverInput?.click()"
+              >
+                <span class="material-symbols-outlined" aria-hidden="true"
+                  >photo_camera</span
+                >
+              </button>
+              <input
+                ref="coverInput"
+                type="file"
+                accept="image/png,image/jpeg"
+                hidden
+                @change="uploadCover"
+              />
+            </div>
+            <div class="hd-body">
+              <h2 class="hd-name">
+                {{ store.selectedPlaylist.name || t("roomPlaylists.loading") }}
+              </h2>
+              <p class="hd-sub">
+                {{ store.selectedPlaylist.trackCount }}
+                {{ t("queue.tracks") }} &middot;
+                {{
+                  t(
+                    scope === "room"
+                      ? "roomPlaylists.roomScope"
+                      : "roomPlaylists.personalScope",
+                  )
+                }}
+              </p>
+              <p v-if="store.selectedPlaylist.description" class="hd-desc">
+                {{ store.selectedPlaylist.description }}
+              </p>
+            </div>
+            <button
+              v-if="store.selectedTracks.length && hasRoom"
+              type="button"
+              class="chip-btn chip-primary play-all"
+              :aria-label="t('roomPlaylists.playAll')"
+              :title="t('roomPlaylists.playAll')"
+              :disabled="busy || !commands.canOperate"
+              @click="playSelected"
+            >
+              <span class="material-symbols-outlined" aria-hidden="true"
+                >playlist_play</span
+              >{{ t("roomPlaylists.playAll") }}
+            </button>
+          </header>
+          <form
+            v-if="canEdit"
+            class="d3-import-bar"
+            @submit.prevent="importExternal"
+          >
+            <select
+              v-model="importPlatform"
+              class="text-field"
+              :aria-label="t('roomPlaylists.importPlatform')"
+              :disabled="busy"
+            >
+              <option value="netease">NetEase</option>
+              <option value="qq">QQ Music</option>
+            </select>
+            <input
+              v-model.trim="externalPlaylistId"
+              class="text-field import-id"
+              :aria-label="t('roomPlaylists.externalPlaceholder')"
+              :placeholder="t('roomPlaylists.externalPlaceholder')"
+              :disabled="busy"
+            /><button
+              type="submit"
+              class="chip-btn"
+              :disabled="busy || !externalPlaylistId"
+            >
+              {{ t("search.importPlaylist") }}
+            </button>
+          </form>
+          <div
+            :ref="viewMode === 'detail' ? setSortList : undefined"
+            class="d3-track-list"
+            :aria-busy="store.loading"
+          >
+            <div
+              v-for="(track, index) in store.selectedTracks"
+              :key="track.id"
+              class="track-entry"
+              :data-reorder-id="canSort ? track.id : undefined"
+            >
+              <div
+                class="d3-track-row"
+                :class="{ selected: selectedTrackId === track.id }"
+                @click="selectedTrackId = selectedTrackId === track.id ? null : track.id"
+              >
+                <div class="d3-track-num">{{ index + 1 }}</div>
+                <CoverImage
+                  v-if="track.music.coverUrl"
+                  :src="track.music.coverUrl"
+                  alt=""
+                  class="cover-sq d3-track-cover"
+                /><span
+                  v-else
+                  class="cover-sq d3-track-cover material-symbols-outlined"
+                  aria-hidden="true"
+                  >music_note</span
+                >
+                <div class="track-meta">
+                  <p class="track-name">{{ track.music.name }}</p>
+                  <p class="track-art">
+                    {{
+                      track.music.artists?.join(" / ") || track.music.platform
+                    }}
+                  </p>
+                  <p
+                    v-if="track.notes && editingTrackId !== track.id"
+                    class="track-note-line"
+                  >
+                    {{ track.notes }}
+                  </p>
+                </div>
+                <div class="d3-action-bar">
+                  <button
+                    v-if="scope === 'personal' && hasRoom"
+                    type="button"
+                    class="icon-btn"
+                    :aria-label="t('roomPlaylists.addToQueue')"
+                    :title="t('roomPlaylists.addToQueue')"
+                    :disabled="busy || !commands.canOperate"
+                    @click.stop="
+                      commands.enqueue(track.music.platform, track.music.id)
+                    "
+                  >
+                    <span class="material-symbols-outlined" aria-hidden="true"
+                      >add</span
+                    >
+                  </button>
+                  <button
+                    v-if="canEdit"
+                    type="button"
+                    class="icon-btn"
+                    :class="{ 'accent-icon': track.notes }"
+                    :aria-expanded="editingTrackId === track.id"
+                    :aria-label="t('roomPlaylists.editNotes')"
+                    :title="t('roomPlaylists.editNotes')"
+                    :disabled="busy"
+                    @click.stop="editNotes(track)"
+                  >
+                    <span class="material-symbols-outlined" aria-hidden="true"
+                      >edit_note</span
+                    >
+                  </button>
+                  <button
+                    v-if="canEdit || isLikedPlaylist"
+                    type="button"
+                    class="icon-btn"
+                    :aria-label="t('queue.remove')"
+                    :title="t('queue.remove')"
+                    :disabled="busy"
+                    @click.stop="deleteTrack(track)"
+                  >
+                    <span
+                      class="material-symbols-outlined"
+                      aria-hidden="true"
+                      >{{ isLikedPlaylist ? "heart_minus" : "remove" }}</span
+                    >
+                  </button>
+                </div>
+                <button
+                  v-if="canSort && viewMode === 'detail'"
+                  type="button"
+                  data-reorder-handle
+                  class="icon-btn drag-handle"
+                  :aria-label="
+                    t('roomPlaylists.reorder', { name: track.music.name })
+                  "
+                  :title="t('roomPlaylists.reorderHint')"
+                  :disabled="busy"
+                  @click.stop
+                  @keydown.up.prevent="moveBy(track.id, -1)"
+                  @keydown.down.prevent="moveBy(track.id, 1)"
+                >
+                  <span class="material-symbols-outlined" aria-hidden="true"
+                    >drag_indicator</span
+                  >
+                </button>
+              </div>
+              <div
+                v-if="editingTrackId === track.id"
+                class="d3-note-row show"
+              >
+                <input
+                  v-model="trackNotes"
+                  maxlength="1000"
+                  data-playlist-note
+                  class="text-field"
+                  :aria-label="t('roomPlaylists.editNotes')"
+                  :placeholder="t('roomPlaylists.editNotes')"
+                  @blur="saveNotes(track)"
+                  @keydown.enter.prevent="saveNotes(track)"
+                  @keydown.esc.prevent="editingTrackId = null"
+                />
+              </div>
+            </div>
+            <p
+              v-if="!store.loading && !store.selectedTracks.length"
+              class="empty-state"
+            >
+              {{ t("roomPlaylists.emptyTracks") }}
+            </p>
+          </div>
+          <footer class="d3-footer">
+            <form
+              v-if="editor === 'rename'"
+              class="footer-edit"
+              @submit.prevent="rename"
+            >
+              <input
+                ref="renameInput"
+                v-model.trim="renameValue"
+                class="text-field rename-field"
+                maxlength="64"
+                :aria-label="t('roomPlaylists.namePrompt')"
+                @keydown.esc.prevent="editor = null"
+              /><button
+                type="submit"
+                class="chip-btn chip-primary"
+                :disabled="busy || !renameValue"
+              >
+                {{ t("roomPlaylists.save") }}
+              </button>
+              <button
+                type="button"
+                class="chip-btn"
+                :disabled="busy"
+                @click="editor = null"
+              >
+                {{ t("common.cancel") }}
+              </button>
+            </form>
+            <div v-else-if="editor === 'delete'" class="d3-delete-confirm">
+              <span role="status">{{
+                t("roomPlaylists.deleteConfirm", {
+                  name: store.selectedPlaylist.name,
+                })
+              }}</span>
+              <button
+                type="button"
+                class="chip-btn chip-danger"
+                :disabled="busy"
+                @click="deleteSelected"
+              >
+                {{ t("roomPlaylists.delete") }}
+              </button>
+              <button
+                type="button"
+                class="chip-btn"
+                :disabled="busy"
+                @click="editor = null"
+              >
+                {{ t("common.cancel") }}
+              </button>
+            </div>
+            <div v-else class="footer-row">
+              <div class="footer-left">
+                <select
+                  v-model="exportFormat"
+                  class="text-field export-format"
+                  :aria-label="t('common.export')"
+                >
+                  <option
+                    v-for="format in exportFormats"
+                    :key="format"
+                    :value="format"
+                  >
+                    {{ format.toUpperCase() }}
+                  </option>
+                </select>
+                <button
+                  type="button"
+                  class="chip-btn"
+                  :disabled="busy"
+                  @click="exportSelected"
+                >
+                  {{ t("common.export") }}
+                </button>
+              </div>
+              <div v-if="canEdit" class="footer-right">
+                <button
+                  type="button"
+                  class="chip-btn"
+                  :disabled="busy"
+                  @click="openRename"
+                >
+                  {{ t("roomPlaylists.rename") }}
+                </button>
+                <button
+                  type="button"
+                  class="chip-btn chip-danger"
+                  :disabled="busy"
+                  @click="editor = 'delete'"
+                >
+                  {{ t("roomPlaylists.delete") }}
+                </button>
+              </div>
+            </div>
+          </footer>
+        </template>
+        <p v-else class="empty-state">{{ t("roomPlaylists.empty") }}</p>
+      </div>
+    </div>
   </section>
 </template>
-
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -174,6 +518,7 @@ const exportFormat = ref<(typeof exportFormats)[number]>('txt')
 const editor = ref<'rename' | 'delete' | null>(null)
 const renameValue = ref('')
 const editingTrackId = ref<string | null>(null)
+const selectedTrackId = ref<string | null>(null)
 const trackNotes = ref('')
 const sortList = ref<HTMLElement | null>(null)
 const coverInput = ref<HTMLInputElement | null>(null)
@@ -201,6 +546,7 @@ function goBack() {
   viewMode.value = 'index'
   editor.value = null
   editingTrackId.value = null
+  selectedTrackId.value = null
   message.value = ''
 }
 
@@ -214,6 +560,7 @@ function switchScope(next: PlaylistScope['type']) {
 function select(playlistId: string) {
   store.value.selectedPlaylistId = playlistId
   viewMode.value = 'detail'
+  selectedTrackId.value = null
   void run(() => store.value.loadTracks(playlistId))
 }
 
@@ -355,31 +702,522 @@ function exportSelected() {
 }
 
 onMounted(() => { void run(() => roomPlaylists.loadPlaylists()) })
-</script>
-
-<style scoped>
-.action, .field {
-  min-height: 2rem;
-  border-radius: 0.25rem;
-  font-size: 0.75rem;
+function setSortList(element: Element | null) {
+  if (element instanceof HTMLElement) sortList.value = element
 }
-.action {
-  padding: 0.25rem 0.5rem;
+</script>
+<style scoped>
+.playlist-module {
+  --bg: #0b0b0b;
+  --surface: #111111;
+  --surface-2: #181818;
+  --surface-3: #222222;
+  --surface-4: #2c2c2c;
+  --border: #252525;
+  --border-str: #3a3a3a;
+  --text: #f0f0f0;
+  --text-sec: #888888;
+  --text-ter: #555555;
+  --accent: #71bd99;
+  --accent-h: #8dcbad;
+  --accent-dim: rgba(113, 189, 153, 0.14);
+  --accent-txt: #000000;
+  --danger: #e05252;
+  --danger-bg: rgba(224, 82, 82, 0.12);
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --playlist-accent: #71bd99;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+}
+.playlist-module button,
+.playlist-module input,
+.playlist-module select {
+  color: inherit;
+  font: inherit;
+}
+.playlist-module :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.message-line {
+  flex: none;
+  padding: 4px 10px;
+  color: var(--danger);
+  font-size: 12px;
+}
+.guest-state,
+.empty-state {
+  padding: 28px 12px;
+  color: var(--text-sec);
+  font-size: 13px;
+  text-align: center;
+}
+.guest-state {
+  margin: auto;
+}
+.d3-shell {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.d3-tab-bar {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  padding: 0 14px;
+  background: var(--surface-2);
+  flex-shrink: 0;
+  gap: 0;
+  overflow-x: auto;
+}
+.d3-tab {
+  padding: 11px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-sec);
+  border-bottom: 2px solid transparent;
+  transition: color 0.12s, border-color 0.12s;
+  min-height: 42px;
+  white-space: nowrap;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  cursor: pointer;
+}
+.d3-tab:hover {
+  color: var(--text);
+}
+.d3-tab.on {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.d3-tab-sep {
+  color: var(--text-ter);
+  font-size: 13px;
+  padding: 0 2px;
+}
+.d3-pane {
+  display: none;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.d3-pane.show {
+  display: flex;
+}
+.scope-toggle {
+  display: flex;
+  gap: 2px;
+}
+.scope-btn {
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  color: var(--text-sec) !important;
+  font-size: 12px !important;
+}
+.scope-btn:hover {
+  background: var(--surface-3);
+  color: var(--text) !important;
+}
+.scope-btn.on {
+  color: var(--accent) !important;
+  box-shadow: inset 0 -1.5px var(--accent);
+}
+.d3-tab.scope-btn {
+  min-height: 42px;
+  padding: 11px 14px;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  font-size: 13px !important;
+}
+.d3-tab.scope-btn.on {
+  box-shadow: none;
+  border-bottom-color: var(--accent);
+}
+.text-field {
+  width: 100%;
+  min-width: 0;
+  min-height: 28px;
+  padding: 5px 8px;
+  border: 1px solid var(--border-str) !important;
+  border-radius: 4px;
+  background: var(--surface) !important;
+  font-size: 12px !important;
+}
+.chip-btn {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: var(--surface-3) !important;
+  font-size: 12px !important;
   white-space: nowrap;
 }
-.action:hover:not(:disabled) { background: #222; }
-.action[aria-pressed='true'] { color: var(--playlist-accent); box-shadow: inset 0 -1px var(--playlist-accent); }
-.action:disabled, .field:disabled { opacity: 0.45; }
-.action:focus-visible, .field:focus-visible { outline: 1px solid var(--playlist-accent); outline-offset: 1px; }
-.primary-action { background: var(--playlist-accent); color: #000; font-weight: 600; }
-.primary-action:hover:not(:disabled) { background: #8dcbad; }
-.field { padding: 0.25rem 0.5rem; border: 1px solid #444; background: #111; }
-.icon-action { display: grid; flex-shrink: 0; place-items: center; padding: 0.25rem; min-width: 1.75rem; }
-.icon-action .material-symbols-outlined { font-size: 1.125rem; }
-.drag-handle { cursor: grab; touch-action: none; }
-.drag-handle:active { cursor: grabbing; }
-@media (hover: hover) {
-  .cover-action:not(:focus-visible) { opacity: 0; }
-  .group:hover .cover-action { opacity: 1; }
+.chip-btn:hover:not(:disabled) {
+  background: var(--surface-4) !important;
+}
+.chip-primary {
+  background: var(--accent) !important;
+  color: var(--accent-txt) !important;
+  font-weight: 600 !important;
+}
+.chip-primary:hover:not(:disabled) {
+  background: var(--accent-h) !important;
+}
+.chip-danger {
+  color: var(--danger) !important;
+}
+.chip-btn:disabled,
+.icon-btn:disabled {
+  opacity: 0.4;
+}
+.cover-sq {
+  display: grid;
+  flex: none;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--surface-3);
+  color: var(--text-ter);
+  object-fit: cover;
+}
+.cover-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.row-meta,
+.track-meta {
+  flex: 1;
+  min-width: 0;
+}
+.row-name,
+.track-name,
+.track-art {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sys-badge {
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.row-chevron {
+  color: var(--text-ter);
+}
+.icon-btn {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+}
+.icon-btn:hover:not(:disabled) {
+  background: var(--surface-3);
+}
+.drag-handle {
+  color: var(--text-ter) !important;
+  cursor: grab;
+  touch-action: none;
+}
+.accent-icon {
+  color: var(--accent) !important;
+}
+.note-line {
+  margin: 2px 0 0;
+  padding: 0 10px 6px 52px;
+  color: var(--text-sec);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.d3-index-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.d3-index-toolbar .text-field {
+  flex: 1;
+  min-width: 120px;
+}
+.d3-playlist-list {
+  overflow-y: auto;
+  flex: 1;
+}
+.d3-playlist-row-wrap {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+.d3-playlist-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: background 0.1s;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: none;
+  border: none;
+  color: inherit;
+}
+.d3-playlist-row:hover {
+  background: var(--surface-2);
+}
+.d3-playlist-row.selected {
+  background: var(--accent-dim);
+}
+.d3-playlist-cover {
+  width: 44px;
+  height: 44px;
+  border-radius: 6px;
+}
+.d3-playlist-row .row-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+.d3-playlist-row .row-sub {
+  font-size: 12px;
+  color: var(--text-sec);
+}
+.d3-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.cover-wrap {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--surface-3);
+  display: grid;
+  place-items: center;
+}
+.cover-wrap .cover-cam-btn {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.65);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.cover-wrap:hover .cover-cam-btn {
+  opacity: 1;
+}
+.hd-body {
+  flex: 1;
+  min-width: 0;
+}
+.hd-name {
+  font-size: 16px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hd-sub {
+  font-size: 12px;
+  color: var(--text-sec);
+  margin-top: 2px;
+}
+.hd-desc {
+  font-size: 12px;
+  color: var(--text-sec);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 2px;
+}
+.play-all {
+  flex: none;
+}
+.d3-import-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--surface-2);
+}
+.d3-import-bar select {
+  width: 110px;
+}
+.d3-import-bar .import-id {
+  flex: 1;
+  min-width: 80px;
+}
+.d3-track-list {
+  overflow-y: auto;
+  flex: 1;
+  position: relative;
+}
+.track-entry {
+  border-bottom: 1px solid var(--border);
+}
+.d3-track-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 16px 9px 10px;
+  transition: background 0.1s;
+  cursor: pointer;
+}
+.d3-track-row.selected {
+  background: var(--accent-dim);
+}
+.d3-track-num {
+  width: 20px;
+  text-align: right;
+  font-size: 12px;
+  color: var(--text-ter);
+  flex-shrink: 0;
+}
+.d3-track-cover {
+  width: 38px;
+  height: 38px;
+  border-radius: 4px;
+}
+.d3-track-row .track-name {
+  font-size: 13px;
+  font-weight: 500;
+}
+.d3-track-row .track-art {
+  font-size: 12px;
+  color: var(--text-sec);
+}
+.d3-track-row .track-note-line {
+  font-size: 11px;
+  color: var(--text-sec);
+  margin-top: 2px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.d3-action-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  background: var(--surface-3);
+  border-radius: 4px;
+  padding: 2px;
+  border: 1px solid var(--border-str);
+}
+.d3-action-bar .icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 3px;
+}
+.d3-track-row:not(.selected) .d3-action-bar {
+  opacity: 0;
+  pointer-events: none;
+}
+.d3-track-row.selected .d3-action-bar {
+  opacity: 1;
+}
+.d3-note-row {
+  display: none;
+  padding: 0 16px 8px 48px;
+}
+.d3-note-row.show {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.d3-note-row .text-field {
+  flex: 1;
+}
+.d3-footer {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.footer-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.footer-left {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-right: auto;
+}
+.footer-right {
+  display: flex;
+  gap: 4px;
+}
+.footer-edit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.footer-edit .rename-field {
+  flex: 1;
+  min-width: 120px;
+}
+.d3-delete-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.d3-delete-confirm span {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-sec);
+  min-width: 120px;
+}
+.rename-field {
+  flex: 1;
+}
+.export-format {
+  width: 72px;
 }
 </style>
