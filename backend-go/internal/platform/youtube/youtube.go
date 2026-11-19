@@ -180,5 +180,5 @@ func (*Service) Lyric(context.Context, string) (platform.Lyric, error) { return 
 func (s *Service) StreamURL(ctx context.Context, id string) (string, error) {
 	return media.ResolveYTDLP(ctx, s.ytdlpPath, id)
 }
-func (*Service) StreamCacheable() bool { return false }
+func (*Service) StreamCacheable() bool                            { return false }
 func (*Service) CoverURL(context.Context, string) (string, error) { return "", nil }
