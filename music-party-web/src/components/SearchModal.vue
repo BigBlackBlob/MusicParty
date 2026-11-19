@@ -307,12 +307,14 @@ const displayItems = computed(() => {
 });
 const emptyTitle = computed(() => {
   if (resultMode.value === PLAYLIST_SEARCH_TYPE) return (hasSearched.value ? t('search.noPlaylist') : t('search.importPlaylist'));
+  if (resultMode.value !== ALBUM_SEARCH_TYPE && platform.value === 'soundcloud' && !hasSearched.value) return t('search.soundcloudTitle');
   return resultMode.value === ALBUM_SEARCH_TYPE
     ? (hasSearched.value ? t('search.noAlbums') : t('search.searchAlbums'))
     : (hasSearched.value ? t('search.noResults') : t('search.searchSongs'));
 });
 const emptyMessage = computed(() => {
   if (resultMode.value === PLAYLIST_SEARCH_TYPE) return (hasSearched.value ? t('search.tryDifferent') : t('search.playlistHint'));
+  if (resultMode.value !== ALBUM_SEARCH_TYPE && platform.value === 'soundcloud' && !hasSearched.value) return t('search.soundcloudHint');
   return resultMode.value === ALBUM_SEARCH_TYPE
     ? (hasSearched.value ? t('search.tryDifferent') : t('search.albumHint'))
     : (hasSearched.value ? t('search.noResultsDesc') : t('search.startHint'));
@@ -320,6 +322,7 @@ const emptyMessage = computed(() => {
 
 const searchPlaceholder = computed(() => {
   if (searchType.value === PLAYLIST_SEARCH_TYPE) return t('search.playlistPlaceholder');
+  if (platform.value === 'soundcloud') return t('search.soundcloudPlaceholder');
   return t('search.placeholder');
 });
 

@@ -386,7 +386,10 @@ export default {
     prevPage: '上一页',
     nextPage: '下一页',
     playlistFailed: '歌单解析失败',
-    refreshSources: '刷新音乐源'
+    refreshSources: '刷新音乐源',
+    soundcloudTitle: '仅支持链接查询',
+    soundcloudHint: 'SoundCloud 不支持关键词搜索，请粘贴曲目链接，例如 https://soundcloud.com/artist/track',
+    soundcloudPlaceholder: '粘贴 SoundCloud 曲目链接...',
   },
   playlist: {
     fetchPlaylistsFailed: '获取歌单失败',

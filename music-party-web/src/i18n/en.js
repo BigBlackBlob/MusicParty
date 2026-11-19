@@ -387,7 +387,10 @@ export default {
     prevPage: 'Prev',
     nextPage: 'Next',
     playlistFailed: 'Failed to parse playlist',
-    refreshSources: 'Refresh music sources'
+    refreshSources: 'Refresh music sources',
+    soundcloudTitle: 'URL Lookup Only',
+    soundcloudHint: 'SoundCloud search is unavailable. Paste a track URL to add it — e.g. https://soundcloud.com/artist/track',
+    soundcloudPlaceholder: 'Paste a SoundCloud track URL...',
   },
   playlist: {
     fetchPlaylistsFailed: 'Fetch playlists failed',
