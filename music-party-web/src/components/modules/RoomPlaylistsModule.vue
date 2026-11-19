@@ -702,7 +702,7 @@ function exportSelected() {
 }
 
 onMounted(() => { void run(() => roomPlaylists.loadPlaylists()) })
-function setSortList(element: Element | null) {
+function setSortList(element: Element | Record<string, unknown> | null) {
   if (element instanceof HTMLElement) sortList.value = element
 }
 </script>
