@@ -99,6 +99,10 @@ func (s *Service) Search(ctx context.Context, keyword string, offset, limit int)
 	if err := s.decode(response, &tracks); err != nil {
 		return nil, err
 	}
+	return s.cacheTracks(tracks), nil
+}
+
+func (s *Service) cacheTracks(tracks []platform.Music) []platform.Music {
 	s.cacheMu.Lock()
 	defer s.cacheMu.Unlock()
 	results := tracks[:0]
@@ -116,7 +120,7 @@ func (s *Service) Search(ctx context.Context, keyword string, offset, limit int)
 		}
 		s.trackCache[track.ID] = track
 	}
-	return results, nil
+	return results
 }
 
 func (s *Service) cachedTrack(id string) (platform.Music, bool) {
@@ -190,12 +194,61 @@ func (s *Service) CoverURL(_ context.Context, id string) (string, error) {
 	return track.CoverURL, nil
 }
 
-func (*Service) UserPlaylists(context.Context, string) ([]platform.Playlist, error) {
-	return []platform.Playlist{}, nil
+func (s *Service) UserPlaylists(ctx context.Context, uid string) ([]platform.Playlist, error) {
+	if strings.TrimSpace(uid) == "" {
+		return nil, &platform.InputError{Message: "QQ Music user ID is required"}
+	}
+	response, err := s.request(ctx, "/playlists", url.Values{"uid": {uid}})
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, &platform.UpstreamError{Status: response.StatusCode}
+	}
+	var values []struct {
+		ID         string `json:"id"`
+		Name       string `json:"name"`
+		CoverURL   string `json:"coverUrl"`
+		TrackCount int    `json:"trackCount"`
+	}
+	if err := s.decode(response, &values); err != nil {
+		return nil, err
+	}
+	playlists := make([]platform.Playlist, 0, len(values))
+	for _, value := range values {
+		playlists = append(playlists, platform.Playlist{ID: value.ID, Name: value.Name, CoverImgURL: value.CoverURL, TrackCount: value.TrackCount, Platform: s.Name()})
+	}
+	return playlists, nil
 }
-func (*Service) PlaylistSongs(context.Context, string, int, int) ([]platform.Music, error) {
-	return []platform.Music{}, nil
+
+func (s *Service) PlaylistSongs(ctx context.Context, id string, offset, limit int) ([]platform.Music, error) {
+	if strings.TrimSpace(id) == "" {
+		return nil, &platform.InputError{Message: "QQ Music playlist ID is required"}
+	}
+	if err := platform.ValidatePage(offset, limit, platform.MaxPlaylistLimit); err != nil {
+		return nil, err
+	}
+	response, err := s.request(ctx, "/playlist/tracks", url.Values{
+		"id": {id}, "offset": {strconv.Itoa(offset)}, "limit": {strconv.Itoa(limit)},
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, &platform.UpstreamError{Status: response.StatusCode}
+	}
+	tracks := []platform.Music{}
+	if err := s.decode(response, &tracks); err != nil {
+		return nil, err
+	}
+	if len(tracks) > limit {
+		return nil, errors.New("qq: sidecar returned more tracks than requested")
+	}
+	return s.cacheTracks(tracks), nil
 }
+
 func (*Service) SearchAlbums(context.Context, string, int, int) (platform.AlbumSearchResult, error) {
 	return platform.AlbumSearchResult{Items: []platform.Album{}}, nil
 }

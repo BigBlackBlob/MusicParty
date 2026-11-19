@@ -516,6 +516,13 @@ func (api *PlaylistAPI) roomExport(w http.ResponseWriter, r *http.Request) error
 	return exportTracks(w, r, values, err)
 }
 func (api *PlaylistAPI) remoteSongs(r *http.Request, name, id string) ([]platform.Music, error) {
+	if name != "netease" && name != "qq" {
+		return nil, badRequest("Playlist import supports Netease and QQ Music")
+	}
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, badRequest("Playlist ID is required")
+	}
 	if !api.platforms.PlatformAllowed(r.Context(), name, sessionToken(r)) {
 		return nil, &APIError{Status: http.StatusForbidden, Message: "Forbidden"}
 	}

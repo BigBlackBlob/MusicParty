@@ -87,3 +87,30 @@ func TestSearchMapsAndCachesSidecarTracks(t *testing.T) {
 	require.Equal(t, platform.PlayableMusic{Music: want, URL: "/api/qq/stream/songMid"}, playable)
 	require.False(t, service.StreamCacheable())
 }
+
+func TestPlaylistSidecarMapping(t *testing.T) {
+	sidecar := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-QQ-Cookie") != "session=fixture" {
+			http.Error(w, "missing server credential", http.StatusUnauthorized)
+			return
+		}
+		query := r.URL.Query()
+		switch {
+		case r.URL.Path == "/playlists" && query.Get("uid") == "12345":
+			fmt.Fprint(w, `[{"id":"54321","name":"Mix","coverUrl":"https://cover.example/mix.jpg","trackCount":12}]`)
+		case r.URL.Path == "/playlist/tracks" && query.Get("id") == "54321" && query.Get("offset") == "2" && query.Get("limit") == "500":
+			fmt.Fprint(w, `[{"id":"songMid","name":"Track","artists":["Singer"],"duration":123000,"coverUrl":"https://cover.example/song.jpg"}]`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer sidecar.Close()
+	service := New(platform.NewClient(time.Second), true, sidecar.URL)
+	service.UpdateCredential("session=fixture")
+	lists, err := service.UserPlaylists(t.Context(), "12345")
+	require.NoError(t, err)
+	require.Equal(t, []platform.Playlist{{ID: "54321", Name: "Mix", CoverImgURL: "https://cover.example/mix.jpg", TrackCount: 12, Platform: "qq"}}, lists)
+	tracks, err := service.PlaylistSongs(t.Context(), "54321", 2, 500)
+	require.NoError(t, err)
+	require.Equal(t, []platform.Music{{ID: "songMid", Name: "Track", Artists: []string{"Singer"}, Duration: 123000, CoverURL: "https://cover.example/song.jpg", Platform: "qq"}}, tracks)
+}

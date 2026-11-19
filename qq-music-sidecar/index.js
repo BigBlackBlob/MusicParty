@@ -1,8 +1,10 @@
 import { createServer } from 'node:http';
-import { getPlayUrl, search } from '@sansenjian/qq-music-api/sdk';
-
-// The SDK's debug logs can include the cookie and its derived authentication token.
+// The SDK logs request objects on some failures. They may contain the cookie.
 process.env.DEBUG = '';
+console.log = () => {};
+console.error = () => {};
+const { getPlayUrl, search } = await import('@sansenjian/qq-music-api/sdk');
+const { getUserPlaylists, songListDetail } = await import('@sansenjian/qq-music-api/services');
 
 const pageSize = 50;
 const port = Number(process.env.QQ_SIDECAR_PORT || '3100');
@@ -52,6 +54,68 @@ async function searchTracks(response, params) {
   return json(response, 200, tracks);
 }
 
+async function userPlaylists(request, response, params) {
+  const uid = params.get('uid');
+  if (!uid || !/^\d{1,20}$/.test(uid)) {
+    return json(response, 400, { error: 'invalid_user_id' });
+  }
+  const result = await getUserPlaylists({ uin: uid, cookie: request.headers['x-qq-cookie'] });
+  const payload = result.body?.response;
+  if (result.status !== 200 || payload?.code !== 0 || !Array.isArray(payload.data?.playlists)) {
+    throw new Error('QQ Music user playlists failed');
+  }
+  const playlists = payload.data.playlists.flatMap(playlist => {
+    const id = String(playlist.dissid ?? playlist.tid ?? playlist.disstid ?? playlist.id ?? '');
+    if (!/^\d{1,20}$/.test(id) || id === '0') return [];
+    return [{
+      id,
+      name: playlist.title ?? playlist.dissname ?? playlist.name ?? '',
+      coverUrl: secureCover(playlist.picurl ?? playlist.disscover ?? playlist.coverUrl),
+      trackCount: Number(playlist.song_cnt ?? playlist.songnum ?? playlist.trackCount) || 0,
+    }];
+  });
+  return json(response, 200, playlists);
+}
+
+function secureCover(url) {
+  return typeof url === 'string' && /^https?:\/\//i.test(url) ? url.replace(/^http:/i, 'https:') : '';
+}
+
+async function playlistTracks(request, response, params) {
+  const id = params.get('id');
+  const offset = Number(params.get('offset') ?? '0');
+  const limit = Number(params.get('limit') ?? '100');
+  if (!id || !/^\d{1,20}$/.test(id) || !Number.isSafeInteger(offset) || offset < 0 ||
+      !Number.isSafeInteger(limit) || limit < 1 || limit > 500) {
+    return json(response, 400, { error: 'invalid_playlist_parameters' });
+  }
+  const cookie = request.headers['x-qq-cookie'];
+  const result = await songListDetail({
+    params: { disstid: id },
+    option: cookie ? { headers: { Cookie: cookie } } : {},
+  });
+  const payload = result.body?.response;
+  const songs = payload?.cdlist?.[0]?.songlist;
+  if (result.status !== 200 || payload?.code !== 0 || !Array.isArray(songs)) {
+    throw new Error('QQ Music playlist tracks failed');
+  }
+  // The SDK detail call returns the full song list. Apply the requested window here.
+  const tracks = songs.slice(offset, offset + limit).flatMap(song => {
+    const mid = song?.mid ?? song?.songmid;
+    const name = song?.name ?? song?.songname ?? song?.title;
+    if (!mid || !name) return [];
+    const album = song.album?.mid ?? song.albummid;
+    return [{
+      id: mid,
+      name,
+      artists: Array.isArray(song.singer) ? song.singer.map(singer => singer.name).filter(Boolean) : [],
+      duration: (Number(song.interval) || 0) * 1000,
+      coverUrl: album ? `https://y.gtimg.cn/music/photo_new/T002R300x300M000${encodeURIComponent(album)}.jpg` : '',
+    }];
+  });
+  return json(response, 200, tracks);
+}
+
 async function resolveTrack(request, response, params) {
   const id = params.get('id');
   if (!id || !/^[a-z0-9]+$/i.test(id)) {
@@ -84,6 +148,8 @@ createServer(async (request, response) => {
       switch (pathname) {
         case '/health': return json(response, 200, { ok: true });
         case '/search': return await searchTracks(response, searchParams);
+        case '/playlists': return await userPlaylists(request, response, searchParams);
+        case '/playlist/tracks': return await playlistTracks(request, response, searchParams);
         case '/resolve': return await resolveTrack(request, response, searchParams);
       }
     }
