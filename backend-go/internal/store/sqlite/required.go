@@ -36,7 +36,7 @@ func RequiredSchema() (SchemaSnapshot, error) {
 
 // EnsureCompatibleSchema initializes only a truly empty database when allowed,
 // then verifies the semantic schema required by every typed repository. It
-// never migrates or rewrites a non-empty database.
+// applies additive application migrations after verifying the frozen baseline.
 func EnsureCompatibleSchema(ctx context.Context, store *Store, initializeEmpty bool) error {
 	var tableCount int
 	if err := store.reader.QueryRowContext(ctx, `select count(*) from sqlite_master where type = 'table' and name not like 'sqlite_%'`).Scan(&tableCount); err != nil {
@@ -69,6 +69,9 @@ func EnsureCompatibleSchema(ctx context.Context, store *Store, initializeEmpty b
 	}
 	if len(differences) > 0 {
 		return &SchemaCompatibilityError{Differences: differences}
+	}
+	if err := migratePlaylistMetadata(ctx, store); err != nil {
+		return fmt.Errorf("migrate playlist metadata: %w", err)
 	}
 	return nil
 }
