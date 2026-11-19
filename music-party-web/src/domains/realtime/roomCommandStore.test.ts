@@ -15,18 +15,20 @@ vi.mock('../../transport/realtimeClient', () => ({
   realtimeClient: { connected: true, generation: 1, send: vi.fn(() => true), sendEnvelope: vi.fn(() => true) },
 }))
 vi.mock('../../api/personalPlaylists', () => ({
-  personalPlaylistsApi: { likeSong: vi.fn(), unlikeSong: vi.fn() },
+  personalPlaylistsApi: { likedSongs: vi.fn(), likeSong: vi.fn(), unlikeSong: vi.fn() },
 }))
 
 const music: Music = { id: 'track', name: 'Track', artists: [], duration: 1000, platform: 'local', coverUrl: '' }
 
 describe('liked song control confirmation', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     vi.useFakeTimers()
     realtimeClient.generation = 1
     useUserStore().initUser('member', 'Member', false)
+    vi.mocked(personalPlaylistsApi.likedSongs).mockResolvedValue([])
+    await useLikedSongsStore().syncFromServer('member', false)
     useRealtimeConnectionStore().connected = true
     useRealtimeConnectionStore().state = 'connected'
     useRoomStateSynchronizer().syncState({
@@ -55,7 +57,8 @@ describe('liked song control confirmation', () => {
   })
 
   it('does not infer room likes from the personal liked songs cache', async () => {
-    useLikedSongsStore().add(music)
+    vi.mocked(personalPlaylistsApi.likedSongs).mockResolvedValueOnce([{ id: 'track', playlistId: 'likes', music, createdAt: 1, sortOrder: 0 }])
+    await useLikedSongsStore().syncFromServer('member', false)
     await useRoomCommandStore().toggleLike(music)
     expect(vi.mocked(realtimeClient.sendEnvelope).mock.lastCall?.[0]?.type).toBe('control.like')
   })
@@ -85,7 +88,7 @@ describe('liked song control confirmation', () => {
 
     commands.settleLike({ outcome: 'rejected', mutationId: envelope.payload.mutationId, code: 'FORBIDDEN' })
 
-    expect(liked.includes(music)).toBe(false)
+    expect(liked.isLiked(music)).toBe(false)
     expect(personalPlaylistsApi.likeSong).not.toHaveBeenCalled()
     expect(personalPlaylistsApi.unlikeSong).not.toHaveBeenCalled()
   })
@@ -150,7 +153,7 @@ describe('liked song control confirmation', () => {
     const liked = useLikedSongsStore()
     const sync = useRoomStateSynchronizer()
     await commands.toggleLike(music)
-    expect(liked.includes(music)).toBe(true)
+    expect(liked.isLiked(music)).toBe(true)
 
     sync.syncState({
       idempotencyScopeId: 'replacement-scope', queueEpoch: 'replacement-generation',
@@ -159,10 +162,10 @@ describe('liked song control confirmation', () => {
       isShuffleLocked: false, isLoading: false, historyCursor: 0,
     })
 
-    expect(liked.includes(music)).toBe(false)
+    expect(liked.isLiked(music)).toBe(false)
     expect(useRoomCommandBus().hasPendingMutations).toBe(false)
     await expect(commands.toggleLike(music)).resolves.toBeUndefined()
-    expect(liked.includes(music)).toBe(false)
+    expect(liked.isLiked(music)).toBe(false)
     expect(realtimeClient.sendEnvelope).toHaveBeenCalledOnce()
   })
 
@@ -170,11 +173,11 @@ describe('liked song control confirmation', () => {
     const commands = useRoomCommandStore()
     const liked = useLikedSongsStore()
     await commands.toggleLike(music)
-    expect(liked.includes(music)).toBe(true)
+    expect(liked.isLiked(music)).toBe(true)
 
     commands.reset()
 
-    expect(liked.includes(music)).toBe(false)
+    expect(liked.isLiked(music)).toBe(false)
     expect(useRoomCommandBus().hasPendingMutations).toBe(false)
   })
 

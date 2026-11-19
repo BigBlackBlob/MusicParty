@@ -35,7 +35,7 @@ export const personalPlaylistsApi = {
   likedSongs: () => client.get<LikedSongTrack[]>(likedBase),
   likeSong: (music: Music) => {
     const { id: musicId, name, artists, duration, platform, coverUrl } = music
-    return client.put<Music, Music>(`${likedBase}/${id(platform)}/${id(musicId)}`, {
+    return client.put<PlaylistMutationResult, Music>(`${likedBase}/${id(platform)}/${id(musicId)}`, {
       id: musicId,
       name,
       artists,

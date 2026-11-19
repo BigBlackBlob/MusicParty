@@ -113,8 +113,10 @@ func (api *PlaylistAPI) userList(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return unauthorized(w)
 	}
-	if _, err := api.liked(w, r, session); err != nil {
-		return err
+	if !session.Guest {
+		if _, err := api.liked(w, r, session); err != nil {
+			return err
+		}
 	}
 	values, err := api.users.ListPlaylists(r.Context(), session.PublicID)
 	if err != nil {
@@ -122,11 +124,28 @@ func (api *PlaylistAPI) userList(w http.ResponseWriter, r *http.Request) error {
 	}
 	out := make([]playlistView, 0, len(values))
 	for _, v := range values {
+		if session.Guest && v.SystemKey != nil && *v.SystemKey == realtime.LikedSongsSystemKey {
+			continue
+		}
 		out = append(out, userPlaylist(v))
 	}
 	writeJSON(w, out)
 	return nil
 }
+func (api *PlaylistAPI) requireWritableUserPlaylist(r *http.Request, owner string) error {
+	playlist, err := api.users.FindPlaylist(r.Context(), owner, chi.URLParam(r, "playlistId"))
+	if errors.Is(err, sql.ErrNoRows) {
+		return &APIError{Status: http.StatusNotFound, Message: "Playlist not found"}
+	}
+	if err != nil {
+		return err
+	}
+	if playlist.SystemKey != nil {
+		return &APIError{Status: http.StatusForbidden, Message: "Playlist is read-only"}
+	}
+	return nil
+}
+
 func (api *PlaylistAPI) userCreate(w http.ResponseWriter, r *http.Request) error {
 	session, err := api.user(r)
 	if err != nil {
@@ -148,6 +167,9 @@ func (api *PlaylistAPI) userRename(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return unauthorized(w)
 	}
+	if err := api.requireWritableUserPlaylist(r, session.PublicID); err != nil {
+		return err
+	}
 	name, err := requestName(r)
 	if err != nil {
 		return err
@@ -168,6 +190,9 @@ func (api *PlaylistAPI) userDelete(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return unauthorized(w)
 	}
+	if err := api.requireWritableUserPlaylist(r, session.PublicID); err != nil {
+		return err
+	}
 	changed, err := api.users.DeletePlaylist(r.Context(), session.PublicID, chi.URLParam(r, "playlistId"))
 	return noContentOrNotFound(w, changed, err)
 }
@@ -184,6 +209,9 @@ func (api *PlaylistAPI) userAddBatch(w http.ResponseWriter, r *http.Request) err
 	session, err := api.user(r)
 	if err != nil {
 		return unauthorized(w)
+	}
+	if err := api.requireWritableUserPlaylist(r, session.PublicID); err != nil {
+		return err
 	}
 	var request struct {
 		Musics []storesqlite.Music `json:"musics"`
@@ -217,6 +245,9 @@ func (api *PlaylistAPI) userReorder(w http.ResponseWriter, r *http.Request) erro
 	session, err := api.user(r)
 	if err != nil {
 		return unauthorized(w)
+	}
+	if err := api.requireWritableUserPlaylist(r, session.PublicID); err != nil {
+		return err
 	}
 	ids, err := requestTrackIDs(r)
 	if err != nil {
@@ -255,6 +286,9 @@ func (api *PlaylistAPI) userImportNetease(w http.ResponseWriter, r *http.Request
 	return api.importUser(w, r, session.PublicID, "netease", request.PlaylistID)
 }
 func (api *PlaylistAPI) importUser(w http.ResponseWriter, r *http.Request, owner, platformName, remoteID string) error {
+	if err := api.requireWritableUserPlaylist(r, owner); err != nil {
+		return err
+	}
 	songs, err := api.remoteSongs(r, platformName, remoteID)
 	if err != nil {
 		return err
@@ -297,6 +331,9 @@ func (api *PlaylistAPI) likedSongs(w http.ResponseWriter, r *http.Request) error
 	if err != nil {
 		return unauthorized(w)
 	}
+	if session.Guest {
+		return forbidden(w)
+	}
 	playlist, err := api.liked(w, r, session)
 	if err != nil {
 		return err
@@ -308,6 +345,9 @@ func (api *PlaylistAPI) likeSong(w http.ResponseWriter, r *http.Request) error {
 	session, err := api.user(r)
 	if err != nil {
 		return unauthorized(w)
+	}
+	if session.Guest {
+		return forbidden(w)
 	}
 	var music storesqlite.Music
 	if err := decodeJSONBody(r, &music); err != nil {
@@ -343,6 +383,9 @@ func (api *PlaylistAPI) unlikeSong(w http.ResponseWriter, r *http.Request) error
 	session, err := api.user(r)
 	if err != nil {
 		return unauthorized(w)
+	}
+	if session.Guest {
+		return forbidden(w)
 	}
 	playlist, err := api.liked(w, r, session)
 	if err != nil {

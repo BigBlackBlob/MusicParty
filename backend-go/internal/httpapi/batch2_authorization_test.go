@@ -27,12 +27,13 @@ import (
 type restrictedFixture struct {
 	fixturePlatform
 	calls atomic.Int32
+	name  string
 }
 
-func (*restrictedFixture) Name() string { return "navidrome" }
+func (f *restrictedFixture) Name() string { return defaultValue(f.name, "navidrome") }
 func (f *restrictedFixture) PlaylistSongs(context.Context, string, int, int) ([]platform.Music, error) {
 	f.calls.Add(1)
-	return []platform.Music{{ID: "song", Name: "Song", Platform: "navidrome", Artists: []string{"Artist"}}}, nil
+	return []platform.Music{{ID: "song", Name: "Song", Platform: f.Name(), Artists: []string{"Artist"}}}, nil
 }
 func (f *restrictedFixture) AlbumSongs(ctx context.Context, id string) ([]platform.Music, error) {
 	return f.PlaylistSongs(ctx, id, 0, 1)
@@ -108,7 +109,7 @@ func TestPlaylistImportsUsePlatformAuthorization(t *testing.T) {
 	insertStage5User(t, store, "member-token", "member", "MEMBER")
 	insertStage5Room(t, store, "room", "PUBLIC", 0)
 	cfg := testConfig(t)
-	service := &restrictedFixture{}
+	service := &restrictedFixture{name: "qq"}
 	platforms := NewPlatformAPI(cfg, service)
 	api := NewPlaylistAPI(cfg, store, accounts, roomdomain.New(store, accounts), platforms)
 	userPlaylist, err := api.users.CreatePlaylist(context.Background(), "member", "Personal")
@@ -117,13 +118,13 @@ func TestPlaylistImportsUsePlatformAuthorization(t *testing.T) {
 	require.NoError(t, err)
 	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), api)
 	for _, path := range []string{"/api/me/playlists/" + userPlaylist.ID + "/import", "/api/rooms/room/playlists/" + roomPlaylist.ID + "/import"} {
-		platforms.SetAccess("navidrome", PlatformAccess(accounts, "nobody"))
+		platforms.SetAccess("qq", PlatformAccess(accounts, "nobody"))
 		before := service.calls.Load()
-		denied := batch2Request(handler, http.MethodPost, path, `{"platform":"navidrome","playlistId":"remote"}`, "member-token", "")
+		denied := batch2Request(handler, http.MethodPost, path, `{"platform":"qq","playlistId":"remote"}`, "member-token", "")
 		require.Equal(t, http.StatusForbidden, denied.Code, denied.Body.String())
 		require.Equal(t, before, service.calls.Load(), "denied import must not call provider")
-		platforms.SetAccess("navidrome", PlatformAccess(accounts, "member"))
-		allowed := batch2Request(handler, http.MethodPost, path, `{"platform":"navidrome","playlistId":"remote"}`, "member-token", "")
+		platforms.SetAccess("qq", PlatformAccess(accounts, "member"))
+		allowed := batch2Request(handler, http.MethodPost, path, `{"platform":"qq","playlistId":"remote"}`, "member-token", "")
 		require.Equal(t, http.StatusOK, allowed.Code, allowed.Body.String())
 		require.Equal(t, before+1, service.calls.Load())
 	}

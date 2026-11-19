@@ -34,7 +34,8 @@
         >
           {{ t('nav.queue').toUpperCase() }}
         </button>
-        <button 
+        <button
+          v-if="!user.isGuest" 
           @click="activeView = 'liked'"
           class="mobile-segment__option font-section-label text-section-label transition-all"
           :class="{ 'mobile-segment__option--active': activeView === 'liked' }"
@@ -140,7 +141,7 @@
               <p class="font-caption text-caption text-text-secondary truncate">{{ formatArtists(song.artists) }}</p>
             </div>
             <button 
-              @click="liked.removeAndSync(song.key, user.isGuest)"
+              @click="liked.removeAndSync(song.key)"
               class="w-[44px] h-[44px] flex items-center justify-center rounded-full hover:bg-surface-raised transition-colors text-text-secondary hover:text-error opacity-0 group-hover:opacity-100"
             >
               <span class="material-symbols-outlined text-[20px]">delete</span>
@@ -204,6 +205,7 @@ const liked = useLikedSongsStore();
 const user = useUserStore();
 const roomStore = useRoomStore();
 const activeView = ref('queue');
+watch(() => user.isGuest, guest => { if (guest) activeView.value = 'queue'; });
 const queue = computed(() => player.queue);
 const pendingDelete = ref(false);
 const longPressTimer = ref(null);

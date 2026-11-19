@@ -1,56 +1,58 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useLikedSongsStore } from './likedSongs'
-import { personalPlaylistsApi } from '../../api/personalPlaylists'
+import { personalPlaylistsApi, type LikedSongTrack } from '../../api/personalPlaylists'
 
 vi.mock('../../api/personalPlaylists', () => ({
-  personalPlaylistsApi: {
-    likedSongs: vi.fn(),
-    likeSong: vi.fn(),
-    unlikeSong: vi.fn()
-  }
+  personalPlaylistsApi: { likedSongs: vi.fn(), likeSong: vi.fn(), unlikeSong: vi.fn() },
 }))
 
 const song = (id: string) => ({ id, platform: 'netease', name: id, artists: [] })
+const track = (id: string): LikedSongTrack => ({ id, playlistId: 'likes', music: song(id), createdAt: 1, sortOrder: 0 })
 
-describe('liked songs account isolation', () => {
+describe('server-authoritative liked songs', () => {
   beforeEach(() => {
     localStorage.clear()
     setActivePinia(createPinia())
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     vi.mocked(personalPlaylistsApi.likedSongs).mockResolvedValue([])
   })
 
-  it('does not carry cached songs or upload them across accounts', async () => {
+  it('loads from the server and deletes legacy caches without uploading them', async () => {
+    localStorage.setItem('mp_liked_songs:member', JSON.stringify([song('cached')]))
+    vi.mocked(personalPlaylistsApi.likedSongs).mockResolvedValue([track('server')])
     const store = useLikedSongsStore()
-    store.add(song('from-a'))
-    expect(localStorage.getItem('mp_liked_songs')).toBeNull()
+    await store.syncFromServer('member', false)
+    expect(store.likedSongs.map(item => item.id)).toEqual(['server'])
+    expect(localStorage.getItem('mp_liked_songs:member')).toBeNull()
+    expect(personalPlaylistsApi.likeSong).not.toHaveBeenCalled()
+  })
 
-    await store.syncFromServer('account-b', false)
-
+  it('ignores a previous account response after switching to a guest', async () => {
+    let finish!: (tracks: LikedSongTrack[]) => void
+    vi.mocked(personalPlaylistsApi.likedSongs).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const store = useLikedSongsStore()
+    const request = store.syncFromServer('member', false)
+    await store.syncFromServer('guest', true)
+    finish([track('member-only')])
+    await request
+    await store.toggle(song('guest-only'))
     expect(store.likedSongs).toEqual([])
+    expect(personalPlaylistsApi.likedSongs).toHaveBeenCalledOnce()
     expect(personalPlaylistsApi.likeSong).not.toHaveBeenCalled()
-    expect(localStorage.getItem('mp_liked_songs:account-b')).toBe('[]')
   })
 
-  it('restores the correct account cache after switching', async () => {
+  it('rolls back the failed song without discarding another optimistic write', async () => {
     const store = useLikedSongsStore()
-    await store.syncFromServer('account-a', true)
-    store.add(song('a'))
-    await store.syncFromServer('account-b', true)
-    store.add(song('b'))
-    await store.syncFromServer('account-a', true)
-
-    expect(store.likedSongs.map(item => item.id)).toEqual(['a'])
-  })
-
-  it('supports local playback previews without writing the personal playlist API', () => {
-    const store = useLikedSongsStore()
-    expect(store.toggleLocal(song('current-track'))).toBe('liked')
-    expect(store.includes(song('current-track'))).toBe(true)
-    expect(store.toggleLocal(song('current-track'))).toBe('unliked')
-    expect(store.includes(song('current-track'))).toBe(false)
-    expect(personalPlaylistsApi.likeSong).not.toHaveBeenCalled()
-    expect(personalPlaylistsApi.unlikeSong).not.toHaveBeenCalled()
+    await store.syncFromServer('member', false)
+    let rejectFirst!: (error: Error) => void
+    vi.mocked(personalPlaylistsApi.likeSong).mockImplementationOnce(() => new Promise((_, reject) => { rejectFirst = reject }))
+    vi.mocked(personalPlaylistsApi.likedSongs).mockResolvedValue([track('saved')])
+    const failed = store.toggle(song('failed'))
+    expect(store.isLiked(song('failed'))).toBe(true)
+    await store.toggle(song('saved'))
+    rejectFirst(new Error('offline'))
+    await expect(failed).rejects.toThrow('offline')
+    expect(store.likedSongs.map(item => item.id)).toEqual(['saved'])
   })
 })

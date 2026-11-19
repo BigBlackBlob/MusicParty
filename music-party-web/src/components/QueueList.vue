@@ -13,6 +13,7 @@
           <span v-if="activeView === 'queue'" class="absolute inset-x-2 bottom-0 h-[2px] bg-[var(--accent)]"></span>
         </button>
         <button
+          v-if="!user.isGuest"
           class="queue-tab relative flex shrink-0 items-center gap-1.5 whitespace-nowrap px-2 text-xs font-semibold transition-colors"
           :class="activeView === 'liked' ? 'text-text-primary' : 'text-text-tertiary hover:text-text-secondary'"
           @click="activeView = 'liked'"
@@ -163,6 +164,7 @@ const openSearch = inject('openSearch', null);
 const { t } = useI18n();
 const queue = computed(() => runtime.queue);
 const activeView = ref('queue');
+watch(() => user.isGuest, guest => { if (guest) activeView.value = 'queue'; });
 const queueListRef = ref(null);
 const queueScrollerRef = ref(null);
 let sortableInstance = null;
@@ -274,7 +276,7 @@ const exportLikedSongs = () => {
   URL.revokeObjectURL(url);
 };
 
-const removeLikedSong = (key) => liked.removeAndSync(key, user.isGuest);
+const removeLikedSong = (key) => liked.removeAndSync(key);
 
 const formatArtists = (artists) => Array.isArray(artists) && artists.length ? artists.join(' / ') : t('common.unknownArtist');
 

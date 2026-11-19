@@ -78,7 +78,11 @@ func (api *WebSocketAPI) playlistCommand(ctx context.Context, client *wsruntime.
 	operation := strings.TrimPrefix(kind, "playlist.")
 	find := func() (*storesqlite.Playlist, error) {
 		if request.Scope == "user" {
-			return api.userPlaylists.FindPlaylist(ctx, owner, request.PlaylistID)
+			playlist, err := api.userPlaylists.FindPlaylist(ctx, owner, request.PlaylistID)
+			if err == nil && session.Guest && playlist.SystemKey != nil && *playlist.SystemKey == realtime.LikedSongsSystemKey {
+				return nil, sql.ErrNoRows
+			}
+			return playlist, err
 		}
 		return api.roomPlaylists.FindPlaylist(ctx, roomID, request.PlaylistID)
 	}
@@ -110,7 +114,10 @@ func (api *WebSocketAPI) playlistCommand(ctx context.Context, client *wsruntime.
 		if request.Scope == "user" {
 			// The personal liked list is created on first sight, the same way
 			// GET /api/me/playlists does, so an empty one still shows up.
-			if _, err = runtime.EnsureLikedSongs(ctx, owner); err == nil {
+			if !session.Guest {
+				_, err = runtime.EnsureLikedSongs(ctx, owner)
+			}
+			if err == nil {
 				values, err = api.userPlaylists.ListPlaylists(ctx, owner)
 			}
 		} else {
@@ -122,6 +129,9 @@ func (api *WebSocketAPI) playlistCommand(ctx context.Context, client *wsruntime.
 		}
 		playlists := make([]playlistView, 0, len(values))
 		for _, value := range values {
+			if session.Guest && request.Scope == "user" && value.SystemKey != nil && *value.SystemKey == realtime.LikedSongsSystemKey {
+				continue
+			}
 			playlists = append(playlists, view(value))
 		}
 		respond("playlist.data", map[string]any{"operation": "list", "scope": request.Scope, "playlists": playlists})

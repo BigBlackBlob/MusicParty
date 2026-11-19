@@ -33,7 +33,7 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
   let lastAuthPromptAt = 0
   let deferredQueueUpdate: DeferredQueueUpdate | null = null
   let likeToggleInProgress = false
-  const pendingLikes = new Map<string, { music: Music; result: 'liked' | 'unliked'; actorId: string; previousLiked: boolean; previousPersonalLiked: boolean; acked: boolean }>()
+  const pendingLikes = new Map<string, { music: Music; result: 'liked' | 'unliked'; actorId: string; previousLiked: boolean; settlePersonal?: ((accepted: boolean) => void); acked: boolean }>()
   const pendingPause = new Map<string, boolean>()
   const pendingControls = new Map<string, { kind: 'next' | 'previous' | 'seek'; previousPosition: number; previousLoading: boolean }>()
   const retryableCommands = new Map<string, { envelope: ClientEnvelope; scopeId: string; actorId: string; socketGeneration: number; expiresAt: number; kind: 'pause' | 'next' | 'previous' | 'seek' | 'like' | 'unlike' | 'reorder' }>()
@@ -88,7 +88,7 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
     for (const pending of pendingLikes.values()) {
       // Only roll back un-acked likes — acked ones are waiting for the server
       // snapshot to confirm, and mergeOptimisticLikes will clean them up.
-      if (!pending.acked) rollbackLike(pending.music, pending.actorId, pending.previousLiked, pending.previousPersonalLiked)
+      if (!pending.acked) rollbackLike(pending.music, pending.actorId, pending.previousLiked, pending.settlePersonal)
     }
     pendingLikes.clear()
     pendingControls.clear()
@@ -126,6 +126,7 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
       if (pending.scopeId !== scopeId || pending.actorId !== user.publicId) {
         mutationBus.settleMutation(mutationId)
         retryableCommands.delete(mutationId)
+        pendingLikes.get(mutationId)?.settlePersonal?.(false)
         pendingLikes.delete(mutationId)
         continue
       }
@@ -319,18 +320,16 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
       const previousLiked = runtime.nowPlaying?.music.id === music.id
         && runtime.nowPlaying.music.platform === music.platform
         && runtime.nowPlaying.likedUserIds.includes(actorId)
-      const previousPersonalLiked = likedSongs.includes(music)
       const result = previousLiked ? 'unliked' : 'liked'
       const epoch = runtime.nowPlaying?.playEpoch ?? runtime.lastPlayEpoch
-      if (!runtime.nowPlaying || epoch <= 0) {
+      if (!runtime.nowPlaying || epoch <= 0 || runtime.nowPlaying.music.id !== music.id || runtime.nowPlaying.music.platform !== music.platform) {
         notifyFailure('当前曲目尚未同步，请稍后重试', 'error')
         return
       }
+      const settlePersonal = user.isGuest ? undefined : likedSongs.stageLike(music, result === 'liked')
       if (result === 'liked') {
-        likedSongs.add(music)
         runtime.nowPlaying.likedUserIds = [...new Set([...runtime.nowPlaying.likedUserIds, actorId])]
       } else {
-        likedSongs.remove(`${music.platform}:${music.id}`)
         runtime.nowPlaying.likedUserIds = runtime.nowPlaying.likedUserIds.filter(id => id !== actorId)
       }
       const mutationId = mutationBus.createMutationId(result === 'liked' ? 'like' : 'unlike')
@@ -342,25 +341,24 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
         const pending = pendingLikes.get(mutationId)
         pendingLikes.delete(mutationId)
         if (!pending) return
-        rollbackLike(pending.music, pending.actorId, pending.previousLiked, pending.previousPersonalLiked)
+        rollbackLike(pending.music, pending.actorId, pending.previousLiked, pending.settlePersonal)
         notifyFailure('红心确认超时，请稍后重试', 'error')
         requestResync('like-timeout', true)
       })
       if (!sent) {
-        rollbackLike(music, actorId, previousLiked, previousPersonalLiked)
+        rollbackLike(music, actorId, previousLiked, settlePersonal)
         notifyFailure('红心操作未发送，请稍后重试', 'error')
         return
       }
-      pendingLikes.set(mutationId, { music, result, actorId, previousLiked, previousPersonalLiked, acked: false })
+      pendingLikes.set(mutationId, { music, result, actorId, previousLiked, ...(settlePersonal ? { settlePersonal } : {}), acked: false })
     } finally {
       likeToggleInProgress = false
     }
   }
 
-  function rollbackLike(music: Music, actorId: string, previousRoomLiked: boolean, previousPersonalLiked: boolean): void {
+  function rollbackLike(music: Music, actorId: string, previousRoomLiked: boolean, settlePersonal: ((accepted: boolean) => void) | undefined): void {
     if (user.publicId !== actorId) return
-    if (previousPersonalLiked) likedSongs.add(music)
-    else likedSongs.remove(`${music.platform}:${music.id}`)
+    settlePersonal?.(false)
     if (runtime.nowPlaying?.music.id === music.id && runtime.nowPlaying.music.platform === music.platform) {
       runtime.nowPlaying.likedUserIds = previousRoomLiked
         ? [...new Set([...runtime.nowPlaying.likedUserIds, actorId])]
@@ -380,6 +378,7 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
         ? incoming.likedUserIds.includes(actorId)
         : !incoming.likedUserIds.includes(actorId)
       if (serverAlreadyApplied) {
+        pending.settlePersonal?.(true)
         // Server snapshot now reflects our like — safe to discard the pending entry.
         pendingLikes.delete(mutationId)
         continue
@@ -404,9 +403,10 @@ export const useRoomCommandStore = defineStore('room-commands', () => {
     mutationBus.settleMutation(ack.mutationId)
     if (ack.outcome === 'rejected') {
       pendingLikes.delete(ack.mutationId)
-      rollbackLike(pending.music, pending.actorId, pending.previousLiked, pending.previousPersonalLiked)
+      rollbackLike(pending.music, pending.actorId, pending.previousLiked, pending.settlePersonal)
       notifyFailure(ack.code || '红心操作未生效，请重试', 'error')
     } else {
+      pending.settlePersonal?.(true)
       pending.acked = true
     }
   }

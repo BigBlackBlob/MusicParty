@@ -148,6 +148,15 @@ func (repository *UserPlaylistRepository) AddTrackIfAbsent(ctx context.Context, 
 		if _, err := tx.ExecContext(ctx, `update user_playlist set updated_at = ? where id = ?`, now, playlistID); err != nil {
 			return err
 		}
+		var systemKey sql.NullString
+		if err := tx.QueryRowContext(ctx, `select system_key from user_playlist where id = ?`, playlistID).Scan(&systemKey); err != nil {
+			return err
+		}
+		if systemKey.String == LikedSongsSystemKey {
+			if err := pruneLikedSongs(ctx, tx, playlistID); err != nil {
+				return err
+			}
+		}
 		value := PlaylistTrack{ID: id, PlaylistID: playlistID, Music: *music, SortOrder: sortOrder, CreatedAt: now}
 		track = &value
 		return nil

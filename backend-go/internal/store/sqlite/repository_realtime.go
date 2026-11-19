@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,6 +26,14 @@ func (repository *RealtimeRepository) CommitRoomLike(ctx context.Context, state 
 		return err
 	}
 	return repository.store.Write(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		var guest bool
+		err := tx.QueryRowContext(ctx, `select is_guest from user_profile where public_id = ?`, publicID).Scan(&guest)
+		if errors.Is(err, sql.ErrNoRows) || guest {
+			return upsertPlaybackStateTx(ctx, tx, state, encodedState)
+		}
+		if err != nil {
+			return err
+		}
 		now := repository.now().UnixMilli()
 		if liked {
 			if _, err := tx.ExecContext(ctx, `insert into user_playlist(id,owner_public_id,name,system_key,created_at,updated_at)
@@ -33,7 +42,7 @@ func (repository *RealtimeRepository) CommitRoomLike(ctx context.Context, state 
 			}
 		}
 		var playlistID string
-		err := tx.QueryRowContext(ctx, `select id from user_playlist where owner_public_id=? and system_key=?`, publicID, LikedSongsSystemKey).Scan(&playlistID)
+		err = tx.QueryRowContext(ctx, `select id from user_playlist where owner_public_id=? and system_key=?`, publicID, LikedSongsSystemKey).Scan(&playlistID)
 		if err != nil && err != sql.ErrNoRows {
 			return err
 		}
@@ -55,7 +64,11 @@ func (repository *RealtimeRepository) CommitRoomLike(ctx context.Context, state 
 				return err
 			}
 			if changed > 0 {
-				if !liked {
+				if liked {
+					if err := pruneLikedSongs(ctx, tx, playlistID); err != nil {
+						return err
+					}
+				} else {
 					if err := rewriteUserPlaylistOrder(ctx, tx, publicID, playlistID); err != nil {
 						return err
 					}
@@ -110,4 +123,12 @@ func (repository *RealtimeRepository) CommitRoomState(ctx context.Context, roomI
 		}
 		return upsertPlaybackStateTx(ctx, tx, state, encodedState)
 	})
+}
+
+// pruneLikedSongs keeps the 500 most recently added tracks inside the write transaction.
+func pruneLikedSongs(ctx context.Context, tx *sql.Tx, playlistID string) error {
+	_, err := tx.ExecContext(ctx, `delete from user_playlist_track where playlist_id = ? and id in (
+		select id from user_playlist_track where playlist_id = ? order by sort_order desc, created_at desc, id desc limit -1 offset 500
+	)`, playlistID, playlistID)
+	return err
 }
