@@ -256,27 +256,3 @@ func testConfig(t *testing.T) config.Config {
 }
 
 var _ = strings.Builder{}
-
-func TestSpotifyConfigAndSearchRoute(t *testing.T) {
-	cfg := testConfig(t)
-	cfg.Platforms.Spotify = config.Spotify{Enabled: true, ClientID: "public-spotify-client", ClientSecret: "private-spotify-secret"}
-	service := &searchCapturePlatform{name: "spotify"}
-	handler := NewHandler(cfg, slog.Default(), observability.NewHealth(), observability.NewMetrics(), NewPlatformAPI(cfg, service))
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/config", nil))
-	require.Equal(t, http.StatusOK, response.Code)
-	require.Contains(t, response.Body.String(), `"spotify":{"clientId":"public-spotify-client"}`)
-	require.NotContains(t, response.Body.String(), "private-spotify-secret")
-	response = httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/search/spotify/track%20name", nil))
-	require.Equal(t, http.StatusOK, response.Code)
-	require.Equal(t, "track name", service.keyword)
-	response = httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/platforms", nil))
-	require.Contains(t, response.Body.String(), `"id":"spotify"`)
-
-	cfg.Platforms.Spotify.ClientSecret = ""
-	response = httptest.NewRecorder()
-	NewPlatformAPI(cfg).config(response, httptest.NewRequest(http.MethodGet, "/api/config", nil))
-	require.NotContains(t, response.Body.String(), `"spotify"`)
-}

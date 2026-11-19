@@ -12,15 +12,15 @@ type Music struct {
 }
 
 // PlayableMusic is the canonical queue payload resolved from a platform ID.
-// URL points at a MusicParty proxy for native playback and is empty for embeds.
+// URL always points at a MusicParty proxy rather than an upstream credentialed URL.
 type PlayableMusic struct {
 	Music
 	URL string
 	// PlayerType distinguishes native audio from embed players.
 	// Empty string means native audio (backward-compatible default).
-	// Valid values: "audio-url", "youtube-embed", "soundcloud-widget", "spotify-embed"
+	// Valid values: "audio-url", "youtube-embed", "soundcloud-widget"
 	PlayerType string `json:"playerType,omitempty"`
-	// EmbedID is a platform-native ID or, for Spotify, a canonical track URI.
+	// EmbedID is the platform-native video/track ID used to construct the embed.
 	// Only set when PlayerType is not "audio-url".
 	EmbedID string `json:"embedId,omitempty"`
 }

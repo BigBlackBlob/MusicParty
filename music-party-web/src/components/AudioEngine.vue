@@ -37,16 +37,6 @@
     ></audio>
   </div>
   <YouTubePlayerAdapter v-else-if="player.nowPlaying?.music?.playerType === 'youtube-embed'" />
-  <SpotifyPlayerAdapter
-      v-else-if="isSpotifyPlayer"
-      :track-uri="player.nowPlaying?.music?.embedId ?? ''"
-      :current-position="player.nowPlaying?.currentPosition ?? 0"
-      :is-paused="player.isPaused"
-      :play-epoch="player.nowPlaying?.playEpoch ?? 0"
-      :queue-id="player.nowPlaying?.queueId ?? ''"
-      :duration="player.nowPlaying?.music?.duration ?? 0"
-      :get-current-position="player.getCurrentProgress"
-  />
   <SoundCloudPlayerAdapter v-else />
   <button
       v-if="!isEmbedPlayer && needsUserGesture"
@@ -66,7 +56,6 @@ import { useAudio } from '../composables/useAudio';
 import { withPlaybackToken } from '../utils/audioUrl';
 import YouTubePlayerAdapter from './YouTubePlayerAdapter.vue';
 import SoundCloudPlayerAdapter from './SoundCloudPlayerAdapter.vue';
-import SpotifyPlayerAdapter from './SpotifyPlayerAdapter.vue';
 
 const player = useAudioPlayerAdapter();
 const ui = useUiStore();
@@ -94,14 +83,12 @@ const {
 } = useAudio(audioRef, player, computed(() => ui.volume));
 
 const audioSrc = computed(() => withPlaybackToken(player.nowPlaying?.music));
-const isSpotifyPlayer = computed(() => player.nowPlaying?.music?.playerType === 'spotify-embed');
 const isEmbedPlayer = computed(() =>
-  isSpotifyPlayer.value ||
   player.nowPlaying?.music?.playerType === 'youtube-embed' ||
   player.nowPlaying?.music?.playerType === 'soundcloud-widget'
 );
 // Queue snapshots and patches carry the server media URL for standby preload.
-const queuedAudioSrc = computed(() => isSpotifyPlayer.value ? '' : withPlaybackToken(player.queue?.[0]?.music));
+const queuedAudioSrc = computed(() => withPlaybackToken(player.queue?.[0]?.music));
 // A removal patch can precede its player.state by a frame. Keep the buffered
 // source until that state arrives, so consuming the queue cannot erase it.
 const nextAudioSrc = ref('');

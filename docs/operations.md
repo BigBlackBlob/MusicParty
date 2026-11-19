@@ -28,14 +28,6 @@ curl --fail http://127.0.0.1:8848/actuator/health/readiness
 
 Platform credentials should be saved through the administrator settings or injected through untracked environment configuration during migration. Never print them in support logs.
 
-## Spotify playback experiment
-
-1. Register a Spotify app with Web API and Web Playback SDK access. Set its redirect URI to your exact public HTTPS origin followed by `/spotify/callback`. Add the listening accounts to the app's allowlist when running in Development Mode.
-2. Set `SPOTIFY_ENABLED=true`, `SPOTIFY_CLIENT_ID`, and `SPOTIFY_CLIENT_SECRET` in the server environment, then restart MusicParty. `SPOTIFY_MARKET` defaults to `US` and selects the catalog used for search and queue resolution.
-3. Queue a Spotify track and select **Connect Spotify**, then **Enable Spotify audio**. Each listener uses their own Premium account. Reloading the app requires reconnecting.
-
-Log only the path for `/spotify/callback` at the reverse proxy so the query does not record OAuth codes. If the proxy sets CSP, allow `https://sdk.scdn.co` for scripts and `https://accounts.spotify.com` and `https://api.spotify.com` for connections. Check the browser's report-only CSP output for SDK-managed requests before enforcing the policy.
-
 ## Observe
 
 ```bash

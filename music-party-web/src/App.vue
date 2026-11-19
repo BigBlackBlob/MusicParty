@@ -178,7 +178,6 @@
 
 <script setup>
 import { computed, provide, ref, onMounted, onBeforeUnmount, watch } from 'vue';
-import { useSpotifyAuth } from './composables/useSpotifyAuth';
 import { useWindowSize } from '@vueuse/core';
 import { useRoomRealtimeCoordinator } from './domains/realtime/roomRealtimeCoordinator';
 import { useRealtimeConnectionStore } from './domains/realtime/realtimeConnectionStore';
@@ -296,7 +295,6 @@ watch(() => realtimeConnection.hasInitialSnapshot, (ready) => {
 // while its realtime connection (and Presence snapshot) had already closed.
 watch(() => userStore.isAuthPassed, (isAuthenticated, wasAuthenticated) => {
   if (isAuthenticated || !wasAuthenticated) return;
-  useSpotifyAuth().disconnect();
   player.resetRoomState();
   hasStarted.value = false;
   pendingStart.value = false;

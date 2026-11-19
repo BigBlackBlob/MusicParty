@@ -25,7 +25,6 @@ export const useUiStore = defineStore('ui', () => {
     const lyricAlignment = ref(localStorage.getItem('mp_lyric_alignment') || 'center');
 
     const authorName = ref('ThorNex');
-    const spotifyClientId = ref('');
     const backWords = ref('THORNEX');
     const dynamicAccent = ref(null);
     const lastAccentCoverUrl = ref('');
@@ -131,7 +130,6 @@ export const useUiStore = defineStore('ui', () => {
             const config = await client.get('/api/config');
             authorName.value = config.authorName;
             backWords.value = config.backWords;
-            spotifyClientId.value = config.spotify?.clientId ?? '';
         } catch (e) {
             console.error('Failed to fetch config', e);
         }
@@ -266,7 +264,6 @@ export const useUiStore = defineStore('ui', () => {
         setLyricAlignment,
         authorName,
         backWords,
-        spotifyClientId,
         fetchConfig,
         dynamicAccent,
         activeTheme,

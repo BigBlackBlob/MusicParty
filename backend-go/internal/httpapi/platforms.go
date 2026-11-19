@@ -21,7 +21,6 @@ import (
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/domain/account"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/media"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform"
-	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform/spotify"
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/sync/singleflight"
 )
@@ -250,18 +249,7 @@ func (api *PlatformAPI) Routes(r chi.Router) {
 	r.With(api.requireCoverSession).Get("/api/theme/extract-cover-color", Adapt(api.coverColor))
 }
 func (api *PlatformAPI) config(w http.ResponseWriter, _ *http.Request) {
-	type spotifyConfig struct {
-		ClientID string `json:"clientId"`
-	}
-	payload := struct {
-		AuthorName string         `json:"authorName"`
-		BackWords  string         `json:"backWords"`
-		Spotify    *spotifyConfig `json:"spotify,omitempty"`
-	}{AuthorName: api.cfg.Application.AuthorName, BackWords: api.cfg.Application.BackWords}
-	if cfg := api.cfg.Platforms.Spotify; cfg.Enabled && strings.TrimSpace(cfg.ClientID) != "" && strings.TrimSpace(cfg.ClientSecret) != "" {
-		payload.Spotify = &spotifyConfig{ClientID: strings.TrimSpace(cfg.ClientID)}
-	}
-	writeJSON(w, payload)
+	writeJSON(w, map[string]string{"authorName": api.cfg.Application.AuthorName, "backWords": api.cfg.Application.BackWords})
 }
 
 // albumSearchSupported answers "does this provider have albums at all" in one place, so the web
@@ -285,7 +273,7 @@ func (api *PlatformAPI) platforms(w http.ResponseWriter, r *http.Request) {
 	}
 	api.mu.RUnlock()
 	var out []item
-	for _, name := range []string{"netease", "bilibili", "youtube", "soundcloud", "qq", "spotify", "local", "navidrome", "squidify"} {
+	for _, name := range []string{"netease", "bilibili", "youtube", "soundcloud", "qq", "local", "navidrome", "squidify"} {
 		if service := services[name]; service != nil && service.Available() {
 			if !api.PlatformAllowed(r.Context(), name, sessionToken(r)) {
 				continue
@@ -536,17 +524,6 @@ func proxiedCover(raw string) (string, string, error) {
 	return "", "", errors.New("unsupported cover path")
 }
 func writePlatformResult(w http.ResponseWriter, value any, err error) error {
-	var rateLimit *spotify.RateLimitError
-	if errors.As(err, &rateLimit) {
-		if delay := rateLimit.RetryAfter; delay > 0 {
-			seconds := delay / time.Second
-			if delay%time.Second != 0 {
-				seconds++
-			}
-			w.Header().Set("Retry-After", strconv.FormatInt(int64(seconds), 10))
-		}
-		return &APIError{Status: http.StatusTooManyRequests, Message: rateLimit.Error()}
-	}
 	if err != nil {
 		return mapPlatformError(err)
 	}

@@ -26,7 +26,6 @@ import (
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform/netease"
 	qqplatform "github.com/BigBlackBlob/MusicParty/backend-go/internal/platform/qq"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform/soundcloud"
-	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform/spotify"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform/subsonic"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform/youtube"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/realtime"
@@ -93,12 +92,6 @@ func run() error {
 		qqService,
 		subsonic.New(platformClient, subsonic.Config{ID: "navidrome", BaseURL: cfg.Platforms.Navidrome.BaseURL, Username: cfg.Platforms.Navidrome.Username, Password: cfg.Platforms.Navidrome.Password, Client: cfg.Platforms.Navidrome.Client, Version: cfg.Platforms.Navidrome.APIVersion, ProxyPrefix: "/api/navidrome/cover", Enabled: cfg.Platforms.Navidrome.Enabled}),
 		subsonic.New(platformClient, subsonic.Config{ID: "subsonic-" + cfg.Platforms.Squidify.ID + "@lounge", Label: cfg.Platforms.Squidify.Label, RoomID: "lounge", BaseURL: cfg.Platforms.Squidify.BaseURL, Username: cfg.Platforms.Squidify.Username, Password: cfg.Platforms.Squidify.Password, Client: cfg.Platforms.Squidify.Client, Version: cfg.Platforms.Squidify.APIVersion, ProxyPrefix: "/api/subsonic/lounge/" + cfg.Platforms.Squidify.ID + "/cover", Enabled: cfg.Platforms.Squidify.Enabled}),
-	}
-	spotifyConfig := cfg.Platforms.Spotify
-	if service, ok := spotify.New(spotify.Config(spotifyConfig)); ok {
-		services = append(services, service)
-	} else if spotifyConfig.Enabled {
-		logger.Warn("Spotify is enabled but app credentials are missing")
 	}
 	if databaseStore != nil && cfg.LocalLibrary.Enabled {
 		services = append(services, localplatform.New(storesqlite.NewLocalTrackRepository(databaseStore)))

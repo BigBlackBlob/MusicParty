@@ -66,11 +66,6 @@ services:
       - YOUTUBE_API_KEY=
       - YTDLP_PATH=yt-dlp
       - YOUTUBE_SEARCH_LIMIT=20
-      # [可选] Spotify 实验性播放
-      - SPOTIFY_ENABLED=${SPOTIFY_ENABLED:-false}
-      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID:-}
-      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET:-}
-      - SPOTIFY_MARKET=${SPOTIFY_MARKET:-US}
       # [可选] Navidrome 私有曲库；默认不启用，启用请配合 docker-compose.navidrome.yml
       # - NAVIDROME_ENABLED=false
       # - NAVIDROME_BASE_URL=http://navidrome:4533
