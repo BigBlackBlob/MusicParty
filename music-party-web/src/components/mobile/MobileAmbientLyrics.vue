@@ -447,11 +447,4 @@ const visibleSlots = computed(() => {
   opacity: 0;
   transform: translateY(24px);
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .ambl-line,
-  .ambl-rise-enter-active,
-  .ambl-rise-leave-active,
-  .ambl-pill { transition-duration: 0.01ms; }
-}
 </style>

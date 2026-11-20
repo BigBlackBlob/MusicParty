@@ -1,16 +1,15 @@
 <template>
   <div
-    class="resize-handle group relative flex h-full cursor-col-resize items-center justify-center transition-all"
+    class="resize-handle group relative flex h-full cursor-col-resize items-center justify-center"
     :class="[
-      layoutStore.isEditMode ? 'w-[6px] hover:bg-accent/30' : 'w-0 pointer-events-none',
-      isResizing ? 'bg-accent/50' : ''
+      layoutStore.isEditMode ? 'is-edit' : 'is-hidden',
+      { 'is-resizing': isResizing }
     ]"
     @pointerdown="onPointerDown"
   >
     <div
       v-if="layoutStore.isEditMode"
-      class="h-8 w-1 rounded-full bg-border-subtle group-hover:bg-accent transition-colors"
-      :class="{ 'bg-accent h-12': isResizing }"
+      class="resize-pill"
     />
   </div>
 </template>
@@ -74,5 +73,35 @@ onBeforeUnmount(() => {
 <style scoped>
 .resize-handle {
   z-index: 10;
+  transition: background-color var(--motion-enter) var(--motion-ease-out), width var(--motion-enter) var(--motion-ease-out);
+}
+.resize-handle.is-hidden {
+  width: 0;
+  pointer-events: none;
+}
+.resize-handle.is-edit {
+  width: 8px;
+}
+.resize-handle.is-edit:hover {
+  background: var(--accent-subtle);
+}
+.resize-handle.is-resizing {
+  background: var(--accent-muted);
+}
+.resize-pill {
+  width: 3px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  background: var(--border-strong);
+  transition: height var(--motion-enter) var(--motion-ease-out), background-color var(--motion-enter) var(--motion-ease-out), box-shadow var(--motion-enter) var(--motion-ease-out);
+}
+.resize-handle.is-edit:hover .resize-pill {
+  height: 44px;
+  background: var(--accent);
+}
+.resize-handle.is-resizing .resize-pill {
+  height: 60px;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent-muted);
 }
 </style>

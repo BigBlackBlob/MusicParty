@@ -11,7 +11,7 @@ const DEFAULT_LAYOUT = {
   columns: [
     { id: 'col-0', order: 0, widthPercent: 28, modules: ['nowplaying'] },
     { id: 'col-1', order: 1, widthPercent: 44, modules: ['lyrics'] },
-    { id: 'col-2', order: 2, widthPercent: 28, modules: ['queue'] }
+    { id: 'col-2', order: 2, widthPercent: 28, modules: ['queue-playlists'] }
   ]
 };
 

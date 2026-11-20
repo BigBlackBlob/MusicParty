@@ -18,7 +18,9 @@
 
     <MobileBottomNav v-model:active="activeTab" />
 
-    <SettingsCenter v-if="showSettings" mobile @close="showSettings = false" />
+    <Transition name="mp-modal-fade">
+      <SettingsCenter v-if="showSettings" mobile @close="showSettings = false" />
+    </Transition>
   </div>
 </template>
 

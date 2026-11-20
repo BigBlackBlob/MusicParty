@@ -1,28 +1,24 @@
 <template>
-  <div class="flex h-full flex-col overflow-hidden bg-surface-overlay/50 backdrop-blur-md">
-    <div
-        class="flex h-11 select-none items-center justify-between border-b border-border-subtle bg-[var(--surface-control)] px-3"
-    >
-      <div class="flex items-center gap-2 text-xs font-semibold tracking-[0.12em] text-[var(--text-secondary)]">
-        <span class="material-symbols-outlined text-[14px] text-[var(--accent)]" style="font-variation-settings:'FILL' 0,'wght' 300">chat</span>
-        {{ t('chat.title') }}
-      </div>
-    </div>
-
-    <div class="flex border-b border-border-subtle">
-      <button
+  <section class="chat-module flex h-full flex-col overflow-hidden" :aria-label="t('chat.title')">
+    <!-- Single 46px Flat Underline Header (aligned with QueuePlaylistsModule) -->
+    <header class="chat-header">
+      <nav class="chat-tabs" role="tablist" :aria-label="t('chat.title')">
+        <button
           v-for="tab in chatTabs"
           :key="tab.value"
-          @click="activeTab = tab.value"
-          class="relative flex-1 px-3 py-2 text-xs font-semibold tracking-wide transition-colors"
-          :class="activeTab === tab.value ? 'text-text-primary' : 'text-text-tertiary hover:text-text-secondary'"
+          type="button"
+          role="tab"
+          class="chat-tab"
+          :class="{ 'is-active': activeTab === tab.value }"
+          :aria-selected="activeTab === tab.value"
           :aria-label="tab.label"
           :title="tab.label"
-      >
-        {{ tab.label }}
-        <span v-if="activeTab === tab.value" class="absolute inset-x-2 -bottom-px h-[2px] rounded-full bg-primary"></span>
-      </button>
-    </div>
+          @click="activeTab = tab.value"
+        >
+          {{ tab.label }}
+        </button>
+      </nav>
+    </header>
 
     <div
         ref="msgListRef"
@@ -82,27 +78,28 @@
       </div>
     </div>
 
-    <div v-if="activeTab === CHAT_TAB || activeTab === PUBLIC_TAB" class="flex gap-2 border-t border-border-subtle bg-transparent p-2">
+    <div v-if="activeTab === CHAT_TAB || activeTab === PUBLIC_TAB" class="chat-composer flex items-center gap-2 border-t border-[var(--border-subtle)] bg-[var(--surface-2)] px-2.5 py-2">
       <input
           v-model="inputContent"
           @keyup.enter="send"
           :placeholder="activeTab === PUBLIC_TAB ? t('chat.publicPlaceholder') : t('chat.placeholder')"
-          class="min-w-0 flex-1 rounded-xl border border-[var(--border-default)] bg-[var(--surface-2)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none transition-colors placeholder:text-[var(--text-tertiary)] focus:border-[var(--border-accent)] focus:ring-2 focus:ring-[var(--accent-muted)]"
+          class="min-w-0 flex-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-1)] px-3 py-1.5 text-xs text-[var(--text-primary)] outline-none transition-colors placeholder:text-[var(--text-tertiary)] focus:border-[var(--border-accent)] focus:ring-2 focus:ring-[var(--accent-muted)]"
           :aria-label="t('chat.placeholder')"
       />
       <button
+          type="button"
           @click="send"
-          class="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl bg-[var(--accent)] px-3 text-[var(--text-inverse)] transition-colors hover:bg-[var(--accent-hover)] active:scale-[0.96]"
+          class="inline-flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg bg-[var(--accent)] text-[var(--on-primary)] transition-[background-color,transform] hover:bg-[var(--accent-hover)] active:scale-[0.95]"
           :aria-label="t('chat.send')"
       >
-        <span class="material-symbols-outlined text-[18px]" style="font-variation-settings:'FILL' 1,'wght' 400">send</span>
+        <span class="material-symbols-outlined text-[17px]" style="font-variation-settings:'FILL' 1,'wght' 400">send</span>
       </button>
     </div>
 
-    <div v-else class="flex h-8 items-center justify-center border-t border-border-subtle bg-transparent">
-      <span class="text-xs font-mono text-[var(--text-tertiary)]">{{ t('chat.readOnly') }}</span>
+    <div v-else class="flex h-[38px] items-center justify-center border-t border-[var(--border-subtle)] bg-[var(--surface-2)]">
+      <span class="text-[11px] font-mono text-[var(--text-tertiary)]">{{ t('chat.readOnly') }}</span>
     </div>
-  </div>
+  </section>
 </template>
 
 <script setup>
@@ -184,6 +181,62 @@ watch(() => processedMessages.value.length, (newLen, oldLen) => {
 </script>
 
 <style scoped>
+.chat-module {
+  background: var(--surface-panel);
+  color: var(--text-primary);
+}
+
+.chat-header {
+  height: 46px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-panel);
+  flex-shrink: 0;
+}
+
+.chat-tabs {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  width: 100%;
+  gap: 4px;
+}
+
+.chat-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  transition: color var(--motion-exit) var(--motion-ease-standard);
+}
+
+.chat-tab:hover {
+  color: var(--text-secondary);
+}
+
+.chat-tab.is-active {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.chat-tab.is-active::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 0;
+  height: 2px;
+  background: var(--accent);
+  border-radius: var(--radius-xs) var(--radius-xs) 0 0;
+}
+
 .chat-scroll::-webkit-scrollbar {
   width: 4px;
 }
@@ -193,11 +246,11 @@ watch(() => processedMessages.value.length, (newLen, oldLen) => {
 }
 
 .chat-scroll::-webkit-scrollbar-thumb {
-  background: var(--accent-muted);
-  border-radius: 999px;
+  background: var(--border-default);
+  border-radius: var(--radius-full);
 }
 
 .chat-scroll::-webkit-scrollbar-thumb:hover {
-  background: var(--accent);
+  background: var(--accent-muted);
 }
 </style>

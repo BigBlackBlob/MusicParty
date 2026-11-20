@@ -1,7 +1,9 @@
 <template>
   <div class="layout-renderer-container flex flex-col h-full w-full overflow-hidden">
     <!-- Edit Mode Toolbar -->
-    <EditModeToolbar v-if="layoutStore.isEditMode" />
+    <Transition name="slide-fade">
+      <EditModeToolbar v-if="layoutStore.isEditMode" />
+    </Transition>
 
     <!-- Main Grid -->
     <div
@@ -27,11 +29,13 @@
 
 
     <!-- Module Picker Modal -->
-    <ModulePicker
-      v-if="showModulePicker"
-      :column-id="activeColumnId"
-      @close="showModulePicker = false"
-    />
+    <Transition name="mp-modal-fade">
+      <ModulePicker
+        v-if="showModulePicker"
+        :column-id="activeColumnId"
+        @close="showModulePicker = false"
+      />
+    </Transition>
   </div>
 </template>
 
@@ -113,13 +117,13 @@ const gridStyle = computed(() => {
     const scale = Math.max(0, windowWidth.value - 1024);
     const minimumWidths = cols.map(column => {
       if (column.modules.includes('nowplaying')) return Math.min(340, 320 + scale * 0.05);
-      if (column.modules.includes('queue')) return Math.min(300, 288 + scale * 0.03);
+      if (column.modules.includes('queue') || column.modules.includes('queue-playlists')) return Math.min(300, 288 + scale * 0.03);
       if (column.modules.includes('lyrics')) return 300;
       return 0;
     });
     const minimumTotal = minimumWidths.reduce((sum, width) => sum + width, 0);
     const remaining = Math.max(0, availableWidth - minimumTotal);
-    const flexibleColumns = cols.map(column => !column.modules.includes('nowplaying') && !column.modules.includes('queue'));
+    const flexibleColumns = cols.map(column => !column.modules.includes('nowplaying') && !column.modules.includes('queue') && !column.modules.includes('queue-playlists'));
     const hasFlexibleColumn = flexibleColumns.some(Boolean);
     const weights = cols.map((column, index) => !hasFlexibleColumn || flexibleColumns[index] ? column.widthPercent : 0);
     const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);

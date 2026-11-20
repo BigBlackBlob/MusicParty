@@ -2,12 +2,12 @@
   <div class="fixed inset-0 z-[100] flex items-center justify-center p-4">
     <!-- Backdrop -->
     <div
-      class="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300"
+      class="absolute inset-0 bg-black/60 backdrop-blur-sm"
       @click="$emit('close')"
     />
 
     <!-- Modal Content -->
-    <div class="relative w-full max-w-md bg-surface-overlay rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+    <div class="mp-modal-panel relative w-full max-w-md bg-surface-overlay rounded-2xl shadow-2xl overflow-hidden">
       <div class="flex items-center justify-between px-6 py-4 border-b border-border-subtle">
         <h3 class="text-sm font-bold uppercase tracking-widest text-text-primary">{{ t('layout.addModule') }}</h3>
         <button

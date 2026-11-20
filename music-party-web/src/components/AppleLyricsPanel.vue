@@ -8,15 +8,18 @@
         @focusin="showControlsNow"
         @focusout="scheduleControlsHide"
       >
-        <div v-if="showEmptyState" class="lyrics-empty-state flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-3 text-center">
+        <Transition name="lyrics-stage-fade" mode="out-in">
+        <div v-if="showEmptyState" key="empty" class="lyrics-empty-state flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-3 text-center">
           <span class="lyrics-empty-state__icon material-symbols-outlined" aria-hidden="true">music_note</span>
           <span class="lyrics-empty-state__label text-sm font-medium" :style="emptyStateClass">{{ t('lyrics.empty') }}</span>
         </div>
 
-        <template v-else>
+        <div v-else key="lines" class="relative flex h-full w-full flex-1 flex-col items-center justify-center min-h-0">
           <div
             ref="scrollRef"
-            class="lyrics-scroll relative w-full flex-1 min-h-0 overflow-y-auto overflow-x-hidden [mask-image:linear-gradient(to_bottom,transparent,black_5%,black_95%,transparent)]"
+            class="lyrics-scroll relative w-full flex-1 min-h-0 overflow-y-auto overflow-x-hidden [mask-image:linear-gradient(to_bottom,transparent,black_10%,black_88%,transparent)]"
+            @mouseenter="isHoveringList = true"
+            @mouseleave="isHoveringList = false"
             @wheel.passive="handleUserScrollIntent"
             @touchstart.passive="handleTouchStart"
             @touchmove.passive="handleTouchMove"
@@ -25,13 +28,13 @@
           >
             <div class="lyrics-scroll__content mx-auto flex w-full max-w-[min(760px,88vw)] flex-col" :class="containerAlignmentClass">
               <div class="lyrics-scroll__spacer w-full shrink-0"></div>
-              <div class="relative flex w-full min-w-0 shrink-0 flex-col gap-[0.18em] md:gap-[0.24em]" aria-live="off" :class="containerAlignmentClass">
+              <div class="relative flex w-full min-w-0 shrink-0 flex-col gap-[0.55em] md:gap-[0.72em]" aria-live="off" :class="containerAlignmentClass">
               <div
                 v-for="(line, index) in displayLines"
                 :key="`${line.time}-${index}`"
                 :ref="(el) => setLineRef(el, index)"
-                class="lyrics-line transition-[opacity,transform,color] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
-                :class="[getLineClass(index), alignmentClass]"
+                class="lyrics-line"
+                :class="[getLineClass(index), alignmentClass, { 'lyrics-line--clear': isClearReadingMode }]"
                 :style="getLineStyle(index)"
               >
                 <span v-if="index === activeIndex && line.segments" class="lyrics-line__primary lyrics-line__words">
@@ -86,7 +89,8 @@
               {{ t('lyrics.romanization') }}
             </button>
           </div>
-        </template>
+        </div>
+        </Transition>
       </div>
     </div>
   </div>
@@ -202,6 +206,8 @@ const activeTimeMs = computed(() => {
 const scrollRef = ref(null);
 const activeIndex = ref(-1);
 const isUserScrolling = ref(false);
+const isHoveringList = ref(false);
+const isClearReadingMode = computed(() => isUserScrolling.value || isHoveringList.value);
 const controlsVisible = ref(false);
 const manualScrollTimer = ref(null);
 const controlsTimer = ref(null);
@@ -213,6 +219,7 @@ const touchMoved = ref(false);
 const fontScale = ref(-2);
 let syncRequestId = 0;
 let scrollFrameId = null;
+let smoothScrollRafId = null;
 let programmaticScroll = false;
 
 const alignmentIcon = computed(() => {
@@ -249,15 +256,7 @@ const toggleAlignment = () => {
 const scaledFont = (base) => `${Math.max(10, Math.round(base + fontScale.value * 2)) / 16}rem`;
 
 const shellStyle = computed(() => ({
-  '--lyrics-text-active': props.isDarkMode ? 'rgba(255,255,255,0.98)' : 'rgba(26,26,26,0.98)',
-  '--lyrics-word-todo': props.isDarkMode ? 'rgba(255,255,255,0.38)' : 'rgba(26,26,26,0.32)',
-  '--lyrics-text-mid': props.isDarkMode ? 'rgba(255,255,255,0.72)' : '#515856',
-  '--lyrics-text-low': props.isDarkMode ? 'rgba(255,255,255,0.5)' : '#515856',
-  '--lyrics-translation-active': props.isDarkMode ? 'rgba(255,255,255,0.68)' : '#353535',
-  '--lyrics-translation-mid': props.isDarkMode ? 'rgba(255,255,255,0.42)' : '#353535',
-  '--lyrics-translation-low': props.isDarkMode ? 'rgba(255,255,255,0.22)' : '#353535',
-  '--lyrics-empty': props.isDarkMode ? 'rgba(255,255,255,0.5)' : 'rgba(26,26,26,0.55)',
-  '--lyrics-accent-glow': props.bgColor || (props.isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(26,26,26,0.06)'),
+  '--lyrics-accent-glow': props.bgColor || 'var(--lyrics-glow-fallback)',
   '--lyrics-active-size': props.mobile
     ? `clamp(${scaledFont(22)}, 7vw, ${scaledFont(34)})`
     : `clamp(${scaledFont(34)}, 4.3vw, ${scaledFont(56)})`,
@@ -306,45 +305,49 @@ const getLineClass = (index) => {
 };
 
 const getLineStyle = (index) => {
-  const distance = activeIndex.value === -1 ? index : Math.abs(index - activeIndex.value);
+  const hasActive = activeIndex.value !== -1;
+  const signedDelta = hasActive ? index - activeIndex.value : index;
+  const distance = Math.abs(signedDelta);
+  const clearMode = isClearReadingMode.value;
+  // Subtle Apple Music wave stagger on auto-follow; instant response on hover/manual scroll
+  const staggerMs = clearMode || !hasActive ? 0 : Math.min(distance, 5) * 28;
+
   if (index === activeIndex.value) {
     return {
       opacity: 1,
-      transform: 'scale(1) translate3d(0,0,0)',
+      transform: 'scale(1) translate3d(0, 0, 0)',
+      filter: 'blur(0px)',
+      transitionDelay: '0ms',
       fontSize: 'var(--lyrics-active-size)',
       fontWeight: 700,
-      lineHeight: 1.3,
+      lineHeight: 1.24,
       color: 'var(--lyrics-text-active)',
       '--lyrics-translation-size': 'var(--lyrics-translation-active-size)',
       '--lyrics-translation-color': 'var(--lyrics-translation-active)',
-      textShadow: 'none'
+      textShadow: '0 0 26px var(--lyrics-active-glow)'
     };
   }
 
-  if (distance <= 2) {
-    const offset = activeIndex.value === -1 ? 0 : (index < activeIndex.value ? -8 : 8);
-    return {
-      opacity: 1,
-      transform: `scale(0.84) translate3d(0, ${offset}px, 0)`,
-      fontSize: 'var(--lyrics-mid-size)',
-      fontWeight: 600,
-      lineHeight: 1.28,
-      color: 'var(--lyrics-text-mid)',
-      '--lyrics-translation-size': 'var(--lyrics-translation-mid-size)',
-      '--lyrics-translation-color': 'var(--lyrics-translation-mid)'
-    };
-  }
+  // Constant fontSize + GPU-only scale eliminates layout reflow jump between lines
+  const scale = distance === 1 ? 0.91 : distance === 2 ? 0.86 : 0.82;
+  const offsetY = !hasActive ? 0 : (signedDelta < 0 ? -Math.min(distance * 3, 10) : Math.min(distance * 3, 10));
+  const opacity = clearMode
+    ? (distance === 1 ? 0.72 : distance === 2 ? 0.56 : 0.44)
+    : (distance === 1 ? 0.52 : distance === 2 ? 0.34 : 0.2);
+  const blurPx = clearMode ? 0 : (distance === 1 ? 0.65 : distance === 2 ? 1.35 : 2.1);
 
-  const offset = activeIndex.value === -1 ? 0 : (index < activeIndex.value ? -14 : 14);
   return {
-    opacity: 1,
-    transform: `scale(0.72) translate3d(0, ${offset}px, 0)`,
-    fontSize: 'var(--lyrics-low-size)',
-    fontWeight: 500,
-    lineHeight: 1.28,
-    color: 'var(--lyrics-text-low)',
-    '--lyrics-translation-size': 'var(--lyrics-translation-low-size)',
-    '--lyrics-translation-color': 'var(--lyrics-translation-low)'
+    opacity,
+    transform: `scale(${scale}) translate3d(0, ${offsetY}px, 0)`,
+    filter: `blur(${blurPx}px)`,
+    transitionDelay: `${staggerMs}ms`,
+    fontSize: 'var(--lyrics-active-size)',
+    fontWeight: distance === 1 ? 650 : 600,
+    lineHeight: 1.24,
+    color: distance <= 2 ? 'var(--lyrics-text-mid)' : 'var(--lyrics-text-low)',
+    '--lyrics-translation-size': 'var(--lyrics-translation-active-size)',
+    '--lyrics-translation-color': distance <= 2 ? 'var(--lyrics-translation-mid)' : 'var(--lyrics-translation-low)',
+    textShadow: 'none'
   };
 };
 
@@ -410,11 +413,17 @@ const syncActiveLine = async (force = false) => {
   const container = scrollRef.value;
   const containerRect = container.getBoundingClientRect();
   const lineRect = el.getBoundingClientRect();
-  const visualDelta = (lineRect.top + lineRect.height / 2) - (containerRect.top + containerRect.height / 2);
+  // Optical center (~43% from top, matching Apple Music focus sweet spot)
+  const opticalAnchor = containerRect.top + containerRect.height * 0.43;
+  const visualDelta = (lineRect.top + lineRect.height / 2) - opticalAnchor;
   const maxTop = Math.max(0, container.scrollHeight - container.clientHeight);
   const nextTop = Math.max(0, Math.min(maxTop, container.scrollTop + visualDelta));
 
   if (scrollFrameId !== null) cancelAnimationFrame(scrollFrameId);
+  if (smoothScrollRafId !== null) {
+    cancelAnimationFrame(smoothScrollRafId);
+    smoothScrollRafId = null;
+  }
   scrollFrameId = requestAnimationFrame(() => {
     scrollFrameId = null;
     if (requestId !== syncRequestId || !scrollRef.value) return;
@@ -422,19 +431,51 @@ const syncActiveLine = async (force = false) => {
     lastAutoScrollAt.value = Date.now();
     lastScrolledIndex.value = targetIndex;
 
-    programmaticScroll = true;
-    scrollRef.value.scrollTo({
-      top: nextTop,
-      behavior: (indexChanged && props.isPlaying && !force) ? 'smooth' : 'auto'
-    });
-    window.setTimeout(() => {
+    const shouldAnimate = indexChanged && props.isPlaying && !force;
+    if (!shouldAnimate) {
+      programmaticScroll = true;
+      scrollRef.value.scrollTop = nextTop;
+      lastScrollTop.value = scrollRef.value.scrollTop;
       programmaticScroll = false;
-      if (scrollRef.value) lastScrollTop.value = scrollRef.value.scrollTop;
-    }, 600);
+      return;
+    }
+
+    const startTop = scrollRef.value.scrollTop;
+    const delta = nextTop - startTop;
+    if (Math.abs(delta) < 1) return;
+
+    const duration = 560;
+    const startTime = performance.now();
+    programmaticScroll = true;
+
+    const step = (now) => {
+      if (!scrollRef.value || isUserScrolling.value) {
+        smoothScrollRafId = null;
+        programmaticScroll = false;
+        return;
+      }
+      const t = Math.min(1, (now - startTime) / duration);
+      // Quartic ease-out: snappy pull with velvety Apple Music landing
+      const eased = 1 - Math.pow(1 - t, 4);
+      scrollRef.value.scrollTop = startTop + delta * eased;
+      lastScrollTop.value = scrollRef.value.scrollTop;
+      if (t < 1) {
+        smoothScrollRafId = requestAnimationFrame(step);
+      } else {
+        smoothScrollRafId = null;
+        programmaticScroll = false;
+      }
+    };
+    smoothScrollRafId = requestAnimationFrame(step);
   });
 };
 
 const handleUserScrollIntent = () => {
+  if (smoothScrollRafId !== null) {
+    cancelAnimationFrame(smoothScrollRafId);
+    smoothScrollRafId = null;
+    programmaticScroll = false;
+  }
   revealControls();
   isUserScrolling.value = true;
   clearManualTimer();
@@ -562,6 +603,7 @@ onBeforeUnmount(() => {
   clearManualTimer();
   clearControlsTimer();
   if (scrollFrameId !== null) cancelAnimationFrame(scrollFrameId);
+  if (smoothScrollRafId !== null) cancelAnimationFrame(smoothScrollRafId);
   if (karaokeFrame !== null) cancelAnimationFrame(karaokeFrame);
 });
 </script>
@@ -617,8 +659,20 @@ onBeforeUnmount(() => {
   max-width: min(760px, 88vw);
   min-width: 0;
   word-break: break-word;
-  will-change: transform, opacity;
-  letter-spacing: 0;
+  will-change: transform, opacity, filter;
+  letter-spacing: -0.015em;
+  transition:
+    transform 560ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 480ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 380ms cubic-bezier(0.22, 1, 0.36, 1),
+    text-shadow 480ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.lyrics-line--clear:not(.lyrics-line--active):hover {
+  opacity: 0.92 !important;
+  filter: blur(0px) !important;
+  transition-delay: 0ms !important;
 }
 
 @container stage-column (max-width: 400px) {
@@ -645,22 +699,35 @@ onBeforeUnmount(() => {
 }
 
 .lyrics-word {
-  display: inline;
+  display: inline-block;
+  white-space: pre-wrap;
+  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    text-shadow 260ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .lyrics-word--done {
   color: var(--lyrics-text-active);
+  transform: translateY(0);
 }
 
 .lyrics-word--todo {
   color: var(--lyrics-word-todo);
+  transform: translateY(0);
 }
 
 .lyrics-word--active {
-  background-image: linear-gradient(90deg, var(--lyrics-text-active) var(--word-fill, 0%), var(--lyrics-word-todo) var(--word-fill, 0%));
+  background-image: linear-gradient(
+    90deg,
+    var(--lyrics-text-active) 0%,
+    var(--lyrics-text-active) max(0%, calc(var(--word-fill, 0%) - 10%)),
+    var(--lyrics-word-todo) min(100%, calc(var(--word-fill, 0%) + 14%)),
+    var(--lyrics-word-todo) 100%
+  );
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  transform: translateY(-1.5px);
+  text-shadow: 0 0 18px var(--lyrics-active-glow);
 }
 
 .lyrics-line__romanization {
@@ -807,6 +874,19 @@ onBeforeUnmount(() => {
   opacity: 1;
 }
 
+.lyrics-stage-fade-enter-active {
+  transition: opacity var(--motion-panel) var(--motion-ease-standard);
+}
+
+.lyrics-stage-fade-leave-active {
+  transition: opacity var(--motion-exit) var(--motion-ease-in);
+}
+
+.lyrics-stage-fade-enter-from,
+.lyrics-stage-fade-leave-to {
+  opacity: 0;
+}
+
 .lyrics-control--text {
   width: auto;
   min-width: 3.4rem;
@@ -821,19 +901,5 @@ onBeforeUnmount(() => {
   background: var(--accent-subtle);
   color: var(--accent);
   opacity: 1;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .lyrics-line {
-    transition-duration: 0.01ms;
-  }
-
-  .lyrics-control {
-    transition-duration: 0.01ms;
-  }
-
-  .lyrics-controls {
-    transition-duration: 0.01ms;
-  }
 }
 </style>

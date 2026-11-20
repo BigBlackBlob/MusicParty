@@ -1,16 +1,17 @@
 <template>
-  <div
-    v-if="open"
-    role="dialog"
-    aria-modal="true"
-    :aria-labelledby="titleId"
-    class="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-[var(--surface-0)]/70 p-4 backdrop-blur-xl"
-    @click.self="emitCancel"
-  >
-    <form
-      class="w-full max-w-sm rounded-2xl border border-[var(--border-default)] bg-[var(--surface-4)] p-6 shadow-2xl"
-      @submit.prevent="submit"
+  <Transition name="mp-modal-fade">
+    <div
+      v-if="open"
+      role="dialog"
+      aria-modal="true"
+      :aria-labelledby="titleId"
+      class="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-[var(--surface-0)]/70 p-4 backdrop-blur-xl"
+      @click.self="emitCancel"
     >
+      <form
+        class="mp-modal-panel w-full max-w-sm rounded-2xl border border-[var(--border-default)] bg-[var(--surface-4)] p-6 shadow-2xl"
+        @submit.prevent="submit"
+      >
       <div class="mb-5 flex items-center justify-between gap-3">
         <div class="min-w-0">
           <h2 :id="titleId" class="truncate text-lg font-bold text-[var(--text-primary)]">{{ t('rooms.privateAccessTitle') }}</h2>
@@ -64,6 +65,7 @@
       </div>
     </form>
   </div>
+  </Transition>
 </template>
 
 <script setup lang="ts">

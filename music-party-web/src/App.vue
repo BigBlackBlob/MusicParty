@@ -90,8 +90,9 @@
       </p>
     </div>
 
+    <Transition name="mp-modal-fade">
     <div v-if="editingRoom" class="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-[var(--surface-0)]/70 p-4 backdrop-blur-xl">
-      <div class="w-full max-w-md rounded-2xl border border-[var(--border-default)] bg-[var(--surface-4)] p-6 shadow-2xl">
+      <div class="mp-modal-panel w-full max-w-md rounded-2xl border border-[var(--border-default)] bg-[var(--surface-4)] p-6 shadow-2xl">
         <div class="mb-5 flex items-center justify-between">
           <h2 class="text-lg font-bold text-[var(--text-primary)]">Edit Lounge</h2>
           <button class="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]" @click="closeRoomDialog">
@@ -131,9 +132,11 @@
         </div>
       </div>
     </div>
+    </Transition>
 
+    <Transition name="mp-modal-fade">
     <div v-if="deletingRoom" class="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-[var(--surface-0)]/70 p-4 backdrop-blur-xl">
-      <div class="w-full max-w-sm rounded-2xl border border-[var(--border-default)] bg-[var(--surface-4)] p-6 shadow-2xl">
+      <div class="mp-modal-panel w-full max-w-sm rounded-2xl border border-[var(--border-default)] bg-[var(--surface-4)] p-6 shadow-2xl">
         <h2 class="text-lg font-bold text-[var(--text-primary)]">Delete Lounge</h2>
         <p class="mt-2 text-sm text-[var(--text-secondary)]">Delete {{ deletingRoom.name }} and move listeners back to Lounge?</p>
         <div v-if="roomDialogError" class="mt-3 text-sm text-[var(--error-soft-text)]">{{ roomDialogError }}</div>
@@ -143,6 +146,7 @@
         </div>
       </div>
     </div>
+    </Transition>
 
     <PrivateRoomAccessDialog
       :open="privateRoomDialogOpen"

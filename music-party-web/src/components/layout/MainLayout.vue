@@ -13,7 +13,10 @@
               :title="t('rooms.currentRoom', { name: currentRoomName })"
             >
               <span class="truncate py-1">{{ currentRoomName }}</span>
-              <span class="material-symbols-outlined text-[18px]">expand_more</span>
+              <span
+                class="material-symbols-outlined text-[18px] transition-transform duration-200"
+                :class="{ 'rotate-180': isRoomMenuOpen }"
+              >expand_more</span>
             </button>
             <span
               class="h-2 w-2 shrink-0 rounded-full"
@@ -21,9 +24,10 @@
               :title="realtimeConnection.connected ? t('settings.connected') : t('settings.disconnected')"
             />
           </div>
+          <Transition name="mp-popover-fade">
           <div
             v-if="isRoomMenuOpen"
-            class="absolute left-5 top-14 z-50 w-[340px] rounded-lg border border-border-default bg-surface-panel p-3 shadow-2xl backdrop-blur-xl"
+            class="absolute left-5 top-14 z-50 w-[340px] origin-top-left rounded-lg border border-border-default bg-surface-panel p-3 shadow-2xl backdrop-blur-xl"
           >
             <div class="mb-3 flex items-center justify-between">
               <span class="font-micro text-[10px] font-black uppercase tracking-[0.18em] text-text-tertiary">{{ t('rooms.title') }}</span>
@@ -82,16 +86,18 @@
               @keyup.enter="createRoom"
             />
           </div>
+          </Transition>
         </div>
           <button
             type="button"
-            class="desktop-top-bar__search flex min-w-0 w-full cursor-pointer items-center gap-3 rounded-md border border-border-subtle bg-[var(--surface-control)] px-4 py-2 text-left transition-colors hover:bg-[var(--surface-control-hover)] focus-visible:ring-2 focus-visible:ring-[var(--accent-muted)]"
+            class="desktop-top-bar__search flex min-w-0 w-full cursor-pointer items-center gap-3 rounded-md border border-border-subtle bg-[var(--surface-control)] px-3.5 py-2 text-left transition-all hover:border-[var(--border-default)] hover:bg-[var(--surface-control-hover)] focus-visible:ring-2 focus-visible:ring-[var(--accent-muted)]"
             :aria-label="t('search.searchAndAdd')"
             :title="t('search.searchAndAdd')"
             @click="handleSearchClick"
           >
             <span class="material-symbols-outlined text-text-muted text-[18px]">search</span>
             <span class="text-text-muted font-compact text-compact truncate tracking-tight">{{ t('search.placeholder') }}</span>
+            <kbd class="ml-auto hidden sm:inline-flex items-center rounded border border-border-subtle bg-[var(--surface-2)] px-1.5 py-0.5 font-mono text-[10px] font-medium text-text-tertiary">Ctrl K</kbd>
           </button>
         <div class="desktop-top-bar__actions flex flex-shrink-0 items-center justify-end gap-3">
           <div class="relative">
@@ -119,13 +125,15 @@
               </div>
             </button>
 
+            <Transition name="mp-popover-fade">
             <div
               v-if="isUserListOpen"
-              class="absolute right-4 top-12 z-50 w-[320px] overflow-y-auto rounded-lg border border-border-default bg-surface-overlay/95 shadow-lg backdrop-blur-xl"
+              class="absolute right-4 top-12 z-50 w-[320px] origin-top-right overflow-y-auto rounded-lg border border-border-default bg-surface-overlay/95 shadow-lg backdrop-blur-xl"
               style="max-height: min(520px, calc(var(--app-height) - 96px));"
             >
               <UserList />
             </div>
+            </Transition>
           </div>
 
           <button @click="uiStore.toggleDarkMode" class="flex h-10 w-10 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-[var(--surface-control-hover)] hover:text-text-primary" :aria-label="t('settings.toggleTheme')" :title="t('settings.toggleTheme')">
@@ -150,7 +158,9 @@
           </div>
         </div>
       </header>
-      <SettingsCenter v-if="isSettingsOpen" @close="isSettingsOpen = false" />
+      <Transition name="mp-modal-fade">
+        <SettingsCenter v-if="isSettingsOpen" @close="isSettingsOpen = false" />
+      </Transition>
       <PrivateRoomAccessDialog
         :open="privateRoomDialogOpen"
         :room="privateRoomDialogRoom"

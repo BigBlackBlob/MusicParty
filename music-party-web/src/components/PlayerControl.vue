@@ -5,23 +5,23 @@
       <img v-if="currentCover" :src="currentCover" class="w-12 h-12 rounded object-cover" />
       <div v-if="player.nowPlaying" class="flex flex-col min-w-0 flex-1">
         <span class="text-sm font-bold truncate">{{ player.nowPlaying.music.name }}</span>
-        <span class="text-xs text-[#8A8A8A] truncate">{{ player.nowPlaying.music.artists.join(' / ') }}</span>
+        <span class="text-xs text-text-tertiary truncate">{{ player.nowPlaying.music.artists.join(' / ') }}</span>
       </div>
     </div>
 
     <div class="flex flex-col items-center justify-center w-1/3 gap-2">
       <!-- Controls -->
       <div class="flex items-center gap-4 text-sm font-bold">
-        <button @click="commands.toggleShuffle" :disabled="player.isShuffleLocked" class="text-[#8A8A8A] hover:text-white transition-colors disabled:opacity-40" :class="{ 'text-primary': player.isShuffle }" :aria-label="playModeLabel" :title="playModeLabel">{{ playModeLabel }}</button>
-        <button class="text-[#8A8A8A] hover:text-white transition-colors opacity-50 cursor-not-allowed">{{ t('player.prev') }}</button>
-        <button @click="commands.togglePause" class="text-black bg-primary px-3 py-1 rounded hover:bg-white transition-colors">
+        <button @click="commands.toggleShuffle" :disabled="player.isShuffleLocked" class="text-text-tertiary hover:text-text-primary transition-colors disabled:opacity-40" :class="{ 'text-primary': player.isShuffle }" :aria-label="playModeLabel" :title="playModeLabel">{{ playModeLabel }}</button>
+        <button class="text-text-tertiary hover:text-text-primary transition-colors opacity-50 cursor-not-allowed">{{ t('player.prev') }}</button>
+        <button @click="commands.togglePause" class="text-on-primary bg-primary px-3 py-1 rounded hover:bg-[var(--accent-hover)] transition-colors">
           {{ player.isPaused ? t('player.play') : t('player.pause') }}
         </button>
-        <button @click="commands.playNext" class="text-[#8A8A8A] hover:text-white transition-colors">{{ t('player.next') }}</button>
+        <button @click="commands.playNext" class="text-text-tertiary hover:text-text-primary transition-colors">{{ t('player.next') }}</button>
       </div>
       <!-- Progress -->
-<div class="w-full max-w-md h-1.5 bg-[#303033] rounded overflow-hidden relative" :class="canSeek ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'" @click="handleSeek">
-        <div v-if="bufferedPercent > 0" class="absolute inset-0 h-full bg-white/10 pointer-events-none" :style="{ width: bufferedPercent + '%' }"></div>
+<div class="w-full max-w-md h-1.5 bg-border-default rounded overflow-hidden relative" :class="canSeek ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'" @click="handleSeek">
+        <div v-if="bufferedPercent > 0" class="absolute inset-0 h-full bg-[var(--surface-control-hover)] pointer-events-none" :style="{ width: bufferedPercent + '%' }"></div>
         <div class="relative h-full bg-primary" :style="{ width: `${(audio.playbackPositionMs / (player.nowPlaying?.music.duration || 1)) * 100}%` }"></div>
       </div>
     </div>
@@ -34,7 +34,7 @@
          :aria-label="isLiked ? t('player.unlike') : t('player.like')"
          :title="isLiked ? t('player.unlike') : t('player.like')"
          class="flex h-9 w-9 items-center justify-center rounded-md transition-colors hover:bg-[var(--surface-control-hover)] disabled:opacity-40"
-         :class="isLiked ? 'text-primary' : 'text-[#8A8A8A] hover:text-primary'"
+         :class="isLiked ? 'text-primary' : 'text-text-tertiary hover:text-primary'"
        >
          <svg xmlns="http://www.w3.org/2000/svg" height="20" width="20" viewBox="0 -960 960 960" fill="currentColor" aria-hidden="true">
            <path v-if="isLiked" d="m480-120-58-52q-101-91-167-157T150-447.5Q111-500 95.5-544T80-634q0-94 63-157t157-63q52 0 99 22t81 62q34-40 81-62t99-22q94 0 157 63t63 157q0 46-15.5 90T810-447.5Q771-395 705-329T538-172l-58 52Z"/>

@@ -33,9 +33,4 @@ const ui = useUiStore();
 .stage-fade-enter-active { z-index: 1; }
 .stage-fade-leave-active { z-index: 0; }
 .stage-fade-enter-from { opacity: 0; }
-
-@media (prefers-reduced-motion: reduce) {
-  .stage-fade-enter-active,
-  .stage-fade-leave-active { transition: none !important; }
-}
 </style>

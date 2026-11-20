@@ -16,18 +16,18 @@
         <!-- Module Header (Edit Mode Only) -->
         <div
           v-if="layoutStore.isEditMode"
-          class="module-header flex items-center justify-between px-3 py-2 bg-surface-raised border-b border-border-subtle cursor-default"
+          class="module-header flex items-center justify-between px-3 py-2 cursor-default"
         >
           <div class="flex items-center gap-2 overflow-hidden">
-            <span class="module-drag-handle material-symbols-outlined text-[18px] cursor-grab active:cursor-grabbing text-text-muted">drag_indicator</span>
-            <span class="text-[10px] font-bold uppercase tracking-wider text-text-muted truncate">
-              {{ t(`layout.modules.${moduleId}`) || MODULE_MANIFEST[moduleId]?.label[locale] }}
+            <span class="module-drag-handle material-symbols-outlined text-[18px] cursor-grab active:cursor-grabbing text-[var(--text-tertiary)]">drag_indicator</span>
+            <span class="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] truncate">
+              {{ te(`layout.modules.${moduleId}`) ? t(`layout.modules.${moduleId}`) : MODULE_MANIFEST[moduleId]?.label[locale] }}
             </span>
           </div>
           <button
             v-if="MODULE_MANIFEST[moduleId]?.removable"
             @click="layoutStore.removeModule(moduleId, column.id)"
-            class="p-1 hover:bg-error/10 hover:text-error rounded transition-colors"
+            class="p-1 rounded text-[var(--text-secondary)] hover:bg-[var(--error-soft-bg)] hover:text-[var(--error)] transition-colors"
             :aria-label="t('common.remove')"
           >
             <span class="material-symbols-outlined text-[16px]">close</span>
@@ -73,7 +73,7 @@ const props = defineProps({
 
 defineEmits(['add-module']);
 
-const { t, locale } = useI18n();
+const { t, te, locale } = useI18n();
 const layoutStore = useLayoutStore();
 const moduleListRef = ref(null);
 let sortableInstance = null;
@@ -146,9 +146,14 @@ onBeforeUnmount(() => {
 <style scoped>
 .layout-module-wrapper {
   border: 1px solid var(--border-subtle);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--surface-panel);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  box-shadow: inset 0 1px 0 var(--surface-glass-border);
+}
+
+.module-header {
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .layout-module-wrapper[data-id="lyrics"] {
@@ -165,8 +170,9 @@ onBeforeUnmount(() => {
   box-shadow: none;
 }
 
-.layout-module-wrapper[data-id="queue"] {
-  background: var(--queue-panel);
+.layout-module-wrapper[data-id="queue"],
+.layout-module-wrapper[data-id="queue-playlists"] {
+  background: var(--surface-panel);
 }
 
 .layout-column {
@@ -193,12 +199,16 @@ onBeforeUnmount(() => {
 }
 
 .sortable-ghost {
-  opacity: 0.2;
-  background: var(--accent-muted) !important;
+  opacity: 0.35;
+  background: var(--accent-subtle) !important;
+  border-color: var(--border-accent) !important;
+  border-style: dashed !important;
 }
 
 .sortable-drag {
   cursor: grabbing !important;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2) !important;
+  transform: scale(1.01);
+  border-color: var(--border-accent) !important;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.42), 0 0 0 1px var(--border-accent) !important;
 }
 </style>

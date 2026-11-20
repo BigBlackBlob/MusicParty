@@ -1,7 +1,8 @@
 <!-- File: music-party-web/src/components/NamePromptModal.vue -->
 <template>
-  <div v-if="userStore.showNameModal" class="fixed inset-0 z-[var(--z-toast)] bg-[var(--surface-0)]/90 backdrop-blur-xl flex items-center justify-center p-4">
-    <div class="bg-[var(--surface-4)] p-6 w-full max-w-sm rounded-2xl shadow-2xl relative border border-[var(--border-default)] overflow-hidden">
+  <Transition name="mp-modal-fade">
+    <div v-if="userStore.showNameModal" class="fixed inset-0 z-[var(--z-toast)] bg-[var(--surface-0)]/90 backdrop-blur-xl flex items-center justify-center p-4">
+      <div class="mp-modal-panel bg-[var(--surface-4)] p-6 w-full max-w-sm rounded-2xl shadow-2xl relative border border-[var(--border-default)] overflow-hidden">
       <div class="absolute inset-x-0 top-0 h-1 bg-[var(--accent)]"></div>
 
       <h2 class="text-xl font-bold text-[var(--text-primary)] mb-2">{{ t('namePrompt.title') }}</h2>
@@ -30,6 +31,7 @@
       </div>
     </div>
   </div>
+  </Transition>
 </template>
 
 <script setup>

@@ -1,8 +1,8 @@
 <template>
   <DialogRoot :open="isOpen" @update:open="val => !val && emit('close')">
     <DialogPortal>
-      <DialogOverlay class="fixed inset-0 z-[var(--z-overlay)] bg-[var(--overlay-backdrop)] backdrop-blur-md transition-all duration-300" />
-      <DialogContent class="fixed inset-0 z-[var(--z-overlay)] flex items-center justify-center p-8 outline-none">
+      <DialogOverlay class="mp-dialog-overlay fixed inset-0 z-[var(--z-overlay)] bg-[var(--overlay-backdrop)] backdrop-blur-md" />
+      <DialogContent class="mp-dialog-content fixed inset-0 z-[var(--z-overlay)] flex items-center justify-center p-8 outline-none">
         <!-- New Search UI Container -->
         <div class="w-full max-w-5xl h-[80vh] bg-bg-base rounded-xl border border-border-default shadow-2xl flex flex-col overflow-hidden">
           <!-- Search Header -->
@@ -36,32 +36,38 @@
             </div>
 
             <!-- Search Type Tabs -->
-            <div class="flex gap-1 mt-4 border-b border-border-subtle">
+            <div class="relative flex gap-1 mt-4 border-b border-border-subtle">
               <button
+                :ref="(el) => setSearchTabRef(SONG_SEARCH_TYPE, el)"
                 @click="searchType = SONG_SEARCH_TYPE"
                 class="relative px-4 py-2 text-xs font-semibold tracking-wide transition-colors"
                 :class="searchType === SONG_SEARCH_TYPE ? 'text-text-primary' : 'text-text-tertiary hover:text-text-secondary'"
               >
                 {{ t('search.song') }}
-                <span v-if="searchType === SONG_SEARCH_TYPE" class="absolute inset-x-2 -bottom-px h-[2px] rounded-full bg-primary"></span>
               </button>
               <button
+                :ref="(el) => setSearchTabRef(ALBUM_SEARCH_TYPE, el)"
                 @click="searchType = ALBUM_SEARCH_TYPE"
                 :disabled="!supportsAlbumSearch"
                 class="relative px-4 py-2 text-xs font-semibold tracking-wide transition-colors disabled:cursor-not-allowed disabled:opacity-40"
                 :class="searchType === ALBUM_SEARCH_TYPE ? 'text-text-primary' : 'text-text-tertiary hover:text-text-secondary disabled:hover:text-text-tertiary'"
               >
                 {{ t('search.album') }}
-                <span v-if="searchType === ALBUM_SEARCH_TYPE" class="absolute inset-x-2 -bottom-px h-[2px] rounded-full bg-primary"></span>
               </button>
               <button
+                :ref="(el) => setSearchTabRef(PLAYLIST_SEARCH_TYPE, el)"
                 @click="searchType = PLAYLIST_SEARCH_TYPE"
                 class="relative px-4 py-2 text-xs font-semibold tracking-wide transition-colors"
                 :class="searchType === PLAYLIST_SEARCH_TYPE ? 'text-text-primary' : 'text-text-tertiary hover:text-text-secondary'"
               >
                 {{ t('search.playlist') }}
-                <span v-if="searchType === PLAYLIST_SEARCH_TYPE" class="absolute inset-x-2 -bottom-px h-[2px] rounded-full bg-primary"></span>
               </button>
+              <span
+                v-if="tabIndicator.ready"
+                class="search-tab-indicator"
+                aria-hidden="true"
+                :style="tabIndicatorStyle"
+              />
             </div>
           </div>
 
@@ -83,7 +89,8 @@
 
             <!-- Results -->
             <main class="flex-1 p-6 overflow-y-auto bg-bg-base space-y-2">
-              <div v-if="loading" class="space-y-2" aria-busy="true" :aria-label="t('search.loading')">
+              <Transition name="search-fade" mode="out-in">
+              <div v-if="loading" key="loading" class="space-y-2" aria-busy="true" :aria-label="t('search.loading')">
                 <div v-for="i in 6" :key="i" class="flex items-center gap-4 rounded-lg p-3">
                   <div class="h-10 w-10 shrink-0 rounded animate-shimmer bg-[var(--surface-control)]"></div>
                   <div class="flex flex-1 flex-col gap-2">
@@ -93,7 +100,7 @@
                   <div class="h-7 w-7 shrink-0 rounded animate-shimmer bg-[var(--surface-control)]"></div>
                 </div>
               </div>
-              <div v-else-if="searchError" class="flex flex-col items-center justify-center py-20 text-center gap-3" role="status">
+              <div v-else-if="searchError" key="error" class="flex flex-col items-center justify-center py-20 text-center gap-3" role="status">
                 <span class="material-symbols-outlined text-[36px] text-primary opacity-70">cloud_off</span>
                 <p class="text-sm font-semibold text-text-primary">{{ t('search.failed') }}</p>
                 <p class="text-xs text-text-secondary">{{ t('search.noResultsDesc') }}</p>
@@ -101,12 +108,12 @@
                   {{ t('common.retry') }}
                 </button>
               </div>
-              <div v-else-if="displayItems.length === 0" class="flex flex-col items-center justify-center text-center py-20">
+              <div v-else-if="displayItems.length === 0" key="empty" class="flex flex-col items-center justify-center text-center py-20">
                 <div class="text-[14px] text-text-primary font-bold">{{ emptyTitle }}</div>
                 <div class="text-[12px] text-text-muted mt-1">{{ emptyMessage }}</div>
               </div>
 
-              <div v-else class="space-y-2">
+              <div v-else :key="resultMode" class="space-y-2">
                 <!-- Bulk Add for Playlist -->
                 <div v-if="searchType === PLAYLIST_SEARCH_TYPE && playlistSongs.length > 0" class="mb-4 flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg bg-primary/5 border border-primary/20">
                    <div class="flex items-center gap-3">
@@ -171,8 +178,14 @@
 
                   <!-- Album Songs List -->
                   <div v-if="resultMode === ALBUM_SEARCH_TYPE && expandedAlbumIds.has(item.id)" class="ml-14 space-y-1 mb-4 mt-1">
-                    <div v-if="loadingAlbumIds.has(item.id)" class="py-4 text-center text-text-muted text-[12px] font-compact">
-                      {{ t('search.loading') }}
+                    <div v-if="loadingAlbumIds.has(item.id)" class="space-y-1.5 py-2" aria-busy="true" :aria-label="t('search.loading')">
+                      <div v-for="j in 3" :key="j" class="flex items-center gap-3 rounded-md px-3 py-2">
+                        <div class="h-3 w-4 shrink-0 rounded animate-shimmer"></div>
+                        <div class="flex flex-1 flex-col gap-1.5">
+                          <div class="h-2.5 w-1/2 rounded animate-shimmer"></div>
+                          <div class="h-2 w-1/3 rounded opacity-75 animate-shimmer"></div>
+                        </div>
+                      </div>
                     </div>
                     <div v-else-if="albumSongs[item.id]" class="space-y-1">
                       <!-- Album Multi-select Toolbar -->
@@ -250,6 +263,7 @@
                    </button>
                 </div>
               </div>
+              </Transition>
             </main>
           </div>
         </div>
@@ -259,7 +273,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, nextTick, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoomCommandStore } from '../domains/realtime/roomCommandStore';
 import { useUserPlaylistsStore } from '../stores/userPlaylists';
@@ -276,7 +290,7 @@ import {
   toggleAlbumSongSelection
 } from '../utils/selection';
 
-defineProps(['isOpen']);
+const props = defineProps(['isOpen']);
 const emit = defineEmits(['close']);
 const playerStore = useRoomCommandStore();
 const userPlaylistsStore = useUserPlaylistsStore();
@@ -290,6 +304,30 @@ const {
   currentPage, currentPlaylistPage, canGoNext, canGoPlaylistNext, nextPage, prevPage, addAllPlaylistSongs,
   albumSongs, loadingAlbumIds, expandedAlbumIds, toggleAlbum
 } = useSearchLogic();
+
+const searchTabRefs = new Map();
+const tabIndicator = ref({ left: 0, width: 0, ready: false });
+const setSearchTabRef = (tab, el) => {
+  if (el instanceof HTMLElement) searchTabRefs.set(tab, el);
+  else searchTabRefs.delete(tab);
+};
+const updateSearchTabIndicator = () => {
+  const el = searchTabRefs.get(searchType.value);
+  if (!el) return;
+  tabIndicator.value = {
+    left: el.offsetLeft + 8,
+    width: Math.max(0, el.offsetWidth - 16),
+    ready: true,
+  };
+};
+const tabIndicatorStyle = computed(() => ({
+  transform: `translateX(${tabIndicator.value.left}px)`,
+  width: `${tabIndicator.value.width}px`,
+}));
+watch([searchType, () => props.isOpen, supportsAlbumSearch], async () => {
+  await nextTick();
+  updateSearchTabIndicator();
+});
 
 const selectedSongs = ref(new Set());
 
@@ -381,7 +419,10 @@ const addSelectedSongs = (albumId) => {
   clearAlbumSongSelections(albumId);
 };
 
-onMounted(loadPlatforms);
+onMounted(() => {
+  loadPlatforms();
+  nextTick(updateSearchTabIndicator);
+});
 const jumpToPage = (rawValue) => {
   const page = Math.max(1, Number.parseInt(rawValue, 10) || 1);
   doSearch(page);
@@ -404,3 +445,35 @@ const saveSingleSong = async (song) => {
   useToast().success(t('personalPlaylists.savedResult', { added: result.addedCount, skipped: result.skippedCount }));
 };
 </script>
+
+<style scoped>
+.search-tab-indicator {
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  height: 2px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  pointer-events: none;
+  transition: transform var(--motion-enter) var(--motion-ease-standard),
+    width var(--motion-enter) var(--motion-ease-standard);
+}
+
+.search-fade-enter-active {
+  transition: opacity var(--motion-enter) var(--motion-ease-standard),
+    transform var(--motion-enter) var(--motion-ease-standard);
+}
+
+.search-fade-leave-active {
+  transition: opacity 110ms var(--motion-ease-in);
+}
+
+.search-fade-enter-from {
+  opacity: 0;
+  transform: translateY(3px);
+}
+
+.search-fade-leave-to {
+  opacity: 0;
+}
+</style>

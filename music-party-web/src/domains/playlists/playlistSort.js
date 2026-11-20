@@ -8,8 +8,12 @@ export function bindPlaylistSort(list, onReorder) {
   let anchor = null
   const sortable = new Sortable(list, {
     draggable: '[data-reorder-id]',
-    handle: '[data-reorder-handle]',
-    animation: 0,
+    filter: 'input, textarea, select, [data-no-drag]',
+    preventOnFilter: false,
+    animation: 160,
+    ghostClass: 'mp-drag-ghost',
+    chosenClass: 'mp-drag-chosen',
+    dragClass: 'mp-drag-active',
     onChoose(event) { anchor = event.item.nextSibling },
     onEnd(event) {
       const { item, oldDraggableIndex, newDraggableIndex } = event

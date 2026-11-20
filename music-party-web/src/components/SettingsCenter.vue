@@ -1,6 +1,6 @@
 <template>
   <div class="settings-center">
-    <div class="settings-center__shell" :class="{ 'settings-center__shell--mobile': mobile }">
+    <div class="settings-center__shell mp-modal-panel" :class="{ 'settings-center__shell--mobile': mobile }">
       <header class="settings-center__header">
         <div>
           <h2 class="settings-center__title">{{ t('settings.title') }}</h2>
@@ -28,17 +28,36 @@
         </nav>
 
         <main class="settings-center__content">
-          <section v-if="activeSection === 'general'" class="settings-section">
+          <Transition name="settings-fade" mode="out-in">
+          <section v-if="activeSection === 'general'" key="general" class="settings-section">
             <h3 class="settings-section__title">{{ t('settings.general') }}</h3>
             <div class="settings-grid">
-              <button class="settings-row" type="button" @click="ui.toggleDarkMode">
-                <span>{{ t('settings.theme') }}</span>
-                <strong>{{ ui.isDarkMode ? t('settings.dark') : t('settings.light') }}</strong>
-              </button>
-              <button class="settings-row" type="button" @click="ui.setLocale(ui.locale === 'en' ? 'zh' : 'en')">
-                <span>{{ t('settings.language') }}</span>
-                <strong>{{ ui.locale === 'en' ? t('settings.english') : t('settings.chinese') }}</strong>
-              </button>
+              <div class="settings-control-block">
+                <div class="settings-control-block__header">
+                  <span>{{ t('settings.theme') }}</span>
+                </div>
+                <div class="settings-segment">
+                  <button type="button" :class="{ active: ui.isDarkMode }" @click="ui.isDarkMode || ui.toggleDarkMode()">
+                    {{ t('settings.dark') }}
+                  </button>
+                  <button type="button" :class="{ active: !ui.isDarkMode }" @click="!ui.isDarkMode || ui.toggleDarkMode()">
+                    {{ t('settings.light') }}
+                  </button>
+                </div>
+              </div>
+              <div class="settings-control-block">
+                <div class="settings-control-block__header">
+                  <span>{{ t('settings.language') }}</span>
+                </div>
+                <div class="settings-segment">
+                  <button type="button" :class="{ active: ui.locale === 'zh' }" @click="ui.setLocale('zh')">
+                    {{ t('settings.chinese') }}
+                  </button>
+                  <button type="button" :class="{ active: ui.locale === 'en' }" @click="ui.setLocale('en')">
+                    {{ t('settings.english') }}
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div class="settings-control-block">
@@ -68,7 +87,7 @@
             </div>
           </section>
 
-          <section v-else-if="activeSection === 'members'" class="settings-section">
+          <section v-else-if="activeSection === 'members'" key="members" class="settings-section">
             <h3 class="settings-section__title">{{ t('settings.onlineMembers') }}</h3>
             <div class="settings-members">
               <div v-for="member in displayMembers" :key="member.publicId || member.name" class="settings-member">
@@ -81,11 +100,11 @@
             </div>
           </section>
 
-          <section v-else-if="activeSection === 'account'" class="settings-section">
+          <section v-else-if="activeSection === 'account'" key="account" class="settings-section">
             <PersonalInfoPanel @logged-out="$emit('close')" />
           </section>
 
-          <section v-else-if="activeSection === 'room'" class="settings-section">
+          <section v-else-if="activeSection === 'room'" key="room" class="settings-section">
             <h3 class="settings-section__title">{{ t('settings.currentRoom') }}</h3>
             <div class="settings-control-block">
               <label class="settings-control-block__header" for="settings-room-name">
@@ -114,9 +133,10 @@
             </button>
           </section>
 
-          <section v-else class="settings-section">
+          <section v-else :key="activeSection" class="settings-section">
             <AdminSettingsPanel :section="activeSection" />
           </section>
+          </Transition>
         </main>
       </div>
     </div>
@@ -429,6 +449,24 @@ const getInitials = (name = '') => {
 .settings-segment button.active {
   background: var(--accent);
   color: var(--on-primary);
+}
+
+.settings-fade-enter-active {
+  transition: opacity var(--motion-enter) var(--motion-ease-standard),
+    transform var(--motion-enter) var(--motion-ease-standard);
+}
+
+.settings-fade-leave-active {
+  transition: opacity 110ms var(--motion-ease-in);
+}
+
+.settings-fade-enter-from {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.settings-fade-leave-to {
+  opacity: 0;
 }
 
 .settings-members {

@@ -14,7 +14,7 @@ describe('layout store', () => {
     const store = useLayoutStore();
 
     expect(store.layout.columnCount).toBe(3);
-    expect(store.placedModuleIds).toEqual(['nowplaying', 'lyrics', 'queue']);
+    expect(store.placedModuleIds).toEqual(['nowplaying', 'lyrics', 'queue-playlists']);
     expect(localStorage.getItem(LAYOUT_STORAGE_KEY)).toBeNull();
   });
 
@@ -54,16 +54,16 @@ describe('layout store', () => {
   it('does not add or move a module into an occupied column', () => {
     const store = useLayoutStore();
 
-    store.removeModule('queue', 'col-2');
-    store.addModule('queue', 'col-0');
+    store.removeModule('queue-playlists', 'col-2');
+    store.addModule('queue-playlists', 'col-0');
 
     expect(store.layout.columns[0].modules).toEqual(['nowplaying']);
     expect(store.layout.columns[2].modules).toEqual([]);
 
-    store.addModule('queue', 'col-2');
+    store.addModule('queue-playlists', 'col-2');
     store.moveModule('lyrics', 'col-1', 'col-2', 0);
 
     expect(store.layout.columns[1].modules).toEqual(['lyrics']);
-    expect(store.layout.columns[2].modules).toEqual(['queue']);
+    expect(store.layout.columns[2].modules).toEqual(['queue-playlists']);
   });
 });

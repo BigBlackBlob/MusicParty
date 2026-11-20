@@ -173,11 +173,4 @@ const currentLineKey = computed(() => {
   opacity: 0;
   transform: translate3d(0, -0.45rem, 0);
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .mini-lyric-line-enter-active,
-  .mini-lyric-line-leave-active {
-    transition-duration: 0.01ms;
-  }
-}
 </style>

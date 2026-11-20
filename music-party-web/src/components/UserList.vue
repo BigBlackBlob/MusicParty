@@ -193,12 +193,5 @@ const isEnqueuerById = (publicId) => {
   0%, 100% { transform: scaleY(0.4); }
   50% { transform: scaleY(1); }
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .bar {
-    animation: none;
-    transform: scaleY(0.7);
-  }
-}
 </style>
 

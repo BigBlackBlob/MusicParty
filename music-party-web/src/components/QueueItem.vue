@@ -9,8 +9,15 @@
   >
     <template #prefix>
       <div v-if="selectionMode" class="flex h-5 w-5 items-center justify-center rounded-full border transition-colors" :class="selected ? 'border-primary bg-primary text-on-primary' : 'border-border-default bg-surface-raised text-transparent'" @click.stop="emit('toggle-select')">
-        <span class="material-symbols-outlined text-[12px]">check</span>
+        <Check :size="12" :stroke-width="2.25" aria-hidden="true" />
       </div>
+      <GripVertical
+        v-else-if="player.canOperate && (index === undefined || index < 50)"
+        :size="15"
+        :stroke-width="1.75"
+        class="-ml-1 -mr-1.5 shrink-0 text-text-tertiary opacity-0 transition-opacity group-hover:opacity-60 cursor-grab select-none"
+        aria-hidden="true"
+      />
     </template>
 
     <template #meta>
@@ -21,11 +28,25 @@
     </template>
 
     <template #suffix>
-      <button v-if="!selectionMode" @click.stop="player.topSong(item.queueId)" class="hover:text-primary transition-colors" :title="t('queue.playNext')" :aria-label="t('queue.playNext')">
-        <span class="material-symbols-outlined text-[20px]">keyboard_double_arrow_up</span>
+      <button
+        v-if="!selectionMode"
+        type="button"
+        @click.stop="player.topSong(item.queueId)"
+        class="inline-flex h-7 w-7 items-center justify-center rounded-full text-text-tertiary transition-colors hover:bg-[var(--surface-control-hover)] hover:text-primary active:scale-95"
+        :title="t('queue.playNext')"
+        :aria-label="t('queue.playNext')"
+      >
+        <ChevronsUp :size="18" :stroke-width="1.75" aria-hidden="true" />
       </button>
-      <button v-if="!selectionMode" @click.stop="player.removeSong(item.queueId)" class="text-error hover:text-red-400 transition-colors" :title="t('queue.remove')" :aria-label="t('queue.remove')">
-        <span class="material-symbols-outlined text-[20px]">delete</span>
+      <button
+        v-if="!selectionMode"
+        type="button"
+        @click.stop="player.removeSong(item.queueId)"
+        class="inline-flex h-7 w-7 items-center justify-center rounded-full text-text-tertiary transition-colors hover:bg-[var(--error-soft-bg)] hover:text-error active:scale-95"
+        :title="t('queue.remove')"
+        :aria-label="t('queue.remove')"
+      >
+        <Trash2 :size="17" :stroke-width="1.75" aria-hidden="true" />
       </button>
     </template>
   </TrackListItem>
@@ -34,6 +55,7 @@
 <script setup>
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { Check, ChevronsUp, GripVertical, Trash2 } from 'lucide-vue-next';
 import { useRoomCommandStore } from '../domains/realtime/roomCommandStore';
 import TrackListItem from './ui/TrackListItem.vue';
 

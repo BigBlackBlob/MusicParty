@@ -55,4 +55,13 @@ export const MODULE_MANIFEST = {
     maxInstances: 1,
     removable: true,
   },
+  'queue-playlists': {
+    id: 'queue-playlists',
+    label: { en: 'Queue & Playlists', zh: '队列与歌单' },
+    icon: 'queue_music',
+    component: defineAsyncComponent(() => import('../components/modules/QueuePlaylistsModule.vue')),
+    minWidthPx: 300,
+    maxInstances: 1,
+    removable: true,
+  },
 }

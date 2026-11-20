@@ -5,6 +5,9 @@ import { personalPlaylistsApi, type LikedSongTrack } from '../../api/personalPla
 
 export interface LikedSong extends Music {
   key: string
+  trackId: string
+  playlistId: string
+  notes?: string | null
   likedAt: number
 }
 
@@ -12,6 +15,9 @@ const songKey = (music: Pick<Music, 'platform' | 'id'>): string => `${music.plat
 const fromTrack = (track: LikedSongTrack): LikedSong => ({
   ...track.music,
   key: songKey(track.music),
+  trackId: track.id,
+  playlistId: track.playlistId,
+  notes: track.notes ?? null,
   likedAt: track.createdAt,
 })
 
@@ -108,5 +114,23 @@ export const useLikedSongsStore = defineStore('liked-songs', () => {
     if (song) await toggle(song)
   }
 
-  return { likedSongs, isLiked, syncFromServer, removeAndSync, toggle, stageLike, reset }
+  async function updateTrackNotes(key: string, notes: string): Promise<void> {
+    const trimmed = notes.trim()
+    const track = tracks.value.find(item => songKey(item.music) === key)
+    if (!track) return
+    const previous = track.notes
+    if ((previous ?? "") === trimmed) return
+    if (trimmed) track.notes = trimmed
+    else delete track.notes
+    if (!track.playlistId || !track.id) return
+    try {
+      await personalPlaylistsApi.updateTrackNotes(track.playlistId, track.id, trimmed)
+    } catch (error) {
+      if (previous === undefined) delete track.notes
+      else track.notes = previous
+      throw error
+    }
+  }
+
+  return { likedSongs, isLiked, syncFromServer, removeAndSync, toggle, stageLike, updateTrackNotes, reset }
 })
