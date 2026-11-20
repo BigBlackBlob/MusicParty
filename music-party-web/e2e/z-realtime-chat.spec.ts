@@ -49,10 +49,10 @@ test('room and public chat remain isolated while synchronizing between clients',
     await sender.getByRole('button', { name: sendButton }).click()
     await expect(receiver.getByText(roomMessage, { exact: true })).toBeVisible()
 
-    await receiver.getByRole('button', { name: publicTab }).click()
+    await receiver.getByRole('tab', { name: publicTab }).click()
     await expect(receiver.getByText(roomMessage, { exact: true })).toBeHidden()
 
-    await sender.getByRole('button', { name: publicTab }).click()
+    await sender.getByRole('tab', { name: publicTab }).click()
     const publicMessage = uniqueMessage('public-chat')
     await sender.getByPlaceholder(publicPlaceholder).fill(publicMessage)
     await sender.getByRole('button', { name: sendButton }).click()
