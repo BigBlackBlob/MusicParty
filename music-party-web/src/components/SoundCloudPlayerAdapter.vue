@@ -36,6 +36,7 @@ type SoundCloudWidget = {
   pause: () => void;
   seekTo: (positionMs: number) => void;
   getPosition: (callback: (positionMs: number) => void) => void;
+  getDuration: (_callback: (_durationMs: number) => void) => void;
 };
 type SoundCloudAPI = {
   Widget: ((iframe: HTMLIFrameElement) => SoundCloudWidget) & { Events: Record<WidgetEvent, string> };
@@ -180,12 +181,15 @@ function onWidgetPlay() {
   syncInterval = interval;
   widget.getPosition((positionMs) => {
     if (syncInterval !== interval || player.nowPlaying?.playEpoch !== now.playEpoch) return;
-    player.reportPlayback('playback.started', {
-      playEpoch: now.playEpoch,
-      queueId: now.queueId,
-      positionMs,
-      clientTime: player.serverNow(),
-      durationMs: now.music.duration,
+    widget?.getDuration((durationMs) => {
+      if (syncInterval !== interval || player.nowPlaying?.playEpoch !== now.playEpoch) return;
+      player.reportPlayback('playback.started', {
+        playEpoch: now.playEpoch,
+        queueId: now.queueId,
+        positionMs: Math.round(positionMs),
+        clientTime: player.serverNow(),
+        durationMs: Number.isFinite(durationMs) && durationMs > 0 ? Math.round(durationMs) : now.music.duration,
+      });
     });
   });
 }

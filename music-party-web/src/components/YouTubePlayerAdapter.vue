@@ -16,6 +16,7 @@
 import { ref, watch, onMounted, onUnmounted } from 'vue';
 import { useAudioPlayerAdapter } from '../composables/useAudioPlayerAdapter';
 import { useUiStore } from '../stores/ui';
+import { useToastStore } from '../stores/toast';
 
 let youtubeApiPromise;
 
@@ -23,24 +24,41 @@ function loadYouTubeAPI() {
   if (window.YT?.Player) return Promise.resolve(window.YT);
   if (youtubeApiPromise) return youtubeApiPromise;
 
-  youtubeApiPromise = new Promise((resolve) => {
+  youtubeApiPromise = new Promise((resolve, reject) => {
     const previousCallback = window.onYouTubeIframeAPIReady;
+    let script = document.querySelector('script[src="https://www.youtube.com/iframe_api"]');
+    const owned = !script;
+    const cleanup = () => {
+      clearTimeout(timeout);
+      script?.removeEventListener('error', fail);
+      window.onYouTubeIframeAPIReady = previousCallback;
+    };
+    const fail = () => {
+      cleanup();
+      if (owned) script?.remove();
+      youtubeApiPromise = undefined;
+      reject(new Error('YouTube API unavailable'));
+    };
+    const timeout = setTimeout(fail, 15000);
     window.onYouTubeIframeAPIReady = () => {
+      cleanup();
       previousCallback?.();
       resolve(window.YT);
     };
-    if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
-      const script = document.createElement('script');
+    if (!script) {
+      script = document.createElement('script');
       script.src = 'https://www.youtube.com/iframe_api';
       script.async = true;
-      document.head.appendChild(script);
     }
+    script.addEventListener('error', fail, { once: true });
+    if (owned) document.head.appendChild(script);
   });
   return youtubeApiPromise;
 }
 
 const player = useAudioPlayerAdapter();
 const ui = useUiStore();
+const toast = useToastStore();
 const needsUserGesture = ref(false);
 let ytPlayer;
 let destroyed = false;
@@ -50,6 +68,7 @@ let autoplayTimeout;
 let autoplayPending = false;
 let bufferingReported = false;
 let currentVideoId = '';
+let failed = false;
 
 function clearPlaybackTimers() {
   clearInterval(syncInterval);
@@ -69,6 +88,10 @@ function seekToRoomPosition() {
 
 function loadCurrentVideo(embedId) {
   if (!embedId || !ytPlayer) return;
+  clearPlaybackTimers();
+  failed = false;
+  player.isErrorState = false;
+  player.isBuffering = false;
   currentVideoId = embedId;
   needsUserGesture.value = false;
   autoplayPending = !player.isPaused;
@@ -82,7 +105,30 @@ function loadCurrentVideo(embedId) {
   }
 }
 
-function reportError() {
+function reportError(code) {
+  if (destroyed || failed) return;
+  failed = true;
+  clearPlaybackTimers();
+  autoplayPending = false;
+  needsUserGesture.value = code === 5;
+  player.isBuffering = false;
+  player.isErrorState = true;
+  const zh = ui.locale === 'zh';
+  const hostname = window.location.hostname;
+  const ipOrigin = /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname) || hostname.startsWith('[');
+  const embedMessage = ipOrigin
+    ? (zh ? 'YouTube 拒绝嵌入播放，当前通过 IP 地址访问，请改用域名打开页面。' : 'YouTube refused embedded playback from this IP address. Open this page using a domain name.')
+    : (zh ? 'YouTube 拒绝嵌入播放，可在 YouTube 原站打开。' : 'YouTube refused embedded playback. Open the video on YouTube.');
+  const messages = {
+    2: zh ? 'YouTube 视频链接或 ID 无效。' : 'The YouTube video link or ID is invalid.',
+    5: zh ? 'YouTube 播放器加载失败，请点击启用声音重试。' : 'YouTube playback failed. Tap to enable sound to retry.',
+    100: zh ? 'YouTube 视频不存在、已删除或设为私密。' : 'This YouTube video is missing, removed or private.',
+    101: embedMessage,
+    150: embedMessage,
+    153: zh ? 'YouTube 无法验证嵌入来源，请检查页面来源和 Referer 设置。' : 'YouTube could not verify the embed origin. Check the page origin and Referer settings.',
+  };
+  const message = messages[code] ?? (zh ? 'YouTube 播放器无法加载，请检查网络后重试。' : 'YouTube could not load. Check your connection and retry.');
+  toast.add({ title: 'YouTube', message: `${message} (${code ?? 'API'})`, type: 'error', duration: 10000 });
   const now = player.nowPlaying;
   if (now?.queueId) {
     player.reportPlayback('playback.error', {
@@ -94,12 +140,15 @@ function reportError() {
 }
 
 function onPlayerStateChange(event) {
+  // YouTube can emit BUFFERING after a terminal error; keep that failure visible.
+  if (destroyed || failed) return;
   const YT = window.YT;
   if (!YT) return;
   if (event.data === YT.PlayerState.PLAYING) {
     autoplayPending = false;
     needsUserGesture.value = false;
     player.isBuffering = false;
+    player.isErrorState = false;
     bufferingReported = false;
     clearTimeout(bufferingTimeout);
     bufferingTimeout = undefined;
@@ -154,20 +203,25 @@ function onPlayerStateChange(event) {
 }
 
 function onPlayerError(event) {
-  reportError();
-  if (event.data === 5) needsUserGesture.value = true;
+  reportError(event.data);
 }
 
 function enableSound() {
   if (!ytPlayer) return;
+  failed = false;
+  player.isErrorState = false;
   autoplayPending = true;
   ytPlayer.playVideo();
   needsUserGesture.value = false;
 }
 
-watch(() => player.nowPlaying?.music?.embedId, loadCurrentVideo);
+watch([
+  () => player.nowPlaying?.music?.embedId,
+  () => player.nowPlaying?.playEpoch,
+  () => player.nowPlaying?.queueId,
+], ([embedId]) => loadCurrentVideo(embedId));
 watch(() => player.isPaused, (paused) => {
-  if (!ytPlayer || !currentVideoId) return;
+  if (!ytPlayer || !currentVideoId || failed) return;
   if (paused) {
     ytPlayer.pauseVideo();
   } else {
@@ -180,26 +234,30 @@ watch(() => player.forceNextSyncSeek, (shouldSeek) => {
 });
 
 onMounted(async () => {
-  const YT = await loadYouTubeAPI();
-  if (destroyed) return;
-  ytPlayer = new YT.Player('yt-player-container', {
-    width: '1',
-    height: '1',
-    videoId: player.nowPlaying?.music?.embedId,
-    playerVars: {
-      autoplay: 1,
-      controls: 0,
-      disablekb: 1,
-      enablejsapi: 1,
-      origin: window.location.origin,
-      rel: 0,
-    },
-    events: {
-      onReady: () => loadCurrentVideo(player.nowPlaying?.music?.embedId),
-      onStateChange: onPlayerStateChange,
-      onError: onPlayerError,
-    },
-  });
+  try {
+    const YT = await loadYouTubeAPI();
+    if (destroyed) return;
+    ytPlayer = new YT.Player('yt-player-container', {
+      width: '1',
+      height: '1',
+      videoId: player.nowPlaying?.music?.embedId,
+      playerVars: {
+        autoplay: 1,
+        controls: 0,
+        disablekb: 1,
+        enablejsapi: 1,
+        origin: window.location.origin,
+        rel: 0,
+      },
+      events: {
+        onReady: () => loadCurrentVideo(player.nowPlaying?.music?.embedId),
+        onStateChange: onPlayerStateChange,
+        onError: onPlayerError,
+      },
+    });
+  } catch {
+    reportError();
+  }
 });
 
 onUnmounted(() => {
@@ -208,6 +266,7 @@ onUnmounted(() => {
   ytPlayer?.destroy();
   ytPlayer = undefined;
   player.isBuffering = false;
+  player.isErrorState = false;
 });
 </script>
 

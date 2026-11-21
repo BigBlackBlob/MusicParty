@@ -2,6 +2,7 @@ package soundcloud
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,11 +13,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAvailableRequiresClientID(t *testing.T) {
+func TestAvailableForPublicLinksWithoutClientID(t *testing.T) {
 	service := New(platform.NewClient(time.Second), true, "", "")
-	if service.Available() {
-		t.Fatal("Available() = true with an empty client ID")
-	}
+	require.True(t, service.Available())
+	require.False(t, New(platform.NewClient(time.Second), false, "", "").Available())
 }
 
 func TestResolvePlayableUsesSoundCloudWidget(t *testing.T) {
@@ -100,6 +100,10 @@ func TestSearchPermalinkResolveResponses(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if test.status == http.StatusUnauthorized && r.URL.Path == "/oembed" {
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
 				if r.URL.Path != "/resolve" || r.URL.Query().Get("url") != permalink {
 					t.Errorf("unexpected resolve request: %s", r.URL)
 					http.Error(w, "unexpected resolve request", http.StatusBadRequest)
@@ -139,6 +143,63 @@ func TestSearchPermalinkLaterPageIsEmpty(t *testing.T) {
 	tracks, err := service.Search(t.Context(), "https://soundcloud.com/artist/track", 20, 20)
 	require.NoError(t, err)
 	require.Empty(t, tracks)
+}
+
+func TestPublicPermalinkSurvivesUnavailableAPIAndServiceRestart(t *testing.T) {
+	const permalink = "https://soundcloud.com/mystical-complex/mystical-complex-kill-them-1"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/oembed" {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		require.Empty(t, r.Header.Get("Authorization"))
+		require.Empty(t, r.URL.Query().Get("client_id"))
+		require.Empty(t, r.URL.Query().Get("oauth_token"))
+		require.Contains(t, []string{permalink, "https://api.soundcloud.com/tracks/54202938"}, r.URL.Query().Get("url"))
+		_, _ = w.Write([]byte(`{"title":"Kill them All II by Mystical Complex","author_name":"Mystical Complex","thumbnail_url":"https://i1.sndcdn.com/cover.jpg","html":"<iframe src=\"https://w.soundcloud.com/player/?url=https%3A%2F%2Fapi.soundcloud.com%2Ftracks%2F54202938&visual=true\"></iframe>"}`))
+	}))
+	t.Cleanup(server.Close)
+	client := platform.NewClient(time.Second)
+	client.HTTP.Transport = rewriteTransport{target: server.URL, base: server.Client().Transport}
+	service := New(client, true, "rejected-client", "")
+	service.UpdateCredential("private-token")
+	tracks, err := service.Search(t.Context(), permalink, 0, 20)
+	require.NoError(t, err)
+	require.Len(t, tracks, 1)
+	require.Equal(t, "54202938", tracks[0].ID)
+	require.Equal(t, "Kill them All II", tracks[0].Name)
+	for _, clientID := range []string{"", "rejected-client"} {
+		restarted := New(client, true, clientID, "")
+		require.True(t, restarted.Available())
+		playable, err := restarted.ResolvePlayable(t.Context(), tracks[0].ID)
+		require.NoError(t, err)
+		require.Equal(t, tracks[0], playable.Music)
+		require.Equal(t, "soundcloud-widget", playable.PlayerType)
+		require.Equal(t, "54202938", playable.EmbedID)
+	}
+}
+
+func TestPublicOEmbedRejectsUnexpectedPlayerTargets(t *testing.T) {
+	for _, target := range []string{
+		"https://evil.example/player/?url=https%3A%2F%2Fapi.soundcloud.com%2Ftracks%2F123",
+		"https://w.soundcloud.com/player/?url=https%3A%2F%2Fevil.example%2Ftracks%2F123",
+		"https://w.soundcloud.com/player/?url=https%3A%2F%2Fapi.soundcloud.com%2Fplaylists%2F123",
+		"https://w.soundcloud.com/player/?url=https%3A%2F%2Fapi.soundcloud.com%2Ftracks%2F-1",
+		"https://w.soundcloud.com/player/?url=https%3A%2F%2Fapi.soundcloud.com%2Ftracks%2F123%2Fstream",
+	} {
+		t.Run(target, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, "/oembed", r.URL.Path)
+				_ = json.NewEncoder(w).Encode(map[string]string{"title": "Track", "html": `<iframe src="` + target + `"></iframe>`})
+			}))
+			t.Cleanup(server.Close)
+			client := platform.NewClient(time.Second)
+			client.HTTP.Transport = rewriteTransport{target: server.URL, base: server.Client().Transport}
+			tracks, err := New(client, true, "", "").Search(t.Context(), "https://soundcloud.com/artist/track", 0, 20)
+			require.ErrorContains(t, err, "did not return a track Widget")
+			require.Empty(t, tracks)
+		})
+	}
 }
 
 func TestSearchKeywordsAndNonTrackURLs(t *testing.T) {

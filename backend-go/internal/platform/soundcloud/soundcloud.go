@@ -3,6 +3,7 @@ package soundcloud
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"net/http"
@@ -31,7 +32,7 @@ func New(client *platform.Client, enabled bool, clientID, _ string) *Service {
 
 func (*Service) Name() string { return "soundcloud" }
 
-func (s *Service) Available() bool { return s.enabled && s.clientID != "" }
+func (s *Service) Available() bool { return s.enabled }
 
 func (s *Service) UpdateCredential(value string) {
 	s.mu.Lock()
@@ -138,8 +139,14 @@ func (s *Service) Search(ctx context.Context, keyword string, offset, limit int)
 }
 
 func (s *Service) resolvePermalink(ctx context.Context, permalink string) ([]platform.Music, error) {
+	if s.clientID == "" {
+		return s.publicSearch(ctx, permalink)
+	}
 	var item track
 	if err := s.getJSON(ctx, "/resolve", url.Values{"url": {permalink}}, &item); err != nil {
+		if authorizationDenied(err) {
+			return s.publicSearch(ctx, permalink)
+		}
 		var upstream *platform.UpstreamError
 		var syntaxError *json.SyntaxError
 		var typeError *json.UnmarshalTypeError
@@ -159,11 +166,84 @@ func (s *Service) trackInfo(ctx context.Context, id string) (platform.Music, err
 	if strings.TrimSpace(id) == "" {
 		return platform.Music{}, errors.New("soundcloud track ID is required")
 	}
+	if s.clientID == "" {
+		return s.publicTrack(ctx, apiBaseURL+"/tracks/"+url.PathEscape(id))
+	}
 	var item track
 	if err := s.getJSON(ctx, "/tracks/"+url.PathEscape(id), url.Values{}, &item); err != nil {
+		if authorizationDenied(err) {
+			return s.publicTrack(ctx, apiBaseURL+"/tracks/"+url.PathEscape(id))
+		}
 		return platform.Music{}, err
 	}
 	return item.music(), nil
+}
+
+func authorizationDenied(err error) bool {
+	var upstream *platform.UpstreamError
+	return errors.As(err, &upstream) && (upstream.Status == http.StatusUnauthorized || upstream.Status == http.StatusForbidden)
+}
+
+func (s *Service) publicSearch(ctx context.Context, permalink string) ([]platform.Music, error) {
+	music, err := s.publicTrack(ctx, permalink)
+	var upstream *platform.UpstreamError
+	if errors.As(err, &upstream) && upstream.Status == http.StatusNotFound {
+		return []platform.Music{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return []platform.Music{music}, nil
+}
+
+// Public oEmbed supplies a durable numeric Widget ID without API credentials.
+// Duration is unknown here and is reported by the Widget when playback starts.
+func (s *Service) publicTrack(ctx context.Context, source string) (platform.Music, error) {
+	var response struct {
+		Title     string `json:"title"`
+		Author    string `json:"author_name"`
+		Thumbnail string `json:"thumbnail_url"`
+		HTML      string `json:"html"`
+	}
+	query := url.Values{"url": {source}, "format": {"json"}}
+	if err := withoutRequestURL(s.client.JSON(ctx, "https://soundcloud.com/oembed?"+query.Encode(), nil, &response)); err != nil {
+		return platform.Music{}, err
+	}
+	decoder := xml.NewDecoder(strings.NewReader(response.HTML))
+	decoder.Strict = false // oEmbed returns HTML, including unescaped ampersands.
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			break
+		}
+		element, ok := token.(xml.StartElement)
+		if !ok || element.Name.Local != "iframe" {
+			continue
+		}
+		for _, attr := range element.Attr {
+			if attr.Name.Local != "src" {
+				continue
+			}
+			widget, err := url.Parse(attr.Value)
+			if err != nil || widget.Scheme != "https" || widget.Host != "w.soundcloud.com" || widget.Path != "/player/" || widget.User != nil {
+				continue
+			}
+			trackURL, err := url.Parse(widget.Query().Get("url"))
+			if err != nil || trackURL.Scheme != "https" || trackURL.Host != "api.soundcloud.com" || trackURL.User != nil {
+				continue
+			}
+			id := strings.TrimPrefix(trackURL.Path, "/tracks/")
+			numeric, err := strconv.ParseInt(id, 10, 64)
+			if !strings.HasPrefix(trackURL.Path, "/tracks/") || err != nil || numeric <= 0 || strconv.FormatInt(numeric, 10) != id {
+				continue
+			}
+			if strings.TrimSpace(response.Title) == "" {
+				continue
+			}
+			return platform.Music{ID: id, Name: strings.TrimSuffix(response.Title, " by "+response.Author), Artists: []string{response.Author}, Platform: "soundcloud", CoverURL: response.Thumbnail}, nil
+		}
+	}
+	return platform.Music{}, errors.New("soundcloud oEmbed did not return a track Widget")
 }
 
 func (s *Service) ResolvePlayable(ctx context.Context, id string) (platform.PlayableMusic, error) {
@@ -171,7 +251,7 @@ func (s *Service) ResolvePlayable(ctx context.Context, id string) (platform.Play
 	if err != nil {
 		return platform.PlayableMusic{}, err
 	}
-	return platform.PlayableMusic{Music: music, PlayerType: "soundcloud-widget", EmbedID: id}, nil
+	return platform.PlayableMusic{Music: music, PlayerType: "soundcloud-widget", EmbedID: music.ID}, nil
 }
 
 func (s *Service) StreamURL(ctx context.Context, id string) (string, error) {
