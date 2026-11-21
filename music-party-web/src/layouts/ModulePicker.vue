@@ -35,7 +35,7 @@
             </div>
             <div class="flex-1 min-w-0">
               <div class="text-sm font-bold text-text-primary group-hover:text-accent transition-colors">
-                {{ t(`layout.modules.${mod.id}`) || mod.label[locale] }}
+                {{ te(`layout.modules.${mod.id}`) ? t(`layout.modules.${mod.id}`) : mod.label[locale] }}
               </div>
               <div class="text-[10px] text-text-muted uppercase tracking-wider mt-0.5">
                 {{ mod.id }}
@@ -65,7 +65,7 @@ const props = defineProps({
 
 const emit = defineEmits(['close']);
 
-const { t, locale } = useI18n();
+const { t, te, locale } = useI18n();
 const layoutStore = useLayoutStore();
 
 const availableModules = computed(() => {

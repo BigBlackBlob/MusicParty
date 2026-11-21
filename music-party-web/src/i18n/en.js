@@ -32,7 +32,8 @@ export default {
       lyrics: 'Lyrics',
       queue: 'Queue',
       chat: 'Chat',
-      playlists: 'Playlists'
+      playlists: 'Playlists',
+      'queue-playlists': 'Queue & Playlists'
     }
   },
 

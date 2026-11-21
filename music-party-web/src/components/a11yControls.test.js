@@ -35,7 +35,7 @@ describe('accessible control semantics', () => {
   });
 
   it('gives room playlist icon controls accessible names', () => {
-    const source = readSource('src/components/modules/RoomPlaylistsModule.vue');
+    const source = readSource('src/components/modules/queue-playlists/PlaylistsTabPane.vue');
 
     expect(source).toContain(':aria-label="t(\'common.back\')"');
     expect(source).toContain(':aria-label="t(\'roomPlaylists.playAll\')"');

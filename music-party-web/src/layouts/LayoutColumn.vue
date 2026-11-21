@@ -170,7 +170,6 @@ onBeforeUnmount(() => {
   box-shadow: none;
 }
 
-.layout-module-wrapper[data-id="queue"],
 .layout-module-wrapper[data-id="queue-playlists"] {
   background: var(--surface-panel);
 }

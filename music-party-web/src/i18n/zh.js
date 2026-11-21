@@ -32,7 +32,8 @@ export default {
       lyrics: '歌词',
       queue: '播放队列',
       chat: '聊天',
-      playlists: '歌单'
+      playlists: '歌单',
+      'queue-playlists': '队列与歌单'
     }
   },
 

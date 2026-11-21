@@ -225,7 +225,7 @@ const trackKey = computed(() => (
   music.value ? `${music.value.platform || ''}:${music.value.id || trackTitle.value}` : 'empty'
 ));
 const isQueuePlaced = computed(() => (
-  layoutStore.placedModuleIds.includes('queue') || layoutStore.placedModuleIds.includes('queue-playlists')
+  layoutStore.placedModuleIds.includes('queue-playlists')
 ));
 const playModeLabel = computed(() => player.isShuffle ? t('player.shuffle') : t('player.listPlayback'));
 

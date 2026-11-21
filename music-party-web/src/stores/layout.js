@@ -5,28 +5,20 @@ import { MODULE_MANIFEST } from '../layouts/moduleManifest';
 export const LAYOUT_STORAGE_KEY = 'mp-layout-v1';
 export const MAX_MODULES_PER_COLUMN = 1;
 
+const QUEUE_PLAYLISTS_MODULE = 'queue-playlists';
+const QUEUE_PLAYLISTS_IDS = [QUEUE_PLAYLISTS_MODULE, 'queue', 'playlists'];
+
 const DEFAULT_LAYOUT = {
   version: 3,
   columnCount: 3,
   columns: [
     { id: 'col-0', order: 0, widthPercent: 28, modules: ['nowplaying'] },
     { id: 'col-1', order: 1, widthPercent: 44, modules: ['lyrics'] },
-    { id: 'col-2', order: 2, widthPercent: 28, modules: ['queue-playlists'] }
+    { id: 'col-2', order: 2, widthPercent: 28, modules: [QUEUE_PLAYLISTS_MODULE] }
   ]
 };
 
 const cloneDefaultLayout = () => JSON.parse(JSON.stringify(DEFAULT_LAYOUT));
-
-const normalizeColumnWidths = (columns) => {
-  if (!Array.isArray(columns) || columns.length === 0) return columns;
-  const width = 100 / columns.length;
-  return columns.map((column, index) => ({
-    ...column,
-    order: index,
-    widthPercent: Number.isFinite(column.widthPercent) ? column.widthPercent : width,
-    modules: Array.isArray(column.modules) ? column.modules : []
-  }));
-};
 
 const sanitizeLayout = (candidate) => {
   if (!candidate || typeof candidate !== 'object') return cloneDefaultLayout();
@@ -35,21 +27,28 @@ const sanitizeLayout = (candidate) => {
     return cloneDefaultLayout();
   }
 
-  const columns = normalizeColumnWidths(candidate.columns)
+  const defaultWidth = 100 / candidate.columns.length;
+  const columns = candidate.columns
     .map((column, index) => ({
-      id: typeof column.id === 'string' && column.id ? column.id : `col-${index}`,
-      order: Number.isFinite(column.order) ? column.order : index,
-      widthPercent: column.widthPercent,
-      modules: column.modules.filter(moduleId => MODULE_MANIFEST[moduleId]).slice(0, MAX_MODULES_PER_COLUMN)
+      id: typeof column?.id === 'string' && column.id ? column.id : `col-${index}`,
+      order: Number.isFinite(column?.order) ? column.order : index,
+      widthPercent: Number.isFinite(column?.widthPercent) ? column.widthPercent : defaultWidth,
+      modules: Array.isArray(column?.modules) ? column.modules : []
     }))
     .sort((a, b) => a.order - b.order)
     .map((column, index) => ({ ...column, order: index }));
 
+  // Reuse the merged module's position first, then the old queue, then the old playlists.
+  const savedQueueId = QUEUE_PLAYLISTS_IDS.find(id => columns.some(column => column.modules.includes(id)));
   const placed = new Set();
   columns.forEach((column) => {
-    column.modules = column.modules.filter((moduleId) => {
+    const moduleIds = column.modules
+      .filter(id => !QUEUE_PLAYLISTS_IDS.includes(id) || id === savedQueueId)
+      .map(id => id === savedQueueId ? QUEUE_PLAYLISTS_MODULE : id)
+      .filter(id => typeof id === 'string' && Object.hasOwn(MODULE_MANIFEST, id));
+
+    column.modules = moduleIds.slice(0, MAX_MODULES_PER_COLUMN).filter((moduleId) => {
       const manifest = MODULE_MANIFEST[moduleId];
-      if (!manifest) return false;
       if (manifest.maxInstances !== -1 && placed.has(moduleId)) return false;
       placed.add(moduleId);
       return true;
@@ -57,7 +56,9 @@ const sanitizeLayout = (candidate) => {
   });
 
   if (!placed.has('nowplaying')) {
-    columns[Math.min(1, columns.length - 1)].modules.unshift('nowplaying');
+    const playerColumn = columns.find(column => column.modules.length === 0)
+      ?? columns.find(column => !column.modules.includes(QUEUE_PLAYLISTS_MODULE));
+    playerColumn.modules.unshift('nowplaying');
   }
 
   return {
@@ -68,13 +69,27 @@ const sanitizeLayout = (candidate) => {
 };
 
 const loadInitialLayout = () => {
+  const savedLayout = localStorage.getItem(LAYOUT_STORAGE_KEY);
+  if (!savedLayout) return cloneDefaultLayout();
+
+  let candidate;
   try {
-    const savedLayout = localStorage.getItem(LAYOUT_STORAGE_KEY);
-    return savedLayout ? sanitizeLayout(JSON.parse(savedLayout)) : cloneDefaultLayout();
+    candidate = JSON.parse(savedLayout);
   } catch {
     localStorage.removeItem(LAYOUT_STORAGE_KEY);
     return cloneDefaultLayout();
   }
+
+  const layout = sanitizeLayout(candidate);
+  const serialized = JSON.stringify(layout);
+  if (serialized !== savedLayout) {
+    try {
+      localStorage.setItem(LAYOUT_STORAGE_KEY, serialized);
+    } catch {
+      // The migrated layout still works when browser storage cannot be written.
+    }
+  }
+  return layout;
 };
 
 export const useLayoutStore = defineStore('layout', () => {
