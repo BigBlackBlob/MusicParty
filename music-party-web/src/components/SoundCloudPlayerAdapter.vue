@@ -80,6 +80,7 @@ function trackURL(embedId: string) {
 
 // Keep the iframe src fixed after setup so track changes go through Widget.load.
 let loadedId = player.nowPlaying?.music?.embedId;
+let loadedEpoch = player.nowPlaying?.playEpoch;
 const initialQuery = new URLSearchParams({
   ...Object.fromEntries(Object.entries(widgetOptions).map(([key, value]) => [key, String(value)])),
   url: loadedId ? trackURL(loadedId) : '',
@@ -134,14 +135,16 @@ function reportError() {
 
 function seekToRoomPosition() {
   if (!ready || !widget) return;
-  widget.seekTo(Math.max(0, player.getCurrentProgress()));
+  const position = Math.max(0, player.getCurrentProgress());
+  widget.seekTo(position);
+  player.setPlaybackPosition(position);
   player.forceNextSyncSeek = false;
 }
 
 function onWidgetReady() {
   if (destroyed) return;
   const embedId = player.nowPlaying?.music?.embedId;
-  if (embedId && embedId !== loadedId) {
+  if (embedId && (embedId !== loadedId || player.nowPlaying?.playEpoch !== loadedEpoch)) {
     loadTrack(embedId);
     return;
   }
@@ -156,6 +159,7 @@ function loadTrack(embedId: string) {
   stopSync();
   stopAutoplayCheck();
   loadedId = embedId;
+  loadedEpoch = player.nowPlaying?.playEpoch;
   widget?.load(trackURL(embedId), {
     ...widgetOptions, auto_play: !player.isPaused, callback: onWidgetReady,
   });
@@ -216,8 +220,8 @@ function enableSound() {
   play();
 }
 
-watch(() => player.nowPlaying?.music?.embedId, (embedId) => {
-  if (ready && embedId && embedId !== loadedId) loadTrack(embedId);
+watch(() => [player.nowPlaying?.music?.embedId, player.nowPlaying?.playEpoch] as const, ([embedId, epoch]) => {
+  if (ready && embedId && (embedId !== loadedId || epoch !== loadedEpoch)) loadTrack(embedId);
 });
 
 watch(() => player.isPaused, (paused) => {

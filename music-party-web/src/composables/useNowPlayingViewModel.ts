@@ -13,6 +13,8 @@ const platformLabelKeyMap: Record<string, string> = {
   netease: 'platforms.netease',
   bilibili: 'platforms.bilibili',
   youtube: 'platforms.youtube',
+  soundcloud: 'platforms.soundcloud',
+  qq: 'platforms.qq',
   navidrome: 'platforms.navidrome',
   local: 'platforms.local',
 }

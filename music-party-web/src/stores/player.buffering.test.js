@@ -71,8 +71,8 @@ describe('buffering progress + reload position restore', () => {
     expect(src).toContain("reason === 'suspend'");
   });
 
-  it('AudioEngine filters stalled events via isActuallyStalled and drops emptied', () => {
-    const src = readSrc('src/components/AudioEngine.vue');
+  it('native audio filters stalled events via isActuallyStalled and drops emptied', () => {
+    const src = readSrc('src/components/NativeAudioPlayerAdapter.vue');
     expect(src).toContain('isActuallyStalled');
     // emptied 事件不再触发 onPlaybackStalled
     expect(src).not.toContain("@emptied=\"onPlaybackStalled('emptied')\"");

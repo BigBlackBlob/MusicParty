@@ -161,6 +161,80 @@ func TestPlaybackStartedStalledAndSkipEndRace(t *testing.T) {
 	require.Equal(t, "second", snapshot["nowPlaying"].(map[string]any)["music"].(*storesqlite.PlayableMusic).ID)
 }
 
+func TestLatePlaybackStartedFillsUnknownDurationWithoutResettingClock(t *testing.T) {
+	for _, paused := range []bool{false, true} {
+		t.Run(fmt.Sprintf("paused=%t", paused), func(t *testing.T) {
+			store := realtimeStore(t)
+			broadcaster := &recordingBroadcaster{}
+			manager := NewManager(store, 10, time.Second, time.Hour, broadcaster)
+			t.Cleanup(manager.Close)
+			runtime, err := manager.Room(context.Background(), "lounge")
+			require.NoError(t, err)
+			_, err = runtime.Enqueue(context.Background(), account.Session{PublicID: "user"}, storesqlite.Music{ID: "54202938", Platform: "soundcloud"}, "one")
+			require.NoError(t, err)
+			_, err = runtime.Execute(context.Background(), func(rt *RoomRuntime, _ context.Context) (any, error) {
+				rt.sessionStateSince = time.Now().Add(-readyGrace - time.Second)
+				rt.onTick(time.Now())
+				return nil, nil
+			})
+			require.NoError(t, err)
+			// Execute after the real ready-timeout path has started the room clock.
+			_, err = runtime.Execute(context.Background(), func(rt *RoomRuntime, ctx context.Context) (any, error) {
+				require.Equal(t, "playing", rt.sessionState)
+				rt.state.Paused = paused
+				rt.clockOwner = "existing-owner"
+				return nil, nil
+			})
+			require.NoError(t, err)
+			snapshot, err := runtime.Snapshot(context.Background())
+			require.NoError(t, err)
+			now := snapshot["nowPlaying"].(map[string]any)
+			report := PlaybackReport{PlayEpoch: now["playEpoch"].(int64), QueueID: now["queueId"].(string), PositionMS: 1, DurationMS: 377478}
+			version := snapshot["stateVersion"]
+			for _, rejected := range []PlaybackReport{
+				{PlayEpoch: report.PlayEpoch - 1, QueueID: report.QueueID, DurationMS: report.DurationMS},
+				{PlayEpoch: report.PlayEpoch, QueueID: "old-queue", DurationMS: report.DurationMS},
+				{PlayEpoch: report.PlayEpoch, QueueID: report.QueueID, DurationMS: 0},
+				{PlayEpoch: report.PlayEpoch, QueueID: report.QueueID, DurationMS: -1},
+				{PlayEpoch: report.PlayEpoch, QueueID: report.QueueID, DurationMS: 24 * 60 * 60 * 1000},
+			} {
+				require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.started", rejected, nil, "late-client"))
+			}
+			snapshot, err = runtime.Snapshot(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, version, snapshot["stateVersion"])
+			var anchor, timestamp int64
+			_, err = runtime.Execute(context.Background(), func(rt *RoomRuntime, _ context.Context) (any, error) {
+				anchor, timestamp = rt.state.PositionAnchor, rt.state.TimestampAnchor
+				return nil, nil
+			})
+			require.NoError(t, err)
+			require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.started", report, nil, "late-client"))
+			snapshot, err = runtime.Snapshot(context.Background())
+			require.NoError(t, err)
+			now = snapshot["nowPlaying"].(map[string]any)
+			require.Equal(t, int64(377478), now["music"].(*storesqlite.PlayableMusic).Duration)
+			require.Equal(t, paused, snapshot["isPaused"])
+			_, err = runtime.Execute(context.Background(), func(rt *RoomRuntime, _ context.Context) (any, error) {
+				require.Equal(t, anchor, rt.state.PositionAnchor)
+				require.Equal(t, timestamp, rt.state.TimestampAnchor)
+				require.Equal(t, "existing-owner", rt.clockOwner)
+				return nil, nil
+			})
+			require.NoError(t, err)
+			event, ok := broadcaster.last("player.state")
+			require.True(t, ok)
+			require.Equal(t, int64(377478), event.payload.(map[string]any)["nowPlaying"].(map[string]any)["music"].(*storesqlite.PlayableMusic).Duration)
+			version = snapshot["stateVersion"]
+			report.DurationMS = 123456
+			require.NoError(t, runtime.ReportPlayback(context.Background(), "playback.started", report, nil, "late-client"))
+			snapshot, err = runtime.Snapshot(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, version, snapshot["stateVersion"], "known duration must not be replaced by repeat start reports")
+		})
+	}
+}
+
 func TestPlaybackReportsLogAppliedAndRejectedEvents(t *testing.T) {
 	store := realtimeStore(t)
 	manager := NewManager(store, 10, time.Second, time.Hour, &recordingBroadcaster{})

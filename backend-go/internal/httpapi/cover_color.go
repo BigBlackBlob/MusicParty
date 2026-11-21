@@ -28,7 +28,7 @@ type cachedCoverColor struct {
 	expiresAt time.Time
 }
 
-// upstreamCoverURL accepts only the two providers' CDN domains and requests thumbnails.
+// upstreamCoverURL accepts supported providers' CDN domains and requests thumbnails.
 func upstreamCoverURL(raw string) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -37,7 +37,8 @@ func upstreamCoverURL(raw string) (string, error) {
 	host := strings.ToLower(u.Hostname())
 	music := host == "music.126.net" || strings.HasSuffix(host, ".music.126.net")
 	bilibili := host == "hdslb.com" || strings.HasSuffix(host, ".hdslb.com")
-	if (!music && !bilibili) || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.Fragment != "" || (u.Port() != "" && u.Port() != "443") || strings.Contains(u.Host, ":") && u.Port() == "" {
+	soundcloud := host == "sndcdn.com" || strings.HasSuffix(host, ".sndcdn.com")
+	if (!music && !bilibili && !soundcloud) || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.Fragment != "" || (u.Port() != "" && u.Port() != "443") || strings.Contains(u.Host, ":") && u.Port() == "" {
 		return "", errors.New("unsupported cover URL")
 	}
 	if net.ParseIP(host) != nil {
@@ -60,7 +61,7 @@ func upstreamCoverURL(raw string) (string, error) {
 		q := u.Query()
 		q.Set("param", "128y128")
 		u.RawQuery = q.Encode()
-	} else {
+	} else if bilibili {
 		u.Path = strings.SplitN(u.Path, "@", 2)[0] + "@128w_128h_1c.jpg"
 		u.RawQuery = ""
 	}

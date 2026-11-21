@@ -29,6 +29,9 @@ func TestUpstreamCoverURL(t *testing.T) {
 		{"https://i0.hdslb.com/a.jpg@1000w.webp?x=1", "https://i0.hdslb.com/a.jpg@128w_128h_1c.jpg"},
 		{"https://music.126.net:443/a", "https://music.126.net/a?param=128y128"},
 		{"https://HDSLB.COM/a", "https://hdslb.com/a@128w_128h_1c.jpg"},
+		{"https://i1.sndcdn.com/artworks-000090810259-rywl9s-t500x500.jpg", "https://i1.sndcdn.com/artworks-000090810259-rywl9s-t500x500.jpg"},
+		{"https://i1.sndcdn.com.attacker.com/a.jpg", ""},
+		{"https://evilsndcdn.com/a.jpg", ""},
 		{"https://evilmusic.126.net.attacker.com/a", ""},
 		{"https://evilmusic.126.net/a", ""},
 		{"https://hdslb.com.attacker.com/a", ""},
@@ -189,6 +192,7 @@ func TestLiveCoverColors(t *testing.T) {
 	for _, raw := range []string{
 		"https://p1.music.126.net/6y-UleORITEDbvrOLV0Q8A==/5639395138885805.jpg",
 		"http://i1.hdslb.com/bfs/archive/5242750857121e05146d5d5b13a47a2a6dd36e98.jpg",
+		"https://i1.sndcdn.com/artworks-000090810259-rywl9s-t500x500.jpg",
 	} {
 		t.Run(raw, func(t *testing.T) {
 			target, err := upstreamCoverURL(raw)

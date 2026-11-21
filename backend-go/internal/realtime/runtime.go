@@ -1596,6 +1596,14 @@ func (r *RoomRuntime) ReportPlayback(ctx context.Context, kind string, report Pl
 			runtime.logEventAt(kind, report.QueueID, epoch, "applied", reason, actor)
 			return nil, nil
 		case "playback.started":
+			validDuration := report.DurationMS > 0 && report.DurationMS < 24*60*60*1000
+			// A slow embed can start after ready_timeout has already started the
+			// clock. Fill missing metadata without moving that clock or its owner.
+			if runtime.sessionState == "playing" && nextState.CurrentMusic != nil && nextState.CurrentMusic.Duration <= 0 && validDuration {
+				nextState.CurrentMusic.Duration = report.DurationMS
+				nextSessionState = "playing"
+				break
+			}
 			if runtime.sessionState != "ready" && runtime.sessionState != "stalled" {
 				runtime.logEvent(kind, report.QueueID, "ignored", "state", actor)
 				return nil, nil
@@ -1605,7 +1613,7 @@ func (r *RoomRuntime) ReportPlayback(ctx context.Context, kind string, report Pl
 				return nil, nil
 			}
 			position := max(0, report.PositionMS)
-			if runtime.sessionState == "ready" && report.DurationMS > 0 && report.DurationMS < 24*60*60*1000 {
+			if validDuration && (runtime.sessionState == "ready" || nextState.CurrentMusic.Duration <= 0) {
 				nextState.CurrentMusic.Duration = report.DurationMS
 			}
 			// Anchor at "now" so the clock starts when playback actually starts.
