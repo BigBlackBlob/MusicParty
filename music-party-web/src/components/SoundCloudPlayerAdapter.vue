@@ -35,6 +35,7 @@ type SoundCloudWidget = {
   play: () => void;
   pause: () => void;
   seekTo: (positionMs: number) => void;
+  setVolume: (_volume: number) => void;
   getPosition: (callback: (positionMs: number) => void) => void;
   getDuration: (_callback: (_durationMs: number) => void) => void;
 };
@@ -65,12 +66,14 @@ function loadSoundCloudAPI() {
 </script>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useAudioPlayerAdapter } from '../composables/useAudioPlayerAdapter';
 import { useUiStore } from '../stores/ui';
+import { getWidgetVolume } from '../utils/playbackVolume';
 
 const player = useAudioPlayerAdapter();
 const ui = useUiStore();
+const effectiveVolume = computed(() => getWidgetVolume(ui.volume, ui.getPlatformVolumeOffset(player.nowPlaying?.music?.platform)));
 const iframeRef = ref<HTMLIFrameElement | null>(null);
 const needsUserGesture = ref(false);
 
@@ -78,13 +81,13 @@ function trackURL(embedId: string) {
   return `https://api.soundcloud.com/tracks/${encodeURIComponent(embedId)}`;
 }
 
-// Keep the iframe src fixed after setup so track changes go through Widget.load.
+// Keep the iframe src fixed; load each track without autoplay so READY can set its volume first.
 let loadedId = player.nowPlaying?.music?.embedId;
 let loadedEpoch = player.nowPlaying?.playEpoch;
 const initialQuery = new URLSearchParams({
   ...Object.fromEntries(Object.entries(widgetOptions).map(([key, value]) => [key, String(value)])),
   url: loadedId ? trackURL(loadedId) : '',
-  auto_play: 'true',
+  auto_play: 'false',
 });
 const widgetUrl = loadedId ? `https://w.soundcloud.com/player/?${initialQuery}` : 'about:blank';
 let widget: SoundCloudWidget | undefined;
@@ -149,6 +152,7 @@ function onWidgetReady() {
     return;
   }
   ready = true;
+  widget?.setVolume(effectiveVolume.value);
   seekToRoomPosition();
   if (player.isPaused) widget?.pause();
   else play();
@@ -161,7 +165,7 @@ function loadTrack(embedId: string) {
   loadedId = embedId;
   loadedEpoch = player.nowPlaying?.playEpoch;
   widget?.load(trackURL(embedId), {
-    ...widgetOptions, auto_play: !player.isPaused, callback: onWidgetReady,
+    ...widgetOptions, auto_play: false, callback: onWidgetReady,
   });
 }
 
@@ -222,6 +226,10 @@ function enableSound() {
 
 watch(() => [player.nowPlaying?.music?.embedId, player.nowPlaying?.playEpoch] as const, ([embedId, epoch]) => {
   if (ready && embedId && (embedId !== loadedId || epoch !== loadedEpoch)) loadTrack(embedId);
+});
+
+watch(effectiveVolume, (volume) => {
+  if (ready) widget?.setVolume(volume);
 });
 
 watch(() => player.isPaused, (paused) => {

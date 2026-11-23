@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setActivePinia, createPinia } from 'pinia';
 import { nextTick } from 'vue';
+import { STORAGE_KEYS } from '../constants/keys';
 import { brandTheme, deriveCoverTheme } from '../utils/coverTheme';
 
 // Mock the API client and music API
@@ -15,6 +16,28 @@ vi.mock('../api/music', () => ({
 
 import { useUiStore } from './ui';
 import { musicApi } from '../api/music';
+
+it('restores per-platform volume offsets without changing the viewer volume', async () => {
+    const pinia = createPinia();
+    const ui = useUiStore(pinia);
+    ui.setVolume(0.8);
+    ui.setPlatformVolumeOffset('netease', -6);
+    ui.setPlatformVolumeOffset('soundcloud', -30);
+    await nextTick();
+    ui.$dispose();
+
+    const restored = useUiStore(createPinia());
+    expect(restored.volume).toBe(0.8);
+    expect(restored.getPlatformVolumeOffset('netease')).toBe(-6);
+    expect(restored.getPlatformVolumeOffset('soundcloud')).toBe(-12);
+    expect(restored.getPlatformVolumeOffset('youtube')).toBe(0);
+    restored.setPlatformVolumeOffset('netease', 0);
+    await nextTick();
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.PLATFORM_VOLUME_OFFSETS))).toEqual({ soundcloud: -12 });
+    restored.$dispose();
+    localStorage.removeItem(STORAGE_KEYS.VOLUME);
+    localStorage.removeItem(STORAGE_KEYS.PLATFORM_VOLUME_OFFSETS);
+});
 
 describe('ui store - cover accent requests', () => {
     beforeEach(() => {

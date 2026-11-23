@@ -13,9 +13,10 @@ vi.mock('../domains/playback/lyrics', () => ({useLyricsStore: () => ({load:vi.fn
 let app: App | undefined
 let host: HTMLDivElement
 let events: { onReady: () => void; onStateChange: (e: {data:number}) => void; onError: (e: {data:number}) => void }
-const video = { loadVideoById:vi.fn(), cueVideoById:vi.fn(), playVideo:vi.fn(), pauseVideo:vi.fn(), destroy:vi.fn(), getCurrentTime:()=>0, getDuration:()=>189, seekTo:vi.fn() }
+const video = { loadVideoById:vi.fn(), cueVideoById:vi.fn(), playVideo:vi.fn(), pauseVideo:vi.fn(), destroy:vi.fn(), getCurrentTime:()=>0, getDuration:()=>189, seekTo:vi.fn(), setVolume:vi.fn() }
 
 beforeEach(() => {
+  vi.clearAllMocks()
   vi.useFakeTimers()
   setActivePinia(createPinia())
   useUiStore().locale = 'zh'
@@ -34,6 +35,7 @@ beforeEach(() => {
 afterEach(() => {
   app?.unmount(); app = undefined
   host.remove()
+  localStorage.clear()
   vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers()
 })
 
@@ -43,6 +45,25 @@ async function mountPlayer() {
   await nextTick()
   events.onReady()
 }
+
+it('sets volume before the video loads and follows slider, mute and offset changes', async () => {
+  const ui = useUiStore()
+  ui.setVolume(0.8)
+  ui.setPlatformVolumeOffset('youtube', -6)
+  await mountPlayer()
+  expect(video.setVolume).toHaveBeenCalledExactlyOnceWith(40)
+  expect(video.setVolume).toHaveBeenCalledBefore(video.loadVideoById)
+
+  ui.setVolume(0)
+  await nextTick()
+  expect(video.setVolume).toHaveBeenLastCalledWith(0)
+  ui.setVolume(0.6)
+  await nextTick()
+  expect(video.setVolume).toHaveBeenLastCalledWith(30)
+  ui.setPlatformVolumeOffset('youtube', -12)
+  await nextTick()
+  expect(video.setVolume).toHaveBeenLastCalledWith(15)
+})
 
 it('ends buffering, shows the embed error once and ignores subsequent buffering events', async () => {
   await mountPlayer()

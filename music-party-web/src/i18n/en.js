@@ -115,6 +115,8 @@ export default {
     relaxed: 'Relaxed',
     large: 'Large',
     globalZoom: 'Global Zoom',
+    platformVolumeOffsets: 'Volume by platform',
+    decibels: '{value} dB',
     connection: 'Connection',
     connected: 'Connected',
     disconnected: 'Disconnected',

@@ -115,6 +115,8 @@ export default {
     relaxed: '宽松',
     large: '宽大',
     globalZoom: '全局缩放',
+    platformVolumeOffsets: '各平台音量',
+    decibels: '{value} dB',
     connection: '连接状态',
     connected: '已连接',
     disconnected: '已断开',

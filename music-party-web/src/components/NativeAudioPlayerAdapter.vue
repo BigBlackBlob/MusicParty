@@ -55,6 +55,7 @@ import { withPlaybackToken } from '../utils/audioUrl';
 
 const player = useAudioPlayerAdapter();
 const ui = useUiStore();
+const offsetDb = computed(() => ui.getPlatformVolumeOffset(player.nowPlaying?.music?.platform));
 const audioElements = [ref(null), ref(null)];
 const activeElement = ref(0);
 const audioRef = computed(() => audioElements[activeElement.value].value);
@@ -76,7 +77,7 @@ const {
   armStalledWatchdog,
   markPlaybackHealthy,
   isActuallyStalled
-} = useAudio(audioRef, player, computed(() => ui.volume));
+} = useAudio(audioRef, player, computed(() => ui.volume), offsetDb);
 
 const audioSrc = computed(() => withPlaybackToken(player.nowPlaying?.music));
 // Queue snapshots and patches carry the server media URL for standby preload.

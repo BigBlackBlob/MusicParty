@@ -85,6 +85,28 @@
                 </button>
               </div>
             </div>
+            <fieldset class="min-w-0">
+              <legend class="settings-section__title">{{ t('settings.platformVolumeOffsets') }}</legend>
+              <div class="settings-grid">
+                <label v-for="platform in volumePlatforms" :key="platform.id" class="settings-control-block">
+                  <span class="settings-control-block__header">
+                    <span>{{ t(`platforms.${platform.id}`, platform.label) }}</span>
+                    <strong>{{ t('settings.decibels', { value: ui.getPlatformVolumeOffset(platform.id) }) }}</strong>
+                  </span>
+                  <input
+                    type="range"
+                    class="settings-range"
+                    :value="ui.getPlatformVolumeOffset(platform.id)"
+                    :min="MIN_PLATFORM_VOLUME_OFFSET_DB"
+                    :max="MAX_PLATFORM_VOLUME_OFFSET_DB"
+                    step="1"
+                    :aria-label="t(`platforms.${platform.id}`, platform.label)"
+                    :aria-valuetext="t('settings.decibels', { value: ui.getPlatformVolumeOffset(platform.id) })"
+                    @input="e => ui.setPlatformVolumeOffset(platform.id, e.target.valueAsNumber)"
+                  />
+                </label>
+              </div>
+            </fieldset>
           </section>
 
           <section v-else-if="activeSection === 'members'" key="members" class="settings-section">
@@ -146,6 +168,9 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useQuery } from '@tanstack/vue-query';
+import { musicApi } from '../api/music';
+import { queryKeys } from '../domains/queryKeys';
 import AdminSettingsPanel from './AdminSettingsPanel.vue';
 import PersonalInfoPanel from './PersonalInfoPanel.vue';
 import { useUiStore } from '../stores/ui';
@@ -153,6 +178,7 @@ import { useUserStore } from '../stores/user';
 import { useRoomStore } from '../stores/room';
 import { useRoomPresenceStore } from '../domains/realtime/roomPresenceStore';
 import { extractErrorMessage } from '../utils/errors';
+import { MAX_PLATFORM_VOLUME_OFFSET_DB, MIN_PLATFORM_VOLUME_OFFSET_DB } from '../utils/playbackVolume';
 
 defineProps({
   mobile: {
@@ -169,6 +195,17 @@ const user = useUserStore();
 const room = useRoomStore();
 const presence = useRoomPresenceStore();
 const activeSection = ref('account');
+const builtinVolumePlatforms = ['netease', 'soundcloud', 'bilibili', 'youtube', 'qq', 'local', 'navidrome', 'squidify']
+  .map(id => ({ id, label: id }));
+const platformsQuery = useQuery({
+  queryKey: computed(() => queryKeys.platforms.byRoom(room.currentRoomId)),
+  queryFn: ({ queryKey: [, roomId], signal }) => musicApi.getPlatforms(roomId, signal),
+  enabled: computed(() => activeSection.value === 'general')
+});
+const volumePlatforms = computed(() => [
+  ...builtinVolumePlatforms,
+  ...(platformsQuery.data.value ?? []).filter(platform => platform.subsonic && !builtinVolumePlatforms.some(({ id }) => id === platform.id))
+]);
 const savingRoom = ref(false);
 const roomError = ref('');
 const roomForm = ref({ name: '', isPrivate: false, password: '', keepExistingPassword: true });

@@ -1,10 +1,12 @@
-import { createApp, nextTick, type App } from 'vue'
+import { createApp, h, nextTick, type App } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import SoundCloudPlayerAdapter from './SoundCloudPlayerAdapter.vue'
 import AudioEngine from './AudioEngine.vue'
 import { useAudioPlaybackStore } from '../domains/playback/audioPlaybackStore'
 import { useRoomRuntimeStore } from '../domains/realtime/roomRuntimeStore'
+import { useUiStore } from '../stores/ui'
+import { useShortcuts } from '../composables/useShortcuts'
 import { realtimeClient } from '../transport/realtimeClient'
 
 vi.mock('../domains/playback/lyrics', () => ({useLyricsStore: () => ({load:vi.fn()})}))
@@ -15,7 +17,7 @@ let handlers: Record<string, () => void>
 let completeDuration: (durationMs: number) => void
 const widget = {
   bind:(event:string, handler:()=>void) => {handlers[event] = handler},
-  unbind:vi.fn(),load:vi.fn(),play:vi.fn(),pause:vi.fn(),seekTo:vi.fn(),
+  unbind:vi.fn(),load:vi.fn<(url: string, options: { auto_play: boolean; callback: () => void }) => void>(),play:vi.fn(),pause:vi.fn(),seekTo:vi.fn(),setVolume:vi.fn(),
   getPosition:(callback:(position:number)=>void) => callback(1200.6),
   getDuration:(callback:(duration:number)=>void) => {completeDuration = callback},
 }
@@ -37,6 +39,7 @@ beforeEach(() => {
 
 afterEach(() => {
   app?.unmount(); host.remove()
+  localStorage.clear()
   vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers()
 })
 
@@ -47,6 +50,36 @@ async function startWidget() {
   handlers.READY?.()
   handlers.PLAY?.()
 }
+
+it('sets volume before playback on ready and reload, and follows the mute shortcut', async () => {
+  const ui = useUiStore()
+  ui.setVolume(0.8)
+  ui.setPlatformVolumeOffset('soundcloud', -6)
+  app = createApp({ setup() { useShortcuts(); return () => h(SoundCloudPlayerAdapter) } })
+  app.mount(host)
+  await nextTick()
+  expect(widget.setVolume).not.toHaveBeenCalled()
+  handlers.READY?.()
+  expect(widget.setVolume).toHaveBeenLastCalledWith(40)
+  expect(widget.setVolume).toHaveBeenCalledBefore(widget.play)
+
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'm' }))
+  await nextTick()
+  expect(widget.setVolume).toHaveBeenLastCalledWith(0)
+  window.dispatchEvent(new KeyboardEvent('keydown', { key: 'm' }))
+  await nextTick()
+  expect(widget.setVolume).toHaveBeenLastCalledWith(25)
+
+  const runtime = useRoomRuntimeStore()
+  runtime.nowPlaying = { ...runtime.nowPlaying!, playEpoch: 2, queueId: 'queue-2' }
+  await nextTick()
+  widget.setVolume.mockClear()
+  ui.setPlatformVolumeOffset('soundcloud', -12)
+  await nextTick()
+  expect(widget.setVolume).not.toHaveBeenCalled()
+  widget.load.mock.lastCall?.[1].callback()
+  expect(widget.setVolume).toHaveBeenCalledExactlyOnceWith(13)
+})
 
 it('reports the Widget duration when public metadata has no duration', async () => {
   await startWidget()
@@ -85,7 +118,7 @@ it('restarts the same SoundCloud track for a new queue entry and keeps snapshot 
   expect(widget.load).not.toHaveBeenCalled()
   runtime.nowPlaying = { ...runtime.nowPlaying!, playEpoch: 2, queueId: 'queue-2', sessionState: 'ready' }
   await nextTick()
-  expect(widget.load).toHaveBeenCalledExactlyOnceWith('https://api.soundcloud.com/tracks/54202938', expect.objectContaining({ auto_play: true }))
+  expect(widget.load).toHaveBeenCalledExactlyOnceWith('https://api.soundcloud.com/tracks/54202938', expect.objectContaining({ auto_play: false }))
 })
 
 it('stops the native room-clock writer when switching to SoundCloud', async () => {

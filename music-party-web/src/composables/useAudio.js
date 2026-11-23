@@ -2,6 +2,7 @@
 
 import { ref, onMounted, onUnmounted, watch } from 'vue';
 import { isUserGestureRequiredError } from '../utils/audioPlayback';
+import { getEffectiveVolume } from '../utils/playbackVolume';
 
 const TRANSITION_FADE_MS = 1500;
 const STALLED_L1_SOFT_WAIT_MS = 2500;
@@ -13,7 +14,7 @@ const STALLED_MAX_RETRIES = 2;
 // L1: 卡住后只显示缓冲遮罩，不动 audio，给浏览器自我恢复的机会
 const SUPPORTED_TRANSITION_PLATFORMS = new Set(['netease', 'bilibili']);
 
-export function useAudio(audioRef, playerStore, userVolumeRef) {
+export function useAudio(audioRef, playerStore, userVolumeRef, offsetDbRef) {
     const localProgress = ref(0);
     const isBuffering = ref(false);
     const bufferedMs = ref(0);
@@ -180,14 +181,10 @@ const clearStalledWatchdog = () => {
         isBuffering.value = false;
     };
 
-    const getUserVolume = () => {
-        const value = userVolumeRef?.value;
-        return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 1;
-    };
-
     const applyEffectiveVolume = () => {
-        if (!audioRef.value) return;
-        audioRef.value.volume = Math.max(0, Math.min(1, getUserVolume() * fadeGain));
+        const audio = audioRef.value;
+        if (!audio) return;
+        audio.volume = getEffectiveVolume(userVolumeRef?.value ?? 1, offsetDbRef?.value, fadeGain);
     };
 
     // 请求唤醒锁 (防止 WebSocket 断连)
@@ -299,6 +296,7 @@ const clearStalledWatchdog = () => {
         if (!audioRef.value || !playerStore.nowPlaying) return;
 
         try {
+            applyEffectiveVolume();
             await audioRef.value.play();
             needsUserGesture.value = false;
             isErrorState.value = false;
@@ -345,7 +343,8 @@ const clearStalledWatchdog = () => {
         }
 
         if (playerStore.isPaused) {
-            audioRef.value.pause();
+            applyEffectiveVolume();
+            audio?.pause();
         } else {
             safePlay();
         }
@@ -392,9 +391,7 @@ const clearStalledWatchdog = () => {
         updateMediaSession();
     }, { immediate: true });
 
-    if (userVolumeRef) {
-        watch(userVolumeRef, applyEffectiveVolume, { immediate: true });
-    }
+    watch([audioRef, () => userVolumeRef?.value, () => offsetDbRef?.value], applyEffectiveVolume, { immediate: true });
 
     let reportedErrorEpoch = null;
     const reportedErrorCodes = new Set();

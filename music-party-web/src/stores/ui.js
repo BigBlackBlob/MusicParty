@@ -6,6 +6,7 @@ import { httpClient as client } from '../transport/httpClient';
 import { musicApi } from '../api/music';
 import { withNavidromeResourceToken } from '../utils/audioUrl';
 import { deriveCoverTheme } from '../utils/coverTheme';
+import { getEffectiveVolume, normalizePlatformVolumeOffset, parsePlatformVolumeOffsets } from '../utils/playbackVolume';
 
 export const useUiStore = defineStore('ui', () => {
     const mobileNowDensityOptions = ['compact', 'standard', 'relaxed'];
@@ -19,7 +20,8 @@ export const useUiStore = defineStore('ui', () => {
     const mobileNowDensity = ref(mobileNowDensityOptions.includes(localStorage.getItem('mp_mobile_now_density')) ? localStorage.getItem('mp_mobile_now_density') : 'standard');
     const mainStageScale = ref(Number(localStorage.getItem('mp_main_stage_scale') || 1));
     const globalZoomLevel = ref(Number(localStorage.getItem('mp_global_zoom_level') || 1));
-    const volume = ref(parseFloat(localStorage.getItem(STORAGE_KEYS.VOLUME) || '0.5'));
+    const volume = ref(getEffectiveVolume(parseFloat(localStorage.getItem(STORAGE_KEYS.VOLUME) || '0.5')));
+    const platformVolumeOffsets = ref(parsePlatformVolumeOffsets(localStorage.getItem(STORAGE_KEYS.PLATFORM_VOLUME_OFFSETS)));
     const showLyricTranslation = ref(localStorage.getItem(STORAGE_KEYS.LYRIC_TRANSLATION) !== 'false');
     const showLyricRomanization = ref(localStorage.getItem(STORAGE_KEYS.LYRIC_ROMANIZATION) === 'true');
     const lyricAlignment = ref(localStorage.getItem('mp_lyric_alignment') || 'center');
@@ -86,7 +88,23 @@ export const useUiStore = defineStore('ui', () => {
     };
 
     const setVolume = (val) => {
-        volume.value = Math.max(0, Math.min(1, val));
+        volume.value = getEffectiveVolume(val);
+    };
+
+    /** @param {string | undefined} platform */
+    const getPlatformVolumeOffset = (platform) => {
+        if (!platform) return 0;
+        const offsets = platformVolumeOffsets.value;
+        return Object.hasOwn(offsets, platform) ? (offsets[platform] ?? 0) : 0;
+    };
+
+    /** @param {string} platform @param {number} offsetDb */
+    const setPlatformVolumeOffset = (platform, offsetDb) => {
+        const next = normalizePlatformVolumeOffset(offsetDb);
+        if (next === getPlatformVolumeOffset(platform)) return;
+        const offsets = { ...platformVolumeOffsets.value, [platform]: next };
+        if (next === 0) delete offsets[platform];
+        platformVolumeOffsets.value = offsets;
     };
 
     const toggleLyricTranslation = () => {
@@ -189,6 +207,14 @@ export const useUiStore = defineStore('ui', () => {
     };
 
     // 监听音量变化并持久化
+    watch(platformVolumeOffsets, (offsets) => {
+        try {
+            localStorage.setItem(STORAGE_KEYS.PLATFORM_VOLUME_OFFSETS, JSON.stringify(offsets));
+        } catch {
+            // Keep the setting active for this session if storage is unavailable.
+        }
+    });
+
     watch(volume, (newVal) => {
         localStorage.setItem(STORAGE_KEYS.VOLUME, newVal.toString());
     });
@@ -254,6 +280,9 @@ export const useUiStore = defineStore('ui', () => {
         setLocale,
         volume,
         setVolume,
+        platformVolumeOffsets,
+        getPlatformVolumeOffset,
+        setPlatformVolumeOffset,
         showLyricTranslation,
         toggleLyricTranslation,
         showLyricRomanization,

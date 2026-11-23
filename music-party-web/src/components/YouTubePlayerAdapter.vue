@@ -13,9 +13,10 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted, onUnmounted } from 'vue';
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue';
 import { useAudioPlayerAdapter } from '../composables/useAudioPlayerAdapter';
 import { useUiStore } from '../stores/ui';
+import { getWidgetVolume } from '../utils/playbackVolume';
 import { useToastStore } from '../stores/toast';
 
 let youtubeApiPromise;
@@ -58,9 +59,11 @@ function loadYouTubeAPI() {
 
 const player = useAudioPlayerAdapter();
 const ui = useUiStore();
+const effectiveVolume = computed(() => getWidgetVolume(ui.volume, ui.getPlatformVolumeOffset(player.nowPlaying?.music?.platform)));
 const toast = useToastStore();
 const needsUserGesture = ref(false);
 let ytPlayer;
+let ready = false;
 let destroyed = false;
 let syncInterval;
 let bufferingTimeout;
@@ -87,7 +90,7 @@ function seekToRoomPosition() {
 }
 
 function loadCurrentVideo(embedId) {
-  if (!embedId || !ytPlayer) return;
+  if (!embedId || !ready || !ytPlayer) return;
   clearPlaybackTimers();
   failed = false;
   player.isErrorState = false;
@@ -220,6 +223,10 @@ watch([
   () => player.nowPlaying?.playEpoch,
   () => player.nowPlaying?.queueId,
 ], ([embedId]) => loadCurrentVideo(embedId));
+watch(effectiveVolume, (volume) => {
+  if (ready) ytPlayer?.setVolume(volume);
+});
+
 watch(() => player.isPaused, (paused) => {
   if (!ytPlayer || !currentVideoId || failed) return;
   if (paused) {
@@ -242,7 +249,7 @@ onMounted(async () => {
       height: '1',
       videoId: player.nowPlaying?.music?.embedId,
       playerVars: {
-        autoplay: 1,
+        autoplay: 0, // onReady applies volume before starting playback.
         controls: 0,
         disablekb: 1,
         enablejsapi: 1,
@@ -250,7 +257,12 @@ onMounted(async () => {
         rel: 0,
       },
       events: {
-        onReady: () => loadCurrentVideo(player.nowPlaying?.music?.embedId),
+        onReady: () => {
+          if (destroyed) return;
+          ready = true;
+          ytPlayer?.setVolume(effectiveVolume.value);
+          loadCurrentVideo(player.nowPlaying?.music?.embedId);
+        },
         onStateChange: onPlayerStateChange,
         onError: onPlayerError,
       },
