@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MusicParty 外部音樂平台接入研究與計劃</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, "Segoe UI", "Noto Sans TC", sans-serif; background: #000; color: #f5f5f5; }
+    body { max-width: 1080px; margin: 0 auto; padding: 36px 24px 72px; line-height: 1.65; }
+    h1 { font-size: 30px; line-height: 1.25; margin: 0 0 8px; }
+    h2 { font-size: 21px; border-top: 1px solid #333; padding-top: 20px; margin-top: 36px; }
+    h3 { font-size: 16px; margin: 20px 0 6px; }
+    p, li { color: #d1d1d1; }
+    a { color: #8fd3c8; }
+    .meta { color: #aaa; margin: 0 0 24px; }
+    .callout { border-left: 3px solid #8fd3c8; padding: 8px 16px; margin: 20px 0; background: #0d1110; }
+    table { width: 100%; border-collapse: collapse; margin: 16px 0 24px; font-size: 14px; }
+    th, td { text-align: left; vertical-align: top; border-bottom: 1px solid #333; padding: 10px 9px; }
+    th { color: #fff; }
+    code { color: #c5e6df; }
+    ul, ol { padding-left: 22px; }
+    li { margin: 5px 0; }
+    .small { font-size: 13px; color: #aaa; }
+    @media (max-width: 700px) { body { padding: 24px 16px 48px; } table { display: block; overflow-x: auto; } }
+  </style>
+</head>
+<body>
+  <h1>MusicParty 外部音樂平台接入研究與計劃</h1>
+  <p class="meta">研究日期：2026-11-18 ｜ 範圍：Bandcamp、SoundCloud、YouTube、VK Audio、QQ 音樂</p>
+
+  <div class="callout"><strong>建議結論</strong><br>不要把外部平台當作同一種播放來源。Bandcamp 先驗證 Subsonic/OpenSubsonic 相容性；SoundCloud 使用官方 Widget；YouTube 改用官方 IFrame Player；VK 按音訊檔案評估，不規劃 VK Video iframe；QQ 音樂使用社群 Node.js 專案 <code>@sansenjian/qq-music-api</code> 做受限的搜尋/播放解析 sidecar，不宣稱其為官方或已獲內容授權。共享播放仍由 Go 房間狀態裁決，播放器依來源使用原生音訊或平台 adapter。</div>
+
+  <h2>現況與邊界</h2>
+  <p>MusicParty 是 Go 模組化單體、Vue 3 前端。Go 管理平台目錄、隊列、房間播放狀態和 WebSocket；目前前端播放位置使用本地音訊元素，隊列的 <code>PlayableMusic</code> 只有供瀏覽器載入的 URL。平台介面已分開 <code>Service</code>、<code>PlayableResolver</code> 與 <code>MediaSource</code>，但共享播放快照仍把各來源收斂為 URL。YouTube 已有 Data API 搜尋、服務端媒體代理和 yt-dlp 解 URL；管理員設定含 <code>YOUTUBE_API_KEY</code>、<code>YOUTUBE_ENABLED</code>。Subsonic 已有來源管理、房間綁定及 HTTP 代理，可作 Bandcamp 首選探路路徑。</p>
+  <p>因此有兩個獨立產品能力需要規劃：一是「搜尋、查看結果、加入房間隊列」，二是「各用戶瀏覽器能依伺服器狀態同步播放」。平台能提供第一項不代表能提供第二項。只有 URL 代理的來源能直接沿用現有 audio 元素；官方嵌入播放器需要 iframe adapter，且在 Safari/iOS、自動播放政策、廣告/地區限制下會有不同的失敗模式。</p>
+
+  <h2>平台可行性</h2>
+  <table>
+    <thead><tr><th>平台</th><th>接口與接入路徑</th><th>同步控制</th><th>主要限制 / 建議</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Bandcamp</strong></td><td>官方在 2026 年公布可用 Subsonic/OpenSubsonic 用戶端透過 <code>https://bandcamp.com/api/subsonic</code> 連接。現有 MusicParty Subsonic provider、來源管理和房間授權可能可直接承接。官方 Bandcamp API 本身主要面向廠牌帳戶、銷售報表與 merch，不是通用公開目錄搜尋 API；官方嵌入播放器可由作品頁生成。</td><td>若 Bandcamp Subsonic 支援 MusicParty 所需的音訊串流，可接目前 audio element 和既有同步機制。單獨的官方 embed 未找到可供外部程式控制的 JS API。</td><td>先做相容性 spike：登入/授權型態、search3、cover、stream range/seek、格式、限流及 Bandcamp 端可播放/購買狀態。若成立，透過現有「新增 Subsonic 來源」配置，不急著新造 Bandcamp 專用後端。若不成立，降級為連結/iframe 目標，避免非官方爬取。官方 2026 新功能須在非生產環境實測確認。</td></tr>
+      <tr><td><strong>SoundCloud</strong></td><td>官方 API 支援公開資源搜尋、播放與 URL resolve；目前建立 app 需要 Artist Pro。機器端可用 client credentials，使用者授權則 OAuth 2.1 + PKCE。官方 HTML5 Widget API 提供播放、暫停、seek、位置查詢及進度/結束事件。</td><td>強。Widget 可作 iframe adapter，根據 Go 的 playEpoch / 播放狀態呼叫 play/pause/seek，並回報實際位置及 FINISH。</td><td>官方 API 憑證和 API 額度由 SoundCloud 控制；有每 app 限額和 429。搜尋應優先篩選完整且 playable 的內容。不要解析/代理非公開音訊 URL。播放使用官方 Widget，搜尋和 metadata 走 Go provider；處理不可嵌入、地域限制和使用者手動點擊播放。</td></tr>
+      <tr><td><strong>YouTube</strong></td><td>Data API 可搜尋影片並取得 metadata；目前官方 Search: list 文件標示每日 100 次獨立 quota bucket，需將搜尋快取、debounce 和配額監控視為必要項。IFrame Player API 支援 play/pause/seek/currentTime/state-change。</td><td>強。官方 iframe 能承接共享狀態，但需確保播放器在每個客戶端實例可見且符合 YouTube 尺寸/品牌/控制要求。</td><td>目前產品內用 yt-dlp 解析可直播放 URL，與官方提供的嵌入式播放路徑存在條款/可靠性風險，且直鏈會過期。建議專門切換到 IFrame Player，不要延伸抓取影片串流。官方 autoplay 可能被瀏覽器阻擋，embed、地區、年齡/版權限制也可能讓某用戶無法播。保留 Data API key 僅作搜尋和狀態檢查。</td></tr>
+      <tr><td><strong>VK Audio</strong></td><td>本計劃只研究 VK 音訊檔案，不做 VK Video。VKCOM audio schema 可作資料欄位參考；實際可用 API、授權、曲目搜尋及播放地址取得方式仍須由使用者提供的合法帳號/介面樣例驗證。</td><td>若取得可用且允許服務端存取的音訊 URL，可沿用原生 audio、MusicParty 代理與現有房間同步。</td><td>先確認授權範圍、完整音訊而非試聽、穩定曲目 ID、HTTPS、Range、簽名有效期及房間共享權限。無法確認合法授權或完整播放時只保留連結，不接入共享隊列。<a href="https://github.com/VKCOM/vk-api-schema/blob/master/audio/objects.json">VKCOM audio schema</a></td></tr>
+      <tr><td><strong>QQ 音樂</strong></td><td>採用社群 Node.js 套件 <code>@sansenjian/qq-music-api</code>（研究核對版本 2.6.0），優先以其函式式 SDK 搜尋、解析可播放地址；不採 QQ 官方接入方案，也不把該套件視為官方 SDK。</td><td>若解析到可直接播放的音訊 URL，Go 可透過內部 resolver/媒體代理接現有 audio 與房間時鐘；套件本身不提供房間同步能力。</td><td>Node sidecar 與 Go 分進程部署，僅內網呼叫且只暴露必要搜尋/解析操作。研究樣例中熱門付費曲目匿名播放解析無 URL，部分無付費標記曲目返回 128k MP3 並支援 Range；這不代表普遍可播或已獲共享/轉播授權。需在目標部署網路重驗、限制上游 HTTPS host/redirect、防 SSRF、處理短期 URL、禁用全檔快取。Cookie 預留為可選且預設關閉的管理員憑據；不放 query、日誌、隊列或瀏覽器。套件 README 明示不可商用，因此項目使用性質未確認前只能保持實驗性、預設關閉，不得進入商業部署；MIT 僅指程式碼授權，不包含內容或帳號授權。</td></tr>
+    </tbody>
+  </table>
+
+  <h2>建議架構</h2>
+  <ol>
+    <li><strong>播放能力明確化：</strong>在 Go 合約為 playable item 增加播放模式/播放器種類欄位，例如 <code>mediaType: audio-url | youtube-embed | soundcloud-widget | vk-embed</code>，並帶平台 item ID 與最小必要 embed metadata。禁止用任意 URL 當 iframe src；由 adapter 根據受驗證的 ID/官方 URL 建立 iframe。</li>
+    <li><strong>前端播放器 adapter：</strong>保持一個 room player coordinator，按來源掛載原生 audio（含授權後的 VK Audio/QQ 解析音訊）、YouTube IFrame 或 SoundCloud Widget。共用介面覆蓋 load、play、pause、seek、getPosition、destroy 和播放/錯誤事件。adapter 把平台事件轉為現有 Pinia 播放狀態；不能讓每個平台自行管理隊列。</li>
+    <li><strong>伺服器同步裁決：</strong>Go 仍負責當前歌曲、playEpoch、伺服器位置錨點、pause/seek/skip 和隊列前進。用戶端收到快照後載入項目，等待 adapter ready，再對比實際位置並 seek；週期性修正只對超過容忍值的 drift 執行，避免頻繁跳播。播放器嵌入狀態須納入契約與 E2E fixture。</li>
+    <li><strong>共享播放健康狀態：</strong>瀏覽器政策或平台拒播時，客戶端回報播放啟動失敗；房間仍保留同一隊列項目，顯示無法播放並允許人工略過。不要讓單一客戶端播放失敗直接改變全房間隊列。</li>
+    <li><strong>安全與隱私：</strong>iframe host allowlist、CSP <code>frame-src</code> 和 <code>connect-src</code> 明確列平台來源；API secret、Cookie 和短期播放 URL 不進日誌或房間快照。QQ sidecar 僅內網可達，Go 必須校驗允許的 HTTPS 上游 host 與重定向，避免 SSRF；依平台要求揭露第三方請求。</li>
+  </ol>
+
+  <h2>分階段實施順序</h2>
+  <table>
+    <thead><tr><th>階段</th><th>工作</th><th>退出條件</th></tr></thead>
+    <tbody>
+      <tr><td>0. 產品決策與安全盤點</td><td>官方平台以官方 embed 為主，明確確認共同播放是否允許每個房間成員各自連接第三方 CDN；盤點現有 YouTube yt-dlp 實作在正式部署中的開關與責任邊界。QQ 套件僅作單獨、預設關閉的研究項目。</td><td>同意 player adapter 合約方向；不把 QQ 非官方解析方案泛化為其他平台或通用媒體抽取能力。</td></tr>
+      <tr><td>1. Bandcamp spike</td><td>在本地/測試環境以 Bandcamp Subsonic URL 加為一個普通 Subsonic 源，驗證登入、搜尋、曲目資料、封面、串流、seek、播放完成和併發。測試只讀公開/授權曲目，不連 VPS。</td><td>功能穩定則記錄官方端點行為並沿用 Subsonic；有關鍵不相容則停止並改為 embed/外鏈產品決策。</td></tr>
+      <tr><td>2. SoundCloud MVP</td><td>後端 provider 實作搜尋、resolve、權限/限速/快取；前端先做獨立 Widget adapter。將單曲加入既有房間隊列。</td><td>至少兩個瀏覽器同步 play/pause/seek/skip；處理 widget ready、FINISH、ERROR、429 和 autoplay blocked；API secret 僅在後端。</td></tr>
+      <tr><td>3. YouTube 播放器替換</td><td>以官方 IFrame Player 承接既有搜尋結果和隊列，保留 Data API 搜尋，實作 embed 狀態/隱私參數與 quota cache。分開評估舊 yt-dlp route 的移除時點。</td><td>共享播放流程完全不依賴短期媒體直鏈；符合播放器尺寸、可見性及 YouTube API 政策；限制搜尋流量並監測配額。</td></tr>
+      <tr><td>4. QQ 音樂 sidecar spike</td><td>固定套件版本與來源提交，核對 SDK API、Node engine、依賴授權；在隔離測試環境量測匿名搜尋、曲目 metadata、播放解析、HTTPS/Range、簽名失效和部署網路。不要直接公開套件完整 Koa API。</td><td>目標運行環境可穩定搜尋；只有具備合法共享權限、完整音訊及可接受的服務條款後才允許入隊。熱門付費曲、無 URL、過期 Cookie 和上游錯誤皆有明確降級。</td></tr>
+      <tr><td>5. VK Audio 實驗</td><td>確認音訊 API/憑據來源與授權樣例，驗證完整音訊、HTTPS Range、簽名續期和房間共享權限；沿原生音訊路徑實驗。</td><td>故障有清晰訊息且不污染隊列；沒有把 VK Video 或未驗證音訊接口混入正式 provider。</td></tr>
+      <tr><td>6. 上線準備</td><td>新增合約遷移、回滾行為、CSP/隱私說明、速率限制、健康指標和人工驗收。由本地/預發布驗證完成後，再另行安排部署窗口。</td><td>CI、跨瀏覽器 E2E、配置缺漏行為、密鑰輪替和回滾均通過；VPS 部署需另行明確授權，本研究沒有存取該環境。</td></tr>
+    </tbody>
+  </table>
+
+  <h2>風險與驗收清單</h2>
+  <ul>
+    <li><strong>瀏覽器自動播放：</strong>每個成員的 iframe 可能要求手勢解鎖。新房間加入者若無法自動播放，應呈現明確的「點擊開始同步」狀態，確認後追上伺服器位置。</li>
+    <li><strong>位置漂移：</strong>以伺服器位置錨點為目標，採容忍閾值校正。YouTube seek 可能落在鄰近 keyframe，驗收以誤差區間而非毫秒精準為準。</li>
+    <li><strong>播放結束判定：</strong>平台事件、資料庫時長和伺服器推算可能不一致。避免客戶端 FINISH 直接推進房間隊列；由伺服器根據權威時長推進，平台事件只供觀測/提示。</li>
+    <li><strong>區域及權限差異：</strong>香港 VPS 的伺服器可連通不代表各地瀏覽器可連通。測試至少包含香港桌機、行動 Safari/Chrome、未登入平台帳號，以及無第三方 cookies 場景。</li>
+    <li><strong>第三方 iframe：</strong>確認實際 CSS 尺寸和布局空間；YouTube 最小播放器尺寸會影響現有精簡播放區。載入 widget 前避免未互動即向第三方洩露使用者資料。</li>
+    <li><strong>搜尋可用性：</strong>YouTube quota 是每日 100 次 search.list 呼叫。SoundCloud 依 client 限額且可能 429。需 debounce、短期快取、每平台服務狀態和友善降級。</li>
+    <li><strong>授權與內容規則：</strong>官方平台優先使用官方 API/播放器。QQ 套件為非官方社群專案，其程式碼授權不等於 QQ 內容使用、帳號 Cookie 或房間共享授權；正式開放前須完成政策與法律審核。不下載、全檔快取或重新分發平台影音位元組。</li>
+  </ul>
+
+  <h2>資料來源</h2>
+  <ul>
+    <li><a href="https://blog.bandcamp.com/2026/07/16/discover-improvements-and-subsonic-implementation/">Bandcamp: Discover Improvements and Subsonic Implementation</a></li>
+    <li><a href="https://bandcamp.com/developer">Bandcamp API access and intended account use</a></li>
+    <li><a href="https://bandcamp.com/guide">Bandcamp Artist Guide: official embedded players</a></li>
+    <li><a href="https://get.bandcamp.help/en/articles/15263071-how-do-i-create-a-bandcamp-embedded-player">Bandcamp Help: create an embedded player</a></li>
+    <li><a href="https://developers.soundcloud.com/docs/api/guide">SoundCloud API Guide: public search/playback and OAuth flows</a></li>
+    <li><a href="https://developers.soundcloud.com/docs/api/html5-widget">SoundCloud HTML5 Widget API: playback controls and events</a></li>
+    <li><a href="https://developers.soundcloud.com/docs/api/register-app">SoundCloud app registration and credentials</a></li>
+    <li><a href="https://developers.soundcloud.com/docs/api/rate-limits">SoundCloud API rate limits</a></li>
+    <li><a href="https://developers.google.com/youtube/iframe_api_reference">YouTube IFrame Player API reference</a></li>
+    <li><a href="https://developers.google.com/youtube/data/reference/rest/v3/search/list">YouTube Data API search.list and current quota bucket</a></li>
+    <li><a href="https://developers.google.com/youtube/terms/developer-policies-guide">YouTube API developer policies</a></li>
+    <li><a href="https://github.com/VKCOM/vk-api-schema/blob/master/audio/objects.json">VKCOM audio object schema</a></li>
+    <li><a href="https://github.com/sansenjian/qq-music-api">sansenjian/qq-music-api repository and README</a></li>
+    <li><a href="https://github.com/sansenjian/qq-music-api/tree/45d0d275b590d8c3f99270e7f74135873172c71a">QQ Music API source snapshot reviewed: 45d0d275b590d8c3f99270e7f74135873172c71a</a></li>
+    <li><a href="https://github.com/sansenjian/qq-music-api/issues/46">QQ Music API issue #46: cloud search behavior report</a> <span class="small">(reported 2026-09-10; deployment egress must be tested independently.)</span></li>
+  </ul>
+
+  <p class="small">香港 VPS 只會影響 MusicParty 後端出口；外部 iframe/媒體通常由房間成員自己的瀏覽器連接平台，因此 VPS 位置不能解決每位成員所在地的封鎖或版權限制。本文件是基於程式碼閱讀與平台官方資料的技術計劃，不構成平台條款或法律意見。平台 API、quota 和政策可能調整，實施前需重查官方文件。研究期間未連接或修改香港 VPS、線上資料庫、正式構建/預覽渠道。</p>
+</body>
+</html>

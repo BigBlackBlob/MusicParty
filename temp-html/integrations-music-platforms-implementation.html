@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MusicParty 外部音乐平台接入方案</title>
+<style>
+:root{color-scheme:dark}body{margin:0;background:#000;color:#fff;font:16px/1.65 system-ui,sans-serif}main{max-width:72rem;margin:auto;padding:clamp(1rem,4vw,2.5rem)}h1,h2,h3{line-height:1.25}h1{font-size:clamp(1.65rem,4vw,2.3rem);margin:0 0 .75rem}h2{font-size:1.42rem;margin:2rem 0 .7rem;border-top:1px solid #373737;padding-top:1rem}h3{font-size:1.1rem;margin:1.2rem 0 .4rem}p,ul,ol,dl{margin:.45rem 0 .8rem}ul,ol{padding-left:1.45rem}li+li{margin-top:.35rem}a{color:#a9d5ff;text-underline-offset:.2em}code{font:0.92em/1.4 ui-monospace,monospace;overflow-wrap:anywhere;color:#ddd}nav{display:flex;flex-wrap:wrap;gap:.25rem 1rem;margin-top:1rem}table{border-collapse:collapse;width:100%;text-align:left}th,td{vertical-align:top;border-bottom:1px solid #373737;padding:.55rem .65rem}thead th{border-bottom:1px solid #777}tbody th{width:17%}.table-scroll{overflow-x:auto}.table-scroll:focus-visible,a:focus-visible{outline:2px solid #a9d5ff;outline-offset:3px}dt{font-weight:650;margin-top:.7rem}dd{margin:.2rem 0 .6rem}.flow{border-left:2px solid #888;padding-left:.8rem}.dim{color:#c4c4c4}@media(max-width:38rem){th,td{padding:.4rem .3rem;font-size:.89rem}tbody th{width:auto}}
+</style>
+</head>
+<body><main>
+<header>
+<h1>MusicParty 外部音乐平台接入方案</h1>
+<p>VK 按音频文件接入，不规划 VK Video。QQ 音乐使用非官方 Node.js 项目 <code>@sansenjian/qq-music-api</code> 做受限解析 sidecar；先确认运行稳定性、授权边界与完整音频可用性。Cookie 仅预留为默认关闭的管理员凭据。Bandcamp 验证 Subsonic 兼容性，SoundCloud 和 YouTube 使用各自的官方嵌入播放器。</p>
+<nav aria-label="目录"><a href="#analysis">仓库分析</a><a href="#vk">VK 音频</a><a href="#qqmusic">QQ 音乐</a><a href="#phases">实施顺序</a><a href="#acceptance">验收</a><a href="#sources">资料</a></nav>
+</header>
+<section id="analysis">
+<h2>仓库分析</h2>
+<dl>
+<dt>队列已经支持按平台和曲目 ID 解析</dt>
+<dd><code>httpapi/websocket.go</code> 在入队时调用 <code>PlatformAPI.ResolvePlayable</code>。平台的 <code>PlayableResolver</code> 返回曲目信息和 MusicParty 内部播放地址。<code>store/sqlite/models.go</code> 的队列与房间快照保存可播放曲目，含 <code>url</code> 和 <code>needsProxy</code>。VK 用稳定曲目 ID 和内部 URL 就能走这套结构。</dd>
+<dt>媒体代理已有 Range 转发，下载缓存要单独控制</dt>
+<dd><code>httpapi/media.go</code> 的 <code>proxyPlatform</code> 用 <code>authorizedMediaSource</code> 检查来源权限，再由 <code>MediaSource</code> 解析上游地址。<code>media/proxy.go</code> 转发 <code>Range</code> 和成功响应的范围头。目前上游 <code>416</code> 会变成 <code>502</code>。<code>proxyPlatform</code> 和 <code>PlatformAPI.PreResolveMedia</code> 都有全文件缓存提交路径，接 VK 时需要检查播放请求和下一首预热两处。</dd>
+<dt>房间时钟已有裁决逻辑</dt>
+<dd><code>AudioEngine.vue</code> 和 <code>useAudioPlayerAdapter.ts</code> 通过现有音频事件更新播放器并上报状态。后者是音频引擎访问房间状态的接口。<code>RoomRuntime.ReportPlayback</code> 核对 <code>playEpoch</code> 和 <code>queueId</code>，按实际开始播放设锚点，拒绝过早的结束事件。当前时钟拥有者的重试耗尽可触发推进，因此接入时要验证哪些错误属于单个成员，哪些代表曲目已经不可用。</dd>
+</dl>
+</section>
+<section id="vk">
+<h2>VK 音频文件接入</h2>
+<p class="flow"><strong>数据路径</strong><br>授权曲目 ID → Go 解析曲目并生成 MusicParty 播放地址 → 房间保存稳定地址 → 浏览器请求地址 → Go 获取授权文件地址并转发音频 → 现有 <code>AudioEngine</code> 播放和同步</p>
+<h3>先确认授权接口的实际响应</h3>
+<p>VKCOM 的公开 schema 描述了 MP3 URL、时长和曲目 ID。实际接入还缺具体端点、可用凭据及脱敏样例。首轮用一首授权曲目确认稳定标识、完整时长、文件类型、是否支持 Range、签名有效期和重签规则，并确认接口授权覆盖房间成员通过服务端收听。若接口返回音频字节，验证字节响应是否支持 Range。若返回播放列表、试听或仅单用户可用的凭据，由各自的约束决定是否能进入共享队列。<a href="https://github.com/VKCOM/vk-api-schema/blob/master/audio/objects.json" target="_blank" rel="noopener noreferrer">VKCOM 音频对象 schema</a></p>
+<h3>最小实现</h3>
+<ol>
+<li>在 <code>internal/platform</code> 增加 VK 来源，按实际响应实现曲目解析和媒体读取。稳定 ID 使用上游定义的完整曲目标识，例如样例验证后采用 <code>owner_id</code> 与 <code>id</code> 组合。时长统一为毫秒。授权凭据留在 Go 端。</li>
+<li>注册默认关闭的来源与同源音频路由。首轮用固定授权曲目验证入队，确认上游支持授权搜索之后再发布搜索入口。由后端以曲目 ID 构造或解析目标，限制可请求的 HTTPS 来源和重定向目标。媒体请求沿用现有会话入口，按获批的授权范围检查读取权限。</li>
+<li>入队和快照保存 MusicParty 内部地址。播放时读取签名 URL。确认上游如何表示签名到期后，可在响应尚未写出时刷新一次。首次接入采用流式转发，跳过请求侧全文件缓存和队列预热下载，也避免签名 URL 进入日志、历史或客户端。后续按授权与实际请求量决定是否缓存。</li>
+<li>保持原生播放和 WebSocket 消息结构。请求有合法 Range 时传递上游返回的 <code>206</code> 及范围头。越界时保留 <code>416</code> 和上游的 <code>Content-Range</code>。若上游忽略 Range 而返 <code>200</code>，按实际行为判定首版能否支持同步拖动。<a href="https://www.rfc-editor.org/rfc/rfc9110.html#name-range-requests" target="_blank" rel="noopener noreferrer">RFC 9110 Range 请求</a></li>
+</ol>
+</section>
+<section id="qqmusic">
+<h2>QQ 音乐接入</h2>
+<h3>以社区 Node SDK 做隔离验证</h3>
+<p>使用 <code>@sansenjian/qq-music-api</code>，研究核对版本为 <code>2.6.0</code>、提交 <code>45d0d275b590d8c3f99270e7f74135873172c71a</code>。优先调用其函数式 SDK（如 <code>search</code>、<code>getMusicPlay</code>），不要把整套 Koa API 暴露到公网。该仓库 README 声明 MIT，同时明示“仅供学习研究，不可商用”，并提示上游字段可能变动；因此项目用途未确认前只能实验性接入、默认关闭，不应进入商业部署。MIT 仅覆盖代码许可，不代表 QQ 音乐内容、账号凭据或房间共享获得授权。<a href="https://github.com/sansenjian/qq-music-api/tree/45d0d275b590d8c3f99270e7f74135873172c71a" target="_blank" rel="noopener noreferrer">源码快照</a> · <a href="https://github.com/sansenjian/qq-music-api/issues/46" target="_blank" rel="noopener noreferrer">Issue #46：云端搜索异常报告</a></p>
+<p>隔离环境匿名实测：搜索「周杰伦」「陈奕迅」可返回结果，但样例热门付费曲目 <code>getMusicPlay</code> 返回 HTTP 200 仍无播放 URL；部分无付费标记曲目得到 128k MP3。两首样例 HTTPS 音频支持 Range，实际时长与搜索结果接近。<code>getSongInfo</code> 样例返回上游 <code>500001</code>，首版不要依赖它，优先使用搜索结果 metadata。这些结果仅代表测试样例，不可推断任意曲目均可播；必须在目标部署网络重新验证，并确认账号权益、授权与平台条款允许共享播放。</p>
+<p>Node 与 Go 不能进程内互调。建议 Node sidecar 只封装搜索和播放地址解析，监听 loopback/私有网络，仅允许 Go 调用；Go 侧实现薄的 <code>Service</code>/<code>PlayableResolver</code>/<code>MediaSource</code> 适配，继续做房间权限校验并经 MusicParty 媒体代理提供地址。播放 URL 是短期上游地址，服务端需只接受 HTTPS、校验 host 和每次重定向目标以防 SSRF，并为过期地址设置有限重解析。首版关闭全文件缓存与下一首预下载。SDK 实测地址初始为 HTTP，但上游样例可切换到 HTTPS 并支持 Range；以目标环境验证结果为准。</p>
+<p>包要求 Node <code>^20.17.0 || &gt;=22.9.0</code>；核对环境使用 Node <code>24.18.0</code>。接入前需确认部署镜像/运行时兼容并固定版本和锁文件。Issue #46 于 2026-09-10 报告搜索在阿里云服务器异常、本地正常；维护者建议使用智能搜索接口，次日作者回报恢复。因此预发布必须从实际服务端出口执行合约测试，不能只凭开发机成功启用。</p>
+<h3>按接入方式启用凭据入口</h3>
+<p>保留可选管理员 Cookie 入口，默认关闭；仅当匿名能力不足、用户明确配置且账号权益可用于该场景时再启用。优先通过 SDK 支持的 credential/header 参数传入。若必须使用 Koa app，检查并修正其请求日志，禁止 Cookie 出现在 query string、访问日志或错误追踪中；不要开放 <code>/user/getCookie</code>、<code>/user/setCookie</code> 等管理端点给公网。</p>
+<p>现有管理路由只接受网易云和哔哩哔哩，SQLite 也只对已登记凭据键做加解密。启用 QQ Cookie 时，沿用现有加密存储与启动加载，为其增加专属键，并验证管理员授权、缺失/过期、替换、清除、重启恢复和接口不回显。Go 到 Node sidecar 走受限私有通道；凭据、上游播放 URL 不得进入浏览器、队列快照或日志。全局管理员 Cookie 不代表房间内所有成员各自拥有对应播放权益。</p>
+</section>
+<section id="phases">
+<h2>实施顺序</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="平台实施顺序"><table>
+<thead><tr><th scope="col">阶段</th><th scope="col">交付</th><th scope="col">进入实现的条件</th></tr></thead>
+<tbody>
+<tr><th scope="row">1. Bandcamp spike</th><td>按普通 Subsonic 来源配置，核对现有 <code>search3.view</code>、单曲信息、封面和 <code>stream.view</code>。Beta 面向账号收藏。<a href="https://blog.bandcamp.com/2026/07/16/discover-improvements-and-subsonic-implementation/" target="_blank" rel="noopener noreferrer">Bandcamp 公告</a></td><td>验证专用凭据、收藏范围、格式、拖动，以及账户授权是否覆盖房间使用。兼容则走现有来源管理。</td></tr>
+<tr><th scope="row">2. SoundCloud</th><td>用官方 Widget 完成首个嵌入播放，搜索凭据可用后接入目录。用 READY、实际播放状态、位置和 FINISH 驱动现有房间同步。<a href="https://developers.soundcloud.com/docs/api/html5-widget" target="_blank" rel="noopener noreferrer">Widget API</a></td><td>验证可嵌入单曲、自动播放受阻后的恢复、进度回调、不可播放状态与正确的队列推进。</td></tr>
+<tr><th scope="row">3. YouTube</th><td>保留 Data API 搜索，用官方 IFrame Player 播放。待嵌入路径通过验收后，再单独处理旧媒体路由。<a href="https://developers.google.com/youtube/iframe_api_reference" target="_blank" rel="noopener noreferrer">IFrame Player API</a></td><td>确认可见播放器和最小 200 × 200 视区，验证不可嵌入视频和各客户端兼容性。先评审静态播放器布局方案，再改页面。</td></tr>
+<tr><th scope="row">4. QQ 音乐 SDK spike</th><td>固定 <code>@sansenjian/qq-music-api</code> 版本；Node sidecar 只提供 Go 所需的搜索/解析接口，Go 适配后接现有媒体代理。先使用匿名 SDK 能力，不依赖单曲详情 API。</td><td>目标部署出口搜索稳定；授权确认可共享；完整音频、HTTPS Range、短期 URL 续期通过；不缓存整曲、不泄露 Cookie/URL。无播放权益时明确拒绝入队。</td></tr>
+<tr><th scope="row">5. VK Audio 实验</th><td>确认 VK 音频授权接口与样例，复用原生音频路径；不实现 VK Video iframe。</td><td>完整音频、Range、签名有效期与房间权限清楚后才继续。</td></tr>
+</tbody></table></div>
+<p>从 SoundCloud 阶段起再扩展 SQLite 队列、Go 播放快照及前端解析，让载荷区分原生音频和嵌入播放。旧队列缺新字段时按原生音频读取。嵌入载荷只带平台 ID 或校验后的官方引用。前端播放器实现加载、播放、暂停、定位、读位置和卸载，房间仍由 Go 维护播放时钟并决定何时换曲。QQ/VK 音频解析结果仅作为原生音频来源，不把上游短期地址写入持久队列。发布前检查 Web 与桌面 API 消费方，按实际播放器能力启用嵌入来源。</p>
+</section>
+<section id="acceptance">
+<h2>首批验收</h2>
+<ul>
+<li><strong>媒体契约。</strong> 用本地测试源覆盖首包、远端 Range、越界 Range、上游签名过期后的有限重试和无权访问。检查媒体请求和下一首准备都不会提交 VK 全文件缓存。</li>
+<li><strong>双客户端播放。</strong> 用两名房间成员验证入队、播放、暂停、拖动、晚加入、重连、切歌和自然结束。核对当前曲目和 <code>playEpoch</code>，记录定位后两端的位置误差，确认曲目只推进一次。真实样例阶段加入 Safari/iOS 检查。</li>
+<li><strong>故障归属。</strong> 一个成员的自动播放受阻或访问失败时，其余成员可继续当前曲目。曲目级错误按现有服务端裁决处理。若测试触发时钟拥有者错误导致误跳，先收紧该错误映射，再启用 VK 来源。</li>
+<li><strong>QQ 音乐。</strong> 覆盖搜索无结果、付费曲无 URL、完整音频、上游 <code>500001</code>、Range、过期地址有限重解析、sidecar 不可用及实际部署网络。Cookie 默认关闭；启用时验证权限、过期/替换/清除/重启，所有日志、响应和队列快照不含凭据或短期上游 URL。不得以匿名样例成功替代授权审查。</li>
+<li><strong>交付范围。</strong> 先用本地可控样例验证代理和同步，再分别用获授权的 VK 音频与 QQ 音乐曲目验证上游行为。当前交付仅为分析和实施计划，真实部署出口、内容授权及双客户端结果均待后续验证。</li>
+</ul>
+</section>
+<section id="sources">
+<h2>资料与代码定位</h2>
+<p>平台依据见各段末尾链接。QQ SDK 仓库：<a href="https://github.com/sansenjian/qq-music-api" target="_blank" rel="noopener noreferrer">sansenjian/qq-music-api</a>，核对快照 <code>45d0d275b590d8c3f99270e7f74135873172c71a</code>；<a href="https://github.com/sansenjian/qq-music-api/issues/46" target="_blank" rel="noopener noreferrer">Issue #46</a> 记录云端搜索异常报告。代码入口集中在 <code>backend-go/internal/platform/model.go</code>、<code>backend-go/internal/httpapi/platforms.go</code>、<code>backend-go/internal/httpapi/media.go</code>、<code>backend-go/internal/media/proxy.go</code>、<code>backend-go/internal/realtime/runtime.go</code> 和 <code>music-party-web/src/components/AudioEngine.vue</code>。凭据入口位于 <code>backend-go/internal/httpapi/admin.go</code>，凭据存储识别位于 <code>backend-go/internal/store/sqlite/credentials.go</code>。</p>
+</section>
+</main></body></html>

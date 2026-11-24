@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MusicParty · hkvps yt-dlp 实验交接</title>
+<style>
+:root{color-scheme:dark;background:#000;color:#fff;font:16px/1.65 system-ui,sans-serif}body{max-width:53rem;margin:0 auto;padding:1.5rem 1rem 3rem}h1{font-size:1.65rem;line-height:1.35;margin:.3rem 0 .7rem}h2{font-size:1.2rem;line-height:1.4;margin:1.8rem 0 .6rem;border-top:1px solid #444;padding-top:.8rem}p,ul,ol,dl{margin:.55rem 0}li+li{margin-top:.3rem}a{color:#b1d9ff;text-underline-offset:.18em}nav{display:flex;flex-wrap:wrap;gap:.35rem 1rem;margin:1rem 0}code,pre{font-family:ui-monospace,Consolas,monospace;font-size:.9em}code{overflow-wrap:anywhere}pre{background:#141414;border-left:2px solid #777;padding:.7rem .9rem;overflow:auto;margin:.65rem 0}pre code{font-size:inherit}dt{font-weight:700}dd{margin:0 0 .45rem 0}dd,li,p{overflow-wrap:anywhere}
+</style>
+</head>
+<body>
+<main>
+<header>
+<h1>hkvps 上的 yt-dlp 下载续传实验</h1>
+<p><strong>尚未执行。</strong>下一会话只做隔离实验，确认 VPS 能否下载、续传并通过 HTTP Range 提供一首 YouTube 音频。先完整下载，再提供播放，不做边下边播，也不改线上播放器。</p>
+<nav aria-label="文档目录"><a href="#scope">范围</a><a href="#baseline">代码现状</a><a href="#download">下载与续传</a><a href="#range">Range 验收</a><a href="#report">交付与下一步</a></nav>
+</header>
+<section id="scope">
+<h2>范围和边界</h2>
+<ul>
+<li>目标主机是已有 SSH 别名 <code>hkvps</code>。测试样本是 <a href="https://www.youtube.com/watch?v=0Ojarj6nTM4" target="_blank" rel="noopener noreferrer">YouTube 视频 0Ojarj6nTM4</a>；已去掉原链接的电台和歌单参数，只测单视频。仅对有权下载和测试的内容执行；文件不对外发布。</li>
+<li>只用独立临时目录，或不挂载生产数据、不共享生产容器配置的一次性容器。测试 HTTP 只监听 VPS 环回地址；如需本机浏览器验收，用 SSH 本地端口转发，不开放公网端口。</li>
+<li>不改 Compose、生产容器、现有缓存、数据库、队列、防火墙或反向代理，不部署、不重启服务。不从旧 handoff 或生产配置读取凭据。首轮匿名测试；遇到登录或令牌要求就记录并停下，不导入个人 Cookie，不写出签名媒体 URL。</li>
+<li>SoundCloud 的进度条、来源标签和封面取色已由用户验收通过，相关提交为 <code>c2e1c9e</code>。本实验不碰 SoundCloud。YouTube iframe 限制与 VPS 下载是否可行是两个问题。</li>
+</ul>
+</section>
+<section id="baseline">
+<h2>代码现状</h2>
+<dl>
+<dt><code>backend-go/internal/media/ytdlp.go</code></dt><dd>用 <code>-f bestaudio -g</code> 获取临时媒体地址，短暂缓存解析结果，不下载音频。现有 30 秒解析超时不是后台下载任务的超时。</dd>
+<dt><code>backend-go/internal/platform/youtube/youtube.go</code></dt><dd>播放类型是 <code>youtube-embed</code>；<code>StreamCacheable()</code> 返回 <code>false</code>。不要只翻这个开关来代替验证。</dd>
+<dt><code>backend-go/internal/media/files.go</code></dt><dd>已有本地文件 Range 响应逻辑。实验可先用独立的 Go <code>http.ServeContent</code> 服务验证文件分发，不需要把实验接入生产路由。</dd>
+<dt><code>Dockerfile</code></dt><dd>仓库镜像构建会安装 yt-dlp 和 FFmpeg，但这不代表 VPS 宿主机有这些工具，也不代表镜像具备完整的 YouTube JS 运行时和 EJS 依赖。先记录实验实际使用的版本和环境。</dd>
+</dl>
+</section>
+<section id="download">
+<h2>下载、中断、续传</h2>
+<ol>
+<li>在 hkvps 上以普通用户、独立 Bash 会话运行。先检查磁盘余量及 <code>yt-dlp</code>、<code>ffprobe</code>、<code>ffmpeg</code> 和受支持的 JS 运行时；记录版本。缺依赖时按官方 EJS 指南配置隔离环境，不升级宿主机全局依赖。</li>
+<li>在独立目录列出格式，挑一个音频专用格式。优先选普通 HTTPS 格式以便检查字节续传；如果只有分片格式，记录协议与分片进度。不要预设某个格式 ID 一定可用。</li>
+</ol>
+<pre><code>umask 077
+work=$(mktemp -d -t musicparty-ytdlp.XXXXXXXX) || exit 1
+cd "$work" || exit 1
+url='https://www.youtube.com/watch?v=0Ojarj6nTM4'
+yt-dlp --version
+yt-dlp --ignore-config --no-cache-dir --no-playlist \
+  --socket-timeout 15 --retries 1 -F "$url"</code></pre>
+<ol start="3">
+<li>把 <code>format</code> 设为上一步实际选中的格式 ID。两次都使用同一个目录、输出模板、格式、工具版本及运行时参数；不加转码或覆盖选项。先限速下载，在 <code>.part</code> 已有非零字节后按 Ctrl+C。若文件已经下载完成，这次不算中断测试；用新目录重做，不覆盖已有文件。</li>
+</ol>
+<pre><code>format='填入已确认的音频格式 ID'
+download_audio() {
+  timeout --signal=INT --kill-after=10s 5m yt-dlp \
+    --ignore-config --no-cache-dir --no-playlist --continue --part \
+    --socket-timeout 15 --retries 1 --fragment-retries 1 \
+    --abort-on-unavailable-fragments --max-filesize 64M \
+    -f "$format" -o '%(id)s.%(ext)s' "$@" "$url"
+}
+download_audio --limit-rate 256K   # 看到 .part 增长后按 Ctrl+C
+ls -la                             # 记录 .part 大小，分片格式也保留状态文件
+download_audio                     # 保留同目录、同格式、同输出模板</code></pre>
+<p>示例假设使用 GNU <code>timeout</code>，如临时环境未提供就用等价的独立超时控制。单视频、单任务；文件大小参数不当作磁盘硬配额，留意实际写入量。若卡在格式提取、403、429、登录验证、PO Token 或 JS challenge，记录发生阶段和脱敏后的错误，不反复重试。</p>
+<ol start="4">
+<li>续传要有证据：中断时的字节数或分片编号，以及第二次日志的非零续传偏移或分片起点。若日志显示从头重下，即使最后成功，也只算下载通过，不算续传通过。yt-dlp 的默认 <code>--continue</code> 和 <code>--part</code> 并不保证每种上游格式都能恢复。</li>
+<li>对最终文件用 <code>ffprobe</code> 检查音频流、编码、容器、时长和大小；用 <code>ffmpeg -v error -xerror -i "$file" -map 0:a:0 -f null -</code> 整段解码。记下 SHA-256。最终文件必须稳定且可解码，不能把 <code>.part</code> 当成成品。</li>
+</ol>
+</section>
+<section id="range">
+<h2>HTTP Range 验收</h2>
+<p>临时服务只暴露已验收的那一个文件，不提供目录列表或诊断日志。可用 Go <code>http.ServeContent</code>。显式设置匹配文件的 MIME，例如 M4A 用 <code>audio/mp4</code>，WebM 音频用 <code>audio/webm</code>。在 VPS 本机测试，或通过 <code>ssh -N -L 127.0.0.1:18088:127.0.0.1:18088 hkvps</code> 到本机测试。端口有冲突就换空闲端口，不停止其他服务。</p>
+<pre><code>endpoint='http://127.0.0.1:18088/audio'
+curl -fsS -D full.headers  -o full.body  "$endpoint"
+curl -fsS -D range.headers -o range.body -H 'Range: bytes=1024-2047' "$endpoint"
+curl -sS  -D invalid.headers -o /dev/null -H 'Range: bytes=999999999-' "$endpoint"</code></pre>
+<ul>
+<li>完整请求返回 <code>200</code>，下载文件的 SHA-256 与原件一致。非零偏移请求返回 <code>206</code>，<code>Content-Range</code> 为 <code>bytes 1024-2047/总字节数</code>，正文大小为 1024 字节，并与源文件对应字节一致。</li>
+<li>越界请求返回 <code>416</code>，<code>Content-Range</code> 为 <code>bytes */总字节数</code>。浏览器验收时，用原生音频控件播放并拖到后半段，确认进度继续走、声音恢复；没有实听就注明只验证了 HTTP 和解码。</li>
+<li>两种续传分开判定：yt-dlp 恢复的是 VPS 上游下载，Range 恢复的是客户端对已完成文件的读取。任何一项通过都不能替另一项。</li>
+</ul>
+</section>
+<section id="report">
+<h2>交付与下一步</h2>
+<p>报告三项独立结论：hkvps 下载是否成功、是否实际从非零位置续传、完整性与 Range 是否通过。附格式 ID／协议、工具版本、首次中断字节数／分片编号、恢复位置、最终时长与大小、HTTP 状态、是否实听。单样本只能证实该视频在该次运行中可用，不能证明长期稳定。</p>
+<p>结束后停掉测试进程和转发，仅清理明确属于本次实验的临时目录与一次性容器。实验通过也先汇报，不自动接入。接入时再单独讨论下载任务去重、磁盘限额、缓存过期、完成文件原子发布和失败回退；第一版仍只播放完整文件。</p>
+<p>参考：<a href="https://github.com/yt-dlp/yt-dlp#filesystem-options" target="_blank" rel="noopener noreferrer">yt-dlp 文件选项</a> · <a href="https://github.com/yt-dlp/yt-dlp/wiki/EJS" target="_blank" rel="noopener noreferrer">EJS 指南</a> · <a href="https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide" target="_blank" rel="noopener noreferrer">PO Token 指南</a> · <a href="https://pkg.go.dev/net/http#ServeContent" target="_blank" rel="noopener noreferrer">Go ServeContent</a></p>
+</section>
+</main>
+</body>
+</html>
