@@ -53,6 +53,7 @@ import { useUiStore } from '../stores/ui';
 import { useAudio } from '../composables/useAudio';
 import { withPlaybackToken } from '../utils/audioUrl';
 
+const emit = defineEmits(['youtube-fallback']);
 const player = useAudioPlayerAdapter();
 const ui = useUiStore();
 const offsetDb = computed(() => ui.getPlatformVolumeOffset(player.nowPlaying?.music?.platform));
@@ -77,7 +78,7 @@ const {
   armStalledWatchdog,
   markPlaybackHealthy,
   isActuallyStalled
-} = useAudio(audioRef, player, computed(() => ui.volume), offsetDb);
+} = useAudio(audioRef, player, computed(() => ui.volume), offsetDb, () => emit('youtube-fallback'));
 
 const audioSrc = computed(() => withPlaybackToken(player.nowPlaying?.music));
 // Queue snapshots and patches carry the server media URL for standby preload.

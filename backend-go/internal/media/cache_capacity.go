@@ -138,18 +138,23 @@ func (c *Cache) releaseReservation(reservation *cacheReservation) {
 	reservation.bytes = 0
 }
 
-func (c *Cache) discardPartial(part string, reservation *cacheReservation) {
+func (c *Cache) discardPartial(part string, reservation *cacheReservation, extra ...string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	// If deletion fails, keep the physical bytes indexed for later eviction. Never
 	// release quota for debris that is still on disk.
-	if err := os.Remove(part); err != nil && !errors.Is(err, os.ErrNotExist) {
-		size := reservation.bytes
-		if info, err := os.Lstat(part); err == nil {
-			size = info.Size()
+	for _, path := range append([]string{part}, extra...) {
+		id := filepath.Base(path)
+		c.usedBytes -= c.entries[id].size
+		delete(c.entries, id)
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			size := reservation.bytes
+			if info, err := os.Lstat(path); err == nil {
+				size = info.Size()
+			}
+			c.entries[id] = cacheEntry{path: path, size: size, accessOrder: c.nextAccessOrderLocked()}
+			c.usedBytes += size
 		}
-		c.entries[filepath.Base(part)] = cacheEntry{path: part, size: size, accessOrder: c.nextAccessOrderLocked()}
-		c.usedBytes += size
 	}
 	c.reservedBytes -= reservation.bytes
 	reservation.bytes = 0

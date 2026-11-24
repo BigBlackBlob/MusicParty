@@ -20,6 +20,7 @@ ARG OCI_SOURCE="https://github.com/BigBlackBlob/MusicParty"
 ARG OCI_REVISION="unknown"
 ARG OCI_CREATED="unknown"
 ARG OCI_VERSION="dev"
+ARG YTDLP_VERSION="2026.11.23"
 
 LABEL org.opencontainers.image.source=$OCI_SOURCE \
       org.opencontainers.image.revision=$OCI_REVISION \
@@ -28,8 +29,11 @@ LABEL org.opencontainers.image.source=$OCI_SOURCE \
 
 WORKDIR /app
 
-RUN apk add --no-cache ca-certificates ffmpeg python3 py3-pip tzdata wget \
-    && pip3 install --no-cache-dir --break-system-packages -U yt-dlp \
+RUN apk add --no-cache ca-certificates ffmpeg nodejs python3 py3-pip tzdata wget \
+    && pip3 install --no-cache-dir --break-system-packages "yt-dlp[default]==${YTDLP_VERSION}" \
+    && test "$(yt-dlp --version)" = "${YTDLP_VERSION}" \
+    && node -e "process.exit(Number(process.versions.node.split('.')[0]) >= 22 ? 0 : 1)" \
+    && printf "Runtime versions: yt-dlp=%s node=%s ffmpeg=%s\n" "$(yt-dlp --version)" "$(node --version)" "$(ffmpeg -version | head -n 1)" \
     && addgroup -S -g 10001 appgroup \
     && adduser -S -D -H -u 10001 -G appgroup appuser \
     && mkdir -p /app/data /app/cached_media /app/static \

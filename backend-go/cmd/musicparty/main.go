@@ -210,6 +210,11 @@ func run() error {
 		realtimeManager.SetPreResolver(func(ctx context.Context, music storesqlite.Music) {
 			platformAPI.PreResolveMedia(ctx, platform.Music{ID: music.ID, Name: music.Name, Artists: music.Artists, Duration: music.Duration, Platform: music.Platform, CoverURL: music.CoverURL}, mediaCache)
 		})
+		realtimeManager.SetYouTubeCache(func(id string) bool {
+			return platformAPI.YouTubeCached(id, mediaCache)
+		}, func(ctx context.Context, id string) {
+			platformAPI.PreResolveMedia(ctx, platform.Music{ID: id, Platform: "youtube"}, mediaCache)
+		})
 		realtimeManager.SetStreamVerifier(func(ctx context.Context, music storesqlite.Music) error {
 			return platformAPI.VerifyStream(ctx, music.Platform, music.ID)
 		})

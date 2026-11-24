@@ -57,19 +57,29 @@ type ControlResult struct {
 }
 
 type Manager struct {
-	store        *storesqlite.Store
-	queueSize    int
-	timeout      time.Duration
-	idle         time.Duration
-	broadcaster  Broadcaster
-	mu           sync.Mutex
-	runtimes     map[string]*RoomRuntime
-	loading      map[string]*roomLoad
-	closed       bool
-	limits       QueueLimits
-	chat         *chatPolicy
-	preResolve   func(context.Context, storesqlite.Music)
-	verifyStream func(context.Context, storesqlite.Music) error
+	store          *storesqlite.Store
+	queueSize      int
+	timeout        time.Duration
+	idle           time.Duration
+	broadcaster    Broadcaster
+	mu             sync.Mutex
+	runtimes       map[string]*RoomRuntime
+	loading        map[string]*roomLoad
+	closed         bool
+	limits         QueueLimits
+	chat           *chatPolicy
+	preResolve     func(context.Context, storesqlite.Music)
+	youtubeReady   func(string) bool
+	prepareYouTube func(context.Context, string)
+	verifyStream   func(context.Context, storesqlite.Music) error
+}
+
+// SetYouTubeCache installs the local readiness check and nonblocking cache submission.
+// Configure it before loading rooms.
+func (m *Manager) SetYouTubeCache(ready func(string) bool, prepare func(context.Context, string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.youtubeReady, m.prepareYouTube = ready, prepare
 }
 
 // SetPreResolver installs best-effort media preparation for the next queued track.
@@ -153,7 +163,10 @@ func (m *Manager) Room(ctx context.Context, roomID string) (*RoomRuntime, error)
 			rt, err = newRoomRuntime(loadCtx, m.store, roomID, m.queueSize, m.timeout, m.idle, m.broadcaster, m.release, m.limits, m.chat)
 			if rt != nil {
 				rt.preResolve = m.preResolve
+				rt.youtubeReady, rt.prepareYouTube = m.youtubeReady, m.prepareYouTube
 				rt.verifyStream = m.verifyStream
+				rt.prepareNextYouTube()
+				go rt.loop()
 			}
 		}
 		m.mu.Lock()
@@ -294,6 +307,9 @@ type RoomRuntime struct {
 	eventLogQueue       []playbackEvent
 	eventLogGen         uint64
 	preResolve          func(context.Context, storesqlite.Music)
+	youtubeReady        func(string) bool
+	prepareYouTube      func(context.Context, string)
+	preparedYouTube     string
 	preResolveBusy      bool
 	verifyStream        func(context.Context, storesqlite.Music) error
 	verificationEpochs  map[int64]struct{}
@@ -338,7 +354,6 @@ func newRoomRuntime(ctx context.Context, store *storesqlite.Store, roomID string
 	}
 	r.controlMutations = make(map[controlKey]controlRecord)
 	r.controlCounts = make(map[string]int)
-	go r.loop()
 	return r, nil
 }
 
@@ -396,7 +411,7 @@ func (r *RoomRuntime) Enqueue(ctx context.Context, session account.Session, musi
 		item := storesqlite.QueueItem{QueueID: uuid.NewString(), Music: music, EnqueuedBy: storesqlite.UserSummary{PublicID: session.PublicID, Name: session.DisplayName, Guest: session.Guest}, Status: "PENDING"}
 		next := append(slices.Clone(runtime.queue), item)
 		nextState := clonePlaybackState(runtime.state)
-		startedID := startFirst(&nextState, &next)
+		startedID := runtime.startFirst(&nextState, &next)
 		started := startedID != ""
 		if err := runtime.checkQueueCapacity(session.PublicID, next); err != nil {
 			return nil, err
@@ -417,6 +432,9 @@ func (r *RoomRuntime) Enqueue(ctx context.Context, session account.Session, musi
 		runtime.queue = next
 		runtime.state = nextState
 		runtime.queueVersion++
+		if started {
+			runtime.prepareStartedYouTube()
+		}
 		pending := []storesqlite.QueueItem{item}
 		if item.QueueID == startedID {
 			pending = []storesqlite.QueueItem{}
@@ -449,7 +467,7 @@ func (r *RoomRuntime) EnqueueMany(ctx context.Context, session account.Session, 
 		}
 		next := append(slices.Clone(runtime.queue), items...)
 		nextState := clonePlaybackState(runtime.state)
-		startedID := startFirst(&nextState, &next)
+		startedID := runtime.startFirst(&nextState, &next)
 		started := startedID != ""
 		if err := runtime.checkQueueCapacity(session.PublicID, next); err != nil {
 			return nil, err
@@ -470,6 +488,9 @@ func (r *RoomRuntime) EnqueueMany(ctx context.Context, session account.Session, 
 		runtime.queue = next
 		runtime.state = nextState
 		runtime.queueVersion++
+		if started {
+			runtime.prepareStartedYouTube()
+		}
 		pending := slices.DeleteFunc(slices.Clone(items), func(item storesqlite.QueueItem) bool { return item.QueueID == startedID })
 		runtime.broadcast("queue.patch", map[string]any{"operation": "append", "queueEpoch": runtime.controlScope, "queueVersion": runtime.queueVersion, "items": pending, "queueIds": consumedQueueIDs(startedID)})
 		runtime.broadcastState()
@@ -834,7 +855,7 @@ func (r *RoomRuntime) PreviousFor(ctx context.Context, admin bool, expectedEpoch
 		entry := runtime.history[runtime.historySkipped]
 		if err := runtime.mutateStateDirect(ctx, func(s *storesqlite.PlaybackState) {
 			now := time.Now().UnixMilli()
-			s.CurrentMusic = playableMusic(entry.Music)
+			s.CurrentMusic = runtime.startingMusic(entry.Music)
 			s.CurrentEnqueuerID = entry.EnqueuerPublicID
 			s.CurrentEnqueuerName = nil
 			s.Paused = false
@@ -988,7 +1009,7 @@ func (r *RoomRuntime) dropCurrentTrack(ctx context.Context, queue []storesqlite.
 	if len(nextQueue) > 0 {
 		item := takeNext(&nextState, &nextQueue)
 		nextQueueID = item.QueueID
-		nextState.CurrentMusic = playableMusic(item.Music)
+		nextState.CurrentMusic = r.startingMusic(item.Music)
 		nextState.CurrentEnqueuerID = &item.EnqueuedBy.PublicID
 		nextState.CurrentEnqueuerName = &item.EnqueuedBy.Name
 		nextState.Paused = false
@@ -1044,7 +1065,7 @@ func (r *RoomRuntime) advance(ctx context.Context) error {
 		item := takeNext(&nextState, &nextQueue)
 		nextQueueID, nextSessionState = item.QueueID, "ready"
 		removed = append(removed, item.QueueID)
-		nextState.CurrentMusic = playableMusic(item.Music)
+		nextState.CurrentMusic = r.startingMusic(item.Music)
 		nextState.CurrentEnqueuerID = &item.EnqueuedBy.PublicID
 		nextState.CurrentEnqueuerName = &item.EnqueuedBy.Name
 		nextState.Paused = false
@@ -1224,13 +1245,13 @@ func consumedQueueIDs(id string) []string {
 }
 
 // startFirst returns the queue ID consumed when starting an idle player.
-func startFirst(state *storesqlite.PlaybackState, queue *[]storesqlite.QueueItem) string {
+func (r *RoomRuntime) startFirst(state *storesqlite.PlaybackState, queue *[]storesqlite.QueueItem) string {
 	if state.CurrentMusic != nil || len(*queue) == 0 {
 		return ""
 	}
 	item := takeNext(state, queue)
 	now := time.Now().UnixMilli()
-	state.CurrentMusic = playableMusic(item.Music)
+	state.CurrentMusic = r.startingMusic(item.Music)
 	state.CurrentEnqueuerID = &item.EnqueuedBy.PublicID
 	state.CurrentEnqueuerName = &item.EnqueuedBy.Name
 	state.Paused = false
@@ -1248,19 +1269,31 @@ func startFirst(state *storesqlite.PlaybackState, queue *[]storesqlite.QueueItem
 // takeNext consumes explicit priority before shuffle while preserving the
 // visible order of the remaining queue.
 func takeNext(state *storesqlite.PlaybackState, queue *[]storesqlite.QueueItem) storesqlite.QueueItem {
-	index := 0
-	var priority int64
-	for i, item := range *queue {
-		if item.PlaybackPriority > priority {
-			index, priority = i, item.PlaybackPriority
-		}
-	}
+	index, priority := prioritizedTrack(*queue)
 	if priority == 0 && state.Shuffle {
 		index = rand.IntN(len(*queue))
 	}
 	item := (*queue)[index]
 	*queue = slices.Delete(*queue, index, index+1)
 	return item
+}
+
+func prioritizedTrack(queue []storesqlite.QueueItem) (index int, priority int64) {
+	for i, item := range queue {
+		if item.PlaybackPriority > priority {
+			index, priority = i, item.PlaybackPriority
+		}
+	}
+	return index, priority
+}
+
+func (r *RoomRuntime) startingMusic(music storesqlite.Music) *storesqlite.PlayableMusic {
+	track := playableMusic(music)
+	if track.Platform == "youtube" && r.youtubeReady != nil && r.youtubeReady(track.ID) {
+		track.PlayerType = "audio"
+		track.URL = "/api/youtube/stream/" + url.PathEscape(track.ID)
+	}
+	return track
 }
 
 func playableMusic(music storesqlite.Music) *storesqlite.PlayableMusic {
@@ -1271,8 +1304,6 @@ func playableMusic(music storesqlite.Music) *storesqlite.PlayableMusic {
 		streamURL = "/api/netease/stream/" + escapedID
 	case music.Platform == "bilibili":
 		streamURL = "/api/bilibili/stream/" + escapedID
-	case music.Platform == "youtube":
-		streamURL = "/api/youtube/stream/" + escapedID
 	case music.Platform == "local":
 		streamURL = "/api/local/media/" + escapedID
 	case music.Platform == "navidrome":
@@ -1288,13 +1319,10 @@ func playableMusic(music storesqlite.Music) *storesqlite.PlayableMusic {
 	}
 	playerType := music.PlayerType
 	embedID := music.EmbedID
-	if playerType == "" {
-		switch music.Platform {
-		case "youtube":
-			playerType, embedID = "youtube-embed", music.ID
-		case "soundcloud":
-			playerType, embedID = "soundcloud-widget", music.ID
-		}
+	if music.Platform == "youtube" {
+		playerType, embedID = "youtube-embed", music.ID
+	} else if playerType == "" && music.Platform == "soundcloud" {
+		playerType, embedID = "soundcloud-widget", music.ID
 	}
 	if playerType == "youtube-embed" || playerType == "soundcloud-widget" {
 		streamURL = ""
@@ -1376,6 +1404,7 @@ func (r *RoomRuntime) broadcastState() {
 }
 func (r *RoomRuntime) broadcast(kind string, payload any) {
 	if kind == "queue.patch" {
+		r.prepareNextYouTube()
 		if fields, ok := payload.(map[string]any); ok {
 			for _, key := range []string{"items", "queue"} {
 				if items, ok := fields[key].([]storesqlite.QueueItem); ok {
@@ -1719,10 +1748,14 @@ func (r *RoomRuntime) PlaybackFailed(ctx context.Context, queueID, musicID, name
 
 // prepareNextTrack resolves and cache-submits one queued item without blocking the room actor.
 func (r *RoomRuntime) prepareNextTrack() {
+	r.prepareNextYouTube()
 	if r.preResolve == nil || r.preResolveBusy || len(r.queue) == 0 {
 		return
 	}
 	item := r.queue[0]
+	if item.Music.Platform == "youtube" {
+		return
+	}
 	r.preResolveBusy = true
 	go func() {
 		defer func() {
@@ -1733,6 +1766,31 @@ func (r *RoomRuntime) prepareNextTrack() {
 		}()
 		r.preResolve(r.ctx, item.Music)
 	}()
+}
+
+// An idle room starts immediately. Warm the missed track for a later replay.
+func (r *RoomRuntime) prepareStartedYouTube() {
+	if track := r.state.CurrentMusic; r.prepareYouTube != nil && track != nil && track.PlayerType == "youtube-embed" {
+		r.prepareYouTube(r.ctx, track.ID)
+	}
+}
+
+// Queue changes can bring a YouTube track up next after playback.started.
+func (r *RoomRuntime) prepareNextYouTube() {
+	if r.prepareYouTube == nil || len(r.queue) == 0 {
+		r.preparedYouTube = ""
+		return
+	}
+	index, _ := prioritizedTrack(r.queue)
+	item := r.queue[index]
+	if item.Music.Platform != "youtube" {
+		r.preparedYouTube = ""
+		return
+	}
+	if item.QueueID != r.preparedYouTube {
+		r.preparedYouTube = item.QueueID
+		r.prepareYouTube(r.ctx, item.Music.ID)
+	}
 }
 
 // verifyPlaybackError resolves media off-actor, then sends the result back through the actor.

@@ -61,6 +61,7 @@ type downloadJob struct {
 	key, url string
 	deadline time.Time
 	headers  http.Header
+	generate func(context.Context, string, int64) error
 }
 
 // Cache accounts for committed files plus reservations covering all partial writes.
@@ -141,6 +142,14 @@ func (c *Cache) Get(key string) (string, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.lookupLocked(filepath.Base(c.pathForKey(key)))
+}
+
+// Has reports whether the complete cached file exists; partial downloads are excluded.
+func (c *Cache) Has(key string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	_, ok := c.lookupLocked(filepath.Base(c.pathForKey(key)))
+	return ok
 }
 
 // Acquire pins a completed file until release. Otherwise eviction could unlink a
@@ -224,6 +233,36 @@ func (c *Cache) Submit(key, url string, headers http.Header) error {
 	}
 }
 
+// SubmitGenerated queues a producer that writes a complete file to a cache-owned
+// staging path. The producer may use path+.part for resume and must honor maxBytes.
+func (c *Cache) SubmitGenerated(key string, generate func(ctx context.Context, path string, maxBytes int64) error) error {
+	if generate == nil {
+		return errors.New("generated cache download requires a producer")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return context.Canceled
+	}
+	if _, ok := c.lookupLocked(filepath.Base(c.pathForKey(key))); ok {
+		return nil
+	}
+	if _, ok := c.inflight[key]; ok {
+		return nil
+	}
+	c.inflight[key] = &inflightEntry{total: -1, changed: make(chan struct{})}
+	select {
+	case <-c.ctx.Done():
+		delete(c.inflight, key)
+		return context.Canceled
+	case c.jobs <- downloadJob{key: key, deadline: time.Now().Add(c.options.TaskTTL), generate: generate}:
+		return nil
+	default:
+		delete(c.inflight, key)
+		return ErrDownloadQueueFull
+	}
+}
+
 func (c *Cache) Close() {
 	c.closeOne.Do(func() {
 		c.mu.Lock()
@@ -254,7 +293,11 @@ func (c *Cache) worker() {
 		case <-c.ctx.Done():
 			return
 		case job := <-c.jobs:
-			c.download(job)
+			if job.generate != nil {
+				c.downloadGenerated(job)
+			} else {
+				c.download(job)
+			}
 			c.mu.Lock()
 			if entry := c.inflight[job.key]; entry != nil {
 				if !entry.done {

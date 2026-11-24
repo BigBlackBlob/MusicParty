@@ -2,6 +2,7 @@ package media
 
 import (
 	"context"
+	"os"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -9,45 +10,59 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestYTDLPResolverBoundsProcessesAndSharesResolution(t *testing.T) {
-	resolver := newYTDLPResolver(1)
-	var calls atomic.Int32
+func TestGeneratedDownloadDeduplicatesAndPublishesOnlyCompleteFile(t *testing.T) {
+	cache, err := NewCache(t.TempDir(), 4096, nil, 1, 2, 0, 0, CacheOptions{MaxFileBytes: 2048, ReservationBytes: 512})
+	require.NoError(t, err)
+	defer cache.Close()
 	started, release := make(chan struct{}), make(chan struct{})
-	resolver.run = func(ctx context.Context, executable, id string) (string, error) {
+	var calls atomic.Int32
+	producer := func(ctx context.Context, path string, maxBytes int64) error {
 		calls.Add(1)
+		if maxBytes != 2048 {
+			return os.ErrInvalid
+		}
+		if err := os.WriteFile(path, []byte("partial"), 0o600); err != nil {
+			return err
+		}
 		close(started)
 		select {
 		case <-release:
-			return "https://cdn.test/audio", nil
+			return os.WriteFile(path, []byte("complete audio"), 0o600)
 		case <-ctx.Done():
-			return "", ctx.Err()
+			return ctx.Err()
 		}
 	}
-	first := make(chan string, 1)
-	go func() { value, _ := resolver.resolve(context.Background(), "unused", "abcdefghijk"); first <- value }()
+	require.NoError(t, cache.SubmitGenerated("youtube:video", producer))
 	<-started
-	_, err := resolver.resolve(context.Background(), "unused", "ABCDEFGHIJK")
-	require.ErrorIs(t, err, ErrResolverBusy)
-	canceled, cancel := context.WithCancel(context.Background())
-	cancel()
-	_, err = resolver.resolve(canceled, "unused", "abcdefghijk")
-	require.ErrorIs(t, err, context.Canceled)
-	waiting, stopWaiting := context.WithTimeout(context.Background(), 20*time.Millisecond)
-	defer stopWaiting()
-	_, err = resolver.resolve(waiting, "unused", "abcdefghijk")
-	require.ErrorIs(t, err, context.DeadlineExceeded, "same-video requests join the in-flight result rather than hitting capacity")
-	require.EqualValues(t, 1, calls.Load())
+	require.NoError(t, cache.SubmitGenerated("youtube:video", producer))
+	require.False(t, cache.Has("youtube:video"), "a growing output must never be visible")
 	close(release)
-	select {
-	case value := <-first:
-		require.Equal(t, "https://cdn.test/audio", value)
-	case <-time.After(time.Second):
-		t.Fatal("resolver did not finish")
-	}
-	value, err := resolver.resolve(context.Background(), "unused", "abcdefghijk")
+	path := waitCache(t, cache, "youtube:video")
+	data, err := os.ReadFile(path)
 	require.NoError(t, err)
-	require.Equal(t, "https://cdn.test/audio", value)
-	require.EqualValues(t, 1, calls.Load(), "repeated requests must reuse one resolution")
-	_, err = resolver.resolve(context.Background(), "unused", "bad&id=whatever")
-	require.Error(t, err)
+	require.Equal(t, "complete audio", string(data))
+	require.EqualValues(t, 1, calls.Load())
+}
+
+func TestGeneratedDownloadTimeoutCleansPartialForIframeFallback(t *testing.T) {
+	cache, err := NewCache(t.TempDir(), 4096, nil, 1, 2, 0, 0, CacheOptions{MaxFileBytes: 2048, ReservationBytes: 512, TaskTTL: 40 * time.Millisecond})
+	require.NoError(t, err)
+	defer cache.Close()
+	var calls atomic.Int32
+	producer := func(ctx context.Context, path string, _ int64) error {
+		calls.Add(1)
+		if err := os.WriteFile(path+".part", []byte("growing"), 0o600); err != nil {
+			return err
+		}
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	require.NoError(t, cache.SubmitGenerated("youtube:video", producer))
+	require.NoError(t, cache.SubmitGenerated("youtube:video", producer))
+	require.Eventually(t, func() bool { return !cache.IsInflight("youtube:video") }, time.Second, 10*time.Millisecond)
+	require.False(t, cache.Has("youtube:video"))
+	require.EqualValues(t, 1, calls.Load())
+	entries, err := os.ReadDir(cache.root)
+	require.NoError(t, err)
+	require.Empty(t, entries, "failed host download leaves no playable file, so the client must keep the iframe fallback")
 }

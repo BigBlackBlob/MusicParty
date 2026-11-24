@@ -14,7 +14,7 @@ const STALLED_MAX_RETRIES = 2;
 // L1: 卡住后只显示缓冲遮罩，不动 audio，给浏览器自我恢复的机会
 const SUPPORTED_TRANSITION_PLATFORMS = new Set(['netease', 'bilibili']);
 
-export function useAudio(audioRef, playerStore, userVolumeRef, offsetDbRef) {
+export function useAudio(audioRef, playerStore, userVolumeRef, offsetDbRef, onYouTubeFallback) {
     const localProgress = ref(0);
     const isBuffering = ref(false);
     const bufferedMs = ref(0);
@@ -80,6 +80,7 @@ const clearStalledWatchdog = () => {
 
     const enterPlaybackErrorState = (reason) => {
         clearStalledWatchdog();
+        if (fallbackToYouTube()) return;
         isBuffering.value = false;
         isErrorState.value = true;
         audioRef.value?.pause();
@@ -294,6 +295,7 @@ const clearStalledWatchdog = () => {
     // 尝试播放并处理浏览器拦截
     const safePlay = async () => {
         if (!audioRef.value || !playerStore.nowPlaying) return;
+        const track = playerStore.nowPlaying;
 
         try {
             applyEffectiveVolume();
@@ -313,6 +315,8 @@ const clearStalledWatchdog = () => {
                 needsUserGesture.value = true;
                 console.warn("Autoplay blocked. User interaction required.");
             } else if (e.name !== 'AbortError') {
+                if (e.name === 'NotSupportedError' && track.queueId === playerStore.nowPlaying?.queueId &&
+                    track.playEpoch === playerStore.nowPlaying?.playEpoch && fallbackToYouTube()) return;
                 console.warn("Play failed:", e);
             }
         }
@@ -408,7 +412,17 @@ const clearStalledWatchdog = () => {
     };
 
     // === 4. 错误重试机制 ===
+    const fallbackToYouTube = () => {
+        if (!onYouTubeFallback || playerStore.nowPlaying?.music?.platform !== 'youtube') return false;
+        clearStalledWatchdog();
+        clearRetryTimers();
+        audioRef.value?.pause();
+        onYouTubeFallback();
+        return true;
+    };
+
     const handleError = () => {
+        if (fallbackToYouTube()) return;
         if (!playerStore.nowPlaying?.music?.url) return;
 
         // 忽略由切换 src 导致的中断错误

@@ -30,6 +30,9 @@ func TestUpstreamCoverURL(t *testing.T) {
 		{"https://music.126.net:443/a", "https://music.126.net/a?param=128y128"},
 		{"https://HDSLB.COM/a", "https://hdslb.com/a@128w_128h_1c.jpg"},
 		{"https://i1.sndcdn.com/artworks-000090810259-rywl9s-t500x500.jpg", "https://i1.sndcdn.com/artworks-000090810259-rywl9s-t500x500.jpg"},
+		{"https://i.ytimg.com/vi/0Ojarj6nTM4/hqdefault.jpg", "https://i.ytimg.com/vi/0Ojarj6nTM4/hqdefault.jpg"},
+		{"https://other.ytimg.com/vi/0Ojarj6nTM4/hqdefault.jpg", ""},
+		{"https://i.ytimg.com.attacker.com/vi/0Ojarj6nTM4/hqdefault.jpg", ""},
 		{"https://i1.sndcdn.com.attacker.com/a.jpg", ""},
 		{"https://evilsndcdn.com/a.jpg", ""},
 		{"https://evilmusic.126.net.attacker.com/a", ""},
@@ -130,10 +133,17 @@ func TestDominantCoverColor(t *testing.T) {
 }
 
 func TestUpstreamCoverCacheAndSession(t *testing.T) {
+	const youtubeCover = "https://i.ytimg.com/vi/0Ojarj6nTM4/hqdefault.jpg"
 	var calls atomic.Int32
 	upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
-		require.Equal(t, "/a.jpg@128w_128h_1c.jpg", r.URL.Path)
+		switch r.Host {
+		case "i.ytimg.com":
+			require.Equal(t, "/vi/0Ojarj6nTM4/hqdefault.jpg", r.URL.Path)
+		default:
+			require.Equal(t, "i1.hdslb.com", r.Host)
+			require.Equal(t, "/a.jpg@128w_128h_1c.jpg", r.URL.Path)
+		}
 		require.NotEmpty(t, r.UserAgent())
 		require.Empty(t, r.Header.Get("Cookie"))
 		require.Empty(t, r.Header.Get("Authorization"))
@@ -175,6 +185,10 @@ func TestUpstreamCoverCacheAndSession(t *testing.T) {
 	w = batch2Request(router, "GET", path, "", "cover-token", "")
 	require.Equal(t, http.StatusOK, w.Code)
 	require.EqualValues(t, 2, calls.Load())
+	w = batch2Request(router, "GET", "/api/theme/extract-cover-color?url="+url.QueryEscape(youtubeCover), "", "cover-token", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.JSONEq(t, `{"accent":"#204080","accentHover":"#204080","accentMuted":"rgba(32, 64, 128, 0.16)","accentSubtle":"rgba(32, 64, 128, 0.08)"}`, w.Body.String())
+	require.EqualValues(t, 3, calls.Load())
 }
 
 func TestLiveCoverColors(t *testing.T) {
@@ -193,6 +207,7 @@ func TestLiveCoverColors(t *testing.T) {
 		"https://p1.music.126.net/6y-UleORITEDbvrOLV0Q8A==/5639395138885805.jpg",
 		"http://i1.hdslb.com/bfs/archive/5242750857121e05146d5d5b13a47a2a6dd36e98.jpg",
 		"https://i1.sndcdn.com/artworks-000090810259-rywl9s-t500x500.jpg",
+		"https://i.ytimg.com/vi/0Ojarj6nTM4/hqdefault.jpg",
 	} {
 		t.Run(raw, func(t *testing.T) {
 			target, err := upstreamCoverURL(raw)

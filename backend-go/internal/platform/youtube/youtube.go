@@ -153,6 +153,10 @@ func (s *Service) ResolvePlayable(ctx context.Context, id string) (platform.Play
 	return platform.PlayableMusic{Music: music, PlayerType: "youtube-embed", EmbedID: id}, nil
 }
 
+func (s *Service) Download(ctx context.Context, id, target string, maxBytes int64) error {
+	return media.DownloadYTDLP(ctx, s.ytdlpPath, id, target, maxBytes)
+}
+
 func (s *Service) fetchTrack(ctx context.Context, id string) (platform.Music, error) {
 	var videos struct {
 		Items []struct {
@@ -237,8 +241,8 @@ func (*Service) SearchUsers(context.Context, string) ([]platform.User, error) {
 	return []platform.User{}, nil
 }
 func (*Service) Lyric(context.Context, string) (platform.Lyric, error) { return platform.Lyric{}, nil }
-func (s *Service) StreamURL(ctx context.Context, id string) (string, error) {
-	return media.ResolveYTDLP(ctx, s.ytdlpPath, id)
+func (*Service) StreamURL(context.Context, string) (string, error) {
+	return "", errors.New("YouTube audio is served only after a completed host download")
 }
 func (*Service) StreamCacheable() bool                            { return false }
 func (*Service) CoverURL(context.Context, string) (string, error) { return "", nil }

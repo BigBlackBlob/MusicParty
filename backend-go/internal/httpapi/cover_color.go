@@ -38,7 +38,8 @@ func upstreamCoverURL(raw string) (string, error) {
 	music := host == "music.126.net" || strings.HasSuffix(host, ".music.126.net")
 	bilibili := host == "hdslb.com" || strings.HasSuffix(host, ".hdslb.com")
 	soundcloud := host == "sndcdn.com" || strings.HasSuffix(host, ".sndcdn.com")
-	if (!music && !bilibili && !soundcloud) || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.Fragment != "" || (u.Port() != "" && u.Port() != "443") || strings.Contains(u.Host, ":") && u.Port() == "" {
+	youtube := host == "i.ytimg.com"
+	if (!music && !bilibili && !soundcloud && !youtube) || (u.Scheme != "https" && u.Scheme != "http") || u.User != nil || u.Fragment != "" || (u.Port() != "" && u.Port() != "443") || strings.Contains(u.Host, ":") && u.Port() == "" {
 		return "", errors.New("unsupported cover URL")
 	}
 	if net.ParseIP(host) != nil {

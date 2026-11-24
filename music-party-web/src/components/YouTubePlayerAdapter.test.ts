@@ -2,6 +2,7 @@ import { createApp, nextTick, type App } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import YouTubePlayerAdapter from './YouTubePlayerAdapter.vue'
+import AudioEngine from './AudioEngine.vue'
 import { useRoomRuntimeStore } from '../domains/realtime/roomRuntimeStore'
 import { useAudioPlaybackStore } from '../domains/playback/audioPlaybackStore'
 import { useToastStore } from '../stores/toast'
@@ -63,6 +64,44 @@ it('sets volume before the video loads and follows slider, mute and offset chang
   ui.setPlatformVolumeOffset('youtube', -12)
   await nextTick()
   expect(video.setVolume).toHaveBeenLastCalledWith(15)
+})
+
+it('falls back from native YouTube audio at the room position without reporting a failed track', async () => {
+  const runtime = useRoomRuntimeStore()
+  const now = runtime.nowPlaying!
+  const url = `/api/youtube/stream/${now.music.id}`
+  runtime.nowPlaying = { ...now, music: { ...now.music, url, playerType: 'audio' } }
+  runtime.remotePosition = 42000
+  const ui = useUiStore()
+  ui.setVolume(0.8)
+  ui.setPlatformVolumeOffset('youtube', -6)
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
+  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
+
+  app = createApp(AudioEngine)
+  app.mount(host)
+  await nextTick()
+  const audio = host.querySelector('audio')!
+  expect(audio.getAttribute('src')).toBe(url)
+  expect(audio.volume).toBeCloseTo(0.401, 3)
+  ui.setPlatformVolumeOffset('youtube', -12)
+  await nextTick()
+  expect(audio.volume).toBeCloseTo(0.201, 3)
+  expect(host.querySelector('.youtube-player-host')).toBeNull()
+
+  audio.dispatchEvent(new Event('error'))
+  await nextTick()
+  await nextTick()
+  expect(host.querySelector('audio')).toBeNull()
+  events.onReady()
+  expect(video.loadVideoById).toHaveBeenCalledExactlyOnceWith({ videoId: now.music.id, startSeconds: 42 })
+  expect(video.setVolume).toHaveBeenLastCalledWith(20)
+  expect(realtimeClient.send).not.toHaveBeenCalled()
+  expect(runtime.nowPlaying?.playEpoch).toBe(now.playEpoch)
+
+  runtime.nowPlaying = { ...runtime.nowPlaying!, playEpoch: 2 }
+  await nextTick()
+  expect(host.querySelector('audio')?.getAttribute('src')).toBe(url)
 })
 
 it('ends buffering, shows the embed error once and ignores subsequent buffering events', async () => {

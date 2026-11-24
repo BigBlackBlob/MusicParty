@@ -166,6 +166,17 @@ func (api *PlatformAPI) PreResolveMedia(ctx context.Context, music platform.Musi
 	if err != nil {
 		return
 	}
+	key := platformCacheKey(source, music.Platform, music.ID)
+	if music.Platform == "youtube" {
+		if downloader, ok := source.(interface {
+			Download(context.Context, string, string, int64) error
+		}); ok {
+			_ = cache.SubmitGenerated(key, func(jobCtx context.Context, path string, maxBytes int64) error {
+				return downloader.Download(jobCtx, music.ID, path, maxBytes)
+			})
+		}
+		return
+	}
 	target, err := source.StreamURL(ctx, music.ID)
 	if err != nil || target == "" {
 		return
@@ -180,8 +191,17 @@ func (api *PlatformAPI) PreResolveMedia(ctx context.Context, music platform.Musi
 		headers.Set("User-Agent", "Mozilla/5.0")
 	}
 	if cacheable, ok := source.(platform.StreamCacheable); !ok || cacheable.StreamCacheable() {
-		_ = cache.Submit(platformCacheKey(source, music.Platform, music.ID), target, headers)
+		_ = cache.Submit(key, target, headers)
 	}
+}
+
+// YouTubeCached checks the same completed-file key used by the stream route.
+func (api *PlatformAPI) YouTubeCached(videoID string, cache *media.Cache) bool {
+	if cache == nil {
+		return false
+	}
+	source, ok := api.Service("youtube")
+	return ok && cache.Has(platformCacheKey(source, "youtube", videoID))
 }
 func (api *PlatformAPI) SupportsCredentialUpdate(name string) bool {
 	api.mu.RLock()

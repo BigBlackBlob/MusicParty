@@ -92,7 +92,9 @@ func TestYouTubeRateBudgetAndCoverSlotsRejectBeforeUpstream(t *testing.T) {
 	api := NewMediaAPI(cfg, account.New(store), store, nil, platforms, http.DefaultClient, nil)
 	for range 30 {
 		request := httptest.NewRequest("GET", "/api/youtube/stream/abcdefghijk", nil)
-		require.NoError(t, api.proxyPlatform(httptest.NewRecorder(), request, "youtube", "abcdefghijk", false))
+		response := httptest.NewRecorder()
+		require.NoError(t, api.proxyPlatform(response, request, "youtube", "abcdefghijk", false))
+		require.Equal(t, http.StatusNotFound, response.Code)
 	}
 	response := httptest.NewRecorder()
 	err := api.proxyPlatform(response, httptest.NewRequest("GET", "/api/youtube/stream/abcdefghijk", nil), "youtube", "abcdefghijk", false)
@@ -100,7 +102,7 @@ func TestYouTubeRateBudgetAndCoverSlotsRejectBeforeUpstream(t *testing.T) {
 	require.ErrorAs(t, err, &apiErr)
 	require.Equal(t, http.StatusTooManyRequests, apiErr.Status)
 	require.NotEmpty(t, response.Header().Get("Retry-After"))
-	require.Equal(t, 30, source.calls)
+	require.Zero(t, source.calls)
 	cover := &resourceFixture{name: "navidrome"}
 	platforms.Register(cover)
 	platforms.coverSlots <- struct{}{}

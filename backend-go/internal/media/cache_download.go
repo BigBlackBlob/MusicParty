@@ -48,6 +48,62 @@ func (c *Cache) download(job downloadJob) {
 	}
 }
 
+// downloadGenerated commits only after the producer has closed a complete file.
+func (c *Cache) downloadGenerated(job downloadJob) {
+	ctx, cancel := context.WithDeadline(c.ctx, job.deadline)
+	defer cancel()
+	platform := strings.SplitN(job.key, ":", 2)[0]
+	if limit := c.limits[platform]; limit != nil {
+		select {
+		case limit <- struct{}{}:
+			defer func() { <-limit }()
+		case <-ctx.Done():
+			return
+		}
+	}
+	entry, _ := c.startInflightAttempt(job.key)
+	if entry == nil {
+		return
+	}
+	reservation, err := c.reserveSpace(c.options.MaxFileBytes)
+	if err != nil {
+		return
+	}
+	path := c.pathForKey(job.key)
+	part := path + ".part"
+	committed := false
+	defer func() {
+		if !committed {
+			c.discardPartial(part, reservation, part+".part")
+		}
+	}()
+	// Do not let yt-dlp reuse an abandoned output left by failed cleanup.
+	if _, err := os.Lstat(part); !errors.Is(err, os.ErrNotExist) {
+		return
+	}
+	if _, err := os.Lstat(part + ".part"); !errors.Is(err, os.ErrNotExist) {
+		return
+	}
+	if err := job.generate(ctx, part, c.options.MaxFileBytes); err != nil || ctx.Err() != nil {
+		return
+	}
+	if _, err := os.Lstat(part + ".part"); !errors.Is(err, os.ErrNotExist) {
+		return
+	}
+	info, err := os.Stat(part)
+	if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > c.options.MaxFileBytes {
+		return
+	}
+	if err := c.commitPartial(ctx, part, path, info.Size(), reservation); err != nil {
+		return
+	}
+	committed = true
+	c.mu.Lock()
+	entry.done = true
+	wakeInflightLocked(entry)
+	c.mu.Unlock()
+}
+
 // Each attempt owns one reservation and one partial. The task deadline spans
 // queueing, platform admission, all retries and response-body reads.
 func (c *Cache) startInflightAttempt(key string) (*inflightEntry, uint64) {

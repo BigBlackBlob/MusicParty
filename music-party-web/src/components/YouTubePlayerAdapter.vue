@@ -98,13 +98,11 @@ function loadCurrentVideo(embedId) {
   currentVideoId = embedId;
   needsUserGesture.value = false;
   autoplayPending = !player.isPaused;
+  const video = { videoId: embedId, startSeconds: Math.max(0, player.getCurrentProgress()) / 1000 };
   if (player.isPaused) {
-    ytPlayer.cueVideoById({
-      videoId: embedId,
-      startSeconds: Math.max(0, player.getCurrentProgress()) / 1000,
-    });
+    ytPlayer.cueVideoById(video);
   } else {
-    ytPlayer.loadVideoById({ videoId: embedId });
+    ytPlayer.loadVideoById(video);
   }
 }
 

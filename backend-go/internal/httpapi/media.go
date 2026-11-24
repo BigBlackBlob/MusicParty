@@ -336,13 +336,24 @@ func (api *MediaAPI) proxyPlatform(w http.ResponseWriter, r *http.Request, name,
 	if err != nil {
 		return err
 	}
+	cacheKey := platformCacheKey(source, name, id)
+	if !cover && name == "youtube" && api.cache != nil {
+		if path, release, ok := api.cache.Acquire(cacheKey); ok {
+			defer release()
+			return media.ServeFile(w, r, path, "audio/mp4", "private, max-age=86400")
+		}
+	}
 	if name == "youtube" {
 		if retry, blocked := api.resolverLimiter.admit(ClientIP(r)); blocked {
 			w.Header().Set("Retry-After", retry)
 			return &APIError{Status: http.StatusTooManyRequests, Message: "Media resolution rate limit reached"}
 		}
 	}
-	cacheKey := platformCacheKey(source, name, id)
+	if !cover && name == "youtube" {
+		// Only committed downloads are served. The room queue submits the jobs.
+		w.WriteHeader(http.StatusNotFound)
+		return nil
+	}
 	if !cover && api.cache != nil {
 		// 1. Completed file: serve directly.
 		if path, release, ok := api.cache.Acquire(cacheKey); ok {
@@ -383,10 +394,6 @@ func (api *MediaAPI) proxyPlatform(w http.ResponseWriter, r *http.Request, name,
 		}
 		slog.Warn("platform stream resolution rejected", "platform", name, "id", id, "reason", streamErr.Reason, "code", code)
 		return &APIError{Status: http.StatusUnprocessableEntity, Code: code, Message: message}
-	}
-	if errors.Is(err, media.ErrResolverBusy) {
-		w.Header().Set("Retry-After", "1")
-		return &APIError{Status: http.StatusServiceUnavailable, Message: "Media resolver busy"}
 	}
 	if err != nil || target == "" {
 		w.WriteHeader(http.StatusNotFound)
