@@ -206,6 +206,16 @@ func TestPlaylistRepositoriesMatchOwnershipDedupAndReorderSemantics(t *testing.T
 	if err != nil {
 		t.Fatalf("CreateSystemPlaylist(): %v", err)
 	}
+	systemTrack, err := users.AddTrackIfAbsent(ctx, "u-playlist", systemPlaylist.ID, &musicA)
+	if err != nil || systemTrack == nil {
+		t.Fatalf("AddTrackIfAbsent(system) = %+v, %v", systemTrack, err)
+	}
+	if changed, err := users.SetTrackNotes(ctx, "u-playlist", systemPlaylist.ID, systemTrack.ID, "好听"); err != nil || !changed {
+		t.Fatalf("SetTrackNotes(system) = %v, %v; want true, nil", changed, err)
+	}
+	if changed, err := users.SetTrackNotes(ctx, "other-user", systemPlaylist.ID, systemTrack.ID, "x"); err != nil || changed {
+		t.Fatalf("SetTrackNotes(other owner) = %v, %v; want false, nil", changed, err)
+	}
 	if _, err := users.CreateSystemPlaylist(ctx, "u-playlist", "收藏更新", "favorites"); err != nil {
 		t.Fatalf("CreateSystemPlaylist(upsert): %v", err)
 	}

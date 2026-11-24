@@ -42,7 +42,7 @@ func (repository *RoomPlaylistRepository) SetDescription(ctx context.Context, ro
 
 func (repository *UserPlaylistRepository) SetTrackNotes(ctx context.Context, owner, playlistID, trackID, notes string) (bool, error) {
 	return updatePlaylistMetadata(ctx, repository.store, `update user_playlist_track set notes = ? where playlist_id = ? and id = ?
-		and exists (select 1 from user_playlist where id = ? and owner_public_id = ? and system_key is null)`, notes, playlistID, trackID, playlistID, owner)
+		and exists (select 1 from user_playlist where id = ? and owner_public_id = ?)`, notes, playlistID, trackID, playlistID, owner)
 }
 
 func (repository *RoomPlaylistRepository) SetTrackNotes(ctx context.Context, room, playlistID, trackID, notes string) (bool, error) {
