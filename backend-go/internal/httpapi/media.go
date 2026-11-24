@@ -25,12 +25,20 @@ type MediaAPI struct {
 	platforms       *PlatformAPI
 	proxy           media.Proxy
 	cache           *media.Cache
+	soundCloudCache *media.Cache
 	uploads         chan struct{}
 	resolverLimiter *loginLimiter
 }
 
 func NewMediaAPI(cfg config.Config, accounts *account.Service, store *storesqlite.Store, library *media.LocalLibrary, platforms *PlatformAPI, proxyClient *http.Client, cache *media.Cache) *MediaAPI {
 	return &MediaAPI{cfg: cfg, accounts: accounts, repository: storesqlite.NewLocalTrackRepository(store), library: library, platforms: platforms, proxy: media.Proxy{Client: proxyClient}, cache: cache, uploads: make(chan struct{}, 2), resolverLimiter: &loginLimiter{enabled: true, max: 30, maxTracked: 10000, window: time.Minute, block: time.Minute, items: map[string]loginAttempt{}, now: time.Now}}
+}
+
+// SetSoundCloudCache installs the session-scoped cache that holds SoundCloud
+// audio. It is separate from the shared media cache, because SoundCloud only
+// permits storing audio for the session that requested it.
+func (api *MediaAPI) SetSoundCloudCache(cache *media.Cache) {
+	api.soundCloudCache = cache
 }
 
 func (api *MediaAPI) Routes(r chi.Router) {
@@ -56,6 +64,7 @@ func (api *MediaAPI) Routes(r chi.Router) {
 	r.Get("/api/netease/stream/{songId}", Adapt(api.neteaseStream))
 	r.Get("/api/bilibili/stream/{bvid}", Adapt(api.bilibiliStream))
 	r.Get("/api/youtube/stream/{videoId}", Adapt(api.youtubeStream))
+	r.Get("/api/soundcloud/stream/{trackId}", Adapt(api.soundCloudStream))
 	r.Get("/api/qq/stream/{songId}", Adapt(api.qqStream))
 	r.Get("/api/navidrome/stream/{songId}", Adapt(api.navidromeStream))
 	r.Get("/api/navidrome/cover/{coverId}", Adapt(api.navidromeCover))
@@ -291,6 +300,36 @@ func (api *MediaAPI) bilibiliStream(w http.ResponseWriter, r *http.Request) erro
 }
 func (api *MediaAPI) youtubeStream(w http.ResponseWriter, r *http.Request) error {
 	return api.proxyPlatform(w, r, "youtube", chi.URLParam(r, "videoId"), false)
+}
+
+// soundCloudStream serves a cached SoundCloud track from the host.
+//
+// SoundCloud only permits caching audio for the session that requested it, so
+// this route never falls back to proxying an upstream URL. It either serves the
+// session's own copy or reports that the track is not available.
+func (api *MediaAPI) soundCloudStream(w http.ResponseWriter, r *http.Request) error {
+	return api.soundCloudStreamFor(w, r, chi.URLParam(r, "trackId"))
+}
+
+// soundCloudStreamFor serves a cached SoundCloud track from the host.
+//
+// SoundCloud only permits caching audio for the session that requested it, so
+// this route never falls back to proxying an upstream URL. It either serves the
+// session's own copy or reports that the track is not available.
+func (api *MediaAPI) soundCloudStreamFor(w http.ResponseWriter, r *http.Request, id string) error {
+	source, err := api.platforms.authorizedMediaSource(r, "soundcloud")
+	if err != nil {
+		return err
+	}
+	cacheKey := platformCacheKey(source, "soundcloud", id)
+	if api.soundCloudCache != nil {
+		if path, release, ok := api.soundCloudCache.Acquire(cacheKey); ok {
+			defer release()
+			return media.ServeFile(w, r, path, "audio/mp4", "private, max-age=3600")
+		}
+	}
+	// The track is either not cached yet or only playable through the widget.
+	return &APIError{Status: http.StatusNotFound, Code: "stream-unavailable", Message: "The requested track is unavailable for streaming"}
 }
 func (api *MediaAPI) qqStream(w http.ResponseWriter, r *http.Request) error {
 	return api.proxyPlatform(w, r, "qq", chi.URLParam(r, "songId"), false)

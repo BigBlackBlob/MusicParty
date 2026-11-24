@@ -1864,6 +1864,20 @@
         "x-go-source": "backend-go/internal/httpapi"
       }
     },
+    "/api/soundcloud/stream/{trackId}": {
+      "get": {
+        "operationId": "get.api.soundcloud.stream.trackId",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "x-go-source": "backend-go/internal/httpapi"
+      }
+    },
     "/api/subsonic/{roomId}/{sourceId}/cover/{coverId}": {
       "get": {
         "operationId": "get.api.subsonic.roomId.sourceId.cover.coverId",

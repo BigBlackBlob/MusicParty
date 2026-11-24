@@ -36,7 +36,7 @@ RUN apk add --no-cache ca-certificates ffmpeg nodejs python3 py3-pip tzdata wget
     && printf "Runtime versions: yt-dlp=%s node=%s ffmpeg=%s\n" "$(yt-dlp --version)" "$(node --version)" "$(ffmpeg -version | head -n 1)" \
     && addgroup -S -g 10001 appgroup \
     && adduser -S -D -H -u 10001 -G appgroup appuser \
-    && mkdir -p /app/data /app/cached_media /app/static \
+    && mkdir -p /app/data /app/cached_media /app/cached_media_soundcloud /app/static \
     && chown -R appuser:appgroup /app
 
 COPY --from=backend-builder /out/musicparty /app/musicparty

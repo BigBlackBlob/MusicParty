@@ -636,6 +636,22 @@
       "description": "MusicParty Go runtime configuration"
     },
     {
+      "name": "SOUNDCLOUD_CACHE_ENTRY_TTL_MS",
+      "default": "1_800_000",
+      "required": false,
+      "secret": false,
+      "deprecated": false,
+      "description": "MusicParty Go runtime configuration"
+    },
+    {
+      "name": "SOUNDCLOUD_CACHE_MAX_SIZE",
+      "default": "256MB",
+      "required": false,
+      "secret": false,
+      "deprecated": false,
+      "description": "MusicParty Go runtime configuration"
+    },
+    {
       "name": "SOUNDCLOUD_CLIENT_ID",
       "required": false,
       "secret": false,
@@ -650,8 +666,32 @@
       "description": "MusicParty Go runtime configuration"
     },
     {
+      "name": "SOUNDCLOUD_DOWNLOAD_CONCURRENCY",
+      "default": "1",
+      "required": false,
+      "secret": false,
+      "deprecated": false,
+      "description": "MusicParty Go runtime configuration"
+    },
+    {
       "name": "SOUNDCLOUD_ENABLED",
       "default": "false",
+      "required": false,
+      "secret": false,
+      "deprecated": false,
+      "description": "MusicParty Go runtime configuration"
+    },
+    {
+      "name": "SOUNDCLOUD_FFMPEG_PATH",
+      "default": "ffmpeg",
+      "required": false,
+      "secret": false,
+      "deprecated": false,
+      "description": "MusicParty Go runtime configuration"
+    },
+    {
+      "name": "SOUNDCLOUD_YTDLP_PATH",
+      "default": "yt-dlp",
       "required": false,
       "secret": false,
       "deprecated": false,

@@ -66,6 +66,15 @@ services:
       - YOUTUBE_API_KEY=
       - YTDLP_PATH=yt-dlp
       - YOUTUBE_SEARCH_LIMIT=20
+      # [可选] SoundCloud 播放。只需公开的 client_id，不需要 OAuth token：
+      # 音频由镜像内的 yt-dlp 取回，ffmpeg 合并成可拖动的单文件。
+      # SoundCloud 只允许在当前会话内缓存音频，所以这里的缓存独立且会自动过期。
+      - SOUNDCLOUD_ENABLED=false
+      - SOUNDCLOUD_CLIENT_ID=
+      - SOUNDCLOUD_YTDLP_PATH=yt-dlp
+      - SOUNDCLOUD_FFMPEG_PATH=ffmpeg
+      - SOUNDCLOUD_CACHE_MAX_SIZE=256MB
+      - SOUNDCLOUD_CACHE_ENTRY_TTL_MS=1800000
       # [可选] Navidrome 私有曲库；默认不启用，启用请配合 docker-compose.navidrome.yml
       # - NAVIDROME_ENABLED=false
       # - NAVIDROME_BASE_URL=http://navidrome:4533
@@ -109,6 +118,8 @@ services:
     volumes:
       # 挂载音频缓存目录，防止重启后 B 站歌曲重新下载
       - ./music_party/cached_media:/app/cached_media
+      # SoundCloud 的会话期缓存。每次重启都会清空，因为上游条款不允许跨会话保存音频。
+      - ./music_party/cached_media_soundcloud:/app/cached_media_soundcloud
       # 挂载数据目录，用于持久化播放列表和历史记录
       # 本地上传曲库默认也保存在 ./music_party/data/local-library
       - ./music_party/data:/app/data

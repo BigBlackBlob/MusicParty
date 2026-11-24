@@ -108,6 +108,10 @@ type SoundCloud struct {
 	Enabled      bool
 	ClientID     string
 	ClientSecret string
+	// YTDLPPath and FFmpegPath locate the tools that fetch and join the audio.
+	// yt-dlp resolves the public playback location without any credential.
+	YTDLPPath string
+	FFmpegPath string
 }
 
 type QQMusic struct {
@@ -146,6 +150,12 @@ type Chat struct {
 
 type Cache struct {
 	MaxSize string
+	// SoundCloudMaxSize bounds the session-scoped SoundCloud cache.
+	SoundCloudMaxSize string
+	// SoundCloudEntryTTL bounds how long a cached SoundCloud track stays
+	// playable. SoundCloud only permits caching audio for the session that
+	// requested it, so the entries must expire on their own.
+	SoundCloudEntryTTL time.Duration
 }
 
 type Performance struct {
@@ -156,6 +166,7 @@ type Performance struct {
 	NeteaseDownloadConcurrency     int
 	BilibiliDownloadConcurrency    int
 	YouTubeDownloadConcurrency     int
+	SoundCloudDownloadConcurrency  int
 	LocalDownloadConcurrency       int
 	DownloadTaskTTL                time.Duration
 	DownloadMaxRetries             int
@@ -257,6 +268,8 @@ func Load(lookup LookupEnv) (Config, error) {
 				Enabled:      r.bool("SOUNDCLOUD_ENABLED", false),
 				ClientID:     r.string("SOUNDCLOUD_CLIENT_ID", ""),
 				ClientSecret: r.string("SOUNDCLOUD_CLIENT_SECRET", ""),
+				YTDLPPath:    r.string("SOUNDCLOUD_YTDLP_PATH", "yt-dlp"),
+				FFmpegPath:   r.string("SOUNDCLOUD_FFMPEG_PATH", "ffmpeg"),
 			},
 			QQMusic: QQMusic{
 				Enabled:    r.bool("QQ_MUSIC_ENABLED", false),
@@ -278,13 +291,20 @@ func Load(lookup LookupEnv) (Config, error) {
 		Queue:  Queue{MaxSize: r.int("QUEUE_MAX_SIZE", 1000), HistorySize: r.int("QUEUE_HISTORY_SIZE", 50), MaxUserSongs: r.int("QUEUE_MAX_USER_SONGS", 100)},
 		Player: Player{MaxPlaylistImportSize: r.int("PLAYLIST_IMPORT_LIMIT", 100), RoomEvictionIdle: r.durationMS("ROOM_EVICTION_IDLE_MS", 3_600_000)},
 		Chat:   Chat{MaxHistorySize: r.int("CHAT_HISTORY_LIMIT", 1000), MinInterval: r.durationMS("CHAT_MIN_INTERVAL", 1000), MaxMessageLength: r.int("CHAT_MAX_LENGTH", 200)},
-		Cache:  Cache{MaxSize: r.string("CACHE_MAX_SIZE", "1GB")},
+		Cache: Cache{
+			MaxSize: r.string("CACHE_MAX_SIZE", "1GB"),
+			// SoundCloud forbids storing user audio beyond the session that
+			// requested it, so its cache is small and short-lived by default.
+			SoundCloudMaxSize:   r.string("SOUNDCLOUD_CACHE_MAX_SIZE", "256MB"),
+			SoundCloudEntryTTL:  r.durationMS("SOUNDCLOUD_CACHE_ENTRY_TTL_MS", 1_800_000),
+		},
 		Performance: Performance{
 			DownloadMaxQueuedTasks: r.int("DOWNLOAD_MAX_QUEUED_TASKS", 100),
 			DownloadMaxActiveTasks: r.int("DOWNLOAD_MAX_ACTIVE_TASKS", 3), DownloadReservationBytes: r.int64("DOWNLOAD_RESERVATION_BYTES", 33_554_432),
 			DownloadMaxFileBytes:       r.int64("DOWNLOAD_MAX_FILE_BYTES", 268_435_456),
 			NeteaseDownloadConcurrency: r.int("NETEASE_DOWNLOAD_CONCURRENCY", 2), BilibiliDownloadConcurrency: r.int("BILIBILI_DOWNLOAD_CONCURRENCY", 1),
 			YouTubeDownloadConcurrency: r.int("YOUTUBE_DOWNLOAD_CONCURRENCY", 1), LocalDownloadConcurrency: r.int("LOCAL_DOWNLOAD_CONCURRENCY", 2),
+			SoundCloudDownloadConcurrency: r.int("SOUNDCLOUD_DOWNLOAD_CONCURRENCY", 1),
 			DownloadTaskTTL: r.durationMS("DOWNLOAD_TASK_TTL_MS", 1_800_000), DownloadMaxRetries: r.int("DOWNLOAD_MAX_RETRIES", 3),
 			DownloadRetryInitialDelay: r.durationMS("DOWNLOAD_RETRY_INITIAL_DELAY_MS", 1000), DownloadRetryMaxDelay: r.durationMS("DOWNLOAD_RETRY_MAX_DELAY_MS", 30_000),
 			CoverColorCacheSize: r.int("COVER_COLOR_CACHE_SIZE", 256), CoverColorMaxConcurrent: r.int("COVER_COLOR_MAX_CONCURRENT", 4),

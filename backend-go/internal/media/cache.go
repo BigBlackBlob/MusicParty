@@ -38,6 +38,13 @@ type CacheOptions struct {
 	PlatformLimits                 map[string]int
 	ReservationBytes, MaxFileBytes int64
 	TaskTTL, RetryMaxDelay         time.Duration
+	// EntryTTL bounds how long a committed file stays usable. A zero value
+	// keeps entries until the cache evicts them by capacity.
+	EntryTTL time.Duration
+	// Ephemeral wipes the whole directory when the cache starts. Providers
+	// whose terms forbid storing audio beyond the session use it together
+	// with EntryTTL, so a restart never resurrects a previous session's files.
+	Ephemeral bool
 }
 
 func ParseByteSize(value string) (int64, error) {
@@ -188,6 +195,18 @@ func (c *Cache) lookupLocked(id string) (string, bool) {
 	if !info.Mode().IsRegular() {
 		return "", false
 	}
+	// An expired entry is unusable even though the bytes are still on disk.
+	if c.expiredLocked(info.ModTime()) {
+		if exists {
+			c.usedBytes -= old.size
+			delete(c.entries, id)
+		}
+		if removeErr := os.Remove(path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			c.entries[id] = cacheEntry{path: path, size: info.Size(), accessOrder: c.nextAccessOrderLocked()}
+			c.usedBytes += info.Size()
+		}
+		return "", false
+	}
 	base := c.usedBytes
 	if exists {
 		base -= old.size
@@ -202,6 +221,14 @@ func (c *Cache) lookupLocked(id string) (string, bool) {
 	}
 	_, exists = c.entries[id]
 	return path, exists
+}
+
+// expiredLocked reports whether a file outlived the configured entry lifetime.
+func (c *Cache) expiredLocked(modified time.Time) bool {
+	if c.options.EntryTTL <= 0 {
+		return false
+	}
+	return time.Since(modified) > c.options.EntryTTL
 }
 
 func (c *Cache) Submit(key, url string, headers http.Header) error {
@@ -281,6 +308,77 @@ func (c *Cache) Close() {
 			}
 		}
 	})
+}
+
+// Purge removes every committed file and forgets its accounting. Providers
+// whose terms forbid storing audio beyond the session call this when the
+// session ends, so no listener can play a previously cached track.
+func (c *Cache) Purge() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for id, entry := range c.entries {
+		if c.readers[id] > 0 {
+			continue
+		}
+		if err := os.Remove(entry.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		c.usedBytes -= entry.size
+		delete(c.entries, id)
+	}
+}
+
+// PurgeKey removes one cached file. It is used when a session ends and the
+// tracks it warmed must become unplayable.
+func (c *Cache) PurgeKey(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	id := filepath.Base(c.pathForKey(key))
+	entry, exists := c.entries[id]
+	if !exists {
+		return
+	}
+	if c.readers[id] > 0 {
+		return
+	}
+	if err := os.Remove(entry.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return
+	}
+	c.usedBytes -= entry.size
+	delete(c.entries, id)
+}
+
+// SweepExpired deletes entries that outlived the configured lifetime. A cache
+// without an entry lifetime keeps every file until capacity evicts it.
+func (c *Cache) SweepExpired() int {
+	if c.options.EntryTTL <= 0 {
+		return 0
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	removed := 0
+	for id, entry := range c.entries {
+		if c.readers[id] > 0 {
+			continue
+		}
+		info, err := os.Stat(entry.path)
+		if err != nil {
+			c.usedBytes -= entry.size
+			delete(c.entries, id)
+			removed++
+			continue
+		}
+		if !c.expiredLocked(info.ModTime()) {
+			continue
+		}
+		if err := os.Remove(entry.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		c.usedBytes -= entry.size
+		delete(c.entries, id)
+		removed++
+	}
+	return removed
 }
 
 func (c *Cache) worker() {

@@ -82,6 +82,9 @@ func run() error {
 	platformClient := platform.NewClient(15 * time.Second)
 	soundcloudService := soundcloud.New(platformClient, cfg.Platforms.SoundCloud.Enabled, cfg.Platforms.SoundCloud.ClientID, cfg.Platforms.SoundCloud.ClientSecret)
 	soundcloudService.UpdateCredential(soundcloudToken)
+	// SoundCloud audio is fetched with yt-dlp and joined into one seekable file
+	// with ffmpeg. Neither tool needs a SoundCloud credential.
+	soundcloudService.SetDownloadTools(cfg.Platforms.SoundCloud.YTDLPPath, cfg.Platforms.SoundCloud.FFmpegPath)
 	qqService := qqplatform.New(platformClient, cfg.Platforms.QQMusic.Enabled, cfg.Platforms.QQMusic.SidecarURL)
 	qqService.UpdateCredential(qqCookie)
 	services := []platform.Service{
@@ -104,6 +107,7 @@ func run() error {
 	var mediaAPI *httpapi.MediaAPI
 	var transcoder *media.Transcoder
 	var mediaCache *media.Cache
+	var soundCloudCache *media.Cache
 	var webSocketAPI *httpapi.WebSocketAPI
 	var realtimeManager *realtime.Manager
 	var socketHub *wsruntime.Hub
@@ -161,7 +165,29 @@ func run() error {
 			return fmt.Errorf("initialize media cache: %w", sizeErr)
 		}
 		defer mediaCache.Close()
+		// SoundCloud only permits storing audio for the session that requested it,
+		// so its cache is separate, ephemeral and expires on its own.
+		soundCloudBytes, soundCloudSizeErr := media.ParseByteSize(cfg.Cache.SoundCloudMaxSize)
+		if soundCloudSizeErr != nil {
+			return fmt.Errorf("parse SoundCloud cache size: %w", soundCloudSizeErr)
+		}
+		soundCloudCache, sizeErr = media.NewCache("cached_media_soundcloud", soundCloudBytes, proxyClient,
+			cfg.Performance.SoundCloudDownloadConcurrency, cfg.Performance.DownloadMaxQueuedTasks,
+			cfg.Performance.DownloadMaxRetries, cfg.Performance.DownloadRetryInitialDelay, media.CacheOptions{
+				ReservationBytes: cfg.Performance.DownloadReservationBytes, MaxFileBytes: cfg.Performance.DownloadMaxFileBytes,
+				TaskTTL: cfg.Performance.DownloadTaskTTL, RetryMaxDelay: cfg.Performance.DownloadRetryMaxDelay,
+				EntryTTL: cfg.Cache.SoundCloudEntryTTL, Ephemeral: true,
+				PlatformLimits: map[string]int{"soundcloud": cfg.Performance.SoundCloudDownloadConcurrency},
+			})
+		if sizeErr != nil {
+			return fmt.Errorf("initialize SoundCloud cache: %w", sizeErr)
+		}
+		defer soundCloudCache.Close()
 		mediaAPI = httpapi.NewMediaAPI(cfg, accountService, databaseStore, library, platformAPI, proxyClient, mediaCache)
+		mediaAPI.SetSoundCloudCache(soundCloudCache)
+		// SoundCloud audio may only be cached for the session that requested
+		// it, so it is kept in its own short-lived cache.
+		platformAPI.SetSoundCloudCache(soundCloudCache)
 		platformAPI.SetAccess("navidrome", httpapi.PlatformAccess(accountService, navidromeAllowedUsers))
 		platformAPI.SetAccess("subsonic-"+cfg.Platforms.Squidify.ID+"@lounge", httpapi.PlatformAccess(accountService, cfg.Platforms.Squidify.AllowedUsers))
 		dynamicServices, dynamicAccess, loadErr := loadSubsonicServices(applicationContext, databaseStore, platformClient)
@@ -205,6 +231,24 @@ func run() error {
 			}
 		}()
 		defer func() { stopCleanup(); <-cleanupDone }()
+		// SoundCloud audio may only be cached for the session that requested it,
+		// so expired entries are deleted instead of waiting for capacity eviction.
+		soundCloudCleanupCtx, stopSoundCloudCleanup := context.WithCancel(applicationContext)
+		soundCloudCleanupDone := make(chan struct{})
+		go func() {
+			defer close(soundCloudCleanupDone)
+			ticker := time.NewTicker(time.Minute)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-soundCloudCleanupCtx.Done():
+					return
+				case <-ticker.C:
+					soundCloudCache.SweepExpired()
+				}
+			}
+		}()
+		defer func() { stopSoundCloudCleanup(); <-soundCloudCleanupDone }()
 		authAPI.SetSessionPresenceUpdater(socketHub)
 		realtimeManager = realtime.NewManager(databaseStore, cfg.Performance.RoomCommandQueueCapacity, cfg.Performance.RoomCommandQueueTimeout, cfg.Player.RoomEvictionIdle, socketHub, realtime.QueueLimits{MaxSize: cfg.Queue.MaxSize, MaxUserSongs: cfg.Queue.MaxUserSongs, HistorySize: cfg.Queue.HistorySize})
 		realtimeManager.SetPreResolver(func(ctx context.Context, music storesqlite.Music) {
@@ -214,6 +258,11 @@ func run() error {
 			return platformAPI.YouTubeCached(id, mediaCache)
 		}, func(ctx context.Context, id string) {
 			platformAPI.PreResolveMedia(ctx, platform.Music{ID: id, Platform: "youtube"}, mediaCache)
+		})
+		realtimeManager.SetSoundCloudCache(func(id string) bool {
+			return platformAPI.SoundCloudCached(id, soundCloudCache)
+		}, func(ctx context.Context, id string) {
+			platformAPI.PreResolveMedia(ctx, platform.Music{ID: id, Platform: "soundcloud"}, soundCloudCache)
 		})
 		realtimeManager.SetStreamVerifier(func(ctx context.Context, music storesqlite.Music) error {
 			return platformAPI.VerifyStream(ctx, music.Platform, music.ID)

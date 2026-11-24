@@ -44,6 +44,15 @@ __pycache__/
 /music-party-web/playwright-report/
 /music-party-web/test-results/
 
+# dependency trees and tool scratch output (never commit)
+/qq-music-sidecar/node_modules/
+/node_modules/
+/.impeccable/
+/.playwright-cli/
+
+# local UI baseline screenshot dumps (never commit)
+/docs/assets/ui-baseline/
+
 # local runtime data, scratch and captured cookies (never commit)
 /.env
 /.tmp/

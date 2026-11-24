@@ -37,6 +37,11 @@ type PlatformAPI struct {
 	colorsMu     sync.Mutex
 	colors       map[string]cachedCoverColor
 	colorFlights singleflight.Group
+	// soundCloudCache holds the session-scoped SoundCloud audio. SoundCloud
+	// only permits storing audio for the session that requested it, so this
+	// cache is short-lived and separate from the general-purpose one.
+	soundCloudMu    sync.RWMutex
+	soundCloudCache *media.Cache
 }
 
 // decodedURLParam restores the complete value emitted by encodeURIComponent.
@@ -158,7 +163,21 @@ func (api *PlatformAPI) MediaSourceFor(ctx context.Context, name, token string) 
 
 // PreResolveMedia submits a best-effort cache job for a queued track. It shares
 // the same resolver, cache key, and upstream headers as the serving path.
+//
+// The SoundCloud cache is separate, because SoundCloud only permits storing
+// audio for the session that requested it. Such a track must never reach the
+// general-purpose cache, which keeps files beyond a single session, so the
+// routing happens here instead of at every call site.
 func (api *PlatformAPI) PreResolveMedia(ctx context.Context, music platform.Music, cache *media.Cache) {
+	if music.Platform == "soundcloud" {
+		api.soundCloudMu.RLock()
+		sessionCache := api.soundCloudCache
+		api.soundCloudMu.RUnlock()
+		if sessionCache == nil {
+			return
+		}
+		cache = sessionCache
+	}
 	if cache == nil || music.Platform == "local" || music.ID == "" {
 		return
 	}
@@ -167,7 +186,7 @@ func (api *PlatformAPI) PreResolveMedia(ctx context.Context, music platform.Musi
 		return
 	}
 	key := platformCacheKey(source, music.Platform, music.ID)
-	if music.Platform == "youtube" {
+	if music.Platform == "youtube" || music.Platform == "soundcloud" {
 		if downloader, ok := source.(interface {
 			Download(context.Context, string, string, int64) error
 		}); ok {
@@ -202,6 +221,31 @@ func (api *PlatformAPI) YouTubeCached(videoID string, cache *media.Cache) bool {
 	}
 	source, ok := api.Service("youtube")
 	return ok && cache.Has(platformCacheKey(source, "youtube", videoID))
+}
+
+// SoundCloudCached checks the same completed-file key used by the stream route.
+func (api *PlatformAPI) SoundCloudCached(trackID string, cache *media.Cache) bool {
+	if cache == nil {
+		return false
+	}
+	source, ok := api.Service("soundcloud")
+	return ok && cache.Has(platformCacheKey(source, "soundcloud", trackID))
+}
+
+// SetSoundCloudCache installs the session-scoped SoundCloud audio cache.
+// It must be configured before rooms are loaded, so every SoundCloud download
+// lands in the short-lived cache instead of the general-purpose one.
+func (api *PlatformAPI) SetSoundCloudCache(cache *media.Cache) {
+	api.soundCloudMu.Lock()
+	defer api.soundCloudMu.Unlock()
+	api.soundCloudCache = cache
+}
+
+// SoundCloudCache returns the session-scoped SoundCloud audio cache.
+func (api *PlatformAPI) SoundCloudCache() *media.Cache {
+	api.soundCloudMu.RLock()
+	defer api.soundCloudMu.RUnlock()
+	return api.soundCloudCache
 }
 func (api *PlatformAPI) SupportsCredentialUpdate(name string) bool {
 	api.mu.RLock()

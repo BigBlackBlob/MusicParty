@@ -1,5 +1,5 @@
 {
-  "routeCount": 114,
+  "routeCount": 115,
   "routes": [
     {
       "method": "GET",
@@ -629,6 +629,12 @@
       "method": "GET",
       "path": "/api/search/{platform}/{keyword}",
       "operationId": "get.api.search.platform.keyword",
+      "source": "backend-go/internal/httpapi"
+    },
+    {
+      "method": "GET",
+      "path": "/api/soundcloud/stream/{trackId}",
+      "operationId": "get.api.soundcloud.stream.trackId",
       "source": "backend-go/internal/httpapi"
     },
     {

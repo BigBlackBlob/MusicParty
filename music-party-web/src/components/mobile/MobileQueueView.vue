@@ -35,7 +35,7 @@
           {{ t('nav.queue').toUpperCase() }}
         </button>
         <button
-          v-if="!user.isGuest" 
+          v-if="!user.isGuest"
           @click="activeView = 'liked'"
           class="mobile-segment__option font-section-label text-section-label transition-all"
           :class="{ 'mobile-segment__option--active': activeView === 'liked' }"

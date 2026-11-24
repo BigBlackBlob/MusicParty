@@ -5,22 +5,30 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"sync"
 
+	"github.com/BigBlackBlob/MusicParty/backend-go/internal/media"
 	"github.com/BigBlackBlob/MusicParty/backend-go/internal/platform"
 )
 
-const apiBaseURL = "https://api.soundcloud.com"
+// apiBaseURL is the public v2 API. It accepts a client_id alone, so SoundCloud
+// audio can be resolved without an OAuth token or a client secret.
+const apiBaseURL = "https://api-v2.soundcloud.com"
+
+// widgetTrackBaseURL is the canonical track address that the public oEmbed
+// endpoint and the player widget both understand.
+const widgetTrackBaseURL = "https://api.soundcloud.com"
 
 type Service struct {
 	client      *platform.Client
 	enabled     bool
 	clientID    string
+	ytdlpPath   string
+	ffmpegPath  string
 	mu          sync.RWMutex
 	accessToken string
 }
@@ -28,6 +36,14 @@ type Service struct {
 // New uses an externally provisioned token, so the client secret is not retained.
 func New(client *platform.Client, enabled bool, clientID, _ string) *Service {
 	return &Service{client: client, enabled: enabled, clientID: clientID}
+}
+
+// SetDownloadTools configures the external binaries used to materialize audio.
+// Without them the service still resolves tracks, but only the widget can play them.
+func (s *Service) SetDownloadTools(ytdlpPath, ffmpegPath string) {
+	s.mu.Lock()
+	s.ytdlpPath, s.ffmpegPath = ytdlpPath, ffmpegPath
+	s.mu.Unlock()
 }
 
 func (*Service) Name() string { return "soundcloud" }
@@ -79,9 +95,47 @@ type track struct {
 	Duration   int64  `json:"duration"`
 	ArtworkURL string `json:"artwork_url"`
 	Streamable bool   `json:"streamable"`
-	User       struct {
+	// Policy classifies the upstream rights: ALLOW, SNIP or MONETIZE.
+	Policy string `json:"policy"`
+	User   struct {
 		Username string `json:"username"`
 	} `json:"user"`
+	Publisher struct {
+		Artist string `json:"artist"`
+	} `json:"publisher_metadata"`
+	Media struct {
+		Transcodings []transcoding `json:"transcodings"`
+	} `json:"media"`
+}
+
+// transcoding is one upstream rendition. The protocol tells us whether the
+// audio is plain HLS or DRM-protected.
+type transcoding struct {
+	URL    string `json:"url"`
+	Preset string `json:"preset"`
+	Format struct {
+		Protocol string `json:"protocol"`
+		MimeType string `json:"mime_type"`
+	} `json:"format"`
+}
+
+// access describes how the host may play a track.
+type access int
+
+const (
+	// accessNative means the host can fetch and serve the full audio.
+	accessNative access = iota
+	// accessTrial means only a 30 second preview exists.
+	accessTrial
+	// accessDRM means the audio is encrypted and only the widget can play it.
+	accessDRM
+)
+
+func (t track) artist() string {
+	if name := strings.TrimSpace(t.Publisher.Artist); name != "" {
+		return name
+	}
+	return t.User.Username
 }
 
 func (t track) music() platform.Music {
@@ -91,9 +145,28 @@ func (t track) music() platform.Music {
 	}
 	return platform.Music{
 		ID: id, Name: t.Title,
-		Artists: []string{t.User.Username}, Duration: t.Duration,
+		Artists: []string{t.artist()}, Duration: t.Duration,
 		Platform: "soundcloud", CoverURL: t.ArtworkURL,
 	}
+}
+
+// classify decides how the host may play the track. SNIP tracks only ever
+// expose a short preview, and encrypted renditions cannot be remuxed at all.
+func (t track) classify() access {
+	for _, rendition := range t.Media.Transcodings {
+		if strings.Contains(strings.ToLower(rendition.Format.Protocol), "encrypted") {
+			return accessDRM
+		}
+	}
+	if strings.EqualFold(t.Policy, "SNIP") {
+		return accessTrial
+	}
+	for _, rendition := range t.Media.Transcodings {
+		if strings.EqualFold(rendition.Format.Protocol, "hls") {
+			return accessNative
+		}
+	}
+	return accessDRM
 }
 
 type searchResponse struct {
@@ -123,10 +196,9 @@ func (s *Service) Search(ctx context.Context, keyword string, offset, limit int)
 	}
 	query := url.Values{
 		"q": {keyword}, "limit": {strconv.Itoa(limit)}, "offset": {strconv.Itoa(offset)},
-		"linked_partitioning": {"1"},
 	}
 	var response searchResponse
-	if err := s.getJSON(ctx, "/tracks", query, &response); err != nil {
+	if err := s.getJSON(ctx, "/search/tracks", query, &response); err != nil {
 		return nil, err
 	}
 	result := make([]platform.Music, 0, len(response.Collection))
@@ -167,16 +239,32 @@ func (s *Service) trackInfo(ctx context.Context, id string) (platform.Music, err
 		return platform.Music{}, errors.New("soundcloud track ID is required")
 	}
 	if s.clientID == "" {
-		return s.publicTrack(ctx, apiBaseURL+"/tracks/"+url.PathEscape(id))
+		return s.publicTrack(ctx, widgetTrackBaseURL+"/tracks/"+url.PathEscape(id))
 	}
 	var item track
 	if err := s.getJSON(ctx, "/tracks/"+url.PathEscape(id), url.Values{}, &item); err != nil {
 		if authorizationDenied(err) {
-			return s.publicTrack(ctx, apiBaseURL+"/tracks/"+url.PathEscape(id))
+			return s.publicTrack(ctx, widgetTrackBaseURL+"/tracks/"+url.PathEscape(id))
 		}
 		return platform.Music{}, err
 	}
 	return item.music(), nil
+}
+
+// trackDetails loads the full track, including the renditions that decide
+// whether the host may play it natively.
+func (s *Service) trackDetails(ctx context.Context, id string) (track, error) {
+	if strings.TrimSpace(id) == "" {
+		return track{}, errors.New("soundcloud track ID is required")
+	}
+	if s.clientID == "" {
+		return track{}, errors.New("soundcloud client ID is required to inspect a track")
+	}
+	var item track
+	if err := s.getJSON(ctx, "/tracks/"+url.PathEscape(id), url.Values{}, &item); err != nil {
+		return track{}, err
+	}
+	return item, nil
 }
 
 func authorizationDenied(err error) bool {
@@ -246,53 +334,116 @@ func (s *Service) publicTrack(ctx context.Context, source string) (platform.Musi
 	return platform.Music{}, errors.New("soundcloud oEmbed did not return a track Widget")
 }
 
+// ResolvePlayable picks the playback engine for a track. The widget plays every
+// track the host cannot fetch itself, and preview-only tracks are rejected so
+// the room never queues a track it cannot play in full.
+//
+// The native engine is chosen later, once the host has cached the audio, so
+// the queue item keeps the widget as its fallback.
 func (s *Service) ResolvePlayable(ctx context.Context, id string) (platform.PlayableMusic, error) {
 	music, err := s.trackInfo(ctx, id)
 	if err != nil {
 		return platform.PlayableMusic{}, err
 	}
+	details, detailErr := s.trackDetails(ctx, id)
+	if detailErr == nil && details.classify() == accessTrial {
+		return platform.PlayableMusic{}, &platform.StreamResolutionError{
+			Kind: platform.StreamTrialOnly, Reason: http.StatusUnprocessableEntity,
+			Detail: "soundcloud track " + id + " only offers a preview",
+		}
+	}
 	return platform.PlayableMusic{Music: music, PlayerType: "soundcloud-widget", EmbedID: music.ID}, nil
 }
 
+// StreamURL resolves the upstream media location for a track. SoundCloud serves
+// HLS segments behind short-lived signed URLs, so the resolved location is only
+// valid for the lifetime of its signature.
 func (s *Service) StreamURL(ctx context.Context, id string) (string, error) {
 	if strings.TrimSpace(id) == "" {
 		return "", errors.New("soundcloud track ID is required")
 	}
-	token := s.accessTokenValue()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, s.apiURL("/tracks/"+url.PathEscape(id)+"/stream", url.Values{}, token), nil)
+	details, err := s.trackDetails(ctx, id)
 	if err != nil {
 		return "", err
 	}
-	request.Header.Set("User-Agent", s.client.UserAgent)
-	if token != "" {
-		request.Header.Set("Authorization", "OAuth "+token)
+	switch details.classify() {
+	case accessTrial:
+		return "", &platform.StreamResolutionError{
+			Kind: platform.StreamTrialOnly, Reason: http.StatusUnprocessableEntity,
+			Detail: "soundcloud track " + id + " only offers a preview",
+		}
+	case accessDRM:
+		return "", &platform.StreamResolutionError{
+			Kind: platform.StreamUnavailable, Reason: http.StatusForbidden,
+			Detail: "soundcloud track " + id + " is protected and must use the widget",
+		}
 	}
-	client := *s.client.HTTP
-	client.CheckRedirect = func(next *http.Request, via []*http.Request) error {
-		next.Header.Del("Referer")
-		if next.URL.Host != request.URL.Host {
-			next.Header.Del("Authorization")
+	for _, rendition := range details.Media.Transcodings {
+		if !strings.EqualFold(rendition.Format.Protocol, "hls") {
+			continue
 		}
-		if s.client.HTTP.CheckRedirect != nil {
-			return s.client.HTTP.CheckRedirect(next, via)
+		target, err := s.resolveRendition(ctx, rendition.URL)
+		if err == nil && target != "" {
+			return target, nil
 		}
-		if len(via) >= 10 {
-			return errors.New("too many SoundCloud stream redirects")
-		}
-		return nil
 	}
-	response, err := client.Do(request)
+	return "", errors.New("soundcloud track has no playable rendition")
+}
+
+// Download materializes the track audio into a cache-owned file.
+//
+// yt-dlp resolves the public playback location on its own, so no SoundCloud
+// credential is required. The result is a single seekable file that the host
+// can serve with HTTP range support.
+func (s *Service) Download(ctx context.Context, id, target string, maxBytes int64) error {
+	if strings.TrimSpace(id) == "" {
+		return errors.New("soundcloud track ID is required")
+	}
+	details, err := s.trackDetails(ctx, id)
 	if err != nil {
+		return err
+	}
+	switch details.classify() {
+	case accessTrial:
+		return &platform.StreamResolutionError{
+			Kind: platform.StreamTrialOnly, Reason: http.StatusUnprocessableEntity,
+			Detail: "soundcloud track " + id + " only offers a preview",
+		}
+	case accessDRM:
+		return &platform.StreamResolutionError{
+			Kind: platform.StreamUnavailable, Reason: http.StatusForbidden,
+			Detail: "soundcloud track " + id + " is protected and must use the widget",
+		}
+	}
+	s.mu.RLock()
+	ytdlpPath, ffmpegPath := s.ytdlpPath, s.ffmpegPath
+	s.mu.RUnlock()
+	return media.DownloadSoundCloud(ctx, ytdlpPath, ffmpegPath, id, target, maxBytes)
+}
+
+// resolveRendition exchanges a transcoding location for the signed media URL.
+// The media endpoint requires the client_id as a query parameter.
+func (s *Service) resolveRendition(ctx context.Context, transcodingURL string) (string, error) {
+	if strings.TrimSpace(transcodingURL) == "" {
+		return "", errors.New("soundcloud rendition has no location")
+	}
+	parsed, err := url.Parse(transcodingURL)
+	if err != nil {
+		return "", err
+	}
+	query := parsed.Query()
+	query.Set("client_id", s.clientID)
+	parsed.RawQuery = query.Encode()
+	var payload struct {
+		URL string `json:"url"`
+	}
+	if err := s.client.JSON(ctx, parsed.String(), nil, &payload); err != nil {
 		return "", withoutRequestURL(err)
 	}
-	defer response.Body.Close()
-	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return "", fmt.Errorf("soundcloud stream returned HTTP %d", response.StatusCode)
+	if strings.TrimSpace(payload.URL) == "" {
+		return "", errors.New("soundcloud rendition did not resolve to a media URL")
 	}
-	if response.Request == nil || response.Request.URL == nil || response.Request.URL.String() == request.URL.String() || response.Request.URL.Query().Has("oauth_token") {
-		return "", errors.New("soundcloud stream did not resolve to a URL")
-	}
-	return response.Request.URL.String(), nil
+	return payload.URL, nil
 }
 
 func (s *Service) CoverURL(ctx context.Context, id string) (string, error) {

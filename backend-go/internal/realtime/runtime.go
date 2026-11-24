@@ -71,7 +71,11 @@ type Manager struct {
 	preResolve     func(context.Context, storesqlite.Music)
 	youtubeReady   func(string) bool
 	prepareYouTube func(context.Context, string)
-	verifyStream   func(context.Context, storesqlite.Music) error
+	// soundCloudReady reports whether a SoundCloud track is already cached
+	// locally, and prepareSoundCloud warms that cache for the next track.
+	soundCloudReady    func(string) bool
+	prepareSoundCloud  func(context.Context, string)
+	verifyStream       func(context.Context, storesqlite.Music) error
 }
 
 // SetYouTubeCache installs the local readiness check and nonblocking cache submission.
@@ -80,6 +84,14 @@ func (m *Manager) SetYouTubeCache(ready func(string) bool, prepare func(context.
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.youtubeReady, m.prepareYouTube = ready, prepare
+}
+
+// SetSoundCloudCache installs the readiness check and cache submission for
+// SoundCloud tracks. Configure it before loading rooms.
+func (m *Manager) SetSoundCloudCache(ready func(string) bool, prepare func(context.Context, string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.soundCloudReady, m.prepareSoundCloud = ready, prepare
 }
 
 // SetPreResolver installs best-effort media preparation for the next queued track.
@@ -164,8 +176,14 @@ func (m *Manager) Room(ctx context.Context, roomID string) (*RoomRuntime, error)
 			if rt != nil {
 				rt.preResolve = m.preResolve
 				rt.youtubeReady, rt.prepareYouTube = m.youtubeReady, m.prepareYouTube
+				rt.soundCloudReady, rt.prepareSoundCloud = m.soundCloudReady, m.prepareSoundCloud
 				rt.verifyStream = m.verifyStream
+				// A restored track may point at a host stream whose session
+				// cache no longer holds the audio, so its engine is derived
+				// again from the cache instead of the persisted value.
+				rt.refreshCurrentEngine()
 				rt.prepareNextYouTube()
+				rt.prepareNextSoundCloud()
 				go rt.loop()
 			}
 		}
@@ -310,7 +328,12 @@ type RoomRuntime struct {
 	youtubeReady        func(string) bool
 	prepareYouTube      func(context.Context, string)
 	preparedYouTube     string
-	preResolveBusy      bool
+	// soundCloudReady reports whether a SoundCloud track is already cached
+	// locally, and prepareSoundCloud warms that cache for the next track.
+	soundCloudReady        func(string) bool
+	prepareSoundCloud      func(context.Context, string)
+	preparedSoundCloud     string
+	preResolveBusy         bool
 	verifyStream        func(context.Context, storesqlite.Music) error
 	verificationEpochs  map[int64]struct{}
 	onClose             func(*RoomRuntime)
@@ -434,6 +457,7 @@ func (r *RoomRuntime) Enqueue(ctx context.Context, session account.Session, musi
 		runtime.queueVersion++
 		if started {
 			runtime.prepareStartedYouTube()
+			runtime.prepareStartedSoundCloud()
 		}
 		pending := []storesqlite.QueueItem{item}
 		if item.QueueID == startedID {
@@ -490,6 +514,7 @@ func (r *RoomRuntime) EnqueueMany(ctx context.Context, session account.Session, 
 		runtime.queueVersion++
 		if started {
 			runtime.prepareStartedYouTube()
+			runtime.prepareStartedSoundCloud()
 		}
 		pending := slices.DeleteFunc(slices.Clone(items), func(item storesqlite.QueueItem) bool { return item.QueueID == startedID })
 		runtime.broadcast("queue.patch", map[string]any{"operation": "append", "queueEpoch": runtime.controlScope, "queueVersion": runtime.queueVersion, "items": pending, "queueIds": consumedQueueIDs(startedID)})
@@ -1293,7 +1318,43 @@ func (r *RoomRuntime) startingMusic(music storesqlite.Music) *storesqlite.Playab
 		track.PlayerType = "audio"
 		track.URL = "/api/youtube/stream/" + url.PathEscape(track.ID)
 	}
+	// A cached SoundCloud track plays through the host, which supports seeking.
+	// Tracks that are not cached keep using the widget.
+	if track.Platform == "soundcloud" {
+		if r.soundCloudReady != nil && r.soundCloudReady(track.ID) {
+			track.PlayerType = "audio"
+			track.URL = "/api/soundcloud/stream/" + url.PathEscape(track.ID)
+			track.EmbedID = ""
+		} else {
+			// The session cache may have expired or been wiped, so the widget
+			// remains the only engine that can play the track.
+			track.PlayerType = "soundcloud-widget"
+			track.URL = ""
+			track.EmbedID = track.ID
+		}
+	}
 	return track
+}
+
+// refreshCurrentEngine re-derives the playback engine of the current track.
+// A restored room may still name a host stream whose session cache has since
+// expired, so the engine must follow the cache rather than the stored value.
+func (r *RoomRuntime) refreshCurrentEngine() {
+	if r.state.CurrentMusic == nil {
+		return
+	}
+	if r.state.CurrentMusic.Platform != "soundcloud" {
+		return
+	}
+	if r.soundCloudReady != nil && r.soundCloudReady(r.state.CurrentMusic.ID) {
+		r.state.CurrentMusic.PlayerType = "audio"
+		r.state.CurrentMusic.URL = "/api/soundcloud/stream/" + url.PathEscape(r.state.CurrentMusic.ID)
+		r.state.CurrentMusic.EmbedID = ""
+		return
+	}
+	r.state.CurrentMusic.PlayerType = "soundcloud-widget"
+	r.state.CurrentMusic.URL = ""
+	r.state.CurrentMusic.EmbedID = r.state.CurrentMusic.ID
 }
 
 func playableMusic(music storesqlite.Music) *storesqlite.PlayableMusic {
@@ -1405,6 +1466,7 @@ func (r *RoomRuntime) broadcastState() {
 func (r *RoomRuntime) broadcast(kind string, payload any) {
 	if kind == "queue.patch" {
 		r.prepareNextYouTube()
+		r.prepareNextSoundCloud()
 		if fields, ok := payload.(map[string]any); ok {
 			for _, key := range []string{"items", "queue"} {
 				if items, ok := fields[key].([]storesqlite.QueueItem); ok {
@@ -1753,7 +1815,9 @@ func (r *RoomRuntime) prepareNextTrack() {
 		return
 	}
 	item := r.queue[0]
-	if item.Music.Platform == "youtube" {
+	// SoundCloud audio may only be cached for the session that requested it,
+	// so it uses its own short-lived cache and is prepared separately.
+	if item.Music.Platform == "youtube" || item.Music.Platform == "soundcloud" {
 		return
 	}
 	r.preResolveBusy = true
@@ -1790,6 +1854,31 @@ func (r *RoomRuntime) prepareNextYouTube() {
 	if item.QueueID != r.preparedYouTube {
 		r.preparedYouTube = item.QueueID
 		r.prepareYouTube(r.ctx, item.Music.ID)
+	}
+}
+
+// An idle room starts immediately. Warm the missed track for a later replay.
+func (r *RoomRuntime) prepareStartedSoundCloud() {
+	if track := r.state.CurrentMusic; r.prepareSoundCloud != nil && track != nil && track.Platform == "soundcloud" {
+		r.prepareSoundCloud(r.ctx, track.ID)
+	}
+}
+
+// Queue changes can bring a SoundCloud track up next after playback.started.
+func (r *RoomRuntime) prepareNextSoundCloud() {
+	if r.prepareSoundCloud == nil || len(r.queue) == 0 {
+		r.preparedSoundCloud = ""
+		return
+	}
+	index, _ := prioritizedTrack(r.queue)
+	item := r.queue[index]
+	if item.Music.Platform != "soundcloud" {
+		r.preparedSoundCloud = ""
+		return
+	}
+	if item.QueueID != r.preparedSoundCloud {
+		r.preparedSoundCloud = item.QueueID
+		r.prepareSoundCloud(r.ctx, item.Music.ID)
 	}
 }
 

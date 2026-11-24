@@ -24,6 +24,17 @@ func (c *Cache) scan() error {
 	if err != nil {
 		return err
 	}
+	// An ephemeral cache must not serve files that a previous session left
+	// behind, so the directory is emptied before anything is indexed.
+	if c.options.Ephemeral {
+		for _, file := range files {
+			path := filepath.Join(c.root, file.Name())
+			if err := os.RemoveAll(path); err != nil {
+				return fmt.Errorf("clear ephemeral cache: %w", err)
+			}
+		}
+		return nil
+	}
 	type diskEntry struct {
 		id string
 		cacheEntry
