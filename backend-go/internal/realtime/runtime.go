@@ -73,9 +73,9 @@ type Manager struct {
 	prepareYouTube func(context.Context, string)
 	// soundCloudReady reports whether a SoundCloud track is already cached
 	// locally, and prepareSoundCloud warms that cache for the next track.
-	soundCloudReady    func(string) bool
-	prepareSoundCloud  func(context.Context, string)
-	verifyStream       func(context.Context, storesqlite.Music) error
+	soundCloudReady   func(string) bool
+	prepareSoundCloud func(context.Context, string)
+	verifyStream      func(context.Context, storesqlite.Music) error
 }
 
 // SetYouTubeCache installs the local readiness check and nonblocking cache submission.
@@ -330,14 +330,14 @@ type RoomRuntime struct {
 	preparedYouTube     string
 	// soundCloudReady reports whether a SoundCloud track is already cached
 	// locally, and prepareSoundCloud warms that cache for the next track.
-	soundCloudReady        func(string) bool
-	prepareSoundCloud      func(context.Context, string)
-	preparedSoundCloud     string
-	preResolveBusy         bool
-	verifyStream        func(context.Context, storesqlite.Music) error
-	verificationEpochs  map[int64]struct{}
-	onClose             func(*RoomRuntime)
-	closeOnce           sync.Once
+	soundCloudReady    func(string) bool
+	prepareSoundCloud  func(context.Context, string)
+	preparedSoundCloud string
+	preResolveBusy     bool
+	verifyStream       func(context.Context, storesqlite.Music) error
+	verificationEpochs map[int64]struct{}
+	onClose            func(*RoomRuntime)
+	closeOnce          sync.Once
 }
 
 type playbackEvent struct {

@@ -110,7 +110,7 @@ type SoundCloud struct {
 	ClientSecret string
 	// YTDLPPath and FFmpegPath locate the tools that fetch and join the audio.
 	// yt-dlp resolves the public playback location without any credential.
-	YTDLPPath string
+	YTDLPPath  string
 	FFmpegPath string
 }
 
@@ -295,8 +295,8 @@ func Load(lookup LookupEnv) (Config, error) {
 			MaxSize: r.string("CACHE_MAX_SIZE", "1GB"),
 			// SoundCloud forbids storing user audio beyond the session that
 			// requested it, so its cache is small and short-lived by default.
-			SoundCloudMaxSize:   r.string("SOUNDCLOUD_CACHE_MAX_SIZE", "256MB"),
-			SoundCloudEntryTTL:  r.durationMS("SOUNDCLOUD_CACHE_ENTRY_TTL_MS", 1_800_000),
+			SoundCloudMaxSize:  r.string("SOUNDCLOUD_CACHE_MAX_SIZE", "256MB"),
+			SoundCloudEntryTTL: r.durationMS("SOUNDCLOUD_CACHE_ENTRY_TTL_MS", 1_800_000),
 		},
 		Performance: Performance{
 			DownloadMaxQueuedTasks: r.int("DOWNLOAD_MAX_QUEUED_TASKS", 100),
@@ -305,7 +305,7 @@ func Load(lookup LookupEnv) (Config, error) {
 			NeteaseDownloadConcurrency: r.int("NETEASE_DOWNLOAD_CONCURRENCY", 2), BilibiliDownloadConcurrency: r.int("BILIBILI_DOWNLOAD_CONCURRENCY", 1),
 			YouTubeDownloadConcurrency: r.int("YOUTUBE_DOWNLOAD_CONCURRENCY", 1), LocalDownloadConcurrency: r.int("LOCAL_DOWNLOAD_CONCURRENCY", 2),
 			SoundCloudDownloadConcurrency: r.int("SOUNDCLOUD_DOWNLOAD_CONCURRENCY", 1),
-			DownloadTaskTTL: r.durationMS("DOWNLOAD_TASK_TTL_MS", 1_800_000), DownloadMaxRetries: r.int("DOWNLOAD_MAX_RETRIES", 3),
+			DownloadTaskTTL:               r.durationMS("DOWNLOAD_TASK_TTL_MS", 1_800_000), DownloadMaxRetries: r.int("DOWNLOAD_MAX_RETRIES", 3),
 			DownloadRetryInitialDelay: r.durationMS("DOWNLOAD_RETRY_INITIAL_DELAY_MS", 1000), DownloadRetryMaxDelay: r.durationMS("DOWNLOAD_RETRY_MAX_DELAY_MS", 30_000),
 			CoverColorCacheSize: r.int("COVER_COLOR_CACHE_SIZE", 256), CoverColorMaxConcurrent: r.int("COVER_COLOR_MAX_CONCURRENT", 4),
 			WebSocketClientQueueCapacity: r.int("WEBSOCKET_CLIENT_QUEUE_CAPACITY", 256), RoomCommandQueueCapacity: r.int("ROOM_COMMAND_QUEUE_CAPACITY", 100),

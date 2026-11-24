@@ -221,16 +221,16 @@ func TestSearchKeywordsAndNonTrackURLs(t *testing.T) {
 		{name: "keyword", keyword: "音乐 & more"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			query := r.URL.Query()
-			if r.URL.Path != "/search/tracks" || query.Get("q") != test.keyword ||
-				query.Get("offset") != "0" || query.Get("limit") != "20" {
-				t.Errorf("unexpected keyword search request: %s", r.URL)
-				http.Error(w, "unexpected keyword search request", http.StatusBadRequest)
-				return
-			}
-			_, _ = w.Write([]byte(`{"collection":[{"id":42,"title":"Search result","streamable":true,"user":{"username":"Artist"}}]}`))
-		}))
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				query := r.URL.Query()
+				if r.URL.Path != "/search/tracks" || query.Get("q") != test.keyword ||
+					query.Get("offset") != "0" || query.Get("limit") != "20" {
+					t.Errorf("unexpected keyword search request: %s", r.URL)
+					http.Error(w, "unexpected keyword search request", http.StatusBadRequest)
+					return
+				}
+				_, _ = w.Write([]byte(`{"collection":[{"id":42,"title":"Search result","streamable":true,"user":{"username":"Artist"}}]}`))
+			}))
 			t.Cleanup(server.Close)
 
 			client := platform.NewClient(time.Second)
