@@ -16,7 +16,9 @@ export const useUiStore = defineStore('ui', () => {
     localStorage.removeItem('mp_auto_lite_mode');
     const forceMobileLayout = ref(localStorage.getItem('mp_force_mobile_layout') === 'true');
     const mobilePreviewWidth = ref(parseInt(localStorage.getItem('mp_mobile_preview_width') || '390', 10));
-    const mobileActiveTab = ref(localStorage.getItem('mp_mobile_active_tab') || 'now');
+    const mobileActiveTabOptions = ['now', 'queue', 'search', 'chat', 'members'];
+    const storedMobileActiveTab = localStorage.getItem('mp_mobile_active_tab');
+    const mobileActiveTab = ref(mobileActiveTabOptions.includes(storedMobileActiveTab) ? storedMobileActiveTab : 'now');
     const mobileNowDensity = ref(mobileNowDensityOptions.includes(localStorage.getItem('mp_mobile_now_density')) ? localStorage.getItem('mp_mobile_now_density') : 'standard');
     const mainStageScale = ref(Number(localStorage.getItem('mp_main_stage_scale') || 1));
     const globalZoomLevel = ref(Number(localStorage.getItem('mp_global_zoom_level') || 1));
@@ -68,7 +70,7 @@ export const useUiStore = defineStore('ui', () => {
     };
 
     const setMobileActiveTab = (tab) => {
-        if (['now', 'queue', 'search', 'chat'].includes(tab)) {
+        if (mobileActiveTabOptions.includes(tab)) {
             mobileActiveTab.value = tab;
         }
     };

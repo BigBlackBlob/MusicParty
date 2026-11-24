@@ -9,7 +9,7 @@
           <input 
             v-model="keyword"
             class="flex-1 bg-transparent border-none outline-none text-body font-body text-text-primary placeholder-text-muted px-2 w-full"
-            :placeholder="t('search.placeholder')" 
+            :placeholder="searchPlaceholder"
             type="text"
             autocomplete="off"
             enterkeyhint="search"
@@ -33,28 +33,45 @@
         </button>
       </form>
 
-      <!-- Platform Selector -->
-      <div class="mobile-segment mobile-search-platforms">
-        <button 
-          v-for="p in platforms"
-          :key="p.id"
-          type="button"
-          @click="platform = p.id"
-          class="mobile-segment__option font-section-label text-section-label transition-all"
-          :class="{ 'mobile-segment__option--active': platform === p.id }"
+      <!-- Platform Selector: horizontally scrollable capsule rail + All (N) drawer trigger -->
+      <div class="mobile-source-rail-row flex items-center gap-2 min-w-0">
+        <div
+          ref="sourceRailRef"
+          class="mobile-segment mobile-source-rail flex-1 min-w-0"
+          role="tablist"
+          :aria-label="t('search.platformAria')"
         >
-          <div class="flex items-center justify-center gap-1.5">
-            <div 
-              class="w-2 h-2 rounded-full" 
-              :class="[
-                p.id === 'netease' ? 'bg-platform-netease' : '',
-                p.id === 'bilibili' ? 'bg-platform-bilibili' : '',
-                p.id === 'navidrome' || p.subsonic ? 'bg-primary' : '',
-                platform !== p.id ? 'opacity-50' : ''
-              ]"
-            ></div>
-            {{ p.label }}
-          </div>
+          <button
+            v-for="p in platforms"
+            :key="p.id"
+            :ref="(el) => setSourcePillRef(p.id, el)"
+            type="button"
+            role="tab"
+            :aria-selected="platform === p.id"
+            :data-platform-id="p.id"
+            @click="selectPlatform(p.id)"
+            class="mobile-segment__option mobile-source-rail__pill font-section-label text-section-label transition-all"
+            :class="{ 'mobile-segment__option--active': platform === p.id }"
+          >
+            <span class="flex items-center justify-center gap-1.5 whitespace-nowrap">
+              <span
+                class="w-2 h-2 rounded-full flex-shrink-0"
+                :class="[getPlatformDotClass(p), platform !== p.id ? 'opacity-50' : '']"
+              ></span>
+              <span>{{ getPlatformLabel(p) }}</span>
+            </span>
+          </button>
+        </div>
+
+        <button
+          type="button"
+          data-testid="source-drawer-trigger"
+          @click="isSourceDrawerOpen = true"
+          class="mobile-source-all-btn flex-shrink-0 font-micro text-micro text-text-secondary hover:text-text-primary border border-border-default bg-surface-panel rounded-[var(--radius-sm)] px-2.5 h-[36px] inline-flex items-center gap-1 whitespace-nowrap transition-colors"
+          :aria-expanded="isSourceDrawerOpen"
+          aria-haspopup="dialog"
+        >
+          <span>{{ t('search.allSources', { count: platforms.length }) }}</span>
         </button>
       </div>
 
@@ -173,8 +190,9 @@
 
       <template v-else>
         <div v-if="songs.length === 0" class="mobile-content-state">
-          <span class="material-symbols-outlined mobile-content-state__icon">music_note</span>
-          <p class="font-compact text-compact">{{ hasSearched ? t('search.noResults') : t('search.searchSongs') }}</p>
+          <span class="material-symbols-outlined mobile-content-state__icon">{{ emptySongIcon }}</span>
+          <p class="font-compact text-compact">{{ emptySongTitle }}</p>
+          <p v-if="emptySongHint" class="text-caption font-caption text-text-secondary max-w-[280px]">{{ emptySongHint }}</p>
         </div>
 
         <div v-else>
@@ -209,12 +227,110 @@
         </div>
       </template>
     </main>
+    <!-- All Sources Grouped Drawer -->
+    <DialogRoot :open="isSourceDrawerOpen" @update:open="isSourceDrawerOpen = $event">
+      <DialogPortal>
+        <DialogOverlay class="mp-dialog-overlay fixed inset-0 z-[var(--z-overlay)] bg-[var(--overlay-backdrop)] backdrop-blur-sm" />
+        <DialogContent
+          data-testid="source-drawer"
+          class="mp-dialog-content fixed inset-x-0 bottom-0 z-[var(--z-modal)] mx-auto max-w-[520px] rounded-t-[var(--radius-lg)] bg-surface-overlay border-t border-x border-border-default shadow-2xl outline-none flex flex-col max-h-[75dvh]"
+        >
+          <div class="flex justify-center pt-2 pb-1">
+            <div class="w-9 h-1 rounded-full bg-border-strong" aria-hidden="true"></div>
+          </div>
+
+          <div class="flex items-center justify-between px-md py-2.5 border-b border-border-subtle">
+            <DialogTitle class="font-compact text-compact font-semibold text-text-primary">
+              {{ t('search.sourceDrawerTitle') }}
+            </DialogTitle>
+            <DialogClose as-child>
+              <button
+                type="button"
+                class="w-8 h-8 rounded-[var(--radius-sm)] border border-border-default bg-surface-panel text-text-secondary hover:text-text-primary flex items-center justify-center transition-colors"
+                :aria-label="t('common.close')"
+              >
+                <span class="material-symbols-outlined text-[18px]">close</span>
+              </button>
+            </DialogClose>
+          </div>
+
+          <div class="overflow-y-auto px-md py-3 pb-[calc(env(safe-area-inset-bottom)+16px)] flex flex-col gap-4">
+            <div v-if="streamingPlatforms.length > 0" data-testid="source-group-streaming">
+              <div class="font-micro text-micro uppercase tracking-wider text-text-muted mb-2">
+                {{ t('search.sourceGroupStreaming') }} ({{ streamingPlatforms.length }})
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <button
+                  v-for="p in streamingPlatforms"
+                  :key="p.id"
+                  type="button"
+                  :data-drawer-platform-id="p.id"
+                  @click="pickPlatformFromDrawer(p.id)"
+                  class="flex flex-col items-start gap-1 p-2.5 rounded-[var(--radius-md)] border text-left transition-colors"
+                  :class="platform === p.id
+                    ? 'border-primary bg-accent-subtle text-text-primary'
+                    : 'border-border-default bg-surface-panel text-text-secondary hover:text-text-primary'"
+                >
+                  <div class="w-full flex items-center justify-between gap-2">
+                    <span class="inline-flex items-center gap-1.5 min-w-0 font-compact text-compact text-text-primary">
+                      <span
+                        class="w-2 h-2 rounded-full flex-shrink-0"
+                        :class="[getPlatformDotClass(p), platform !== p.id ? 'opacity-50' : '']"
+                      ></span>
+                      <span class="truncate">{{ getPlatformLabel(p) }}</span>
+                    </span>
+                    <span v-if="platform === p.id" class="material-symbols-outlined text-primary text-[16px] flex-shrink-0">check</span>
+                  </div>
+                  <span class="font-micro text-micro text-text-muted truncate w-full">
+                    {{ getPlatformCapability(p) }}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            <div v-if="selfHostedPlatforms.length > 0" data-testid="source-group-self-hosted">
+              <div class="font-micro text-micro uppercase tracking-wider text-text-muted mb-2">
+                {{ t('search.sourceGroupSelfHosted') }} ({{ selfHostedPlatforms.length }})
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <button
+                  v-for="p in selfHostedPlatforms"
+                  :key="p.id"
+                  type="button"
+                  :data-drawer-platform-id="p.id"
+                  @click="pickPlatformFromDrawer(p.id)"
+                  class="flex flex-col items-start gap-1 p-2.5 rounded-[var(--radius-md)] border text-left transition-colors"
+                  :class="platform === p.id
+                    ? 'border-primary bg-accent-subtle text-text-primary'
+                    : 'border-border-default bg-surface-panel text-text-secondary hover:text-text-primary'"
+                >
+                  <div class="w-full flex items-center justify-between gap-2">
+                    <span class="inline-flex items-center gap-1.5 min-w-0 font-compact text-compact text-text-primary">
+                      <span
+                        class="w-2 h-2 rounded-full flex-shrink-0"
+                        :class="[getPlatformDotClass(p), platform !== p.id ? 'opacity-50' : '']"
+                      ></span>
+                      <span class="truncate">{{ getPlatformLabel(p) }}</span>
+                    </span>
+                    <span v-if="platform === p.id" class="material-symbols-outlined text-primary text-[16px] flex-shrink-0">check</span>
+                  </div>
+                  <span class="font-micro text-micro text-text-muted truncate w-full">
+                    {{ getPlatformCapability(p) }}
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </DialogPortal>
+    </DialogRoot>
   </section>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { DialogRoot, DialogPortal, DialogOverlay, DialogContent, DialogTitle, DialogClose } from 'reka-ui';
 import { useRoomCommandStore } from '../../domains/realtime/roomCommandStore';
 import { useSearchLogic } from '../../composables/useSearchLogic';
 import CoverImage from '../CoverImage.vue';
@@ -227,7 +343,7 @@ import {
   toggleAlbumSongSelection
 } from '../../utils/selection';
 
-const { t } = useI18n();
+const { t, te } = useI18n();
 const player = useRoomCommandStore();
 const {
   platform,
@@ -250,9 +366,90 @@ const {
 } = useSearchLogic();
 
 const selectedSongs = ref(new Set());
+const isSourceDrawerOpen = ref(false);
+const sourceRailRef = ref(null);
+const sourcePillRefs = new Map();
+
+const setSourcePillRef = (id, el) => {
+  if (el) {
+    sourcePillRefs.set(id, el);
+  } else {
+    sourcePillRefs.delete(id);
+  }
+};
 
 const hasSearched = computed(() => hasSubmittedSearch.value || songs.value.length > 0 || albums.value.length > 0);
 const resultMode = computed(() => searchType.value === 'album' && supportsAlbumSearch.value ? 'album' : 'song');
+
+const isSelfHostedPlatform = (p) => p.subsonic || p.id === 'local' || p.id === 'navidrome';
+
+const streamingPlatforms = computed(() => platforms.value.filter(p => !isSelfHostedPlatform(p)));
+const selfHostedPlatforms = computed(() => platforms.value.filter(p => isSelfHostedPlatform(p)));
+
+const getPlatformLabel = (p) => {
+  const key = `platforms.${p.id}`;
+  return te(key) ? t(key) : p.label;
+};
+
+const getPlatformDotClass = (p) => {
+  if (p.id === 'netease') return 'bg-platform-netease';
+  if (p.id === 'bilibili') return 'bg-platform-bilibili';
+  if (p.id === 'navidrome' || p.subsonic) return 'bg-primary';
+  return 'bg-text-muted';
+};
+
+const getPlatformCapability = (p) => {
+  if (p.id === 'soundcloud') return t('search.sourceCapUrlOnly');
+  if (p.id === 'local') return t('search.sourceCapLocalBrowse');
+  if (p.subsonic || p.id === 'navidrome') return t('search.sourceCapSubsonic');
+  if (p.supportsAlbumSearch) return t('search.sourceCapAlbumAndSong');
+  return t('search.sourceCapSongOnly');
+};
+
+const searchPlaceholder = computed(() => {
+  if (platform.value === 'soundcloud') return t('search.soundcloudPlaceholder');
+  return t('search.placeholder');
+});
+
+const emptySongIcon = computed(() => {
+  if (platform.value === 'soundcloud' && !hasSearched.value) return 'link';
+  if (platform.value === 'local' && !hasSearched.value) return 'folder_open';
+  return 'music_note';
+});
+
+const emptySongTitle = computed(() => {
+  if (platform.value === 'soundcloud' && !hasSearched.value) return t('search.soundcloudTitle');
+  if (platform.value === 'local' && !hasSearched.value) return t('search.localBrowseTitle');
+  return hasSearched.value ? t('search.noResults') : t('search.searchSongs');
+});
+
+const emptySongHint = computed(() => {
+  if (platform.value === 'soundcloud' && !hasSearched.value) return t('search.soundcloudHint');
+  if (platform.value === 'local' && !hasSearched.value) return t('search.localBrowseHint');
+  return '';
+});
+
+const scrollActivePillIntoView = async (id) => {
+  await nextTick();
+  const el = sourcePillRefs.get(id);
+  if (el && typeof el.scrollIntoView === 'function') {
+    el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }
+};
+
+const selectPlatform = (id) => {
+  platform.value = id;
+};
+
+const pickPlatformFromDrawer = (id) => {
+  platform.value = id;
+  isSourceDrawerOpen.value = false;
+  scrollActivePillIntoView(id);
+};
+
+watch(platform, (nextId) => {
+  scrollActivePillIntoView(nextId);
+});
 
 const handleSearchAction = () => doSearch();
 
@@ -314,12 +511,31 @@ onMounted(loadPlatforms);
 </script>
 
 <style scoped>
-.mobile-search-platforms,
+.mobile-source-rail {
+  padding: 2px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  flex-wrap: nowrap;
+}
+
+.mobile-source-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-source-rail__pill {
+  flex: 0 0 auto;
+  min-width: auto;
+  min-height: 32px;
+  padding: 6px 12px;
+  white-space: nowrap;
+}
+
 .mobile-search-types {
   padding: 2px;
 }
 
-.mobile-search-platforms .mobile-segment__option,
 .mobile-search-types .mobile-segment__option {
   min-height: 32px;
 }

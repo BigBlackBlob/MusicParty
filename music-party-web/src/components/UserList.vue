@@ -1,13 +1,100 @@
 <template>
-  <div class="p-4">
-    <div class="mb-4 flex items-center justify-between">
+  <div :class="hideHeader ? '' : 'p-4'">
+    <div v-if="!hideHeader" class="mb-4 flex items-center justify-between">
       <h3 class="text-sm font-semibold text-[var(--text-primary)]">{{ t('settings.onlineMembers') }}</h3>
       <div class="rounded-full border border-[var(--border-default)] bg-[var(--surface-3)] px-2.5 py-0.5 text-xs font-mono text-[var(--text-secondary)]">
         {{ users.length }}
       </div>
     </div>
 
-    <div class="space-y-3">
+    <div v-if="grouped" class="space-y-4">
+      <div v-if="users.length === 0" class="mobile-content-state">
+        <span class="material-symbols-outlined mobile-content-state__icon">group</span>
+        <p class="font-compact text-compact">{{ t('userList.empty') }}</p>
+      </div>
+
+      <section
+        v-for="section in groupedSections"
+        :key="section.key"
+        :data-testid="`member-group-${section.key}`"
+        class="space-y-2.5"
+      >
+        <h4 class="font-micro text-micro uppercase tracking-wider text-[var(--text-tertiary)] px-1">
+          {{ section.label }} ({{ section.members.length }})
+        </h4>
+
+        <div class="space-y-2.5">
+          <div
+            v-for="u in section.members"
+            :key="u.publicId"
+            class="flex min-w-0 items-center gap-3 rounded-2xl border px-3 py-2 transition-colors"
+            :class="[
+              isSelf(u) ? 'border-[var(--border-default)] bg-[var(--surface-2)]' : 'border-transparent bg-[var(--surface-2)] hover:border-[var(--border-default)]',
+              isEnqueuerById(u.publicId) ? 'border-[var(--accent)]/30 bg-[var(--accent-subtle)]' :
+              isLikedUser(u.publicId) ? 'bg-[var(--surface-3)]' : ''
+            ]"
+          >
+            <div
+              class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold uppercase transition-colors"
+              :class="[
+                isEnqueuerById(u.publicId) ? 'bg-[var(--accent)] text-[var(--text-inverse)]' :
+                isLikedUser(u.publicId) ? 'bg-[var(--accent)] text-[var(--text-inverse)]' :
+                isSelf(u) ? 'bg-[var(--surface-3)] text-[var(--text-primary)]' :
+                'bg-[var(--surface-3)] text-[var(--text-secondary)]'
+              ]"
+            >
+              <span v-if="isEnqueuerById(u.publicId)" :aria-label="t('userList.dj')">DJ</span>
+              <Zap v-else-if="isLikedUser(u.publicId)" class="w-4 h-4 fill-current text-[var(--text-inverse)]" />
+              <span v-else :aria-label="isSelf(u) ? t('userList.me') : t('settings.member')">{{ getInitials(u.name) }}</span>
+            </div>
+
+            <div class="flex min-w-0 flex-1 flex-col gap-1">
+              <input
+                v-if="isSelf(u)"
+                v-model="newName"
+                @blur="doRename"
+                @keyup.enter="doRename"
+                class="w-full bg-transparent text-sm font-semibold outline-none border-b border-transparent focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-muted)]"
+                :aria-label="t('userList.rename')"
+                :class="isEnqueuerById(u.publicId) ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'"
+              />
+              <div
+                v-else
+                class="truncate text-sm font-semibold"
+                :class="isEnqueuerById(u.publicId) ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'"
+              >
+                {{ u.name }}
+              </div>
+              <div class="flex min-w-0 flex-wrap items-center gap-1.5">
+                <span class="member-badge" :class="isEnqueuerById(u.publicId) ? 'member-badge--accent' : ''">
+                  {{ isEnqueuerById(u.publicId) ? t('userList.dj') : (isSelf(u) ? t('userList.me') : t('settings.member')) }}
+                </span>
+                <span v-if="isSelf(u) && isEnqueuerById(u.publicId)" class="member-badge">
+                  {{ t('userList.me') }}
+                </span>
+                <span v-if="isSelf(u) ? userStore.isGuest : u.isGuest" class="member-badge">
+                  {{ t('settings.guest') }}
+                </span>
+              </div>
+            </div>
+
+            <div v-if="isEnqueuerById(u.publicId)" class="flex h-4 w-4 shrink-0 items-end gap-0.5" :aria-label="t('userList.statusDJ')">
+              <div class="bar bar-1 bg-[var(--accent)]"></div>
+              <div class="bar bar-2 bg-[var(--accent)]"></div>
+              <div class="bar bar-3 bg-[var(--accent)]"></div>
+            </div>
+            <div
+              v-else
+              class="h-2 w-2 shrink-0 rounded-full bg-[var(--accent)]"
+              :class="isSelf(u) ? 'animate-pulse' : ''"
+              :aria-label="t('userList.statusOnline')"
+            ></div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div v-else class="space-y-3">
       <!-- 自己 -->
       <div
           v-if="me"
@@ -112,6 +199,17 @@ import { useRoomRealtimeCoordinator } from '../domains/realtime/roomRealtimeCoor
 import { useRoomPresenceStore } from '../domains/realtime/roomPresenceStore';
 import { Zap } from 'lucide-vue-next';
 
+const props = defineProps({
+  grouped: {
+    type: Boolean,
+    default: false
+  },
+  hideHeader: {
+    type: Boolean,
+    default: false
+  }
+});
+
 const { t } = useI18n();
 const userStore = useUserStore();
 const playerStore = useRoomRuntimeStore();
@@ -137,6 +235,26 @@ const isLikedUser = (publicId) => {
 watch(() => userStore.currentUser.name, (name) => newName.value = name);
 
 const others = computed(() => users.value.filter(u => u.publicId !== userStore.publicId));
+
+const isSelf = (u) => u.publicId === userStore.publicId;
+
+const sortSelfFirst = (list) => {
+  const selfList = list.filter(isSelf);
+  const restList = list.filter(u => !isSelf(u));
+  return [...selfList, ...restList];
+};
+
+const groupedSections = computed(() => {
+  if (!props.grouped) return [];
+  const djs = sortSelfFirst(users.value.filter(u => isEnqueuerById(u.publicId)));
+  const liked = sortSelfFirst(users.value.filter(u => !isEnqueuerById(u.publicId) && isLikedUser(u.publicId)));
+  const listeners = sortSelfFirst(users.value.filter(u => !isEnqueuerById(u.publicId) && !isLikedUser(u.publicId)));
+  return [
+    { key: 'dj', label: t('userList.sectionCurrentDj'), members: djs },
+    { key: 'liked', label: t('userList.sectionLiked'), members: liked },
+    { key: 'listeners', label: t('userList.sectionListeners'), members: listeners }
+  ].filter(section => section.members.length > 0);
+});
 
 const doRename = () => {
   if(newName.value && newName.value !== userStore.currentUser.name) {

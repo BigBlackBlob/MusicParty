@@ -283,7 +283,8 @@ export default {
     nowPlaying: 'Now',
     queue: 'Queue',
     search: 'Search',
-    chat: 'Chat'
+    chat: 'Chat',
+    members: 'Members'
   },
   player: {
     nowPlaying: 'Now Playing',
@@ -394,6 +395,17 @@ export default {
     soundcloudTitle: 'URL Lookup Only',
     soundcloudHint: 'SoundCloud search is unavailable. Paste a track URL to add it — e.g. https://soundcloud.com/artist/track',
     soundcloudPlaceholder: 'Paste a SoundCloud track URL...',
+    allSources: 'All ({count})',
+    sourceDrawerTitle: 'Select music source',
+    sourceGroupStreaming: 'Public streaming',
+    sourceGroupSelfHosted: 'Local & self-hosted Subsonic',
+    sourceCapUrlOnly: 'URL lookup only',
+    sourceCapAlbumAndSong: 'Songs · Albums',
+    sourceCapLocalBrowse: 'Auto-browse library',
+    sourceCapSubsonic: 'Subsonic · Albums',
+    sourceCapSongOnly: 'Songs',
+    localBrowseTitle: 'Local Library',
+    localBrowseHint: 'Local tracks load automatically when selected.',
   },
   playlist: {
     fetchPlaylistsFailed: 'Fetch playlists failed',
@@ -436,7 +448,13 @@ export default {
     dj: 'DJ',
     rename: 'Rename',
     statusDJ: 'DJ Status',
-    statusOnline: 'Online'
+    statusOnline: 'Online',
+    sectionCurrentDj: 'Current DJ',
+    sectionLiked: 'Liked current track',
+    sectionListeners: 'Other listeners',
+    nowSpinning: 'Now playing · Requested by {name}',
+    onlineCount: '{count} online',
+    empty: 'No online members yet.'
   },
   namePrompt: {
     title: 'Identification Required',

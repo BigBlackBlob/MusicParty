@@ -13,6 +13,7 @@
         <MobileQueueView v-else-if="activeTab === 'queue'" :key="'queue'" />
         <MobileSearchView v-else-if="activeTab === 'search'" :key="'search'" />
         <MobileChatView v-else-if="activeTab === 'chat'" :key="'chat'" />
+        <MobileMembersView v-else-if="activeTab === 'members'" :key="'members'" />
       </Transition>
     </main>
 
@@ -32,6 +33,7 @@ import { useChatStore } from '../../stores/chat';
 import { useUiStore } from '../../stores/ui';
 import MobileBottomNav from './MobileBottomNav.vue';
 import MobileChatView from './MobileChatView.vue';
+import MobileMembersView from './MobileMembersView.vue';
 import MobileNowPlaying from './MobileNowPlaying.vue';
 import MobileQueueView from './MobileQueueView.vue';
 import MobileSearchView from './MobileSearchView.vue';

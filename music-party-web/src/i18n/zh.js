@@ -283,7 +283,8 @@ export default {
     nowPlaying: '播放',
     queue: '队列',
     search: '搜索',
-    chat: '聊天'
+    chat: '聊天',
+    members: '成员'
   },
   player: {
     nowPlaying: '正在播放',
@@ -393,6 +394,17 @@ export default {
     soundcloudTitle: '仅支持链接查询',
     soundcloudHint: 'SoundCloud 不支持关键词搜索，请粘贴曲目链接，例如 https://soundcloud.com/artist/track',
     soundcloudPlaceholder: '粘贴 SoundCloud 曲目链接...',
+    allSources: '全部 ({count})',
+    sourceDrawerTitle: '选择音乐源',
+    sourceGroupStreaming: '公网流媒体平台',
+    sourceGroupSelfHosted: '本地曲库与自建 Subsonic',
+    sourceCapUrlOnly: '仅链接解析',
+    sourceCapAlbumAndSong: '歌曲 · 专辑',
+    sourceCapLocalBrowse: '自动浏览本地库',
+    sourceCapSubsonic: 'Subsonic · 专辑',
+    sourceCapSongOnly: '歌曲',
+    localBrowseTitle: '本地曲库',
+    localBrowseHint: '切换至本地源后会自动加载曲目列表。',
   },
   playlist: {
     fetchPlaylistsFailed: '获取歌单失败',
@@ -435,7 +447,13 @@ export default {
     dj: '点歌者',
     rename: '修改昵称',
     statusDJ: '点歌者状态',
-    statusOnline: '在线'
+    statusOnline: '在线',
+    sectionCurrentDj: '当前点歌者',
+    sectionLiked: '已点赞当前曲目',
+    sectionListeners: '其他在线听众',
+    nowSpinning: '正在播放 · 由 {name} 点播',
+    onlineCount: '{count} 人在线',
+    empty: '暂无在线成员。'
   },
   namePrompt: {
     title: '需要设置身份',

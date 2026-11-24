@@ -17,7 +17,7 @@
       </span>
       <span class="text-micro font-micro uppercase tracking-wider">{{ item.label }}</span>
 
-      <span v-if="item.badge" class="absolute top-2 right-[25%] flex h-4 min-w-[16px] items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-on-primary shadow-lg z-10">
+      <span v-if="item.badge" class="absolute top-2 right-[18%] flex h-4 min-w-[16px] items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-on-primary shadow-lg z-10">
         {{ item.badge }}
       </span>
     </button>
@@ -28,6 +28,7 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useChatStore } from '../../stores/chat';
+import { useRoomPresenceStore } from '../../domains/realtime/roomPresenceStore';
 
 defineProps({
   active: {
@@ -39,11 +40,18 @@ defineEmits(['update:active']);
 
 const { t } = useI18n();
 const chat = useChatStore();
+const presence = useRoomPresenceStore();
+const onlineBadge = computed(() => {
+  const count = presence.users.length;
+  if (count <= 0) return '';
+  return count > 99 ? '99+' : String(count);
+});
 const items = computed(() => [
   { key: 'now', label: t('nav.nowPlaying'), ariaLabel: t('nav.nowPlaying'), iconName: 'play_circle' },
   { key: 'queue', label: t('nav.queue'), ariaLabel: t('nav.queue'), iconName: 'queue_music' },
   { key: 'search', label: t('nav.search'), ariaLabel: t('nav.search'), iconName: 'search' },
-  { key: 'chat', label: t('nav.chat'), ariaLabel: t('nav.chat'), iconName: 'chat', badge: chat.unreadCount > 0 ? (chat.unreadCount > 99 ? '99+' : chat.unreadCount) : '' }
+  { key: 'chat', label: t('nav.chat'), ariaLabel: t('nav.chat'), iconName: 'chat', badge: chat.unreadCount > 0 ? (chat.unreadCount > 99 ? '99+' : chat.unreadCount) : '' },
+  { key: 'members', label: t('nav.members'), ariaLabel: t('nav.members'), iconName: 'group', badge: onlineBadge.value }
 ]);
 </script>
 
